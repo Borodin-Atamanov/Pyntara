@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.context import Context
 from pyntara.tasks import swapfile_service_install
@@ -93,7 +93,6 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(),
     )
 
 

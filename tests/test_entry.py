@@ -8,11 +8,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from support import make_config
 from typer.testing import CliRunner
 
 from pyntara import task_catalog, task_runner
-from pyntara.config import Config, load_config
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import (
@@ -35,16 +33,6 @@ REAL_TASKS = tasks_values.CATALOG
 DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell")
 
 
-def _test_config() -> Config:
-    """Config with values safe for unit tests; the real file is never touched.
-
-    The autouse fixture zeroes the declared notice timeout and the declared
-    start delay of a task, so a run over the full task set never sleeps.
-    """
-
-    return make_config(
-        cli_tools_packages=("mc", "htop", "hollywood"),
-    )
 
 
 @pytest.fixture(autouse=True)
@@ -103,7 +91,6 @@ def test_run_exports_the_desktop_session(monkeypatch: pytest.MonkeyPatch) -> Non
     # run itself was started.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     monkeypatch.setattr(
         "pyntara.pyntara.session_environment",
@@ -126,7 +113,6 @@ def test_run_reports_a_missing_desktop_session(
     # then write their values and report that they apply at the next login.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -140,10 +126,6 @@ def test_run_skips_the_export_without_a_desktop_user(
     # it; the run itself continues.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr(
-        "pyntara.pyntara.load_config",
-        lambda path: make_config(),
-    )
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -174,7 +156,6 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     # and falls back to the auto-detected mode: the run continues.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     monkeypatch.setattr(
         "pyntara.pyntara.detect_default_mode",
         lambda: "server",
@@ -262,7 +243,6 @@ def test_run_unknown_mode_countdown_has_no_unit_letter(
     # The countdown counts seconds as plain numbers, without the letter s.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     monkeypatch.setattr(
         "pyntara.pyntara.detect_default_mode",
         lambda: "server",
@@ -290,7 +270,6 @@ def test_run_warns_and_continues_on_unknown_tasks(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "nope")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "unknown task names in PYNTARA_TASKS" in result.output
@@ -303,7 +282,6 @@ def test_run_pauses_on_invalid_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "nope")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     slept: list[float] = []
     monkeypatch.setattr(
         "pyntara.pyntara.time.sleep", lambda seconds: slept.append(seconds)
@@ -335,7 +313,6 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     # correct when the catalog grows or shrinks.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def fake_load(name: str) -> object:
         if name == "cli_tools":
@@ -361,10 +338,6 @@ def test_run_configures_the_journal_from_config(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     configured: list[str] = []
     monkeypatch.setattr("pyntara.pyntara.configure_journal", configured.append)
-    monkeypatch.setattr(
-        "pyntara.pyntara.load_config",
-        lambda path: make_config(),
-    )
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -372,19 +345,14 @@ def test_run_configures_the_journal_from_config(
     assert configured[-1] == engine_values.JOURNAL_IDENTIFIER
 
 
-def test_run_journals_the_declared_identifier_of_an_unreadable_config(
+def test_run_journals_the_declared_identifier_without_a_config_file(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # An unreadable config leaves the values of every section absent, which a
-    # task reports as a clean skip; the journal identifier is a declared
-    # value, so the run announces itself under it whatever the config holds.
+    # The run reads no config file at all, and the journal identifier is a
+    # declared value, so the run announces itself under it on every machine.
     _clear_env(monkeypatch)
     configured: list[str] = []
     monkeypatch.setattr("pyntara.pyntara.configure_journal", configured.append)
-    monkeypatch.setattr(
-        "pyntara.pyntara.load_config",
-        lambda path: load_config(Path("/nonexistent-config")),
-    )
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -414,7 +382,6 @@ def test_run_default_run_set_resolves_dependencies(
     # profile id file exists before dnsproxy runs.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -431,7 +398,6 @@ def test_run_warns_and_continues_on_unknown_force_tasks(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "nope")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -452,7 +418,6 @@ def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "add_extra_repos")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "cli_tools")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -471,7 +436,6 @@ def test_run_reports_force_tasks_in_the_run_set(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "add_extra_repos cli_tools")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -490,7 +454,6 @@ def test_run_force_all_reports_the_full_run_set(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "all")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -509,7 +472,6 @@ def test_run_force_all_is_case_insensitive(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "ALL")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -532,8 +494,6 @@ def test_the_force_all_keyword_comes_from_the_values(
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "every")
     shipped_keyword = engine_values.FORCE_ALL_KEYWORD
     monkeypatch.setattr(engine_values, "FORCE_ALL_KEYWORD", "every")
-    base = _test_config()
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: base)
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -544,7 +504,6 @@ def test_the_force_all_keyword_comes_from_the_values(
     expected = " ".join(sorted(_default_run_set("minimal")))
     assert f"Force: {expected}" in result.output
 
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: base)
     monkeypatch.setattr(engine_values, "FORCE_ALL_KEYWORD", shipped_keyword)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
@@ -562,10 +521,8 @@ def test_the_run_context_carries_the_clone_root(
     # what happened before this proof existed, so the root is compared
     # with the clone the tests run from and both directories are required.
     _clear_env(monkeypatch)
-    cfg = _test_config()
-    ctx = _run_context(cfg, "minimal", ["hostname"])
+    ctx = _run_context("minimal", ["hostname"])
     assert ctx.repo_root == REPO_ROOT
-    assert (ctx.repo_root / "config").is_dir()
     assert (ctx.repo_root / "task_data").is_dir()
     assert not (ctx.repo_root / "task_data").is_relative_to(ctx.repo_root / "src")
 
@@ -578,7 +535,6 @@ def test_run_force_all_still_reports_invalid_names(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "all nope")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -599,7 +555,6 @@ def test_run_force_tasks_match_case_insensitively(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", "CLI_TOOLS")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -633,7 +588,6 @@ def _captured_force_tasks(
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", value)
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     captured: dict[str, frozenset[str]] = {"force_tasks": frozenset()}
 
     def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
@@ -659,7 +613,6 @@ def test_run_reports_success_and_exits_zero(monkeypatch: pytest.MonkeyPatch) -> 
     # When every task succeeds, the run reports the count and exits 0.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True, message="done")
@@ -678,7 +631,6 @@ def test_run_reports_warnings_and_exits_one(
     # report the count, so scripts can detect an incomplete configuration.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
 
     def warn_task(ctx: object) -> TaskResult:
         return TaskResult(
@@ -707,7 +659,6 @@ def _captured_skip_flag(
         monkeypatch.delenv("PYNTARA_SKIP_APT_UPDATE", raising=False)
     else:
         monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", value)
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: _test_config())
     captured: dict[str, bool | None] = {"flag": None}
 
     def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
@@ -743,8 +694,6 @@ def test_the_true_answers_of_the_flag_come_from_the_values(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", "aye")
     monkeypatch.setattr(engine_values, "ENVIRONMENT_FLAG_TRUE_VALUES", ("aye", "si"))
-    base = _test_config()
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: base)
     captured: dict[str, bool | None] = {"flag": None}
 
     def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
@@ -757,7 +706,6 @@ def test_the_true_answers_of_the_flag_come_from_the_values(
     assert captured["flag"] is True
 
     monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", "yes")
-    monkeypatch.setattr("pyntara.pyntara.load_config", lambda path: base)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert captured["flag"] is False

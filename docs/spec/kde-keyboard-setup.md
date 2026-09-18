@@ -28,7 +28,7 @@ The task reads every current value with kreadconfig6 and writes only what differ
 
 ## Parameters
 
-All parameters live in the [kde_keyboard_setup] table of the config/ directory:
+All parameters live in the src/pyntara/values/kde_keyboard_setup.py:
 
 packages, the packages the task ensures are installed: the provider of kwriteconfig6 and kreadconfig6 (libkf6config-bin), the DBus client used for the reload (qdbus-qt6), the python3-dbus bindings used to apply the hotkeys live and the Qt bindings (python3-pyqt6) that turn a portable shortcut into the combined key code the daemon takes.  
 username, home_dir and config_dir, the target user and that user's home and config directories. The live session bus of that user comes from the engine values module: desktop_username, session_environment_command, session_environment_keys and session_bus_key.  

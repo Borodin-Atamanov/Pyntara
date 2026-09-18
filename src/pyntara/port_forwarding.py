@@ -32,7 +32,6 @@ import re
 import signal
 import socket
 import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -41,7 +40,6 @@ from pathlib import Path
 from pykeepass import PyKeePass
 
 from pyntara import metrics
-from pyntara.config import Config, load_config
 from pyntara.forwarding_ports import candidate_ports
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
@@ -331,7 +329,6 @@ def _last_line(text: str) -> str:
 
 def start_forward(
     env: dict[str, str],
-    cfg: Config,
     key_path: Path,
     ssh_port: int,
     server: str,
@@ -469,7 +466,6 @@ def save_state(state: dict[str, dict[str, int]]) -> None:
 
 
 def _open_tunnel(
-    cfg: Config,
     server: str,
     ssh_port: int,
     local_port: int,
@@ -490,7 +486,6 @@ def _open_tunnel(
     for port in candidate_ports(socket.gethostname()):
         proc, busy, error = start_forward(
             env,
-            cfg,
             key_path,
             ssh_port,
             server,
@@ -518,7 +513,6 @@ def _open_tunnel(
 
 
 def run_forward_loop(
-    cfg: Config,
     state: dict[str, dict[str, int]],
     lock: threading.Lock,
     server: str,
@@ -542,7 +536,7 @@ def run_forward_loop(
     reconnect = 0
     while True:
         try:
-            opened = _open_tunnel(cfg, server, ssh_port, local_port, key_path, env)
+            opened = _open_tunnel(server, ssh_port, local_port, key_path, env)
             if opened is None:
                 reconnect += 1
                 time.sleep(
@@ -594,20 +588,17 @@ def run_forward_loop(
 def main() -> None:
     """Run the port-forwarding loops until the service stops.
 
-    The config path is the first command line argument; the systemd unit
-    renders the configured system_config_path into the ExecStart line. A
+    The systemd unit runs this module with no argument: every value comes
+    from the pyntara values package, so the deployed service never reads
+    a config file. A
     vault that cannot be opened, a missing key or a failed key unlock
     exit nonzero so systemd restarts the service; a vault that opens but
     carries no server group or no passphrase exits cleanly, because there
     is nothing to connect to.
     """
 
-    if len(sys.argv) < 2:
-        print("error: missing config path argument", file=sys.stderr)
-        raise SystemExit(1)
-    cfg = load_config(Path(sys.argv[1]))
     configure_journal(values.JOURNAL_IDENTIFIER)
-    kp = metrics.open_runtime_vault(cfg)
+    kp = metrics.open_runtime_vault()
     if kp is None:
         _log(
             "cannot open the runtime vault; the service will be restarted",
@@ -653,7 +644,7 @@ def main() -> None:
     threads = [
         threading.Thread(
             target=run_forward_loop,
-            args=(cfg, state, lock, server, ssh_port, ssh_port, key_path, env),
+            args=(state, lock, server, ssh_port, ssh_port, key_path, env),
             daemon=True,
         )
         for server in servers

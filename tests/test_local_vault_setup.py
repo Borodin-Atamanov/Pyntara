@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 from pykeepass import PyKeePass, create_database
 from pykeepass.exceptions import CredentialsError
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.context import Context
 from pyntara.tasks import local_vault_setup
@@ -74,8 +74,8 @@ def _ctx(
         vault_password=vault_password,
         force_tasks=frozenset({"local_vault_setup"}) if force else frozenset(),
         repo_root=tmp_path,
-        config=make_config(),
     )
+
 
 
 def _file_mode(path: Path) -> int:

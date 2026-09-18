@@ -15,8 +15,8 @@ format, size and frame rate is possible, from 120 fps to one frame per ten
 seconds (framerate=1/10). The first run shows the KDE screen dialog once;
 the script saves the single-use restore token the portal returns and passes
 it back on later runs, so the recording starts without asking again. The
-token lives in the per-user file wayrecord_token under the pyntara config
-directory, or in the path of the PYNTARA_WAYRECORD_TOKEN environment
+token lives in the per-user file wayrecord_token under the state directory
+of the desktop user, or in the path of the PYNTARA_WAYRECORD_TOKEN environment
 variable. All messages go to stderr; stdout carries only raw frames. The
 capture stops when the pipe closes (ffmpeg exits) or on Ctrl+C.
 """

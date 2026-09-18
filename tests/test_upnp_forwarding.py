@@ -9,18 +9,15 @@ tests only touch temporary fixtures (docs/guides/developer-guide.md).
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
-from support import FakeProc, make_config
+from support import FakeProc
 
 import pyntara.upnp_forwarding as forwarding
-from pyntara.config import Config
 from pyntara.forwarding_ports import desired_port
 from pyntara.values import upnp_forwarding_setup as values
 
-CONFIG_PATH = "/etc/pyntara/config.toml"
 ROUTER_ADDRESS = "191.83.167.128"
 INTERNAL_ADDRESS = "192.168.1.52"
 
@@ -96,7 +93,6 @@ class _FakeRouter:
 def _service(
     monkeypatch: pytest.MonkeyPatch,
     router: _FakeRouter,
-    config: Config,
     triggers: list[bool],
 ) -> None:
     """Wire the service to a faked router, machine and collector."""
@@ -107,14 +103,13 @@ def _service(
     )
     monkeypatch.setattr(forwarding.socket, "gethostname", lambda: "testhost")
     monkeypatch.setattr(forwarding, "package_is_installed", lambda *_a, **_k: True)
-    monkeypatch.setattr(forwarding, "load_config", lambda _path: config)
     monkeypatch.setattr(forwarding, "trigger_collection", lambda: triggers.append(True))
 
 
 def _run_main() -> int:
     """Run the service the way the deployed unit runs it."""
 
-    return forwarding.main(["upnp_forwarding", CONFIG_PATH])
+    return forwarding.main()
 
 
 class TestCandidatePorts:
@@ -146,11 +141,10 @@ class TestMain:
     def test_a_free_port_is_forwarded_and_wakes_the_collector(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         router = _FakeRouter()
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
@@ -163,12 +157,11 @@ class TestMain:
         # replaces a rule silently, so the rule of the neighbour is left
         # alone and the next candidate is tried; the machine name in the
         # description is what tells the two apart.
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         foreign = (ports[0], "192.168.1.48", 443, NEIGHBOUR_DESCRIPTION)
         router = _FakeRouter(rules=(foreign,))
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert foreign in router.rules
@@ -185,13 +178,12 @@ class TestMain:
     ) -> None:
         # The network did not change, so the report carries the same facts
         # as the last one and there is nothing worth sending.
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         router = _FakeRouter(
             rules=((ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION),)
         )
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.added == []
@@ -202,12 +194,11 @@ class TestMain:
     ) -> None:
         # The machine took another address, so its own rule points at the
         # old one: the router takes the same rule again with the new target.
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         stale = (ports[0], "192.168.1.9", 30222, OUR_DESCRIPTION)
         router = _FakeRouter(rules=(stale,))
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
@@ -219,12 +210,11 @@ class TestMain:
         # The description is the ownership mark, so a rule of this machine
         # that delivers the port but carries an older mark is refreshed: the
         # rule then names this machine like every other rule of the run.
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         old_mark = (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
         router = _FakeRouter(rules=(old_mark,))
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
@@ -235,10 +225,9 @@ class TestMain:
     ) -> None:
         # A network without UPnP, or a router with UPnP switched off, is a
         # normal state: nothing is attempted and the service reports success.
-        config = make_config()
         router = _FakeRouter(address=None)
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.added == []
@@ -247,39 +236,22 @@ class TestMain:
     def test_every_candidate_taken_is_reported_and_not_forced(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        config = make_config()
         ports = forwarding.candidate_ports("testhost")
         rules = tuple((port, "192.168.1.48", 443, "pyntara xray") for port in ports)
         router = _FakeRouter(rules=rules)
         triggers: list[bool] = []
-        _service(monkeypatch, router, config, triggers)
+        _service(monkeypatch, router, triggers)
 
         assert _run_main() == 0
         assert router.added == []
         assert triggers == []
         assert router.rules == list(rules)
 
-    def test_a_missing_command_argument_is_refused(self) -> None:
-        assert forwarding.main(["upnp_forwarding"]) == 2
-        assert forwarding.main(["upnp_forwarding", CONFIG_PATH, "extra"]) == 2
-
-    def test_the_config_path_is_the_only_argument(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    def test_the_service_takes_no_argument(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The deployed unit passes the single system config path, because
-        # the service still reads the sshd listen port and wakes the report
-        # collector through that section; the values of its own section are
-        # declared and need no document.
-        seen: list[Path] = []
-        config = make_config()
-
-        def fake_load(path: Path) -> Config:
-            seen.append(path)
-            return config
-
-        monkeypatch.setattr(forwarding, "load_config", fake_load)
+        # Every value the service needs ships with the package, so the
+        # deployed unit runs the module with no argument at all.
         monkeypatch.setattr(forwarding, "package_is_installed", lambda *_a, **_k: True)
         monkeypatch.setattr(forwarding, "ensure_forwarding", lambda *_a: None)
-        path = tmp_path / "config.toml"
-        assert forwarding.main(["upnp_forwarding", str(path)]) == 0
-        assert seen == [path]
+        assert forwarding.main() == 0

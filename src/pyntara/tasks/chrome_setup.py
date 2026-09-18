@@ -654,9 +654,9 @@ def _kconfig_command(
     """One KConfig call: the base, the groups and the key.
 
     The base call carries the file name and every selector is a value of the
-    section, so another KConfig version or another tool is a values change
-    (docs/spec/config-content.md, Exceptions). The reader and the writer
-    share this builder, so the two calls can never drift apart.
+    section, so another KConfig version or another tool is a values change.
+    The reader and the writer share this builder, so the two calls can never
+    drift apart.
     """
 
     command = substituted_command(

@@ -20,7 +20,6 @@ import socket
 from dataclasses import dataclass
 
 from pyntara import upnp
-from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.public_address import (
     PublicAddresses,
@@ -257,7 +256,6 @@ def _machine_public_address(
 
 
 def _server_share_address(
-    full_config: Config,
     inbound: dict[str, object],
     facts: _RunFacts,
 ) -> str | None:

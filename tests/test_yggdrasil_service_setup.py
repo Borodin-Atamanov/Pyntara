@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.context import Context
 from pyntara.tasks import yggdrasil_service_setup
@@ -142,11 +142,6 @@ def _ctx(
         install_mode="server",
         force_tasks=(frozenset({"yggdrasil_service_setup"}) if force else frozenset()),
         task_data_root=tmp_path,
-        config=make_config(
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
-        ),
     )
 
 

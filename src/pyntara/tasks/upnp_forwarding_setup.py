@@ -46,15 +46,14 @@ from pyntara.values import upnp_forwarding_setup as values
 def _render_service_unit(
     template_path: Path,
     venv_python: Path,
-    system_config_path: Path,
     version: str,
 ) -> str:
     """Render the oneshot unit with its ExecStart line substituted.
 
     The service runs the deployment venv interpreter with the configured
-    module and the configured system config path as its only argument; the
-    line is fully expanded here, so the template carries no shell variables
-    of its own. The version line names the deployed code this unit belongs
+    module and no argument, because every value it needs ships with the
+    package; the line is fully expanded here, so the template carries no
+    shell variables of its own. The version line names the deployed code this unit belongs
     to, so a unit on the machine that names another version is written
     again by the task below.
     """
@@ -65,7 +64,6 @@ def _render_service_unit(
             {
                 "python": str(venv_python),
                 "module": values.SERVICE_MODULE_NAME,
-                "config_path": str(system_config_path),
             },
         )
     )
@@ -160,7 +158,6 @@ def task(ctx: Context) -> TaskResult:
         rendered[values.SERVICE_UNIT_NAME] = _render_service_unit(
             data_dir / values.SERVICE_TEMPLATE_FILE_NAME,
             venv_python,
-            metrics_values.SYSTEM_CONFIG_PATH,
             version,
         )
     except OSError as exc:

@@ -10,7 +10,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from support import make_config
 
 from pyntara.metrics import main
 from pyntara.utils import backoff_delay
@@ -23,25 +22,18 @@ def test_main_journals_under_the_declared_service_identifier(
     # The deployed service announces itself in the journal under the
     # identifier of its own section, never under the engine name: the entry
     # point hands the logger the engine table carrying that identifier.
-    config_path = tmp_path / "config.toml"
-    config = make_config()
     configured: list[str] = []
-
-    def fake_load(path: Path) -> object:
-        return config
 
     def fake_sleep(seconds: float) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load)
     monkeypatch.setattr("pyntara.metrics.configure_journal", configured.append)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda: None)
     monkeypatch.setattr(
         "pyntara.metrics_send.send_google_queue",
-        lambda cfg, single_random=False: (0, 0),
+        lambda single_random=False: (0, 0),
     )
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     assert configured[-1] == values.SERVICE_JOURNAL_IDENTIFIER
@@ -50,26 +42,14 @@ def test_main_journals_under_the_declared_service_identifier(
 def test_main_loops_with_base_pause(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # main reads the config path from the argument, loads the config and
-    # runs the vault check, the dispatch and the Google send once per
-    # configured interval; the loop is interrupted after the first sleep,
-    # like a service stop.
-    # main reads the config path from the argument, loads the config,
-    # dispatches and sends once, then sleeps the backoff base; the loop is
-    # interrupted after the first sleep, like a service stop.
-    config_path = tmp_path / "config.toml"
+    # main dispatches and sends once, then sleeps the backoff base; the
+    # loop is interrupted after the first sleep, like a service stop.
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    config = make_config()
-    seen_paths: list[Path] = []
     dispatched: list[object] = []
-    sent: list[object] = []
+    sent: list[int] = []
     pauses: list[int] = []
-
-    def fake_load_config(path: Path) -> object:
-        seen_paths.append(Path(path))
-        return config
 
     def fake_sleep(seconds: float) -> None:
         pauses.append(int(seconds))
@@ -78,20 +58,17 @@ def test_main_loops_with_base_pause(
     def fake_dispatch() -> None:
         dispatched.append(True)
 
-    def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
-        sent.append(cfg)
+    def fake_send(single_random: bool = False) -> tuple[int, int]:
+        sent.append(int(single_random))
         return 0, 0
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
-    assert seen_paths == [config_path]
     assert dispatched == [True]
-    assert sent == [config]
+    assert sent == [0]
     assert pauses == [2]
 
 
@@ -113,17 +90,11 @@ def test_main_enters_retry_mode_and_grows_pauses(
 ) -> None:
     # Every cycle makes a send attempt and none succeeds: the loop enters
     # the retry mode after the first cycle and the pauses grow 2, 4, 8, 16.
-    config_path = tmp_path / "config.toml"
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    config = make_config()
     modes: list[bool] = []
     pauses: list[int] = []
-
-    def fake_load_config(path: Path) -> object:
-        del path
-        return config
 
     def fake_sleep(seconds: float) -> None:
         pauses.append(int(seconds))
@@ -133,16 +104,13 @@ def test_main_enters_retry_mode_and_grows_pauses(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
-        del cfg
+    def fake_send(single_random: bool = False) -> tuple[int, int]:
         modes.append(single_random)
         return 1, 0
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     assert pauses == [2, 4, 8, 16]
@@ -155,17 +123,11 @@ def test_main_resets_retry_mode_after_success(
 ) -> None:
     # A successful cycle resets the counter: the pause returns to the
     # base, and the growth restarts from the base on the next failure.
-    config_path = tmp_path / "config.toml"
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    config = make_config()
     results = [(1, 0), (1, 0), (1, 1), (1, 0)]
     pauses: list[int] = []
-
-    def fake_load_config(path: Path) -> object:
-        del path
-        return config
 
     def fake_sleep(seconds: float) -> None:
         pauses.append(int(seconds))
@@ -175,15 +137,12 @@ def test_main_resets_retry_mode_after_success(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
-        del cfg
+    def fake_send(single_random: bool = False) -> tuple[int, int]:
         return results.pop(0)
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     # Two failures grow to 4, the success resets the pause to the base,
@@ -196,17 +155,11 @@ def test_main_cycle_without_attempts_stays_normal(
 ) -> None:
     # A cycle without send attempts (an empty queue) does not grow the
     # pause: the loop keeps the base.
-    config_path = tmp_path / "config.toml"
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    config = make_config()
     results = [(0, 0), (1, 0)]
     pauses: list[int] = []
-
-    def fake_load_config(path: Path) -> object:
-        del path
-        return config
 
     def fake_sleep(seconds: float) -> None:
         pauses.append(int(seconds))
@@ -216,15 +169,12 @@ def test_main_cycle_without_attempts_stays_normal(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
-        del cfg
+    def fake_send(single_random: bool = False) -> tuple[int, int]:
         return results.pop(0)
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     assert pauses == [2, 2]
@@ -235,16 +185,10 @@ def test_main_caps_pause_at_maximum(
 ) -> None:
     # The pause never exceeds backoff_max_seconds: with a ceiling of 16
     # the pauses grow 2, 4, 8, then stay at 16.
-    config_path = tmp_path / "config.toml"
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 16)
-    config = make_config()
     pauses: list[int] = []
-
-    def fake_load_config(path: Path) -> object:
-        del path
-        return config
 
     def fake_sleep(seconds: float) -> None:
         pauses.append(int(seconds))
@@ -254,15 +198,12 @@ def test_main_caps_pause_at_maximum(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
-        del cfg
+    def fake_send(single_random: bool = False) -> tuple[int, int]:
         return 1, 0
 
-    monkeypatch.setattr("pyntara.metrics.load_config", fake_load_config)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     assert pauses == [2, 4, 8, 16, 16]

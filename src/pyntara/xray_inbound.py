@@ -16,11 +16,11 @@ import os
 
 from pyntara import metrics, xray_panel
 from pyntara import xui as xui_client
-from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import proquint_encode, task_data_dir
+from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_facts import _bare_address, _RunFacts, _server_share_address
 
@@ -198,7 +198,6 @@ def _connection_notes(
 
 
 def _stage_connection(
-    full_config: Config,
     timeout: float,
     facts: _RunFacts,
     *,
@@ -240,7 +239,7 @@ def _stage_connection(
     # link with the host localhost.
     share_address_field = panel_values.XRAY_FIELD_KEYS["share_addr"]
     share_strategy_field = panel_values.XRAY_FIELD_KEYS["share_addr_strategy"]
-    address = _server_share_address(full_config, inbound, facts)
+    address = _server_share_address(inbound, facts)
     if address is None:
         warnings.append(
             "no server address available: panel links keep the default host"
@@ -262,7 +261,7 @@ def _stage_connection(
 
     # The client identity comes from the vault entry when it is already
     # there, so a rerun reuses the same client instead of adding another.
-    kp = metrics.open_runtime_vault(full_config)
+    kp = metrics.open_runtime_vault()
     stored: dict[str, str] = {}
     if kp is None:
         warnings.append("runtime vault unavailable: connection profile not stored")
@@ -372,7 +371,7 @@ def _stage_connection(
             url=link,
             notes=notes,
         )
-    kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
+    kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
     _log(f"connection profile stored in {panel_values.CONNECTION_VAULT_ENTRY_TITLE}")
     return TaskResult(
         success=True,

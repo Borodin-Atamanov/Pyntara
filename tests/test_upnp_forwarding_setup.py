@@ -13,7 +13,7 @@ from pathlib import Path
 from string import Template
 
 import pytest
-from support import FakeProc, make_config, make_context
+from support import FakeProc, make_context
 
 from pyntara import __version__
 from pyntara.context import Context
@@ -52,7 +52,7 @@ WantedBy=timers.target
 
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> tuple[Path, Path, Path, Context]:
+) -> tuple[Path, Path, Context]:
     """Point the task at temporary fixtures; return the fixture paths."""
 
     repo = tmp_path / "repo"
@@ -66,19 +66,15 @@ def _install_fixtures(
     venv_python = venv_dir / "bin" / "python"
     venv_python.parent.mkdir(parents=True)
     venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
-    system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(metrics_values, "VENV_DIR", venv_dir)
-    monkeypatch.setattr(metrics_values, "SYSTEM_CONFIG_PATH", system_config)
-    config = make_config()
     ctx = make_context(
         task_data_root=tmp_path,
-        config=config,
         repo_root=repo,
         task_name="upnp_forwarding_setup",
     )
-    return systemd_dir, venv_python, system_config, ctx
+    return systemd_dir, venv_python, ctx
 
 
 def _install_fake(
@@ -121,12 +117,9 @@ def _install_fake(
 
 def _expected_service_unit(
     venv_python: Path,
-    system_config: Path,
     version: str = __version__,
 ) -> str:
-    command = " ".join(
-        [str(venv_python), "-m", values.SERVICE_MODULE_NAME, str(system_config)]
-    )
+    command = " ".join([str(venv_python), "-m", values.SERVICE_MODULE_NAME])
     return Template(SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}", version=version
     )
@@ -148,7 +141,6 @@ def _deploy_units(systemd_dir: Path) -> None:
     (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
         _expected_service_unit(
             metrics_values.VENV_DIR / metrics_values.VENV_PYTHON_RELATIVE_PATH,
-            metrics_values.SYSTEM_CONFIG_PATH,
         ),
         encoding="utf-8",
     )
@@ -160,7 +152,7 @@ def _deploy_units(systemd_dir: Path) -> None:
 def test_deploys_both_units_and_runs_the_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     calls = _install_fake(monkeypatch)
@@ -170,7 +162,7 @@ def test_deploys_both_units_and_runs_the_service(
     assert not result.warnings
     assert (systemd_dir / values.SERVICE_UNIT_NAME).read_text(
         encoding="utf-8"
-    ) == _expected_service_unit(venv_python, system_config)
+    ) == _expected_service_unit(venv_python)
     assert (systemd_dir / values.TIMER_UNIT_NAME).read_text(
         encoding="utf-8"
     ) == _expected_timer_unit()
@@ -183,7 +175,7 @@ def test_deploys_both_units_and_runs_the_service(
 def test_skips_when_the_units_and_the_timer_are_in_place(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     _deploy_units(systemd_dir)
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = upnp_forwarding_setup.task(ctx)
@@ -205,7 +197,7 @@ def test_the_units_carry_the_version_of_the_deployed_code(
     # The version in both units is the one the deployed interpreter
     # reports, not the version of the running installer: the units name the
     # code they will run.
-    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, active=True, venv_version="0.3.999")
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
@@ -222,12 +214,12 @@ def test_units_of_another_version_are_rewritten(
     # A unit that names another version is stale even when everything else
     # matches, so it is written again and systemd is reloaded: that is what
     # carries an update of the code to the machine.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     systemd_dir.mkdir(parents=True)
     (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
-        _expected_service_unit(venv_python, system_config, version="0.0.1"),
+        _expected_service_unit(venv_python, version="0.0.1"),
         encoding="utf-8",
     )
     (systemd_dir / values.TIMER_UNIT_NAME).write_text(
@@ -239,7 +231,7 @@ def test_units_of_another_version_are_rewritten(
     assert ["systemctl", "daemon-reload"] in calls
     assert (systemd_dir / values.SERVICE_UNIT_NAME).read_text(
         encoding="utf-8"
-    ) == _expected_service_unit(venv_python, system_config)
+    ) == _expected_service_unit(venv_python)
 
 
 def test_a_deployment_that_cannot_be_asked_is_a_warning(
@@ -248,7 +240,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
     # A venv that cannot be asked leaves the repository version in the
     # units and names the gap instead of passing the deployment off as the
     # new code.
-    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, active=True, venv_version=None)
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
@@ -260,12 +252,11 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
 def test_force_runs_the_service_again(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, _venv, _ctx = _install_fixtures(monkeypatch, tmp_path)
     _deploy_units(systemd_dir)
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     ctx = make_context(
         task_data_root=tmp_path,
-        config=ctx.config,
         repo_root=tmp_path / "repo",
         task_name="upnp_forwarding_setup",
         force_tasks=frozenset({"upnp_forwarding_setup"}),
@@ -283,7 +274,7 @@ def test_force_runs_the_service_again(
 def test_a_service_in_the_failed_state_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, failed=True)
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
@@ -293,7 +284,7 @@ def test_a_service_in_the_failed_state_is_a_warning(
 def test_a_failed_command_is_a_warning_and_not_a_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, start_ok=False)
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
@@ -305,7 +296,7 @@ def test_a_missing_template_is_a_warning(
 ) -> None:
     # The template of one unit is gone: that unit cannot be written, and
     # the timer that is installed still gets enabled and started.
-    _systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _systemd_dir, _venv, ctx = _install_fixtures(monkeypatch, tmp_path)
     (
         tmp_path
         / "repo"

@@ -10,17 +10,17 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in src/pyntara/values/tasks.py. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.  
 Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and is done when the goal is already reached. Force mode and task selection are environment variables resolved by the engine ([Task selection](spec/install-modes.md#task-selection), [Force task selection](spec/install-modes.md#force-task-selection)); invalid names follow the [Resilience rule](#resilience-rule).  
-Single config source added as the source of truth for the Python part: the config/ directory at the repository root, one TOML file per top-level section, joined into a single document; a config problem never stops the run: the config/ directory is the single source of truth for the Python part, the reader takes every value as it is and invents none, and the rules of the config live in the test suite ([Configuration](contracts/architecture.md#configuration)). Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred.  
+One value source as the source of truth for the Python part: src/pyntara/values/, one module per task, read where the value is used. The config/ directory and its TOML documents are gone, so a value cannot differ between the repository and the machine; a value problem never stops the run, and the rules of the values live in the test suite ([Configuration](contracts/architecture.md#configuration)). Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets.  
 DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.  
 Logging to stdout with the journal as the primary destination. The system journal is the primary destination for own messages: the engine mirrors them through src/pyntara/logger.py under the journal_identifier value of the engine values module, inst.sh mirrors its own under pyntara-install. The file log is residual: inst.sh tees the full stream into /var/log/pyntara/install.log ([bootstrap contract, Logging](contracts/bootstrap.md#logging)) for offline review. No masking filter. The rule is simpler than a filter: never log secret values. Every command through run_command is reported with the lines `  run : <command>` and `  /run: <exit_code> <seconds>s <command>` mirrored to the journal, so walls of subprocess output stay attributed to the command that produced them, and the [done] lines of tasks carry the task execution duration.
 
 ## Engine structure
 
 pyntara.py: command entry, check-vault, run. run is the composition root: it reads the environment, validates it, builds Context and launches the runner.  
-task_catalog.py: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  
+task_catalog.py: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog of src/pyntara/values/tasks.py.  
 models.py: TaskResult dataclass (success, changed, skipped, message, error).  
 context.py: Context frozen dataclass.  
-config/: loads and validates the config/ directory (joined into a single document) into a frozen Config dataclass; the composition root reads it and hands it to tasks through Context.  
+values/: one module per task with the declared values of that task, and the shared modules (common.py, engine.py, tasks.py) beside them.  
 task_runner.py: loads task modules by name, runs them in order, collects results. A missing module is a skipped result, a broken module is a failed result; neither crashes the run, and the summary shows everything that was skipped or failed.  
 tasks/<name>.py: one module per task, each exposing task(ctx) -> TaskResult.  
 tests/: pytest for the engine, bash tests for inst.sh.
@@ -42,7 +42,7 @@ The system_metrics_setup task was implemented as the first separate change: it d
 ## Documentation updates (completed)
 
 docs/contracts/architecture.md: rewritten to the simplified module map.  
-docs/contracts/task-model.md: state machine removed, idempotency and the config-driven task catalog kept.  
+docs/contracts/task-model.md: state machine removed, idempotency and the catalog-driven task set kept.  
 docs/contracts/interactive-ui.md: deleted.  
 docs/guides/project-structure.md: dropped the removed modules.  
 docs/spec/install-modes.md and docs/contracts/bootstrap.md: task-catalog references dropped.

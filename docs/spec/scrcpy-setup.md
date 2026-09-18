@@ -134,7 +134,7 @@ client prints is the operator's evidence.
 
 ## Parameters
 
-All parameters live in the [scrcpy_setup] table of the config/ directory. The
+All parameters live in the src/pyntara/values/scrcpy_setup.py. The
 release query, the archive download and the checksum command run through the
 engine settings, so no task spells a curl or a hash flag itself.
 

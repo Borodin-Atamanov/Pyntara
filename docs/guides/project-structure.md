@@ -10,13 +10,12 @@ replace_line_by_string edits text in memory: every line containing the needle or
 
 add_line_to_file ensures a line is present in a file: an exact line is kept, a fuzzy line containing it is normalized to the exact line, a line containing the comment sign is left untouched and the missing line is appended. It returns whether the file changed; a missing file is not created.
 
-The helpers fit files where one setting is one line and the line order does not matter: systemd unit files, fstab, hosts, key = value files. External tools complement them where a line edit cannot express the change: Augeas (augeas-tools, installed by the tasks that use augeas) where a format lens exists, comby where no lens exists but the structure is regular, dasel/yq/jq for JSON/YAML/TOML/XML. Structured formats are edited with their parsers, never with line edits: config.toml loads through tomllib in src/pyntara/config/.
+The helpers fit files where one setting is one line and the line order does not matter: systemd unit files, fstab, hosts, key = value files. External tools complement them where a line edit cannot express the change: Augeas (augeas-tools, installed by the tasks that use augeas) where a format lens exists, comby where no lens exists but the structure is regular, dasel/yq/jq for JSON/YAML/TOML/XML. Structured formats are edited with their parsers, never with line edits.
 
 ## Top-level files
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
-config/ — Engine configuration, single source of truth for the sections that are not migrated to the values package yet. One TOML file per such top-level section (cli_tools.toml, ...); the loader joins them in sorted order into one document. The values of the engine itself and of every migrated section live in src/pyntara/values/. The task catalog is not here: it lives in src/pyntara/values/tasks.py. See docs/contracts/architecture.md.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the four bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline. Its --fast argument checks only the touched python files and the test modules that match them by name.
@@ -34,7 +33,7 @@ guides/ — How to work with the project
 
 The four secret files (default/production vaults and their passwords) are listed in [Secrets files](../contracts/bootstrap.md#secrets-files); their structure is described in [Secrets model](../spec/secrets-model.md).
 
-secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the [vault_structure] table of the config/ directory (docs/spec/secrets-model.md).  
+secrets/regenerate_vault_by_config.py — Creates or updates a vault file from the declared vault entries of src/pyntara/values/vault_structure.py (docs/spec/secrets-model.md).  
 secrets/read_google_script_credentials.py — Prepares the System Metrics Google Drive web app deploy: reads the google_script_key entry of both vaults (the production vault supplies the script ID in username and the deployment ID embedded in url, every vault supplies an auth key in password), renders task_data/system_metrics_setup/google_drive_script.js with the __GOOGLE_SCRIPT_KEYS__ placeholder replaced by the JSON array of those keys, and prints the two identifiers for task_data/system_metrics_setup/deploy_google_script.sh, which pushes the rendered file to the Apps Script project.
 
 ## src/pyntara/
@@ -43,7 +42,6 @@ src/pyntara/__init__.py — Package docstring and the version re-export from pyn
 src/pyntara/_version.py — Build version carrier: the single line __version__, rewritten by the pre-commit hook on every commit and marked merge=union in .gitattributes, so the number grows per commit without a merge conflict.
 src/pyntara/bump_version.py — Version bumping: reads the build carrier, computes the next patch version and writes the carrier, the PYNTARA_VERSION line of inst.sh and the README title through config_edit.replace_line_by_string, then verifies that every carrier carries the new number and raises ValueError naming the ones that do not. Consumed by hooks/pre-commit (--build-only) and by the landing step hooks/land_version_commit.sh, which commits the carrier list this module reports.  
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
-src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the install mode vocabulary in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks and the vocabularies they validate against live in tests/config_checks.py.  
 src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog from src/pyntara/values/tasks.py.  
 src/pyntara/models.py — TaskResult dataclass.  
 src/pyntara/context.py — Context frozen dataclass.  
@@ -52,10 +50,10 @@ src/pyntara/utils.py — Shared helpers: run_command subprocess wrapper with tim
 src/pyntara/augeas.py — Generic augeas helpers: read, write and sync a drop-in config file through augtool. Used by ssh_daemon_setup and ssh_client_setup.  
 src/pyntara/config_edit.py — Line-level config editing helpers (see [Configuration editing](#configuration-editing)).  
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.  
-src/pyntara/i2pd_address.py — Deployed address command: prints one JSON record with the I2P tunnel address and the ssh command that reaches the SSH daemon through the tunnel, from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address CONFIG_PATH`.  
-src/pyntara/network_addresses.py — Deployed address command: prints one JSON record per address of one family, each with its interface, its scope and the ssh command that connects to it. Runs as `python -m pyntara.network_addresses CONFIG_PATH FAMILY`.  
-src/pyntara/public_address_report.py — Deployed command: prints one JSON record per public address reported by the configured echo services, each with its ssh command, and a reason record for a family without an answer. Runs as `python -m pyntara.public_address_report CONFIG_PATH`.  
-src/pyntara/country_report.py — Deployed command: prints the country the configured services see, with the answers and the decision word. Runs as `python -m pyntara.country_report CONFIG_PATH`.  
+src/pyntara/i2pd_address.py — Deployed address command: prints one JSON record with the I2P tunnel address and the ssh command that reaches the SSH daemon through the tunnel, from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.  
+src/pyntara/network_addresses.py — Deployed address command: prints one JSON record per address of one family, each with its interface, its scope and the ssh command that connects to it. Runs as `python -m pyntara.network_addresses FAMILY`.  
+src/pyntara/public_address_report.py — Deployed command: prints one JSON record per public address reported by the configured echo services, each with its ssh command, and a reason record for a family without an answer. Runs as `python -m pyntara.public_address_report`.  
+src/pyntara/country_report.py — Deployed command: prints the country the configured services see, with the answers and the decision word. Runs as `python -m pyntara.country_report`.  
 src/pyntara/ssh_access.py — Shared construction of the ssh access command of an address: the verbose client, the always written port, the absent user and the SOCKS ProxyCommand of an anonymity channel. Imported by every address command, so the form of the reported command lives in one place.  
 src/pyntara/nextdns.py — NextDNS profile selection: sha256(hostname) modulo pool size and the profile ID shape validation. Imported by nextdns_profile.  
 src/pyntara/nextdns_profile.py — Shared vault selection: opens a KeePass group and selects the deterministic profile ID. Imported by nextdns_setup_system_wide.
@@ -72,7 +70,7 @@ src/pyntara/xray_certificate.py — HTTPS of the panel: whether the HTTP-01 chal
 src/pyntara/xray_inbound.py — Server half of the panel: the universal VLESS+REALITY inbound with the key pair the panel issues, the payload template reader, the single client of that inbound and the connection profile stored in the runtime vault, which are stages 3 and 5 (docs/spec/3x-ui.md). Imported by three_x_ui_xray_setup.
 src/pyntara/xray_local_proxy.py — Client half of the panel: the local proxy inbound of this machine, its routing policy, the pool of remote exits the remote classes leave through and the path checks that prove the exit, which are stages 6 and 7 (docs/spec/3x-ui.md). Imported by three_x_ui_xray_setup.
 src/pyntara/port_forwarding_state.py — Deployed command that prints one JSON record per server and forwarded local port from the state file, each with the ssh command that reaches this machine through it; the System Metrics collector runs it as the port_forwarding network module. Runs as `python -m pyntara.port_forwarding_state`.
-src/pyntara/upnp_forwarding.py — Deployed oneshot service that asks the home router through UPnP to publish the SSH port of this machine: it derives the external port from the hostname with the shared deterministic chain of pyntara.forwarding_ports, tries the next candidate when another rule holds the port, never touches a rule of another machine, and wakes the System Metrics collector when it changed the router. Runs as `python -m pyntara.upnp_forwarding CONFIG_PATH`.
+src/pyntara/upnp_forwarding.py — Deployed oneshot service that asks the home router through UPnP to publish the SSH port of this machine: it derives the external port from the hostname with the shared deterministic chain of pyntara.forwarding_ports, tries the next candidate when another rule holds the port, never touches a rule of another machine, and wakes the System Metrics collector when it changed the router. Runs as `python -m pyntara.upnp_forwarding`.
 src/pyntara/upnp_forwarding_state.py — Deployed command that reads the rules of the home router live and prints one JSON record per rule of this machine with the router address, the published port, the scope of the address and the ssh command; the System Metrics collector runs it as the upnp network module. Runs as `python -m pyntara.upnp_forwarding_state`.
 src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
@@ -94,32 +92,35 @@ One module per task, each exposing task(ctx) -> TaskResult. Task names come from
 
 ## Config section map
 
-Each TOML file in config/ has a corresponding module in src/pyntara/config/ with a frozen dataclass, read by the runtime reader through the field names of that dataclass. The checks of a section live in tests/config_checks.py. Tasks receive the whole Config through Context and access their section by name. Which value types the sections hold, and which never go into the config, is [Config content](../spec/config-content.md).
+Every section has exactly one module in src/pyntara/values/, and a reader imports that module as an alias and reads the declared names through it. Which value types a module holds, and which never become a value, is the Configuration section of [Architecture](../contracts/architecture.md#configuration).
 
-engine -> src/pyntara/values/engine.py -> READ_VALUE_NAMES -> every module that reads a value  
-cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools  
-chrome_setup -> config/chrome_setup.py -> ChromeSetupConfig -> chrome_setup  
-add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos  
-hostname -> config/hostname.py -> HostnameConfig -> hostname  
-swapfile_service_install -> config/swapfile_service_install.py -> SwapfileServiceInstallConfig -> swapfile_service_install  
-zram_service -> config/zram_service.py -> ZramServiceConfig -> zram_service  
-zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service  
-dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup  
-i2pd_service_setup -> src/pyntara/values/i2pd_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
-yggdrasil_service_setup -> src/pyntara/values/yggdrasil_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
+engine -> src/pyntara/values/engine.py -> READ_VALUE_NAMES -> every module that reads a value
+common -> src/pyntara/values/common.py -> READ_VALUE_NAMES -> the tasks that read a machine-wide path or account
+tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py
+cli_tools -> src/pyntara/values/cli_tools.py -> READ_VALUE_NAMES -> the task
+chrome_setup -> src/pyntara/values/chrome_setup.py -> READ_VALUE_NAMES -> the task
+add_extra_repos -> src/pyntara/values/add_extra_repos.py -> READ_VALUE_NAMES -> the task
+hostname -> src/pyntara/values/hostname.py -> READ_VALUE_NAMES -> the task
+swapfile_service_install -> src/pyntara/values/swapfile_service_install.py -> READ_VALUE_NAMES -> the task
+zram_service -> src/pyntara/values/zram_service.py -> READ_VALUE_NAMES -> the task
+zswap_service -> src/pyntara/values/zswap_service.py -> READ_VALUE_NAMES -> the task
+dnsproxy_setup -> src/pyntara/values/dnsproxy_setup.py -> READ_VALUE_NAMES -> the task
+i2pd_service_setup -> src/pyntara/values/i2pd_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command
+yggdrasil_service_setup -> src/pyntara/values/yggdrasil_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command
 three_x_ui_xray_setup -> src/pyntara/values/three_x_ui_xray_setup.py -> READ_VALUE_NAMES -> the task and the deployed report commands
-sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
-tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
+sotavpn_setup -> src/pyntara/values/sotavpn_setup.py -> READ_VALUE_NAMES -> the task
+tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command
 ssh_daemon_setup -> src/pyntara/values/ssh_daemon_setup.py -> READ_VALUE_NAMES -> the task and the shared SSH port reader
 ssh_client_setup -> src/pyntara/values/ssh_client_setup.py -> READ_VALUE_NAMES -> the task
-nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide
+nextdns_setup_system_wide -> src/pyntara/values/nextdns_setup_system_wide.py -> READ_VALUE_NAMES -> the task
 port_forwarding_setup -> src/pyntara/values/port_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
 upnp_forwarding_setup -> src/pyntara/values/upnp_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
-playwright_setup -> config/playwright_setup.py -> PlaywrightSetupConfig -> playwright_setup
+playwright_setup -> src/pyntara/values/playwright_setup.py -> READ_VALUE_NAMES -> the task
 system_metrics_setup -> src/pyntara/values/system_metrics_setup.py -> READ_VALUE_NAMES -> the deployed service, the collector, the ingest, the commit command and the tasks
-vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  
-local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup  
-tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py
+vault_structure -> src/pyntara/values/vault_structure.py -> READ_VALUE_NAMES -> local_vault_setup and nextdns_setup_system_wide
+local_vault_setup -> src/pyntara/values/local_vault_setup.py -> READ_VALUE_NAMES -> the task and every reader of the runtime vault
+rustdesk_setup -> src/pyntara/values/rustdesk_setup.py -> READ_VALUE_NAMES -> the task
+valualinux_setup -> src/pyntara/values/vocalinux_setup.py -> READ_VALUE_NAMES -> the task
 
 ## Public API surface
 
@@ -152,32 +153,26 @@ ssh.py              ssh_port_from_directives
 
 ## Adding a value to an existing section
 
-This is the common case: the section already exists, so a value touches the section file, its dataclass and the checks. Before adding it, confirm that the value belongs in the config at all: [Config content](../spec/config-content.md) lists the types that go into the config with no exception and the types that stay in code.
+This is the common case: the section already has its values module, so a value touches that module, its readers and the tests.
 
-Add the key with a comment to the section file in config/ (config/<section>.toml).  
-Add the field to the frozen dataclass in src/pyntara/config/<section>.py. The runtime reader takes the value of the key with the same name, so nothing else in the package changes and loader.py is never touched.  
-Add the check of the new value to tests/config_checks.py next to the other checks of that section, and add the key to the one test document, the shared document in tests/config_helpers.py: the section tests, the end-to-end cases and the factory in tests/support.py all read that document.  
+Confirm that the value belongs in a values module at all: the Configuration section of [Architecture](../contracts/architecture.md#configuration) says which types are values and which stay in code.  
+Write the constant in src/pyntara/values/<section>.py with a comment that explains what it is, and add its name to READ_VALUE_NAMES of that module. The rule of tests/value_checks.py that fits its type is applied to it by the values guard; a value that needs a new kind of check gets it there.  
+Read it where it is used through the alias the module is imported under, never by copying the literal.  
 Describe the value in the Parameters section of the matching document in docs/spec/.
 
-Nothing breaks on a machine when a step is forgotten, because the run reads what is there and invents no value. The test suite is what catches the omission, during development.
+Nothing breaks on a machine when a step is forgotten, because the run works with the values it has and every task reports what it missed. The test suite is what catches the omission, during development.
 
-## Adding a new config section
+## Adding a new section
 
-Create config/<name>.toml with the values and comments.  
-Create src/pyntara/config/<name>.py with a frozen dataclass.  
-Add the dataclass field to the Config class in loader.py.  
-Export the dataclass from config/__init__.py.
+Create src/pyntara/values/<name>.py with the declared values, their comments and READ_VALUE_NAMES.  
+Add the module name to VALUES_MODULE_NAMES in tests/test_values.py, so the values guard applies the rules to it.  
+Import the module in the task with the alias the import guard expects, or add the reason to EXTRA_VALUE_RULES when the section needs a rule of its own.
 
-A new section needs no parser and no change to the reader: the runtime reader builds every section from the field names of its dataclass. The checks of the new section go to tests/config_checks.py, and the key set has to be mirrored in the shared test document in tests/config_helpers.py, because the coverage guard fails while the test document and the repository config disagree.
+A new section needs no parser and no loader: the values are Python constants the task imports, so a value that is not declared is an ImportError the task reports in plain words, and the remaining tasks still run.
 
-## Config coverage guards
+## Value guards
 
-tests/config_checks.py holds the strict checks of the config: the types, the allowed sets, the ranges and the cross-checks between sections. They are the checks that used to run inside the package; nothing in the package checks anything now.
+tests/value_checks.py holds the rules a declared value must satisfy: the file mode, the non-empty text, the non-negative integer, the non-empty text tuple, the vault entry title and the real package name checks.  
+tests/test_values.py applies every rule to every declared value and refuses a value that is read without the module alias, so a literal copied into a task body fails the suite.  
+tests/test_values_softness.py proves that an unimportable values module and an undeclared name both cost their own task only, while the run continues.
 
-tests/test_config_coverage.py applies those checks to the repository config and compares the forms of the configuration: the repository config, the shared test document in tests/config_helpers.py and the Config the checks build from each of them.
-
-The guards are: the shipped config passes every check, every section of the repository config has a Config field, every Config field has a section, every key of a section is read by its check, every config file contributes a table, a section field is either a key or a recorded derived field, the shared test document mirrors the sections and keys of the repository config except the keys the checks document as optional, and the factory config passes the same checks as any other.
-
-## Config value guards
-
-tests/test_config_value_guard.py reads the sources of the package and refuses a value of a listed type written in a module instead of config/ (docs/spec/config-content.md). It recognises four shapes: a module level constant of a value, a command argv written as a list literal, an absolute path literal outside /proc, /sys and /dev, and a regular expression two or more modules share. Each shape carries the allowlist of what is left, and the allowlists are compared exactly on both sides: a new value fails the suite, and an entry whose value has moved into the config fails it as well, so every migration block deletes its entries and the lists shrink towards the empty state. The allowlists are the work list of the migration to the config, together with the entries of docs/TODO.md.

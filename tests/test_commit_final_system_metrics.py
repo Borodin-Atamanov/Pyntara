@@ -17,11 +17,12 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import commit_final_system_metrics
+from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import system_metrics_setup as values
 from pyntara.values import tasks as tasks_values
 
@@ -30,23 +31,26 @@ ALL_MODES = ("minimal", "server", "desktop")
 
 
 def _ctx(tmp_path: Path) -> Context:
-    """Context with the runtime vault in tmp_path."""
+    """Context with the queue and the runtime vault in tmp_path."""
 
-    vault = tmp_path / "var" / "lib" / "pyntara" / "secrets" / "pyntara.vault"
     return make_context(
         install_mode="server",
         force_tasks=frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(local_vault_path=vault),
     )
 
 
-def _use_queue_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Point the declared queue root at the temporary directory."""
+def _use_temporary_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point the queue root and the runtime vault at the temporary directory."""
 
     monkeypatch.setattr(
         values, "SYSTEM_METRICS_DIR", tmp_path / "var" / "lib" / "pyntara" / "metrics"
+    )
+    monkeypatch.setattr(
+        local_vault_values,
+        "LOCAL_VAULT_PATH",
+        tmp_path / "var" / "lib" / "pyntara" / "secrets" / "pyntara.vault",
     )
 
 
@@ -69,8 +73,8 @@ def _write_queue_report(
     """Write a fake report into the queue directory; return its path.
 
     The report file name is network-{hostname}.json with a 12-character
-    random suffix, matching the config defaults of the test context, so
-    _latest_report finds it by its original name.
+    random suffix, matching the declared values, so _latest_report finds
+    it by its original name.
     """
 
     metrics_dir = tmp_path / "var" / "lib" / "pyntara" / "metrics"
@@ -133,6 +137,7 @@ def test_commits_vault_under_hostname_name(
     # The runtime vault is committed under the name <hostname>.kdbx, the
     # content is preserved and the temp copy removed. No report is in the
     # queue, so the PDF is skipped without a warning.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     calls, temp_path, captured = _install_fakes(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
@@ -152,9 +157,10 @@ def test_commit_command_comes_from_the_config(
     # Another hand-off command in the config is the argv the task runs, so
     # the program and the argument shape are not values of the module, and
     # the collector service runs the same configured command.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     monkeypatch.setattr(values, "COMMAND_PATH", Path("/opt/pyntara/hand-over"))
     monkeypatch.setattr(
@@ -173,7 +179,7 @@ def test_empty_commit_command_reports_error(
     # left behind.
     vault = _write_vault(tmp_path)
     calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
     monkeypatch.setattr(values, "COMMIT_COMMAND", ())
     result = commit_final_system_metrics.task(ctx)
@@ -202,6 +208,7 @@ def test_empty_vault_is_a_warning(
 ) -> None:
     # An empty runtime vault carries no data: the reason is a warning and
     # the commit command never runs for the vault.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path, b"")
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
@@ -215,6 +222,7 @@ def test_commit_failure_is_a_warning(
 ) -> None:
     # A nonzero commit exit is a warning carrying the command detail; the
     # temp copy is removed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     calls, temp_path, _ = _install_fakes(monkeypatch, tmp_path, fail=True)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
@@ -229,6 +237,7 @@ def test_commit_timeout_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A timed-out commit is a warning; the temp copy is removed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     calls, temp_path, _ = _install_fakes(monkeypatch, tmp_path, timeout=True)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
@@ -244,15 +253,16 @@ def test_commits_pdf_from_queue_report(
     # The latest report in the queue is read and a PDF is built from it
     # and committed; the vault is also committed. Both calls use the
     # configured commit command.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     _write_queue_report(tmp_path, "lusab-babad", {"generated_at": "now"})
     pdf_bytes = b"encrypted-pdf"
     monkeypatch.setattr(
         "pyntara.telemetry_pdf.build",
-        lambda cfg, report, hostname: pdf_bytes,
+        lambda report, hostname: pdf_bytes,
     )
     calls, vault_temp, _captured = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -277,6 +287,7 @@ def test_pdf_skipped_when_no_report_in_queue(
 ) -> None:
     # When no report is found in the queue, the PDF is skipped without
     # a warning; the vault is still committed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
@@ -292,14 +303,15 @@ def test_pdf_build_failure_is_a_warning(
 ) -> None:
     # A PDF build that returns None is a warning; the vault is still
     # committed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     _write_queue_report(tmp_path, "lusab-babad", {"generated_at": "now"})
     monkeypatch.setattr(
         "pyntara.telemetry_pdf.build",
-        lambda cfg, report, hostname: None,
+        lambda report, hostname: None,
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -313,14 +325,15 @@ def test_pdf_build_exception_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A PDF build that raises is a warning; the vault is still committed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     _write_queue_report(tmp_path, "lusab-babad", {"generated_at": "now"})
     monkeypatch.setattr(
         "pyntara.telemetry_pdf.build",
-        lambda cfg, report, hostname: (_ for _ in ()).throw(RuntimeError("boom")),
+        lambda report, hostname: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -334,11 +347,12 @@ def test_pdf_commit_failure_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A failed PDF commit is a warning; the vault is still committed.
+    _use_temporary_paths(monkeypatch, tmp_path)
     _write_vault(tmp_path)
     _write_queue_report(tmp_path, "lusab-babad", {"generated_at": "now"})
     monkeypatch.setattr(
         "pyntara.telemetry_pdf.build",
-        lambda cfg, report, hostname: b"pdf",
+        lambda report, hostname: b"pdf",
     )
 
     def fail_pdf_commit(command: list[str], **kwargs: object) -> _FakeProc:
@@ -360,7 +374,7 @@ def test_pdf_commit_failure_is_a_warning(
         "gettempdir",
         lambda: str(tmp_path),
     )
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -379,10 +393,10 @@ def test_vault_missing_pdf_still_committed(
     pdf_bytes = b"encrypted-pdf"
     monkeypatch.setattr(
         "pyntara.telemetry_pdf.build",
-        lambda cfg, report, hostname: pdf_bytes,
+        lambda report, hostname: pdf_bytes,
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
-    _use_queue_root(monkeypatch, tmp_path)
+    _use_temporary_paths(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True

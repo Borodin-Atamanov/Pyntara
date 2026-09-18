@@ -38,7 +38,7 @@ Force mode bypasses the already-installed shortcut and reinstalls the release th
 
 ## Parameters
 
-All parameters live in the [telegram_setup] table of the config/ directory.
+All parameters live in the src/pyntara/values/telegram_setup.py.
 
 latest_url_command is the curl call that resolves the redirect of latest_url, reachability_probe_command with reachability_probe_timeout_seconds is the single-attempt probe the task runs on that host before the resolve, and the archive and icon downloads run with the engine-wide curl settings of the engine values module: curl_download_command is the download call, curl_download_write_out its progress text, and curl_download_timeout_seconds with curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds bound the transfer.  
 username - the desktop user who runs the client and owns the install

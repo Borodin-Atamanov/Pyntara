@@ -11,9 +11,9 @@ afterwards.
 The venv is refreshed whenever its installed pyntara version differs
 from the repository version, so deployed services run the current code
 after every installer run.
-The single system config is copied to the configured system_config_path,
-so the deployed service reads its parameters with the same loader as the
-installer (architecture contract, Configuration). The long-running service
+Values reach the machine as the pyntara package itself: the deployed
+services import the same values modules the installer uses, so no config
+file is copied and no service reads one. The long-running service
 system_metrics.service drains the Google Drive channel queue; the ingest
 service system_metrics-ingest.service
 moves committed files from the spool into the queue and is started by the
@@ -23,8 +23,8 @@ network and system report and is started by the timer
 system_metrics_collector.timer after boot and at the configured daily
 time; all waiting happens inside the collector (docs/spec/system-values.MD,
 section Report collector).
-All unit names, journal identifiers and the spool path come from config
-(architecture contract, Configuration). The task generates the thin
+All unit names, journal identifiers and the spool path are shipped
+values of the pyntara package. The task generates the thin
 commit_system_metrics command file from the command template with the
 configured spool path and journal identifier embedded, so the command
 needs no config access and no root privileges; it also creates the spool
@@ -46,7 +46,6 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__, deployment
-from pyntara.config.loader import render_config_source
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -138,45 +137,17 @@ def _ensure_venv(
     return True, None
 
 
-def _system_config_matches(system_config_path: Path, config_source_dir: Path) -> bool:
-    """True when the system config copy equals the repository config."""
-
-    source = config_source_dir
-    try:
-        if not system_config_path.is_file():
-            return False
-        return system_config_path.read_text(encoding="utf-8") == render_config_source(
-            source
-        )
-    except OSError:
-        return False
-
-
-def _write_system_config(system_config_path: Path, config_source_dir: Path) -> None:
-    """Render the repository config to the configured system path.
-
-    The copy is the single config of the target system: deployed services
-    read it through load_config, so they never need the repository. The
-    repository config/ directory is joined into one document, the same
-    joined text load_config parses.
-    """
-
-    source = config_source_dir
-    system_config_path.parent.mkdir(parents=True, exist_ok=True)
-    system_config_path.write_text(render_config_source(source), encoding="utf-8")
-
-
 def _render_service_unit(
     template_path: Path,
     venv_python: Path,
-    system_config_path: Path,
     version: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
-    The service runs the venv python with the metrics module and the
-    configured system config path as its only argument; the line is fully
-    expanded here, so the template carries no shell variables of its own.
+    The service runs the venv python with the metrics module and no
+    argument, because every value it needs ships with the package; the
+    line is fully expanded here, so the template carries no shell
+    variables of its own.
     The version line names the deployed code the unit belongs to, so a
     unit on the machine that names another version is written again and
     the service restarted.
@@ -185,7 +156,7 @@ def _render_service_unit(
     command = " ".join(
         substituted_command(
             values.SEND_SERVICE_COMMAND,
-            {"python": str(venv_python), "config_path": str(system_config_path)},
+            {"python": str(venv_python)},
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -195,14 +166,13 @@ def _render_service_unit(
 def _render_ingest_service_unit(
     template_path: Path,
     venv_python: Path,
-    system_config_path: Path,
     version: str,
 ) -> str:
     """Render the ingest service unit with the ExecStart line substituted.
 
     The oneshot service runs the venv python with the metrics_ingest
-    module and the configured system config path as its only argument, and
-    it carries the same version line as the service beside it.
+    module and no argument, and it carries the same version line as the
+    service beside it.
     """
 
     command = " ".join(
@@ -229,22 +199,20 @@ def _render_ingest_path_unit(template_path: Path, spool_dir: Path, version: str)
 def _render_collector_service_unit(
     template_path: Path,
     venv_python: Path,
-    system_config_path: Path,
     version: str,
 ) -> str:
     """Render the collector oneshot unit with the ExecStart line substituted.
 
     The service runs the venv python with the metrics_collect module and
-    the configured system config path as its only argument; the line is
-    fully expanded here, so the template carries no shell variables of
-    its own. The version line is the mark of the deployed code it belongs
+    no argument; the line is fully expanded here, so the template carries
+    no shell variables of its own. The version line is the mark of the deployed code it belongs
     to, like the one of the service and the ingest units.
     """
 
     command = " ".join(
         substituted_command(
             values.COLLECTOR_SERVICE_COMMAND,
-            {"python": str(venv_python), "config_path": str(system_config_path)},
+            {"python": str(venv_python)},
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -426,7 +394,6 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
     venv_dir = values.VENV_DIR
     venv_python = venv_dir / values.VENV_PYTHON_RELATIVE_PATH
-    system_config_path = values.SYSTEM_CONFIG_PATH
     command_path = values.COMMAND_PATH
     service_name = values.SERVICE_UNIT_NAME
     ingest_service_name = values.INGEST_SERVICE_UNIT_NAME
@@ -451,13 +418,11 @@ def task(ctx: Context) -> TaskResult:
     service_unit = _render_service_unit(
         template_dir / values.UNIT_TEMPLATE_FILE_NAME,
         venv_python,
-        system_config_path,
         unit_version,
     )
     ingest_service_unit = _render_ingest_service_unit(
         template_dir / values.INGEST_UNIT_TEMPLATE_FILE_NAME,
         venv_python,
-        system_config_path,
         unit_version,
     )
     ingest_path_unit = _render_ingest_path_unit(
@@ -468,7 +433,6 @@ def task(ctx: Context) -> TaskResult:
     collector_service_unit = _render_collector_service_unit(
         template_dir / values.COLLECTOR_UNIT_TEMPLATE_FILE_NAME,
         venv_python,
-        system_config_path,
         unit_version,
     )
     collector_timer_unit = _render_collector_timer_unit(
@@ -485,7 +449,6 @@ def task(ctx: Context) -> TaskResult:
         values.SPOOL_TEMP_PREFIX,
     )
 
-    config_ok = _system_config_matches(system_config_path, ctx.repo_root / "config")
     unit_dir = engine_values.SYSTEMD_UNIT_DIR
     service_unit_ok = _unit_matches(unit_dir, service_name, service_unit)
     ingest_service_unit_ok = _unit_matches(
@@ -530,7 +493,6 @@ def task(ctx: Context) -> TaskResult:
     if (
         not force
         and venv_ok
-        and config_ok
         and service_unit_ok
         and ingest_service_unit_ok
         and ingest_path_unit_ok
@@ -568,16 +530,6 @@ def task(ctx: Context) -> TaskResult:
             venv_changed = False
     changed = changed or venv_changed
 
-    if not config_ok or force:
-        _log(f"writing system config {system_config_path}")
-        try:
-            _write_system_config(system_config_path, ctx.repo_root / "config")
-        except OSError as exc:
-            warnings.append(f"cannot write system config: {exc}")
-        else:
-            _log("system config written")
-            changed = True
-
     units = (
         (service_name, service_unit),
         (ingest_service_name, ingest_service_unit),
@@ -609,8 +561,7 @@ def task(ctx: Context) -> TaskResult:
         force
         or venv_changed
         or not (
-            config_ok
-            and all(unit_states)
+            all(unit_states)
             and service_enabled
             and path_enabled
             and timer_enabled

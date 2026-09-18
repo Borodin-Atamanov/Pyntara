@@ -13,7 +13,7 @@ from pathlib import Path
 from string import Template
 
 import pytest
-from support import FakeProc, make_config, make_context
+from support import FakeProc, make_context
 
 from pyntara import __version__
 from pyntara.context import Context
@@ -43,7 +43,7 @@ WantedBy=multi-user.target
 
 def _install_fixtures(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> tuple[Path, Path, Path, Context]:
+) -> tuple[Path, Path, Context]:
     """Point the task at temporary fixtures; return the fixture paths."""
 
     repo = tmp_path / "repo"
@@ -56,7 +56,6 @@ def _install_fixtures(
     venv_python = venv_dir / "bin" / "python"
     venv_python.parent.mkdir(parents=True)
     venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
-    system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
@@ -64,15 +63,12 @@ def _install_fixtures(
         values, "STATE_FILE_PATH", tmp_path / "port_forwarding_state.json"
     )
     monkeypatch.setattr(metrics_values, "VENV_DIR", venv_dir)
-    monkeypatch.setattr(metrics_values, "SYSTEM_CONFIG_PATH", system_config)
-    config = make_config()
     ctx = make_context(
         task_data_root=tmp_path,
-        config=config,
         repo_root=repo,
         task_name="port_forwarding_setup",
     )
-    return systemd_dir, venv_python, system_config, ctx
+    return systemd_dir, venv_python, ctx
 
 
 def _install_fake(
@@ -112,7 +108,6 @@ def _install_fake(
 
 def _expected_unit(
     venv_python: Path,
-    system_config: Path,
     version: str = __version__,
 ) -> str:
     """The unit the task must render for the given fixtures."""
@@ -122,7 +117,6 @@ def _expected_unit(
             str(venv_python),
             "-m",
             values.SERVICE_MODULE_NAME,
-            str(system_config),
         ]
     )
     return Template(UNIT_TEMPLATE).substitute(
@@ -135,7 +129,7 @@ def _expected_unit(
 def test_deploys_unit_and_starts_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     calls = _install_fake(monkeypatch, active=True)
@@ -143,7 +137,7 @@ def test_deploys_unit_and_starts_service(
     assert result.success
     assert result.changed
     service = values.SERVICE_UNIT_NAME
-    expected = _expected_unit(venv_python, system_config)
+    expected = _expected_unit(venv_python)
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     command_names = [tuple(command) for command in calls]
     assert ("systemctl", "daemon-reload") in command_names
@@ -160,7 +154,7 @@ def test_service_exec_line_comes_from_the_values(
     monkeypatch.setattr(
         values,
         "MODULE_RUN_COMMAND",
-        ("myrun", "-m", "{module}", "{config_path}"),
+        ("myrun", "-m", "{module}"),
     )
     template = tmp_path / "auto_port_forwarding.service"
     template.write_text(
@@ -171,12 +165,11 @@ def test_service_exec_line_comes_from_the_values(
         template,
         Path("/venv/bin/python"),
         values.SERVICE_MODULE_NAME,
-        Path("/etc/pyntara/config.toml"),
         values.SERVICE_RESTART_SECONDS,
         "0.3.516",
     )
     assert (
-        f"ExecStart=myrun -m {values.SERVICE_MODULE_NAME} /etc/pyntara/config.toml"
+        f"ExecStart=myrun -m {values.SERVICE_MODULE_NAME}"
         in unit
     )
     assert f"RestartSec={values.SERVICE_RESTART_SECONDS}" in unit
@@ -189,7 +182,7 @@ def test_the_unit_carries_the_version_of_the_deployed_code(
     # not the version of the running installer: the unit names the code it
     # will run, and that is the version a reader of the machine and the
     # comparison of the next run both look at.
-    systemd_dir, _venv_python, _system_config, ctx = _install_fixtures(
+    systemd_dir, _venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     _install_fake(monkeypatch, active=True, venv_version="0.3.999")
@@ -209,12 +202,12 @@ def test_a_unit_of_another_version_is_rewritten_and_the_service_restarted(
     # machine kept running the old code. A unit that differs in its
     # version line alone is stale, so it is written again and the service
     # restarted.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     service = values.SERVICE_UNIT_NAME
     systemd_dir.mkdir(parents=True)
-    older = _expected_unit(venv_python, system_config).replace(
+    older = _expected_unit(venv_python).replace(
         f"# Deployed by Pyntara {__version__}", "# Deployed by Pyntara 0.0.1"
     )
     (systemd_dir / service).write_text(older, encoding="utf-8")
@@ -223,7 +216,7 @@ def test_a_unit_of_another_version_is_rewritten_and_the_service_restarted(
     assert result.success
     assert result.changed
     assert (systemd_dir / service).read_text(encoding="utf-8") == _expected_unit(
-        venv_python, system_config
+        venv_python
     )
     assert any(command[1] == "restart" for command in calls)
 
@@ -234,7 +227,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
     # A venv that cannot be asked leaves the repository version in the
     # unit and names the gap, so the missing refresh is visible in the
     # install log instead of being passed off as the new code.
-    systemd_dir, _venv_python, _system_config, ctx = _install_fixtures(
+    systemd_dir, _venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     _install_fake(monkeypatch, active=True, venv_version=None)
@@ -252,7 +245,7 @@ def test_renders_the_configured_module_and_commands(
     # The unit runs the declared module and the task drives the unit with
     # the declared commands, so a renamed module or a command that grew an
     # argument is a value change and never a code change.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     monkeypatch.setattr(values, "SERVICE_MODULE_NAME", "other.module")
@@ -270,7 +263,7 @@ def test_renders_the_configured_module_and_commands(
     result = port_forwarding_setup.task(ctx)
     assert result.success
     unit = (systemd_dir / values.SERVICE_UNIT_NAME).read_text(encoding="utf-8")
-    expected = _expected_unit(venv_python, system_config)
+    expected = _expected_unit(venv_python)
     assert unit == expected
     assert "-m other.module" in unit
     assert (
@@ -284,15 +277,15 @@ def test_renders_the_configured_module_and_commands(
 def test_skips_when_already_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, _ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     service = values.SERVICE_UNIT_NAME
-    expected = _expected_unit(venv_python, system_config)
+    expected = _expected_unit(venv_python)
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
     calls = _install_fake(monkeypatch, enabled=True, active=True)
-    result = port_forwarding_setup.task(ctx)
+    result = port_forwarding_setup.task(_ctx)
     assert result.success
     assert not result.changed
     assert not any(command[1] == "restart" for command in calls)
@@ -305,11 +298,11 @@ def test_restarts_when_deployed_but_inactive(
     # restarted: the service exits cleanly when the vault carries no
     # port-forwarding data, and local_vault_setup may have synced the data
     # since, so a restart lets it re-read the vault and establish tunnels.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     service = values.SERVICE_UNIT_NAME
-    expected = _expected_unit(venv_python, system_config)
+    expected = _expected_unit(venv_python)
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
     calls = _install_fake(monkeypatch, enabled=True, active=False)
@@ -322,7 +315,7 @@ def test_restarts_when_deployed_but_inactive(
 def test_force_rewrites_and_restarts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+    systemd_dir, venv_python, _ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
     service = values.SERVICE_UNIT_NAME
@@ -332,13 +325,12 @@ def test_force_rewrites_and_restarts(
     force_ctx = make_context(
         task_data_root=tmp_path,
         force_tasks=frozenset({"port_forwarding_setup"}),
-        config=ctx.config,
         task_name="port_forwarding_setup",
     )
     result = port_forwarding_setup.task(force_ctx)
     assert result.success
     assert result.changed
-    expected = _expected_unit(venv_python, system_config)
+    expected = _expected_unit(venv_python)
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     assert any(command[1] == "restart" for command in calls)
 
@@ -350,7 +342,7 @@ def test_the_state_file_is_never_touched(
     # file after every accepted port, so neither a plain deploy nor a
     # forced one removes it, and a routine restart therefore keeps the
     # ports the machine asked for.
-    _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
     state_path = values.STATE_FILE_PATH
     state_path.parent.mkdir(parents=True, exist_ok=True)
     written = '{"169.58.51.98": {"30222": 46132}}\n'
@@ -359,7 +351,6 @@ def test_the_state_file_is_never_touched(
     force_ctx = make_context(
         task_data_root=tmp_path,
         force_tasks=frozenset({"port_forwarding_setup"}),
-        config=ctx.config,
         task_name="port_forwarding_setup",
     )
     plain = port_forwarding_setup.task(ctx)
@@ -375,7 +366,7 @@ def test_failed_after_start_is_a_warning(
 ) -> None:
     # The service entered the failed state after the start: the reason is a
     # warning of a completed task and the deployed unit stays in place.
-    _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, failed=True)
     result = port_forwarding_setup.task(ctx)
     assert result.success
@@ -388,7 +379,7 @@ def test_inactive_clean_exit_is_ok(
     # A machine whose vault has no port-forwarding data makes the service
     # exit cleanly right after a start; that is the intended no-op state,
     # not a failure.
-    _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
     _install_fake(monkeypatch, active=False, failed=False)
     result = port_forwarding_setup.task(ctx)
     assert result.success
@@ -407,7 +398,6 @@ def test_missing_template_is_a_warning(
     ctx = make_context(
         task_data_root=tmp_path,
         repo_root=repo,
-        config=make_config(),
     )
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = port_forwarding_setup.task(ctx)

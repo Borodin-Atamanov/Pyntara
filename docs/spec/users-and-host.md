@@ -9,7 +9,7 @@ Task: hostname. The machine hostname is a random proquint word pair: hostname.ho
 
 The task writes the name into the configured hostname.hostname_file and applies it to the running kernel through the configured hostname.set_hostname_command, so socket.gethostname() returns the new name for the dependent tasks. The task is idempotent: it is done when the hostname file already carries a name that decodes as a proquint (so it was set by this task) and the kernel already knows it; force mode always generates a fresh name.
 
-All parameter values live in the [hostname] table of the config/ directory: hostname_file, hostname_random_bytes and set_hostname_command.
+All parameter values live in the src/pyntara/values/hostname.py: hostname_file, hostname_random_bytes and set_hostname_command.
 
 ## ZRAM
 
@@ -23,7 +23,7 @@ ZRAM should be aggressive, with strong compression, using almost all memory.
 Each device uses the configured compressor algorithm.  
 ZRAM swap is activated with the configured swap_priority, so it is used before the disk swapfile.
 
-All parameter values live in the [zram_service] table of the config/ directory: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts, reset_busy_retry_delay_seconds, meminfo_total_key and cpuinfo_processor_key. The last two name the kernel file lines the task reads: the installed RAM in /proc/meminfo, with the separator that file uses, and the per-core line of /proc/cpuinfo, so a kernel that renames a field is answered in the config.
+All parameter values live in the src/pyntara/values/zram_service.py: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts, reset_busy_retry_delay_seconds, meminfo_total_key and cpuinfo_processor_key. The last two name the kernel file lines the task reads: the installed RAM in /proc/meminfo, with the separator that file uses, and the per-core line of /proc/cpuinfo, so a kernel that renames a field is answered in the config.
 reset_busy_attempts and reset_busy_retry_delay_seconds bound the retries of a reset or hot_remove that the kernel rejects with EBUSY while a transient opener, for example a udev probe, holds the device.
 
 The zram_service task configures the devices immediately and installs a systemd oneshot service that repeats the setup at every boot.
@@ -34,7 +34,7 @@ Zswap is a compressed cache for swap pages: pages that are being swapped out are
 The zswap_service task writes the parameters into the kernel attribute directory named by parameters_dir_path immediately and installs a systemd oneshot service that repeats the writes at every boot.
 Zswap requires a backing swap device, so the task depends on swapfile_service_install.
 
-The values are aggressive, matching the ZRAM philosophy. All parameters live in the [zswap_service] table of the config/ directory: parameters_dir_path, the parameter_names list in the order the task writes them, and the value of every name as the key of the same name (enabled, compressor, max_pool_percent, accept_threshold_percent, shrinker_enabled), plus the unit template name and the service unit name. A parameter the kernel drops is removed from parameter_names; a boolean key is written as the Y/N spelling the attributes report.
+The values are aggressive, matching the ZRAM philosophy. All parameters live in the src/pyntara/values/zswap_service.py: parameters_dir_path, the parameter_names list in the order the task writes them, and the value of every name as the key of the same name (enabled, compressor, max_pool_percent, accept_threshold_percent, shrinker_enabled), plus the unit template name and the service unit name. A parameter the kernel drops is removed from parameter_names; a boolean key is written as the Y/N spelling the attributes report.
 
 ## Swap file
 

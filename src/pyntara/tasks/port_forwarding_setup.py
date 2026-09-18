@@ -51,16 +51,15 @@ def _render_service_unit(
     template_path: Path,
     venv_python: Path,
     module_name: str,
-    system_config_path: Path,
     restart_seconds: int,
     version: str,
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
     The service runs the venv python with the declared port_forwarding module
-    and the configured system config path as its only argument; the line is
-    fully expanded here, so the template carries no shell variables of its
-    own. The restart pause is a declared value, and the version line names the
+    and no argument, because every value it needs ships with the package; the
+    line is fully expanded here, so the template carries no shell variables of
+    its own. The restart pause is a declared value, and the version line names the
     deployed code this unit belongs to: a unit on the machine that carries
     another version is a stale unit, so the task writes it again and restarts
     the service, and the code that runs is the code the unit was rendered for.
@@ -72,7 +71,6 @@ def _render_service_unit(
             {
                 "python": str(venv_python),
                 "module": module_name,
-                "config_path": str(system_config_path),
             },
         )
     )
@@ -163,7 +161,6 @@ def task(ctx: Context) -> TaskResult:
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     venv_python = metrics_values.VENV_DIR / metrics_values.VENV_PYTHON_RELATIVE_PATH
-    system_config_path = metrics_values.SYSTEM_CONFIG_PATH
     service_name = values.SERVICE_UNIT_NAME
     warnings: list[str] = []
     version, version_warning = deployment.deployed_version(
@@ -178,7 +175,6 @@ def task(ctx: Context) -> TaskResult:
             task_data_dir(ctx.repo_root, ctx.task_name) / values.SERVICE_TEMPLATE_FILE_NAME,
             venv_python,
             values.SERVICE_MODULE_NAME,
-            system_config_path,
             values.SERVICE_RESTART_SECONDS,
             version,
         )

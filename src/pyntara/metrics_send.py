@@ -29,7 +29,6 @@ import subprocess
 from pathlib import Path
 
 import pyntara.metrics
-from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.utils import run_command, substituted_command
@@ -79,7 +78,7 @@ def dispatch_entries() -> None:
             _log(f"dispatched {entry.name} into the channel queues")
 
 
-def send_google_queue(cfg: Config, single_random: bool = False) -> tuple[int, int]:
+def send_google_queue(single_random: bool = False) -> tuple[int, int]:
     """Drain the Google Drive channel queue into the web app.
 
     Every regular non-empty entry no larger than the configured limit is
@@ -115,24 +114,24 @@ def send_google_queue(cfg: Config, single_random: bool = False) -> tuple[int, in
     ]
     if not entries:
         return 0, 0
-    credentials = _google_script_credentials(cfg)
+    credentials = _google_script_credentials()
     if credentials is None:
         _log("google script channel: no credentials, skipping the drain")
         return 0, 0
     url, key = credentials
     if single_random:
         chosen = random.choice(entries)
-        return 1, 1 if _send_entry(cfg, chosen, url, key, sent) else 0
+        return 1, 1 if _send_entry(chosen, url, key, sent) else 0
     attempts = 0
     sent_count = 0
     for entry in entries:
         attempts += 1
-        if _send_entry(cfg, entry, url, key, sent):
+        if _send_entry(entry, url, key, sent):
             sent_count += 1
     return attempts, sent_count
 
 
-def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
+def _google_script_credentials() -> tuple[str, str] | None:
     """The Google web app url and auth key from the runtime vault, or None.
 
     The entry whose title comes from system_metrics_setup
@@ -144,7 +143,7 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
     auth key never appears in any message.
     """
 
-    kp = pyntara.metrics.open_runtime_vault(cfg)
+    kp = pyntara.metrics.open_runtime_vault()
     if kp is None:
         return None
     title = values.GOOGLE_SCRIPT_KEY_ENTRY_TITLE
@@ -241,7 +240,7 @@ def _answer_excerpt(answer: str, limit: int) -> str:
     return ""
 
 
-def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> bool:
+def _send_entry(entry: Path, url: str, key: str, sent: Path) -> bool:
     """Upload one entry and move it to main_sent on success.
 
     The content is read and Base64-encoded; the original name is

@@ -18,10 +18,9 @@ from types import SimpleNamespace
 
 import pytest
 from pykeepass import PyKeePass, create_database
-from support import FakeProc, make_config
+from support import FakeProc
 
 import pyntara.port_forwarding as pf
-from pyntara.config import Config
 from pyntara.forwarding_ports import candidate_ports, desired_port
 from pyntara.port_forwarding import (
     _normalize_host,
@@ -255,7 +254,6 @@ class TestStartForward:
     @pytest.fixture(autouse=True)
     def _config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(values, "CONNECT_TIMEOUT_SECONDS", 1)
-        self.config = make_config()
         self.tmp = tmp_path
         self.bindir = _fake_bin(tmp_path)
         self.key = tmp_path / "key"
@@ -267,7 +265,7 @@ class TestStartForward:
     def test_accepts_the_requested_port(self) -> None:
         env = _agent_env(self.bindir)
         proc, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
+            env, self.key, 30222, "server", "i", 41000, 30222, 5
         )
         assert busy is False
         assert error is None
@@ -282,7 +280,7 @@ class TestStartForward:
         script.write_text("41000\n", encoding="utf-8")
         env = _agent_env(self.bindir, FAKE_SSH_BUSY_SCRIPT=str(script))
         proc, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
+            env, self.key, 30222, "server", "i", 41000, 30222, 5
         )
         assert busy is True
         assert error is not None
@@ -295,7 +293,7 @@ class TestStartForward:
         # backs off instead of walking the whole chain.
         env = _agent_env(self.bindir, FAKE_SSH_FAIL_CONNECT="1")
         proc, busy, error = start_forward(
-            env, self.config, self.key, 30222, "server", "i", 41000, 30222, 5
+            env, self.key, 30222, "server", "i", 41000, 30222, 5
         )
         assert busy is False
         assert error is not None
@@ -439,7 +437,6 @@ class TestOpenTunnel:
         self.key = tmp_path / "key"
         self.argv_log = tmp_path / "argv.txt"
         monkeypatch.setattr(values, "CONNECT_TIMEOUT_SECONDS", 1)
-        self.config = make_config()
         self.monkeypatch = monkeypatch
         monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
         # The pause between two attempts is the behaviour under test, so
@@ -484,16 +481,14 @@ class TestOpenTunnel:
 
         return list(islice(candidate_ports("testhost"), 2))[1]
 
-    def _tiny_range_config(self) -> Config:
+    def _tiny_range(self) -> None:
         """Point the declared range at exactly three ports."""
 
         self.monkeypatch.setattr(values, "DESIRED_PORT_MIN", 1000)
         self.monkeypatch.setattr(values, "DESIRED_PORT_MAX", 1002)
-        return self.config
 
-    def _open(self, env: dict[str, str], config: Config | None = None):
+    def _open(self, env: dict[str, str]):
         return _open_tunnel(
-            config if config is not None else self.config,
             "server",
             30222,
             30222,
@@ -558,9 +553,9 @@ class TestOpenTunnel:
         monkeypatch.setattr(
             pf, "_log", lambda message, **kwargs: messages.append(str(message))
         )
-        config = self._tiny_range_config()
+        self._tiny_range()
         env = self._agent_env(self._busy_script("1000 1001 1002"))
-        opened = self._open(env, config)
+        opened = self._open(env)
         assert opened is None
         attempted = sorted(
             int(attempt.split(":", 1)[0]) for attempt in self._attempts()
@@ -580,7 +575,6 @@ class TestRunForwardLoop:
         self.argv_log = tmp_path / "argv.txt"
         monkeypatch.setattr(values, "CONNECT_TIMEOUT_SECONDS", 1)
         monkeypatch.setattr(values, "STATE_FILE_PATH", self.state_path)
-        self.config = make_config()
         self.monkeypatch = monkeypatch
         monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
 
@@ -637,7 +631,7 @@ class TestRunForwardLoop:
         lock = pf.threading.Lock()
         with pytest.raises(KeyboardInterrupt):
             run_forward_loop(
-                self.config, state, lock, "server", 30222, 30222, self.key, env
+                state, lock, "server", 30222, 30222, self.key, env
             )
 
     def test_state_file_carries_the_declared_mode(
@@ -728,14 +722,9 @@ class TestMain:
         monkeypatch.setattr(
             ssh_daemon_values, "DIRECTIVES", (SshDirective("Port", "30222"),)
         )
-        self.config = make_config()
         self.key = self.root_ssh / "id_ed25519_pf"
         self.key.write_text("dummy", encoding="utf-8")
-        monkeypatch.setattr(pf, "load_config", lambda path: self.config)
         monkeypatch.setattr(pf.socket, "gethostname", lambda: "testhost")
-        monkeypatch.setattr(
-            "sys.argv", ["pyntara.port_forwarding", str(tmp_path / "config.toml")]
-        )
 
     def _kp(self, *, group: bool, passphrase: bool) -> SimpleNamespace:
         entries = []
@@ -760,7 +749,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics,
             "open_runtime_vault",
-            lambda cfg: self._kp(group=False, passphrase=True),
+            lambda: self._kp(group=False, passphrase=True),
         )
         pf.main()
         expected = values.JOURNAL_IDENTIFIER
@@ -774,7 +763,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics,
             "open_runtime_vault",
-            lambda cfg: self._kp(group=False, passphrase=True),
+            lambda: self._kp(group=False, passphrase=True),
         )
         pf.main()
 
@@ -786,7 +775,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics,
             "open_runtime_vault",
-            lambda cfg: self._kp(group=True, passphrase=False),
+            lambda: self._kp(group=True, passphrase=False),
         )
         pf.main()
 
@@ -795,7 +784,7 @@ class TestMain:
     ) -> None:
         # An unopenable vault is recoverable, so the service exits nonzero
         # for systemd to restart it.
-        monkeypatch.setattr(pf.metrics, "open_runtime_vault", lambda cfg: None)
+        monkeypatch.setattr(pf.metrics, "open_runtime_vault", lambda: None)
         with pytest.raises(SystemExit) as exc:
             pf.main()
         assert exc.value.code == 1
@@ -824,7 +813,7 @@ class TestMain:
         monkeypatch.setattr(
             pf.metrics,
             "open_runtime_vault",
-            lambda cfg: self._kp(group=True, passphrase=True),
+            lambda: self._kp(group=True, passphrase=True),
         )
         monkeypatch.setattr(
             pf, "_start_agent", lambda *args, **kwargs: {"PATH": "/bin"}
@@ -834,4 +823,4 @@ class TestMain:
         assert len(created) == 1
         target, args = created[0]
         assert target is run_forward_loop
-        assert args[3] == "169.58.51.98"
+        assert args[2] == "169.58.51.98"

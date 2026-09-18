@@ -18,7 +18,6 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from support import make_config
 
 from pyntara import logger
 from pyntara.models import TaskResult
@@ -438,17 +437,15 @@ def test_a_service_entry_point_keeps_the_journal_off(
     from pyntara import metrics
 
     logger.configure_journal(None)
-    config = make_config()
 
     def fake_sleep(seconds: float) -> None:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(metrics, "load_config", lambda path: config)
     monkeypatch.setattr(metrics.time, "sleep", fake_sleep)
-    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda cfg: None)
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda: None)
     monkeypatch.setattr(
         "pyntara.metrics_send.send_google_queue",
-        lambda cfg, single_random=False: (0, 0),
+        lambda single_random=False: (0, 0),
     )
     monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(tmp_path / "config.toml")])
     with pytest.raises(KeyboardInterrupt):

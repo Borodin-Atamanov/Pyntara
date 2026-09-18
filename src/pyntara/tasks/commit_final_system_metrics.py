@@ -23,13 +23,13 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, substituted_command
 from pyntara.values import engine as engine_values
+from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import system_metrics_setup as values
 
 
@@ -136,7 +136,6 @@ def _latest_report(hostname: str) -> dict[str, object] | None:
 
 
 def _commit_telemetry_pdf_from_queue(
-    cfg: Config,
     hostname: str,
     timeout: int,
 ) -> tuple[bool, list[str]]:
@@ -158,7 +157,7 @@ def _commit_telemetry_pdf_from_queue(
     try:
         from pyntara import telemetry_pdf
 
-        pdf_bytes = telemetry_pdf.build(cfg, report, hostname)
+        pdf_bytes = telemetry_pdf.build(report, hostname)
     except Exception as exc:  # noqa: BLE001 - best effort, never stops the task
         warnings.append(f"telemetry PDF build failed: {exc}")
         return False, warnings
@@ -211,7 +210,7 @@ def task(ctx: Context) -> TaskResult:
     stops both, because nothing can be committed without it.
     """
 
-    vault_path = ctx.config.local_vault_setup.local_vault_path
+    vault_path = local_vault_values.LOCAL_VAULT_PATH
     hostname = socket.gethostname()
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
 
@@ -236,7 +235,7 @@ def task(ctx: Context) -> TaskResult:
     warnings.extend(vault_warnings)
 
     pdf_changed, pdf_warnings = _commit_telemetry_pdf_from_queue(
-        ctx.config, hostname, timeout
+        hostname, timeout
     )
     if pdf_changed:
         changed = True

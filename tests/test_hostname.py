@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.tasks import hostname as task_module
 from pyntara.values import hostname as hostname_values
@@ -33,8 +33,8 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         install_mode="server",
         force_tasks=frozenset({"hostname"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(),
     )
+
 
 
 def _use_hostname_values(

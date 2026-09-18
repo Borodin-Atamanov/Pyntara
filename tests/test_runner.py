@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_runner
 from pyntara.context import Context
@@ -16,7 +16,7 @@ from pyntara.models import TaskResult
 def _ctx() -> Context:
     # task_start_delay_seconds is zeroed so an implemented task does not
     # sleep half a second before running.
-    return make_context(config=make_config())
+    return make_context()
 
 
 def test_run_tasks_reports_missing_implementation(

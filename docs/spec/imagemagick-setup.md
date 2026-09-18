@@ -22,7 +22,7 @@ The template lives in task_data/imagemagick_setup/policy.xml in the repository c
 
 ## Parameters
 
-All parameters live in the [imagemagick_setup] table of the config/ directory.
+All parameters live in the src/pyntara/values/imagemagick_setup.py.
 
 packages - the package names to install, the meta package imagemagick first
 policy_path - the system policy file the tuned policy is written over

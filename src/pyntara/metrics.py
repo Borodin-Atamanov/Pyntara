@@ -7,10 +7,10 @@ committed entries from main_outbox into the channel queues and drains the
 Google Drive channel into the web app; the sender opens the runtime
 secret vault created by local_vault_setup on demand, and a failed open is
 journaled through the shared pyntara.logger functions at error_priority.
-The password itself is never logged. The service reads the single system
-config system_config_path through the same loader as the installer, so
-its parameters come from the same source of truth (architecture contract,
-Configuration). The report collector adds an encrypted telemetry PDF
+The password itself is never logged. The service takes no argument and
+reads no config file: every value comes from the pyntara values package,
+which ships with the deployed code. The report collector adds an
+encrypted telemetry PDF
 next to the report, and the Telegram channel replaces the current
 Google-only sending in a later stage (docs/spec/system-metrics.md).
 """
@@ -25,10 +25,10 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 import pyntara.metrics_send
-from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay
+from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import system_metrics_setup as values
 
 
@@ -47,7 +47,7 @@ def _read_password(path: Path) -> str | None:
         return None
 
 
-def open_runtime_vault(cfg: Config) -> PyKeePass | None:
+def open_runtime_vault() -> PyKeePass | None:
     """Open the runtime vault with the local password, or None.
 
     A missing or empty vault, a missing or empty password file and a
@@ -55,10 +55,12 @@ def open_runtime_vault(cfg: Config) -> PyKeePass | None:
     journaled at system_metrics_setup.error_priority. The password never
     appears in any message. The helper is the shared vault opener of the
     System Metrics service: the channel senders read the runtime vault
-    through it.
+    through it. The vault and the password file are the values of the
+    local_vault_setup section, so the deployed commands take no argument.
     """
 
-    vault = cfg.local_vault_setup.local_vault_path
+    vault = local_vault_values.LOCAL_VAULT_PATH
+    password_path = local_vault_values.PASS_FILE_PATH
     error_priority = values.ERROR_PRIORITY
     if not vault.is_file():
         _log(f"opening runtime vault {vault}: absent", priority=error_priority)
@@ -70,11 +72,11 @@ def open_runtime_vault(cfg: Config) -> PyKeePass | None:
     except OSError:
         _log(f"opening runtime vault {vault}: cannot stat", priority=error_priority)
         return None
-    password = _read_password(cfg.local_vault_setup.pass_file_path)
+    password = _read_password(password_path)
     if password is None:
         _log(
             f"opening runtime vault {vault}: password file "
-            f"{cfg.local_vault_setup.pass_file_path} missing or empty",
+            f"{password_path} missing or empty",
             priority=error_priority,
         )
         return None
@@ -97,30 +99,25 @@ def open_runtime_vault(cfg: Config) -> PyKeePass | None:
 def main() -> None:
     """Run the dispatch and send loop until the service stops.
 
-    The config path is the first command line argument; the systemd unit
-    renders the configured system_config_path into the ExecStart line. A
-    missing argument is an explicit error: without a config the service
-    cannot know what to run. Every cycle dispatches the committed entries
-    into the channel queues and drains the Google Drive channel; a
-    failure of any step is journaled and the loop continues with the next
-    cycle. The pause after a cycle is the retry backoff: a cycle with
-    send attempts and no success grows the pause geometrically from the
-    configured base by the multiplier until the ceiling, every other
-    cycle resets the counter and waits the base
-    (docs/spec/system-metrics.md, section Schedule and retry).
+    The systemd unit runs this module with no argument: every value the
+    loop needs comes from the pyntara values package, which ships with
+    the deployed code, so the service never reads a config file. Every
+    cycle dispatches the committed entries into the channel queues and
+    drains the Google Drive channel; a failure of any step is journaled
+    and the loop continues with the next cycle. The pause after a cycle
+    is the retry backoff: a cycle with send attempts and no success grows
+    the pause geometrically from the configured base by the multiplier
+    until the ceiling, every other cycle resets the counter and waits the
+    base (docs/spec/system-metrics.md, section Schedule and retry).
     """
 
-    if len(sys.argv) < 2:
-        print("error: missing config path argument", file=sys.stderr)
-        raise SystemExit(1)
-    cfg = load_config(Path(sys.argv[1]))
     configure_journal(values.SERVICE_JOURNAL_IDENTIFIER)
     failed_cycles = 0
     while True:
         try:
             pyntara.metrics_send.dispatch_entries()
             attempts, sent = pyntara.metrics_send.send_google_queue(
-                cfg, single_random=failed_cycles > 0
+                single_random=failed_cycles > 0
             )
         except Exception as exc:  # noqa: BLE001 - a broken cycle must not kill the service
             print(f"error: the cycle failed: {exc}", file=sys.stderr)

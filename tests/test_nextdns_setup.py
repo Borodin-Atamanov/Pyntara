@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 from pykeepass import PyKeePass, create_database
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks import nextdns_setup_system_wide as task_module
@@ -56,11 +56,8 @@ def _ctx(
         force_tasks=frozenset({"nextdns_setup_system_wide"}) if force else frozenset(),
         repo_root=tmp_path,
         task_data_root=tmp_path,
-        config=make_config(
-            local_vault_source_production=Path("secrets/production.vault"),
-            local_vault_source_default=Path("secrets/default.vault"),
-        ),
     )
+
 
 
 def _install_source_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

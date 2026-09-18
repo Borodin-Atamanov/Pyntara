@@ -22,9 +22,8 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from support import FakeProc, make_config, make_context
+from support import FakeProc, make_context
 
-from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import sotavpn_setup as sotavpn
 from pyntara.values import common as common_values
@@ -59,7 +58,6 @@ def _ctx(
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
-    config: Config = make_config()
     return make_context(
         task_name="sotavpn_setup",
         install_mode="server",
@@ -67,7 +65,6 @@ def _ctx(
         task_data_root=tmp_path,
         vault_password="run-pass",
         force_tasks=frozenset({"sotavpn_setup"}) if force else frozenset(),
-        config=config,
     )
 
 

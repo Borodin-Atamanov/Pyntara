@@ -85,7 +85,7 @@ def _open_profile_vault(ctx: Context) -> PyKeePass | None:
     if source is not None:
         return source[0]
     _log("source vaults unavailable, trying the runtime vault")
-    return metrics.open_runtime_vault(ctx.config)
+    return metrics.open_runtime_vault()
 
 
 def task(ctx: Context) -> TaskResult:

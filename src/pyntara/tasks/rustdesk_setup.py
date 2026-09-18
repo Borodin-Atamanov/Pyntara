@@ -292,7 +292,7 @@ def _ensure_vault_credentials(
     lost silently.
     """
 
-    kp = metrics.open_runtime_vault(ctx.config)
+    kp = metrics.open_runtime_vault()
     if kp is None:
         return (
             None,

@@ -28,7 +28,7 @@ The old portal-based script task_data/ffmpeg_setup/wayrecord.py stays in the rep
 
 ## Parameters
 
-All parameters live in the [ffmpeg_setup] table of the config/ directory.
+All parameters live in the src/pyntara/values/ffmpeg_setup.py.
 
 packages - the package names to install, the meta package ffmpeg first, then the engine build toolchain
 wayrecord_bin_path - the system path the wayrecord capture engine is built to

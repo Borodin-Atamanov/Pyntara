@@ -16,7 +16,7 @@ When the agent runs a long-running or large-output command from the repository, 
 ### Task presentation
 
 Before each new task the engine prints an empty line, then the task title.  
-After the title there is a pause of engine.task_start_delay_seconds (the config/ directory), so the user sees which task starts.  
+After the title there is a pause of TASK_START_DELAY_SECONDS of the engine values module, so the user sees which task starts.  
 The task then runs and its output streams in real time, showing what is being done.  
 After the task finishes the engine prints a completion line with a brief, informative report that tells how the run went, including the task status, the details from the result and the task execution duration.
 
@@ -65,13 +65,13 @@ mandatory return-code checking
 All setup tasks must be idempotent.  
 Re-runs must not break the system and must not overwrite already generated secrets.  
 Plaintext secret storage is forbidden (including code and logs).  
-External inputs (including the config/ directory) are validated by explicit checks, and those checks belong to the test suite: the runtime reader takes every value as it is, without checking anything and without stopping the run. Every rule of the config lives in tests/config_checks.py, and tests/test_config_coverage.py applies it to the shipped config/ directory during development.  
+External inputs (the environment and the files a task reads) are validated by explicit checks, and those checks belong to the test suite: a task takes every value as it is, without inventing one and without stopping the run. Every rule of a declared value lives in tests/value_checks.py, and tests/test_values.py applies it to every declared value during development.  
 Internal structures without external validation use frozen dataclasses.  
 All package-install operations and other operations must have timeouts.  
 Tasks must also have reasonable large timeouts configured.  
 All processes started from Python must provide return code used for correctness control.
 
-All variables and constants live in the config/ directory, never as constants inside task modules: this includes paths, file modes, unit file names, journal identifiers, queue and spool directory names. A module constant is allowed only as an exception explicitly approved by the user and recorded in docs/contracts/architecture.md; without such a recorded approval the value must live in the config/ directory. A module constant found without a recorded approval is an error to fix immediately: move it into the config/ directory on discovery, never leave it in place. There is no reason to keep any constant outside the config/ directory: all constants live there except the documented exceptions explicitly approved by the user. The same value or the same logic must never be duplicated across modules: shared values and helpers are defined once in a common module and imported. The rule covers the tests too: a fixture takes its values from the shared test document in tests/config_helpers.py instead of restating them, so a value added to the config/ directory reaches the tests without a second edit.
+All variables and constants live in src/pyntara/values/, one module per task, never as constants inside task modules: this includes paths, file modes, unit file names, journal identifiers, queue and spool directory names. A module constant elsewhere is allowed only as an exception explicitly approved by the user and recorded in docs/contracts/architecture.md; without such a recorded approval the value must live in the values module of its task. A constant found without a recorded approval is an error to fix immediately: move it into that module on discovery, never leave it in place. The same value or the same logic must never be duplicated across modules: shared values and helpers are defined once in a common module and imported. The rule covers the tests too: a test reads the declared values through their module alias instead of restating the literals, so a value change reaches every reader at once.
 
 All text that crosses an external boundary must be passed through the shared trim_whitespace helper (pyntara.utils) before it is stored or reported, whenever trimming cannot damage the content: output captured from console commands, values read from files, and user data must never carry trailing newlines or stray edge whitespace into telemetry reports, logs or persisted values, while internal whitespace is preserved. Do not trim binary payloads: the rule applies to text.
 

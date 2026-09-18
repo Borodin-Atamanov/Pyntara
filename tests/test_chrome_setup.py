@@ -14,10 +14,9 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import Config, load_config
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
@@ -103,15 +102,6 @@ APPLETSRC_TEXT = (
 )
 
 
-def _test_config(tmp_path: Path) -> Config:
-    """Config the task still reads: the engine values alone.
-
-    Every writable path of the section is a value now and points at the tmp
-    tree through the fixture below, so no chrome_setup parameter is left in the
-    harness.
-    """
-
-    return make_config()
 
 
 @pytest.fixture(autouse=True)
@@ -162,7 +152,6 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     return make_context(
         task_name="chrome_setup",
         install_mode="desktop",
-        config=_test_config(tmp_path),
         force_tasks=frozenset({"chrome_setup"}) if force else frozenset(),
     )
 
@@ -355,27 +344,6 @@ def test_chrome_setup_depends_on_the_xray_task() -> None:
 
     assert resolved.index("three_x_ui_xray_setup") < resolved.index("chrome_setup")
     assert "yggdrasil_service_setup" in resolved
-
-
-def test_real_config_names_google_repo_cdp_and_system_root() -> None:
-    config = load_config(REPO_ROOT / "config")
-    assert config.chrome_setup.username == "i"
-    assert config.chrome_setup.settings_repo_url.endswith(
-        "chromium-default-settings.git"
-    )
-    assert config.chrome_setup.settings_repo_ref == "main"
-    assert config.chrome_setup.system_root == Path("/")
-    assert config.chrome_setup.cdp_port == 19222
-    assert config.chrome_setup.cdp_address == "127.0.0.1"
-    assert config.chrome_setup.desktop_override_path == Path(
-        "/usr/local/share/applications/google-chrome.desktop"
-    )
-    assert config.chrome_setup.profile_mirror_path == Path(
-        "/home/i/.config/google-chrome-cdp"
-    )
-    assert config.chrome_setup.mount_service_unit_name == (
-        "mount_chrome_user_dir.service"
-    )
 
 
 def test_merge_preferences_overlay_wins_and_keeps_unrelated() -> None:
@@ -919,7 +887,6 @@ def test_missing_templates_leave_settings_in_place(
     ctx = make_context(
         task_name="chrome_setup",
         install_mode="desktop",
-        config=_test_config(tmp_path),
         repo_root=tmp_path,
     )
     _write_repo()

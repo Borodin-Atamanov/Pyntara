@@ -21,10 +21,6 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 from pyntara import task_catalog
-from pyntara.config import (
-    Config,
-    load_config,
-)
 from pyntara.context import Context
 from pyntara.logger import (
     configure_journal,
@@ -42,12 +38,6 @@ from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 
 app = typer.Typer(invoke_without_command=True)
-
-# The engine configuration lives in the repository root. inst.sh launches
-# pyntara from the clone root, so the config/ directory is always found
-# there. The directory is mandatory: a missing or invalid config stops the
-# run (architecture contract, Configuration).
-CONFIG_PATH = Path("config")
 
 # Root of the clone this code runs from: the package lives in src/pyntara/, so
 # the root is two directories above this file. The composition root is the only
@@ -129,18 +119,6 @@ def _env_flag(name: str) -> bool:
     return answer in {
         word.casefold() for word in engine_values.ENVIRONMENT_FLAG_TRUE_VALUES
     }
-
-
-def _load_config() -> Config:
-    """Read config.toml and return it, whatever it holds.
-
-    The read never fails: a value that is not in the document reaches the
-    run as an absent value, the task that needed it reports what it could
-    not do, and the run continues. A broken config never stops the run
-    (architecture contract, Configuration).
-    """
-
-    return load_config(CONFIG_PATH)
 
 
 def _export_desktop_session() -> None:
@@ -339,7 +317,7 @@ def _resolve_force_tasks(
     return frozenset(name for name in names if name.casefold() in force_folded)
 
 
-def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
+def _run_context(mode: str, names: list[str]) -> Context:
     """The Context every task of a run receives.
 
     The clone root is the one computation of REPO_ROOT, which points at
@@ -361,7 +339,6 @@ def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
         repo_root=REPO_ROOT,
         task_data_root=engine_values.TASK_DATA_ROOT,
         skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
-        config=cfg,
     )
 
 
@@ -369,7 +346,6 @@ def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
 def run() -> None:
     """Run the Pyntara provisioning engine."""
 
-    cfg = _load_config()
     configure_journal(engine_values.JOURNAL_IDENTIFIER)
     _export_desktop_session()
     if not tasks_values.CATALOG:
@@ -384,7 +360,7 @@ def run() -> None:
     names = _resolve_task_names(
         mode, engine_values.NOTICE_TIMEOUT, tasks_values.CATALOG
     )
-    ctx = _run_context(cfg, mode, names)
+    ctx = _run_context(mode, names)
     log_event(f"Install mode: {mode}")
     log_event(f"Tasks: {' '.join(names)}")
     if ctx.force_tasks:

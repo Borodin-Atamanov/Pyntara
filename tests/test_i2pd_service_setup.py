@@ -18,7 +18,6 @@ from support import FakeProc as _FakeProc
 from support import (
     i2pd_keys_b32_address,
     i2pd_keys_file_bytes,
-    make_config,
     make_context,
 )
 
@@ -120,11 +119,6 @@ def _ctx(
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=skip_apt_update,
-        config=make_config(
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
-        ),
     )
 
 

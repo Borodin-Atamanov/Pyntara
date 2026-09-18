@@ -120,5 +120,5 @@ def test_an_argument_is_a_usage_error(
 ) -> None:
     # The command reads the declared values and takes no argument, so a
     # path on the command line is a usage error.
-    assert tor_address.main(["tor_address", "/etc/pyntara/config.toml"]) == 2
+    assert tor_address.main(["tor_address", "/etc/pyntara/system.toml"]) == 2
     assert "usage" in capsys.readouterr().err

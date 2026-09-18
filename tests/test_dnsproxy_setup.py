@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from support import FakeProc, make_config, make_context
+from support import FakeProc, make_context
 
 from pyntara.tasks import dnsproxy_setup as task_module
 from pyntara.values import common as common_values
@@ -322,10 +322,9 @@ def _run_task(
     empty value uses a listing that routes through dnsproxy. probe controls
     the pre-cutover dnsproxy answer check."""
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config()
     monkeypatch.setattr(values, "APPEND_PROVIDER_DNS", append_provider_dns)
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
-    context = make_context(vault_password=PASSWORD, config=config, repo_root=Path.cwd())
+    context = make_context(vault_password=PASSWORD, repo_root=Path.cwd())
     monkeypatch.setattr(
         task_module,
         "fetch_latest_release",
@@ -449,8 +448,7 @@ def test_task_fails_early_without_the_nextdns_profile_file(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config()
-    context = make_context(vault_password=PASSWORD, config=config, repo_root=Path.cwd())
+    context = make_context(vault_password=PASSWORD, repo_root=Path.cwd())
     result = task_module.task(context)
     assert result.success is True
     assert any("nextdns_setup_system_wide" in warning for warning in result.warnings)
@@ -715,7 +713,6 @@ def test_release_and_download_curls_carry_configured_flags(
     # The release query runs through the shared release reader, which takes
     # the endpoint and the curl flags from the engine config; the flags of
     # the query itself are asserted in tests/test_github_release.py.
-    make_config()
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:

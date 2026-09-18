@@ -106,12 +106,9 @@ SERVICE_TEMPLATE_FILE_NAME: str = "auto_port_forwarding.service"
 SERVICE_MODULE_NAME: str = "pyntara.port_forwarding"
 
 # Command the deployed unit runs: the interpreter of the deployed venv with the
-# module above and the system config path. The values of this section come from
-# the values package, but the service still reads the config for the deployment
-# venv and for the call that wakes the report collector, which live in the
-# system_metrics_setup section; the path leaves the command line when that
-# section moves to the values package.
-MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}", "{config_path}")
+# module above. The deployed code takes no argument, because every value it
+# needs ships with the values package it imports.
+MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}")
 
 # The systemctl calls of the task, each carrying the unit name as its
 # {service_unit_name} placeholder except the daemon reload.

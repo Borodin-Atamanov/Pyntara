@@ -48,7 +48,7 @@ Every step of the task is guarded on its own, so a step that cannot run is a war
 
 ## Parameters
 
-All parameters live in the [vocalinux_setup] table of the config/ directory.
+All parameters live in the src/pyntara/values/vocalinux_setup.py.
 
 username - the desktop user who runs Vocalinux and owns the install
 home_dir - the home directory of that user; the install, the app config and the autostart entry are derived under it

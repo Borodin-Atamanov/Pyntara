@@ -404,7 +404,7 @@ def _run_panel_stages(
 
     # Stage 2: read credentials, verify session, store in vault. The stage
     # reports only warnings, so its changed flag is not collected.
-    stage2_warnings, _ = _fold_stage(result, _stage2(ctx.config, timeout))
+    stage2_warnings, _ = _fold_stage(result, _stage2(timeout))
 
     # Panel settings: move the subscription paths off the well-known
     # defaults so the panel does not warn about them. A failure here is a
@@ -441,7 +441,7 @@ def _run_panel_stages(
     # Stage 5: ensure the panel client and store the connection profile.
     connection_warnings, connection_changed = _fold_stage(
         result,
-        _stage_connection(ctx.config, timeout, facts, force=force),
+        _stage_connection(timeout, facts, force=force),
     )
 
     # Stage 6: serve the local proxy of this machine through the panel,

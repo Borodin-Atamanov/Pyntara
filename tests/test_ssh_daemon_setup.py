@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import augtool_fake_run, make_config, make_context
+from support import augtool_fake_run, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import ssh_daemon_setup
@@ -145,14 +145,13 @@ def _ctx(
         repo_root=tmp_path,
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
-        config=make_config(),
     )
 
 
 def _install_fixtures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Write the key fixtures; return the task data directory.
 
-    The file names come from the make_config defaults, the same defaults
+    The file names come from the declared values, the same values
     every test uses through _ctx, so the fixtures always match the names
     the task reads from its config.
     """

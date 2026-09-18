@@ -19,7 +19,7 @@ from typing import TypedDict
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.context import Context
 from pyntara.tasks import zram_service
@@ -80,7 +80,6 @@ def _ctx(
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(),
     )
 
 

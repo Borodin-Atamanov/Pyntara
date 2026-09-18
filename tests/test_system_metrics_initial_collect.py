@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
 from pyntara.context import Context
@@ -36,7 +36,6 @@ def _ctx(tmp_path: Path) -> Context:
         force_tasks=frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(),
     )
 
 

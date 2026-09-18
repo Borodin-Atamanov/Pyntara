@@ -17,10 +17,8 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config
 
 from pyntara import metrics_collect
-from pyntara.config import Config
 from pyntara.values import engine as engine_values
 from pyntara.values import system_metrics_setup as values
 from pyntara.values.system_metrics_setup import CollectorModule
@@ -46,7 +44,7 @@ REPORT_WORDS = values.COLLECTOR.report_status_words
 
 def _config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any
-) -> Config:
+) -> None:
     """Point the collector values at tmp_path and return a bare config.
 
     The command path and the lock path of a test run live inside tmp_path,
@@ -69,7 +67,6 @@ def _config(
             **kwargs,
         ),
     )
-    return make_config()
 
 
 def _fake_run(
@@ -609,9 +606,6 @@ def test_main_reports_a_failed_run_in_one_line(
     _config(monkeypatch, tmp_path)
     monkeypatch.setattr("pyntara.metrics_collect.collect_until_ready", fail)
     monkeypatch.setattr(
-        "pyntara.metrics_collect.load_config", lambda path: make_config()
-    )
-    monkeypatch.setattr(
         "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
     )
     metrics_collect.main()
@@ -628,7 +622,6 @@ def test_main_journals_under_the_configured_collector_identifier(
     # the collector from the service and from the run that deployed them.
     _config(monkeypatch, tmp_path)
     configured: list[str] = []
-    monkeypatch.setattr(metrics_collect, "load_config", lambda path: make_config())
     monkeypatch.setattr(metrics_collect, "configure_journal", configured.append)
     monkeypatch.setattr(
         metrics_collect, "_acquire_lock", lambda path, error_priority: object()
@@ -669,7 +662,6 @@ def test_main_collects_and_commits(
         tmp_path,
         network_modules=(IPV4,),
     )
-    monkeypatch.setattr("pyntara.metrics_collect.load_config", lambda path: make_config())
     monkeypatch.setattr(
         "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
     )
@@ -703,7 +695,6 @@ def test_main_exits_when_lock_held(
             tmp_path,
             network_modules=(IPV4,),
         )
-        monkeypatch.setattr("pyntara.metrics_collect.load_config", lambda path: make_config())
         monkeypatch.setattr(
             "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
         )
@@ -740,7 +731,6 @@ def test_main_commit_failure_exits_one(
         tmp_path,
         network_modules=(IPV4,),
     )
-    monkeypatch.setattr("pyntara.metrics_collect.load_config", lambda path: make_config())
     monkeypatch.setattr(
         "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
     )

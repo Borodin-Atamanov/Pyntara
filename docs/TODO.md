@@ -1896,3 +1896,47 @@ machine in this turn, and the probe is named with the figure.
     the tests, 1965 unit tests and the four bash suites. The live production run
     waits for the end of stage F, on the user's decision 149. What is left of
     stage F: nothing; the config layer itself goes in stage G.
+158. The config layer removed on 2026-09-18 (branch drop-config-layer), stage G
+    of the values migration: no TOML document and no loader are left, so the
+    values package is the only source of a value and a machine cannot run with a
+    value the repository does not carry. The decision stated before the change:
+    the deployed services read the values package instead of the single system
+    config, so system_metrics_setup no longer copies a TOML file into
+    /etc/pyntara and the deployed units take no path argument; the vault readers
+    take the declared paths of values/local_vault_setup.py, so
+    metrics.open_runtime_vault and the two kp.save call sites need no Config.
+    What went to the trash: config/ (20 TOML files),
+    src/pyntara/config/ (22 modules), tests/config_checks.py (2664 lines),
+    tests/config_helpers.py (508 lines), tests/test_config_*.py (20 files) and
+    docs/spec/config-content.md.
+    Code changes: open_runtime_vault takes no argument and reads
+    local_vault_setup.LOCAL_VAULT_PATH and PASS_FILE_PATH; xray_panel._stage2,
+    xray_inbound._stage_connection, xray_facts._server_share_address,
+    telemetry_pdf.build, metrics_collect._commit_telemetry_pdf,
+    commit_final_system_metrics._commit_telemetry_pdf_from_queue,
+    port_forwarding.start_forward, _open_tunnel and run_forward_loop and
+    upnp_forwarding.ensure_forwarding all lost their config parameter; the five
+    entry points (metrics, metrics_collect, port_forwarding, upnp_forwarding,
+    pyntara.py) read no config path and take no argument, and Context lost its
+    config field with the loader import of the composition root.
+    Values side: SYSTEM_CONFIG_PATH is gone from values/system_metrics_setup.py
+    and the three deployed unit commands lost their {config_path} placeholder;
+    MODULE_RUN_COMMAND of port_forwarding_setup and upnp_forwarding_setup lost
+    it as well; the system_metrics_setup task writes no system config, so its
+    _system_config_matches and _write_system_config are gone with the drifts
+    they detected (the stale-config restart test went with them, because a value
+    can no longer go stale: the package is what the machine runs).
+    Tests: the suite went from 1965 to 1597 tests, all green, because 368 tests
+    guarded the removed layer. Every remaining file points the declared paths at
+    tmp_path (the vault, the queue, the spool) instead of building a Config, the
+    fake vault openers lost their cfg parameter, and tests/support.py keeps
+    make_context alone, so a test never builds a config object any more.
+    Documentation followed: docs/contracts/architecture.md (Runtime boundaries,
+    Configuration and the Context contract), docs/simplified-architecture.md,
+    docs/guides/project-structure.md (the section map now names one values
+    module per section, and the guides for adding a value or a section were
+    rewritten around the values package), docs/guides/developer-guide.md,
+    docs/guides/project-rules.md, docs/spec/secrets-model.md, README.md, inst.sh
+    and the eleven spec documents that named a config table.
+    Every gate passes: ruff check, mypy strict over 115 source files, mypy over
+    the tests, 1597 unit tests and the four bash suites.

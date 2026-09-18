@@ -16,10 +16,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from support import make_config
 
 from pyntara import metrics_commit
-from pyntara.config import Config
 from pyntara.metrics_commit import (
     build_queue_name,
     ingest_spool,
@@ -36,7 +34,7 @@ TEMP = "temp"
 
 def _spool_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any
-) -> Config:
+) -> None:
     """Point the declared paths at the temporary directory.
 
     The queue root and the spool are declared values, so they are set on
@@ -47,7 +45,6 @@ def _spool_config(
     monkeypatch.setattr(values, "SPOOL_DIR", tmp_path / "spool")
     for name, value in kwargs.items():
         monkeypatch.setattr(values, name.upper(), value)
-    return make_config()
 
 
 def _spool_file(tmp_path: Path, name: str = "report.txt", body: str = "data") -> Path:

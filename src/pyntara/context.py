@@ -10,8 +10,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyntara.config import Config
-
 
 @dataclass(frozen=True)
 class Context:
@@ -30,5 +28,4 @@ class Context:
     repo_root: Path
     task_data_root: Path
     skip_apt_update: bool
-    config: Config
     task_name: str = ""

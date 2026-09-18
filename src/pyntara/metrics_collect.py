@@ -42,7 +42,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.utils import (
@@ -298,7 +297,7 @@ def _commit_report(report: dict[str, object]) -> bool:
     return True
 
 
-def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
+def _commit_telemetry_pdf(report: dict[str, object]) -> None:
     """Build and commit the encrypted telemetry PDF, best effort.
 
     The PDF is an addition to the report: the caller commits network.json
@@ -321,7 +320,7 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
         from pyntara import telemetry_pdf
 
         hostname = socket.gethostname()
-        pdf_bytes = telemetry_pdf.build(cfg, report, hostname)
+        pdf_bytes = telemetry_pdf.build(report, hostname)
         if pdf_bytes is None:
             return
         pdf_name = values.TELEMETRY_PDF_REPORT_FILE_NAME.format(hostname=hostname)
@@ -430,17 +429,13 @@ def trigger_collection() -> bool:
 def main() -> None:
     """Collect the report and commit it through the queue.
 
-    The config path is the first command line argument; the collector
-    service unit renders the configured system_config_path into the
-    ExecStart line. A missing argument is an explicit error. A second
-    running instance exits quietly under the flock. A failed commit is
-    an error exit, so the systemd restart policy retries the collector.
+    The collector service unit runs this module with no argument: every
+    value comes from the pyntara values package, so the deployed service
+    never reads a config file. A second running instance exits quietly
+    under the flock. A failed commit is an error exit, so the systemd
+    restart policy retries the collector.
     """
 
-    if len(sys.argv) < 2:
-        print("error: missing config path argument", file=sys.stderr)
-        raise SystemExit(1)
-    cfg = load_config(Path(sys.argv[1]))
     collector = values.COLLECTOR
     configure_journal(collector.journal_identifier)
     try:
@@ -451,7 +446,7 @@ def main() -> None:
         report = collect_until_ready()
         if not _commit_report(report):
             raise SystemExit(1)
-        _commit_telemetry_pdf(cfg, report)
+        _commit_telemetry_pdf(report)
     except SystemExit:
         raise
     except Exception as exc:  # noqa: BLE001 - a failed run reports one line, never a traceback

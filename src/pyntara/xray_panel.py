@@ -24,7 +24,6 @@ from pathlib import Path
 
 from pyntara import metrics
 from pyntara import xui as xui_client
-from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -36,6 +35,7 @@ from pyntara.utils import (
     substituted_command,
     version_from_output,
 )
+from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
@@ -277,7 +277,6 @@ def _panel_environment_or_warning(
 
 
 def _stage2(
-    full_config: Config,
     timeout: float,
 ) -> TaskResult | None:
     """Run stage 2: read credentials, verify session, store in vault.
@@ -307,7 +306,7 @@ def _stage2(
     _log("stage 2: panel login successful")
 
     # Open the runtime vault.
-    kp = metrics.open_runtime_vault(full_config)
+    kp = metrics.open_runtime_vault()
     if kp is None:
         return TaskResult(
             success=True,
@@ -361,7 +360,7 @@ def _stage2(
         )
         _log("stage 2: creating new vault entry")
 
-    kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
+    kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
     _log("stage 2: vault entry saved")
     return None
 

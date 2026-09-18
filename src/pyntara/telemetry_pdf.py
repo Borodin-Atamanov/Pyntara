@@ -29,7 +29,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 import pyntara.metrics
-from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.values import engine as engine_values
 from pyntara.values import system_metrics_setup as values
@@ -294,7 +293,7 @@ def encrypt(raw: bytes, password: str) -> bytes:
     return out.getvalue()
 
 
-def build(cfg: Config, report: dict[str, object], hostname: str) -> bytes | None:
+def build(report: dict[str, object], hostname: str) -> bytes | None:
     """The encrypted telemetry PDF bytes, or None when it cannot be built.
 
     The password comes from the telemetry_password_entry_title entry of
@@ -303,7 +302,7 @@ def build(cfg: Config, report: dict[str, object], hostname: str) -> bytes | None
     the caller commits network.json without the PDF.
     """
 
-    kp = pyntara.metrics.open_runtime_vault(cfg)
+    kp = pyntara.metrics.open_runtime_vault()
     if kp is None:
         return None
     title = values.TELEMETRY_PASSWORD_ENTRY_TITLE

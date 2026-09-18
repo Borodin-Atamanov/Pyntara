@@ -1014,7 +1014,6 @@ def test_clone_root_points_at_the_repository_root() -> None:
     # the whole suite stays green.
     from pyntara.pyntara import REPO_ROOT
 
-    assert (REPO_ROOT / "config").is_dir()
     assert (REPO_ROOT / "task_data").is_dir()
     assert (REPO_ROOT / "src" / "pyntara" / "pyntara.py").is_file()
 

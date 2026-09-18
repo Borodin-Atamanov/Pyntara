@@ -105,7 +105,7 @@ def _vault(
     """
 
     fake = _FakeVault(password, username)
-    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: fake)
+    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda: fake)
     return fake
 
 
@@ -508,7 +508,7 @@ def test_vault_unavailable_warns_without_changing_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _fake_run(monkeypatch)
-    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: None)
+    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda: None)
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.warnings

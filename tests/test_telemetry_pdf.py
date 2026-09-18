@@ -17,7 +17,6 @@ from pathlib import Path
 
 import pikepdf
 import pytest
-from support import make_config
 
 from pyntara import metrics_collect, telemetry_pdf
 from pyntara.values import system_metrics_setup as values
@@ -174,7 +173,7 @@ def test_commit_telemetry_pdf_never_raises_when_build_fails(
     monkeypatch.setattr(
         "pyntara.metrics_collect.socket.gethostname", lambda: "testhost"
     )
-    metrics_collect._commit_telemetry_pdf(make_config(), _report())
+    metrics_collect._commit_telemetry_pdf(_report())
     assert calls == []
 
 
@@ -201,7 +200,7 @@ def test_commit_telemetry_pdf_commits_the_pdf_bytes(
     monkeypatch.setattr(
         "pyntara.metrics_collect.socket.gethostname", lambda: "testhost"
     )
-    metrics_collect._commit_telemetry_pdf(make_config(), _report())
+    metrics_collect._commit_telemetry_pdf(_report())
     assert len(calls) == 1
     argv = calls[0]
     assert argv[0] == str(commit_path)

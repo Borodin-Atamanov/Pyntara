@@ -188,8 +188,9 @@ export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 # mirroring the declared values curl_download_timeout_seconds, curl_retries,
 # curl_retry_delay_seconds, curl_connect_timeout_seconds and
 # curl_retry_max_time_seconds of src/pyntara/values/engine.py. The installer
-# runs before the config exists, so the values live here as overridable
-# environment defaults (bootstrap contract, Runtime configuration).
+# is a shell script and cannot import the package, so the values live here as
+# overridable environment defaults (bootstrap contract, Runtime
+# configuration).
 CURL_TIMEOUT_SECONDS="${PYNTARA_CURL_TIMEOUT_SECONDS:-7777}"
 CURL_RETRIES="${PYNTARA_CURL_RETRIES:-17}"
 CURL_RETRY_DELAY_SECONDS="${PYNTARA_CURL_RETRY_DELAY_SECONDS:-3}"

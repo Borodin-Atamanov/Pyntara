@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
 from pyntara.context import Context
@@ -225,16 +225,7 @@ def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> No
 def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
     # Force mode reruns the task but does not change the outcome when the
     # target state is already reached.
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset({"cli_tools"}),
-        repo_root=REPO_ROOT,
-        task_data_root=Path("/tmp"),
-        skip_apt_update=False,
-        config=make_config(),
-    )
+    ctx = make_context(force_tasks=frozenset({"cli_tools"}))
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = cli_tools.task(ctx)
     assert result.success is True
@@ -503,16 +494,7 @@ def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # threshold, so the task succeeds (failure only below the threshold).
     monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc", "htop"))
     monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50)
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        repo_root=REPO_ROOT,
-        task_data_root=Path("/tmp"),
-        skip_apt_update=True,
-        config=make_config(),
-    )
+    ctx = make_context()
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -537,16 +519,7 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     # A zero threshold means the task never fails on missing packages.
     monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
     monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 0)
-    ctx = Context(
-        install_mode="minimal",
-        vault_password=None,
-        vault_source=None,
-        force_tasks=frozenset(),
-        repo_root=REPO_ROOT,
-        task_data_root=Path("/tmp"),
-        skip_apt_update=True,
-        config=make_config(),
-    )
+    ctx = make_context()
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         if command[0] == "dpkg-query":

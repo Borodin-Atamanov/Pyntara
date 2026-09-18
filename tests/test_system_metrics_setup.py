@@ -17,10 +17,9 @@ from typing import TypedDict
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import __version__
-from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_setup
 from pyntara.utils import substituted_command
@@ -109,23 +108,18 @@ COLLECTOR_TIMER_NAME = "system_metrics_collector.timer"
 
 
 class SystemMetricsFixtures(TypedDict):
-    """Temporary deployment paths plus the config built for them."""
+    """Temporary deployment paths."""
 
     repo: Path
-    source_config: Path
     venv_dir: Path
     venv_python: Path
     command_path: Path
     spool_dir: Path
-    system_config: Path
     systemd_dir: Path
-    config: Config
 
 
-def _ctx(
-    tmp_path: Path, *, force: bool = False, config: Config | None = None
-) -> Context:
-    """Context with a small safe config; the real file is never touched."""
+def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
+    """Context with the safe defaults the engine fills in a real run."""
 
     return make_context(
         task_name="system_metrics_setup",
@@ -134,7 +128,6 @@ def _ctx(
         repo_root=tmp_path / "repo",
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=config if config is not None else make_config(),
     )
 
 
@@ -146,18 +139,13 @@ def _install_fixtures(
 ) -> SystemMetricsFixtures:
     """Point the task at temporary fixtures; return the fixture paths.
 
-    The repository clone is a temporary directory holding config.toml and
-    the unit and command templates; the venv, the system config, the
-    spool and the unit directory are temporary paths as well, so the real
-    machine is never touched.
+    The repository clone is a temporary directory holding the unit and
+    command templates; the venv, the spool and the unit directory are
+    temporary paths as well, so the real machine is never touched.
     """
 
     repo = tmp_path / "repo"
     repo.mkdir(parents=True)
-    config_dir = repo / "config"
-    config_dir.mkdir(parents=True)
-    source_config = config_dir / "system_metrics_setup.toml"
-    source_config.write_text("[system_metrics_setup]\n", encoding="utf-8")
     task_data = repo / "task_data" / "system_metrics_setup"
     task_data.mkdir(parents=True)
     service_template = task_data / "system_metrics.service"
@@ -179,25 +167,18 @@ def _install_fixtures(
         venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
     command_path = tmp_path / "usr" / "local" / "bin" / "commit_system_metrics"
     spool_dir = tmp_path / "var" / "spool" / "system_metrics"
-    system_config_dir = tmp_path / "etc" / "pyntara"
-    system_config = system_config_dir / "config.toml"
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(values, "VENV_DIR", venv_dir)
-    monkeypatch.setattr(values, "SYSTEM_CONFIG_PATH", system_config)
     monkeypatch.setattr(values, "COMMAND_PATH", command_path)
     monkeypatch.setattr(values, "SPOOL_DIR", spool_dir)
-    config = make_config()
     return {
         "repo": repo,
-        "source_config": source_config,
         "venv_dir": venv_dir,
         "venv_python": venv_python,
         "command_path": command_path,
         "spool_dir": spool_dir,
-        "system_config": system_config,
         "systemd_dir": systemd_dir,
-        "config": config,
     }
 
 
@@ -211,7 +192,6 @@ def _expected_service_unit(
             str(fixtures["venv_python"]),
             "-m",
             "pyntara.metrics",
-            str(fixtures["system_config"]),
         ]
     )
     return Template(UNIT_TEMPLATE).substitute(
@@ -258,7 +238,6 @@ def _expected_collector_service_unit(
             str(fixtures["venv_python"]),
             "-m",
             "pyntara.metrics_collect",
-            str(fixtures["system_config"]),
         ]
     )
     return Template(COLLECTOR_SERVICE_TEMPLATE).substitute(
@@ -357,14 +336,13 @@ def _deploy_fixture(
     venv_version: str = __version__,
     command_ok: bool = True,
     spool_ok: bool = True,
-    stale_config: bool = False,
     stale_path_unit: bool = False,
     uv_available: bool = True,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> tuple[SystemMetricsFixtures, list[list[str]]]:
     """Fixtures plus a fake; when deployed, all state matches the sources.
 
-    stale_config leaves the system config unwritten and stale_path_unit
+    stale_path_unit
     leaves the path unit unwritten, so tests can exercise exactly one
     drift at a time.
     """
@@ -375,12 +353,6 @@ def _deploy_fixture(
         venv_ok=deployed or import_ok,
     )
     if deployed:
-        if not stale_config:
-            fixtures["system_config"].parent.mkdir(parents=True)
-            fixtures["system_config"].write_text(
-                fixtures["source_config"].read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
         fixtures["systemd_dir"].mkdir(parents=True)
         for name, expected in (
             ("system_metrics.service", _expected_service_unit(fixtures)),
@@ -450,7 +422,7 @@ def test_unit_template_name_comes_from_the_config(
     task_data = fixtures["repo"] / "task_data" / "system_metrics_setup"
     (task_data / "system_metrics.service").rename(task_data / "renamed.service")
     monkeypatch.setattr(values, "UNIT_TEMPLATE_FILE_NAME", "renamed.service")
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     deployed = fixtures["systemd_dir"] / "system_metrics.service"
     assert deployed.read_text(encoding="utf-8") == _expected_service_unit(fixtures)
@@ -466,7 +438,7 @@ def test_deploys_service_ingest_and_command(
     # and starts the service, the path unit and the collector timer,
     # writes the commit command and creates the spool directory.
     fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     settings = values
@@ -491,9 +463,6 @@ def test_deploys_service_ingest_and_command(
         and "--no-editable" in call
         and "--reinstall-package" not in call
         for call in calls
-    )
-    assert fixtures["system_config"].read_text(encoding="utf-8") == (
-        fixtures["source_config"].read_text(encoding="utf-8")
     )
     assert (fixtures["systemd_dir"] / "system_metrics.service").read_text(
         encoding="utf-8"
@@ -536,7 +505,7 @@ def test_the_units_carry_the_version_of_the_deployed_code(
     fixtures, _calls = _deploy_fixture(
         monkeypatch, tmp_path, import_ok=True, venv_version="0.3.999"
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success
     for unit_name in (
         "system_metrics.service",
@@ -556,7 +525,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
     # units and names the gap, so the missing refresh is visible in the
     # install log instead of being passed off as the new code.
     fixtures, _calls = _deploy_fixture(monkeypatch, tmp_path)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success
     unit = (fixtures["systemd_dir"] / "system_metrics.service").read_text(
         encoding="utf-8"
@@ -571,7 +540,7 @@ def test_skips_when_already_configured(
     # The venv imports pyntara, the config, the units and the command
     # match and the service and the path unit are enabled: only status
     # queries run, nothing changes.
-    fixtures, calls = _deploy_fixture(
+    _fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         service_enabled=True,
@@ -583,7 +552,7 @@ def test_skips_when_already_configured(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is False
     assert result.message == "already configured"
@@ -591,9 +560,6 @@ def test_skips_when_already_configured(
     assert not any(
         call[0] == "systemctl" and call[1] in ("start", "restart", "enable")
         for call in calls
-    )
-    assert fixtures["system_config"].read_text(encoding="utf-8") == (
-        fixtures["source_config"].read_text(encoding="utf-8")
     )
 
 
@@ -603,7 +569,7 @@ def test_force_reinstalls_and_restarts(
     # Everything is already configured but the task is forced: the package
     # is reinstalled with --reinstall-package pyntara, the config and units
     # rewritten, the service and the path unit enabled and restarted.
-    fixtures, calls = _deploy_fixture(
+    _fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         service_enabled=True,
@@ -616,7 +582,7 @@ def test_force_reinstalls_and_restarts(
         deployed=True,
     )
     result = system_metrics_setup.task(
-        _ctx(tmp_path, force=True, config=fixtures["config"])
+        _ctx(tmp_path, force=True)
     )
     assert result.success is True
     assert result.changed is True
@@ -643,7 +609,7 @@ def test_stale_venv_is_updated_and_service_restarted(
     # deployed: the task reinstalls the package with --reinstall-package
     # pyntara and restarts the long-running service, so the new code takes
     # effect without a reboot.
-    fixtures, calls = _deploy_fixture(
+    _fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         service_enabled=True,
@@ -656,7 +622,7 @@ def test_stale_venv_is_updated_and_service_restarted(
         deployed=True,
         venv_version="0.0.1",
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert any(
@@ -675,11 +641,10 @@ def test_uv_missing_is_a_warning(
     # Without uv on PATH no virtual environment can be built: the step is
     # reported and the configuration, the units, the command and the
     # spool directory are still deployed.
-    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, uv_available=False)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    _fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, uv_available=False)
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert any("uv" in warning for warning in result.warnings)
-    assert fixtures["system_config"].is_file()
 
 
 def test_uv_sync_failure_is_a_warning(
@@ -690,8 +655,8 @@ def test_uv_sync_failure_is_a_warning(
     def fail_uv_sync(command: list[str]) -> bool:
         return command[0] == "uv" and command[1] == "sync"
 
-    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_sync)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    _fixtures, calls = _deploy_fixture(monkeypatch, tmp_path, fail=fail_uv_sync)
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert any("cannot install" in w for w in result.warnings)
     assert any(call[:2] == ["systemctl", "enable"] for call in calls)
@@ -703,7 +668,7 @@ def test_only_service_disabled_starts_it(
     # The venv, config, units, command and spool are in place, only the
     # boot service is missing: no venv or config work happens, the service
     # is enabled and started, the path unit is untouched.
-    fixtures, calls = _deploy_fixture(
+    _fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         service_enabled=False,
@@ -715,7 +680,7 @@ def test_only_service_disabled_starts_it(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "uv" for call in calls)
@@ -723,43 +688,6 @@ def test_only_service_disabled_starts_it(
     assert ["systemctl", "start", "system_metrics.service"] in calls
     assert not any(
         call == ["systemctl", "start", "system_metrics-ingest.path"] for call in calls
-    )
-    assert fixtures["system_config"].read_text(encoding="utf-8") == (
-        fixtures["source_config"].read_text(encoding="utf-8")
-    )
-
-
-def test_config_change_restarts_running_service(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # The venv, units, command and spool are fine but the system config is
-    # stale and the service is already running: it must be restarted to
-    # pick up the new config, not started again.
-    fixtures, calls = _deploy_fixture(
-        monkeypatch,
-        tmp_path,
-        service_enabled=True,
-        path_enabled=True,
-        service_active=True,
-        path_active=True,
-        timer_enabled=True,
-        timer_active=True,
-        import_ok=True,
-        deployed=True,
-        stale_config=True,
-    )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
-    assert result.success is True
-    assert result.changed is True
-    assert ["systemctl", "restart", "system_metrics.service"] in calls
-    assert not any(
-        call == ["systemctl", "start", "system_metrics.service"] for call in calls
-    )
-    assert not any(
-        call == ["systemctl", "restart", "system_metrics-ingest.path"] for call in calls
-    )
-    assert fixtures["system_config"].read_text(encoding="utf-8") == (
-        fixtures["source_config"].read_text(encoding="utf-8")
     )
 
 
@@ -782,7 +710,7 @@ def test_only_command_missing_writes_it(
         deployed=True,
         command_ok=False,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "uv" for call in calls)
@@ -819,7 +747,7 @@ def test_command_stale_content_rewritten(
     fixtures["command_path"].parent.mkdir(parents=True)
     fixtures["command_path"].write_text("stale\n", encoding="utf-8")
     os.chmod(fixtures["command_path"], 0o644)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert fixtures["command_path"].read_text(encoding="utf-8") == _expected_command(
@@ -848,7 +776,7 @@ def test_command_directory_is_a_warning(
         command_ok=False,
     )
     fixtures["command_path"].mkdir(parents=True)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert any("directory" in warning for warning in result.warnings)
     assert fixtures["command_path"].is_dir()
@@ -872,7 +800,7 @@ def test_only_spool_missing_creates_it(
         deployed=True,
         spool_ok=False,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "uv" for call in calls)
@@ -904,7 +832,7 @@ def test_spool_wrong_mode_fixed(
     )
     fixtures["spool_dir"].mkdir(parents=True)
     os.chmod(fixtures["spool_dir"], 0o755)
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert os.stat(fixtures["spool_dir"]).st_mode & 0o7777 == 0o1733
@@ -933,11 +861,9 @@ def test_service_exec_line_comes_from_the_declared_value(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The line a deployed unit starts with is a declared value: another
-    # command is exactly what the unit runs, with the venv interpreter and
-    # the system config path filling their placeholders.
-    monkeypatch.setattr(
-        values, "SEND_SERVICE_COMMAND", ("myrun", "-m", "mymod", "{config_path}")
-    )
+    # command is exactly what the unit runs, with the venv interpreter
+    # filling its placeholder.
+    monkeypatch.setattr(values, "SEND_SERVICE_COMMAND", ("myrun", "-m", "mymod"))
     template = tmp_path / "system_metrics.service"
     template.write_text(
         "[Service]\n$exec_lines\nRestart=on-failure\n",
@@ -946,10 +872,9 @@ def test_service_exec_line_comes_from_the_declared_value(
     unit = system_metrics_setup._render_service_unit(
         template,
         Path("/venv/bin/python"),
-        Path("/etc/pyntara/config.toml"),
         "0.3.516",
     )
-    assert "ExecStart=myrun -m mymod /etc/pyntara/config.toml" in unit
+    assert "ExecStart=myrun -m mymod" in unit
     assert "Restart=on-failure" in unit
 
 
@@ -979,7 +904,7 @@ def test_only_path_unit_disabled_enables_and_starts_it(
 ) -> None:
     # Everything is in place except the path unit enablement: no venv work
     # happens, the path unit is enabled and started.
-    fixtures, calls = _deploy_fixture(
+    _fixtures, calls = _deploy_fixture(
         monkeypatch,
         tmp_path,
         service_enabled=True,
@@ -991,7 +916,7 @@ def test_only_path_unit_disabled_enables_and_starts_it(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "uv" for call in calls)
@@ -1017,7 +942,7 @@ def test_path_unit_stale_restarted(
         deployed=True,
         stale_path_unit=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert (fixtures["systemd_dir"] / "system_metrics-ingest.path").read_text(
@@ -1052,7 +977,7 @@ def test_force_recreates_command_file(
     os.link(fixtures["command_path"], alias)
     inode_before = alias.stat().st_ino
     result = system_metrics_setup.task(
-        _ctx(tmp_path, force=True, config=fixtures["config"])
+        _ctx(tmp_path, force=True)
     )
     assert result.success is True
     assert result.changed is True
@@ -1068,7 +993,7 @@ def test_systemctl_commands_come_from_the_config(
     # The reload of systemd and the enable, restart and start of a unit are
     # config values: another command line in the section is exactly the argv
     # the task runs.
-    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
+    _fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
     monkeypatch.setattr(
         values,
         "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
@@ -1089,8 +1014,7 @@ def test_systemctl_commands_come_from_the_config(
         "SYSTEMCTL_START_COMMAND",
         ("systemctl", "start", "{unit_name}", "--no-block"),
     )
-    config = fixtures["config"]
-    result = system_metrics_setup.task(_ctx(tmp_path, config=config))
+    result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert ["systemctl", "daemon-reload", "--quiet"] in calls
     assert [
@@ -1099,7 +1023,7 @@ def test_systemctl_commands_come_from_the_config(
         values.SERVICE_UNIT_NAME,
         "--no-block",
     ] in calls
-    result = system_metrics_setup.task(_ctx(tmp_path, force=True, config=config))
+    result = system_metrics_setup.task(_ctx(tmp_path, force=True))
     assert result.success is True
     assert [
         "systemctl",

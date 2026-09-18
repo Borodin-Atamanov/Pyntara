@@ -15,7 +15,7 @@ from __future__ import annotations
 import importlib
 
 import pytest
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_runner
 from pyntara.context import Context
@@ -53,7 +53,7 @@ def _ctx() -> Context:
     # The start delay is zeroed so the runner does not pause between the two
     # tasks of the proof. No task of this file reaches the machine: the guard
     # returns before the first step of a task.
-    return make_context(config=make_config())
+    return make_context()
 
 
 @pytest.mark.parametrize(("task_name", "values_module_name"), MIGRATED_SECTIONS)

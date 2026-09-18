@@ -21,11 +21,10 @@ from unittest.mock import Mock
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import routing_policy, xray_client
 from pyntara import xui as xui_client
-from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.location import CountryReport
 from pyntara.models import TaskResult
@@ -140,9 +139,9 @@ def _stage2_fake(
         fake_kp.root_group = Mock()
         fake_kp.add_entry = Mock()
         fake_kp.save = Mock()
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : fake_kp)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: fake_kp)
     else:
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : None)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: None)
 
 
 def _use_temporary_panel_paths(
@@ -211,11 +210,6 @@ def _ctx(
         force_tasks=frozenset({"three_x_ui_xray_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(
-            cli_tools_packages=("mc",),
-            add_extra_repos_components=("universe",),
-            swapfile_path=tmp_path / "swapfile",
-        ),
     )
 
 
@@ -324,7 +318,7 @@ def _install_fake(
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _full_config, _timeout, _facts, **_kwargs: None,
+            lambda _timeout, _facts, **_kwargs: None,
         )
     return calls
 
@@ -397,7 +391,7 @@ def _panel_fake(
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _full_config, _timeout, _facts, **_kwargs: None,
+            lambda _timeout, _facts, **_kwargs: None,
         )
     return calls
 
@@ -1252,7 +1246,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_connection",
-            lambda _full_config, _timeout, _facts, **_kwargs: TaskResult(
+            lambda _timeout, _facts, **_kwargs: TaskResult(
                 success=True, changed=True, message="connection profile stored"
             ),
         )
@@ -2220,11 +2214,11 @@ class TestSelfSignedCert:
         fake_kp.root_group = Mock()
         fake_kp.add_entry = Mock()
         fake_kp.save = Mock()
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg: fake_kp)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: fake_kp)
         monkeypatch.setattr(
             panel_values, "INSTALL_RESULT_ENV_PATH", env_path
         )
-        result = xray_panel._stage2(_ctx(monkeypatch, tmp_path).config, 30)
+        result = xray_panel._stage2(30)
         assert result is None
         url = fake_kp.add_entry.call_args.kwargs["url"]
         assert url.startswith("https://")
@@ -2636,9 +2630,9 @@ class TestConnectionStage:
             "pyntara.xui.update_inbound", lambda env, inbound, timeout: (True, "updated")
         )
         monkeypatch.setattr(
-            xray_inbound, "_server_share_address", lambda full_config, inbound, facts: "203.0.113.5"
+            xray_inbound, "_server_share_address", lambda inbound, facts: "203.0.113.5"
         )
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : fake_kp)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: fake_kp)
         ctx = _ctx(monkeypatch, tmp_path)
         _install_fake(
             monkeypatch,
@@ -2687,7 +2681,7 @@ class TestConnectionStage:
             lambda env, email, timeout: ["vless://x@203.0.113.5:443"],
         )
         monkeypatch.setattr(
-            xray_inbound, "_server_share_address", lambda full_config, inbound, facts: "203.0.113.5"
+            xray_inbound, "_server_share_address", lambda inbound, facts: "203.0.113.5"
         )
         ctx = _ctx(monkeypatch, tmp_path)
         _install_fake(
@@ -2762,14 +2756,14 @@ class TestConnectionStage:
         monkeypatch.setattr(
             xray_inbound,
             "_server_share_address",
-            lambda full_config, inbound, facts: "203.0.113.5",
+            lambda inbound, facts: "203.0.113.5",
         )
         fake_kp = Mock()
         fake_kp.root_group = Mock()
         fake_kp.find_entries.return_value = None
         fake_kp.add_entry = Mock()
         fake_kp.save = Mock()
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : fake_kp)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: fake_kp)
         ctx = _ctx(monkeypatch, tmp_path)
         _install_fake(
             monkeypatch,
@@ -2818,14 +2812,14 @@ class TestConnectionStage:
         monkeypatch.setattr(
             xray_inbound,
             "_server_share_address",
-            lambda full_config, inbound, facts: "203.0.113.5",
+            lambda inbound, facts: "203.0.113.5",
         )
         fake_kp = Mock()
         fake_kp.root_group = Mock()
         fake_kp.find_entries.return_value = None
         fake_kp.add_entry = Mock()
         fake_kp.save = Mock()
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : fake_kp)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: fake_kp)
         ctx = _ctx(monkeypatch, tmp_path)
         _install_fake(
             monkeypatch,
@@ -2860,9 +2854,9 @@ class TestConnectionStage:
             "pyntara.xui.update_inbound", lambda env, inbound, timeout: (True, "updated")
         )
         monkeypatch.setattr(
-            xray_inbound, "_server_share_address", lambda full_config, inbound, facts: "203.0.113.5"
+            xray_inbound, "_server_share_address", lambda inbound, facts: "203.0.113.5"
         )
-        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda cfg : None)
+        monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda: None)
         ctx = _ctx(monkeypatch, tmp_path)
         _install_fake(
             monkeypatch,
@@ -2899,14 +2893,14 @@ class TestServerShareAddress:
     def _inbound(self, share_addr: str = "") -> dict[str, object]:
         return {"shareAddr": share_addr}
 
-    def _config_with_a_temporary_address_file(
+    def _point_the_mesh_address_at_a_missing_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-    ) -> Config:
-        """A config whose mesh address file does not exist.
+    ) -> None:
+        """Point the mesh address file at a path that does not exist.
 
-        The address file is a declared value now, so the test points the
-        value at a path inside the temporary directory and never reads the
-        real node address of the machine it runs on.
+        The address file is a declared value, so the test points the value
+        at a path inside the temporary directory and never reads the real
+        node address of the machine it runs on.
         """
 
         monkeypatch.setattr(
@@ -2914,7 +2908,6 @@ class TestServerShareAddress:
             "ADDRESS_FILE_PATH",
             tmp_path / "yggdrasil_self_address",
         )
-        return make_config()
 
     def test_prefers_a_public_address_that_belongs_to_the_machine(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -2923,9 +2916,7 @@ class TestServerShareAddress:
         # consulted, because the machine is reachable directly.
         facts = _facts(public=("203.0.113.5",), local=("203.0.113.5", "10.0.0.1"))
         assert (
-            xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
-            )
+            xray_facts._server_share_address(self._inbound(), facts)
             == "203.0.113.5"
         )
 
@@ -2938,9 +2929,8 @@ class TestServerShareAddress:
         address_file = tmp_path / "yggdrasil_self_address"
         address_file.write_text("2001:db8::9\n", encoding="utf-8")
         monkeypatch.setattr(yggdrasil_values, "ADDRESS_FILE_PATH", address_file)
-        full_config = make_config()
         assert (
-            xray_facts._server_share_address(full_config, self._inbound(), facts)
+            xray_facts._server_share_address(self._inbound(), facts)
             == "[2001:db8::9]"
         )
 
@@ -2955,10 +2945,9 @@ class TestServerShareAddress:
             router="190.55.165.52",
             client="190.55.165.52",
         )
+        self._point_the_mesh_address_at_a_missing_file(monkeypatch, tmp_path)
         assert (
-            xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
-            )
+            xray_facts._server_share_address(self._inbound(), facts)
             == "190.55.165.52"
         )
 
@@ -2968,10 +2957,9 @@ class TestServerShareAddress:
         # The router answered but the mapping is not in place: the run
         # facts carry no client address, so the local address is used.
         facts = _facts(public=("190.55.165.52",), local=("192.168.1.5",))
+        self._point_the_mesh_address_at_a_missing_file(monkeypatch, tmp_path)
         assert (
-            xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
-            )
+            xray_facts._server_share_address(self._inbound(), facts)
             == "192.168.1.5"
         )
 
@@ -2981,17 +2969,16 @@ class TestServerShareAddress:
         # No white address, no UPnP, no yggdrasil: the server still works
         # for the local network instead of writing no address at all.
         facts = _facts(local=("192.168.1.5",))
+        self._point_the_mesh_address_at_a_missing_file(monkeypatch, tmp_path)
         assert (
-            xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), facts
-            )
+            xray_facts._server_share_address(self._inbound(), facts)
             == "192.168.1.5"
         )
 
     def test_keeps_the_share_address_stored_in_the_panel(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        self._point_the_mesh_address_at_a_missing_file(monkeypatch, tmp_path)
         assert (
             xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path),
                 self._inbound("198.51.100.9"),
                 _facts(),
             )
@@ -2999,9 +2986,10 @@ class TestServerShareAddress:
         )
 
     def test_returns_none_without_any_source(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        self._point_the_mesh_address_at_a_missing_file(monkeypatch, tmp_path)
         assert (
             xray_facts._server_share_address(
-                self._config_with_a_temporary_address_file(monkeypatch, tmp_path), self._inbound(), _facts()
+                self._inbound(), _facts()
             )
             is None
         )

@@ -140,15 +140,12 @@ SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit_name}")
 
 # Commands the deployed units run: the send loop service, the ingest oneshot
 # service and the report collector service, each with the interpreter of the
-# venv as its {python} placeholder and the path of the single system config as
-# its {config_path} one. The modules still read the sections that live in the
-# config document, so the path stays an argument; they take every value of this
-# module from here.
+# venv as its {python} placeholder. A module takes no other argument, because
+# every value it needs ships with the package it imports.
 SEND_SERVICE_COMMAND: tuple[str, ...] = (
     "{python}",
     "-m",
     "pyntara.metrics",
-    "{config_path}",
 )
 INGEST_SERVICE_COMMAND: tuple[str, ...] = (
     "{python}",
@@ -159,7 +156,6 @@ COLLECTOR_SERVICE_COMMAND: tuple[str, ...] = (
     "{python}",
     "-m",
     "pyntara.metrics_collect",
-    "{config_path}",
 )
 
 # Commands of the deployed venv: the check that the venv imports the package
@@ -374,11 +370,6 @@ class TelemetryPdf:
     field_order: tuple[str, ...]
 
 
-# Path of the single system config; the deployed service reads it through the
-# same loader as the installer while the sections still live in the config
-# document, and the two report commands below take it as their argument.
-SYSTEM_CONFIG_PATH: Path = Path("/etc/pyntara/config.toml")
-
 # Command line entry of a deployed module: the interpreter of the venv.
 # Built from VENV_DIR and VENV_PYTHON_RELATIVE_PATH, so the interpreter
 # path of the target machine has one home and no module command carries a
@@ -518,7 +509,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PYTHON_VERSION",
     "VENV_DIR",
     "VENV_PYTHON_RELATIVE_PATH",
-    "SYSTEM_CONFIG_PATH",
     "COMMAND_PATH",
     "COMMIT_COMMAND",
     "VAULT_BACKUP_FILE_NAME",

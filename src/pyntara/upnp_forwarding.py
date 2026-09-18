@@ -37,10 +37,8 @@ import socket
 import sys
 from dataclasses import dataclass
 from itertools import islice
-from pathlib import Path
 
 from pyntara import forwarding_ports, upnp
-from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_collect import trigger_collection
@@ -106,7 +104,7 @@ def ensure_client_package() -> bool:
     return True
 
 
-def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
+def ensure_forwarding(hostname: str) -> Forwarding | None:
     """Make the router deliver the SSH port of this machine.
 
     Returns the rule that is in place and whether this run changed the
@@ -185,28 +183,25 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
     return None
 
 
-def main(argv: list[str]) -> int:
+def main() -> int:
     """Ensure the rule, and wake the report collector when it is new.
 
-    Returns 2 on a wrong argument count and 1 when the section of the
-    config lacks a value the service cannot work without, so an incomplete
-    deployment is visible on the machine. Every other outcome is 0: the
-    network states that leave the machine unreachable this way are reported
-    as progress lines, because a machine without UPnP must keep working.
+    Returns 1 when the run itself fails, so an incomplete deployment is
+    visible on the machine. Every other outcome is 0: the network states
+    that leave the machine unreachable this way are reported as progress
+    lines, because a machine without UPnP must keep working. The service
+    runs this module with no argument: every value comes from the pyntara
+    values package, so the deployed service never reads a config file.
     """
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
-        return 2
-    cfg = load_config(Path(argv[1]))
     configure_journal(values.JOURNAL_IDENTIFIER)
     if not ensure_client_package():
         return 0
-    forwarding = ensure_forwarding(cfg, socket.gethostname())
+    forwarding = ensure_forwarding(socket.gethostname())
     if forwarding is not None and forwarding.changed:
         trigger_collection()
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    sys.exit(main())
