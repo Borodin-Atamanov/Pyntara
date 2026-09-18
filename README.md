@@ -87,9 +87,8 @@ PYNTARA_SKIP_APT_UPDATE=1 bash "$inst"
 
 Values live in Python modules under src/pyntara/values/, one module per task, and
 a task reads the values of its own module, so a value is never written in two
-places. The remaining sections still live in the config/ directory at the
-repository root, one TOML file per top-level section, joined by the loader into a
-single document, and that directory is being retired section by section
+places. There is no second source: the config/ directory and its TOML documents are
+gone, so a machine runs the values the deployed package carries
 ([Configuration](docs/contracts/architecture.md#configuration)).
 
 The interactive installer variant does not work and its development is stopped.

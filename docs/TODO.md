@@ -1972,3 +1972,22 @@ machine in this turn, and the probe is named with the figure.
     named there now. Both rules were proved by a negative control (a missing
     target and an unlisted document each fail while naming the file). Suite:
     1599 tests.
+    Documentation wording finished on 2026-09-18 (branch finish-doc-wording).
+    The probe found that the README paragraph about where values live had never
+    been replaced: the README still told a reader that the remaining sections
+    live in config/ and that the directory is being retired section by section,
+    which stopped being true when the layer went away. The reason is my own
+    process defect, reported here because it happened after the lesson was
+    already recorded: the script that was supposed to replace that paragraph
+    printed "edited" without checking whether each pattern was found, so a
+    paragraph whose line breaks differed from my expectation was silently left
+    in place. The replacement is done now by whole paragraphs and refuses to
+    pass unless exactly one paragraph carries the marker. The same probe
+    finished the terminology: five "config value" phrases became "declared
+    value" in docs/spec/3x-ui.md, dnsproxy-setup.md, i2pd-service.md and
+    system-metrics.md, and the guide heading "Config section map" became
+    "Section map" together with the link from the architecture contract, because
+    there is no config document to map any more.
+    tests/test_documentation_links.py gained a third rule: a link with a
+    fragment points at a heading of its target file, proved by a negative
+    control with a renamed heading. Suite: 1600 tests.

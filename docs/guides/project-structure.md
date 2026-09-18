@@ -90,7 +90,7 @@ Modules planned but not implemented yet are listed in [What is next](../simplifi
 
 One module per task, each exposing task(ctx) -> TaskResult. Task names come from the catalog in src/pyntara/values/tasks.py, the single source of truth; the module list is not repeated here so renames in the catalog cannot leave stale names behind.
 
-## Config section map
+## Section map
 
 Every section has exactly one module in src/pyntara/values/, and a reader imports that module as an alias and reads the declared names through it. Which value types a module holds, and which never become a value, is the Configuration section of [Architecture](../contracts/architecture.md#configuration).
 
