@@ -20,6 +20,7 @@ from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
 from pyntara.values import engine as engine_values
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import system_metrics_setup as metrics_values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -62,10 +63,9 @@ def _install_fixtures(
     monkeypatch.setattr(
         values, "STATE_FILE_PATH", tmp_path / "port_forwarding_state.json"
     )
-    config = make_config(
-        system_metrics_venv_dir=venv_dir,
-        system_metrics_system_config_path=system_config,
-    )
+    monkeypatch.setattr(metrics_values, "VENV_DIR", venv_dir)
+    monkeypatch.setattr(metrics_values, "SYSTEM_CONFIG_PATH", system_config)
+    config = make_config()
     ctx = make_context(
         task_data_root=tmp_path,
         config=config,

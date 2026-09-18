@@ -29,12 +29,13 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 import pyntara.metrics
-from pyntara.config import Config, TelemetryPdfConfig
+from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
-def _ssh_commands(cfg: Config, report: dict[str, object]) -> list[str]:
+def _ssh_commands(report: dict[str, object]) -> list[str]:
     """Every working ssh command of the report, in order.
 
     A record carries the command under the name the declared report
@@ -49,7 +50,7 @@ def _ssh_commands(cfg: Config, report: dict[str, object]) -> list[str]:
     scope_key = engine_values.REPORT_RECORD_KEYS["scope"]
     host_scope = engine_values.HOST_SCOPE_NAME
     link_scope = engine_values.LINK_SCOPE_NAME
-    keys = cfg.system_metrics_setup.collector.report_keys
+    keys = values.COLLECTOR.report_keys
     commands: list[str] = []
     seen: set[str] = set()
     for section_key in (keys["network"], keys["system"]):
@@ -80,16 +81,16 @@ def _ssh_commands(cfg: Config, report: dict[str, object]) -> list[str]:
     return commands
 
 
-def _nextdns_id(cfg: Config, report: dict[str, object]) -> str | None:
+def _nextdns_id(report: dict[str, object]) -> str | None:
     """The NextDNS profile ID of the report, or None when absent.
 
-    The module the config names prints the applied profile ID as plain
-    text; the PDF shows it next to the hostname so the operator sees
-    which profile filters the machine DNS.
+    The declared module name prints the applied profile ID as plain text;
+    the PDF shows it next to the hostname so the operator sees which
+    profile filters the machine DNS.
     """
 
-    keys = cfg.system_metrics_setup.collector.report_keys
-    module_name = cfg.system_metrics_setup.telemetry_pdf.nextdns_module_name
+    keys = values.COLLECTOR.report_keys
+    module_name = values.TELEMETRY_PDF.nextdns_module_name
     section = report.get(keys["network"], [])
     if not isinstance(section, list):
         return None
@@ -183,7 +184,6 @@ def _wrap_command(command: str, width: int) -> list[str]:
 
 
 def build_text(
-    cfg: Config,
     report: dict[str, object],
     entries: list[tuple[str, list[str]]],
     hostname: str,
@@ -197,17 +197,17 @@ def build_text(
     the whole network.json is always present at the bottom.
     """
 
-    keys = cfg.system_metrics_setup.collector.report_keys
-    pdf_cfg = cfg.system_metrics_setup.telemetry_pdf
+    keys = values.COLLECTOR.report_keys
+    pdf_cfg = values.TELEMETRY_PDF
     lines: list[str] = []
     lines.append(f"{hostname} {report.get(keys['generated_at'], '')}")
     lines.append("")
-    nextdns_id = _nextdns_id(cfg, report)
+    nextdns_id = _nextdns_id(report)
     if nextdns_id:
         lines.append(f"{pdf_cfg.nextdns_module_name} {nextdns_id}")
         lines.append("")
     lines.append(pdf_cfg.section_ssh)
-    commands = _ssh_commands(cfg, report)
+    commands = _ssh_commands(report)
     if commands:
         for command in commands:
             lines.extend(_wrap_command(command, pdf_cfg.line_width_chars))
@@ -216,9 +216,9 @@ def build_text(
     lines.append("")
     lines.append(pdf_cfg.section_secrets)
     if entries:
-        for title, values in entries:
+        for title, entry_values in entries:
             lines.append(title)
-            for value in values:
+            for value in entry_values:
                 lines.extend(value.split("\n"))
             lines.append("")
     else:
@@ -251,7 +251,7 @@ def _wrapped_lines(text: str, line_width_chars: int) -> list[str]:
     return out
 
 
-def render(text: str, pdf_cfg: TelemetryPdfConfig, title: str) -> bytes:
+def render(text: str, pdf_cfg: values.TelemetryPdf, title: str) -> bytes:
     """Render the text into a monospace PDF, in memory.
 
     The title becomes the document title, so a viewer names the file by
@@ -303,11 +303,10 @@ def build(cfg: Config, report: dict[str, object], hostname: str) -> bytes | None
     the caller commits network.json without the PDF.
     """
 
-    sms = cfg.system_metrics_setup
     kp = pyntara.metrics.open_runtime_vault(cfg)
     if kp is None:
         return None
-    title = sms.telemetry_password_entry_title
+    title = values.TELEMETRY_PASSWORD_ENTRY_TITLE
     entry = kp.find_entries(
         title=title, group=kp.root_group, recursive=False, first=True
     )
@@ -315,17 +314,21 @@ def build(cfg: Config, report: dict[str, object], hostname: str) -> bytes | None
     if not password:
         _log(
             f"telemetry pdf skipped: no password in vault entry {title!r}",
-            priority=sms.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         return None
     entries = _read_vault_entries(
-        kp, sms.telemetry_pdf_vault_entry_titles, sms.telemetry_pdf.field_order
+        kp,
+        values.TELEMETRY_PDF_VAULT_ENTRY_TITLES,
+        values.TELEMETRY_PDF.field_order,
     )
     try:
-        text = build_text(cfg, report, entries, hostname)
-        generated_at = report.get(sms.collector.report_keys["generated_at"], "")
+        text = build_text(report, entries, hostname)
+        generated_at = report.get(
+            values.COLLECTOR.report_keys["generated_at"], ""
+        )
         title = f"{hostname} {generated_at}"
-        return encrypt(render(text, sms.telemetry_pdf, title), password)
+        return encrypt(render(text, values.TELEMETRY_PDF, title), password)
     except Exception as exc:  # noqa: BLE001 - any failure skips the PDF only
-        _log(f"telemetry pdf skipped: {exc}", priority=sms.error_priority)
+        _log(f"telemetry pdf skipped: {exc}", priority=values.ERROR_PRIORITY)
         return None

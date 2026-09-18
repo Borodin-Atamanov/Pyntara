@@ -21,6 +21,7 @@ from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_initial_collect
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 from pyntara.values import tasks as tasks_values
 
 REAL_TASKS = tasks_values.CATALOG
@@ -102,31 +103,26 @@ def test_starts_collector_when_unit_deployed(
     ]
 
 
-def test_start_command_comes_from_the_config(
+def test_start_command_comes_from_the_declared_value(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another start command in the config is the argv the task runs, with
-    # the configured unit name substituted.
+    # Another declared start command is the argv the task runs, with the
+    # declared unit name substituted.
     _install_fixtures(monkeypatch, tmp_path, unit_deployed=True)
     calls = _install_fake(monkeypatch)
     ctx = _ctx(tmp_path)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            system_metrics_setup=replace(
-                ctx.config.system_metrics_setup,
-                collector=replace(
-                    ctx.config.system_metrics_setup.collector,
-                    service_unit_name="collector-fixture.service",
-                    start_command=(
-                        "sudo",
-                        "systemctl",
-                        "start",
-                        "--no-block",
-                        "{service_unit_name}",
-                    ),
-                ),
+    monkeypatch.setattr(
+        values,
+        "COLLECTOR",
+        replace(
+            values.COLLECTOR,
+            service_unit_name="collector-fixture.service",
+            start_command=(
+                "sudo",
+                "systemctl",
+                "start",
+                "--no-block",
+                "{service_unit_name}",
             ),
         ),
     )

@@ -97,7 +97,7 @@ def _service(
     monkeypatch: pytest.MonkeyPatch,
     router: _FakeRouter,
     config: Config,
-    triggers: list[Config],
+    triggers: list[bool],
 ) -> None:
     """Wire the service to a faked router, machine and collector."""
 
@@ -108,7 +108,7 @@ def _service(
     monkeypatch.setattr(forwarding.socket, "gethostname", lambda: "testhost")
     monkeypatch.setattr(forwarding, "package_is_installed", lambda *_a, **_k: True)
     monkeypatch.setattr(forwarding, "load_config", lambda _path: config)
-    monkeypatch.setattr(forwarding, "trigger_collection", triggers.append)
+    monkeypatch.setattr(forwarding, "trigger_collection", lambda: triggers.append(True))
 
 
 def _run_main() -> int:
@@ -149,12 +149,12 @@ class TestMain:
         config = make_config()
         ports = forwarding.candidate_ports("testhost")
         router = _FakeRouter()
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
-        assert triggers == [config]
+        assert triggers == [True]
 
     def test_the_rule_of_another_machine_moves_to_the_next_candidate(
         self, monkeypatch: pytest.MonkeyPatch
@@ -167,7 +167,7 @@ class TestMain:
         ports = forwarding.candidate_ports("testhost")
         foreign = (ports[0], "192.168.1.48", 443, NEIGHBOUR_DESCRIPTION)
         router = _FakeRouter(rules=(foreign,))
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
@@ -178,7 +178,7 @@ class TestMain:
             30222,
             OUR_DESCRIPTION,
         ) in router.rules
-        assert triggers == [config]
+        assert triggers == [True]
 
     def test_a_rule_that_is_already_right_wakes_nobody(
         self, monkeypatch: pytest.MonkeyPatch
@@ -190,7 +190,7 @@ class TestMain:
         router = _FakeRouter(
             rules=((ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION),)
         )
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
@@ -206,12 +206,12 @@ class TestMain:
         ports = forwarding.candidate_ports("testhost")
         stale = (ports[0], "192.168.1.9", 30222, OUR_DESCRIPTION)
         router = _FakeRouter(rules=(stale,))
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
-        assert triggers == [config]
+        assert triggers == [True]
 
     def test_a_rule_that_carries_an_older_mark_is_written_again(
         self, monkeypatch: pytest.MonkeyPatch
@@ -223,12 +223,12 @@ class TestMain:
         ports = forwarding.candidate_ports("testhost")
         old_mark = (ports[0], INTERNAL_ADDRESS, 30222, "pyntara ssh")
         router = _FakeRouter(rules=(old_mark,))
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
         assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
-        assert triggers == [config]
+        assert triggers == [True]
 
     def test_no_router_is_a_normal_network(
         self, monkeypatch: pytest.MonkeyPatch
@@ -237,7 +237,7 @@ class TestMain:
         # normal state: nothing is attempted and the service reports success.
         config = make_config()
         router = _FakeRouter(address=None)
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
@@ -251,7 +251,7 @@ class TestMain:
         ports = forwarding.candidate_ports("testhost")
         rules = tuple((port, "192.168.1.48", 443, "pyntara xray") for port in ports)
         router = _FakeRouter(rules=rules)
-        triggers: list[Config] = []
+        triggers: list[bool] = []
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0

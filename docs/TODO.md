@@ -1794,3 +1794,53 @@ machine in this turn, and the probe is named with the figure.
     Every gate passes: ruff check, mypy strict over 137 source files, mypy over
     the tests, 2120 unit tests and the four bash suites. The live production run
     waits for the end of stage F, on the user's decision 149.
+
+156. The system_metrics_setup section migrated on 2026-09-18 (branch
+    system-metrics-values), the seventh section of stage F and the last one of
+    the deployed readers. Its 66 values, the CollectorModule, Collector and
+    TelemetryPdf records and the READ_VALUE_NAMES list live in
+    src/pyntara/values/system_metrics_setup.py. Two simplifications went in with
+    it: the interpreter line of a deployed module is built by the new function
+    deployed_python_path() from VENV_DIR and VENV_PYTHON_RELATIVE_PATH instead of
+    being spelled in eleven commands, and the two module tables of the collector
+    are inlined in the COLLECTOR record so they have no second name.
+    DECISION, stated before the change: the system config copy and the
+    {config_path} argument STAY in this section. The deployed modules still read
+    sections that live in the document (local_vault_setup in the send loop,
+    vault_structure through the telemetry PDF), so pyntara.metrics and
+    pyntara.metrics_collect keep the path and only pyntara.metrics_ingest lost
+    it, because that module reads no config at all. The copy and the placeholder
+    leave in stage G, where the whole config layer goes; one change instead of
+    two.
+    Readers converted: metrics.py, metrics_send.py, metrics_ingest.py,
+    metrics_commit.py, metrics_collect.py, telemetry_pdf.py, the three metrics
+    tasks, the two forwarding tasks and the maintenance script
+    secrets/read_google_script_credentials.py. The absent-key branches
+    (SERVICE_CONFIG_KEYS, INGEST_CONFIG_KEYS, COLLECTOR_SECTION_KEYS,
+    COLLECTOR_TABLE_KEYS) and the tests of them are GONE: a declared value is
+    always there, so the deployed units can no longer refuse to run over a
+    missing config key. Parameters that only carried the section were deleted
+    rather than rewired: dispatch_entries, collect, collect_until_ready,
+    _commit_report, _queue_dirs, ingest_spool, trigger_collection, _ensure_venv,
+    the three unit renderers, _commit_runtime_vault, _latest_report and
+    _commit_telemetry_pdf_from_queue take no config any more.
+    Config side removed: config/system_metrics_setup.toml,
+    src/pyntara/config/system_metrics_setup.py, the 661-line block of
+    tests/config_checks.py, the fragment of tests/config_helpers.py, the
+    system_metrics_* parameters and the replace block of tests/support.py, the
+    coverage entries with their component key lists, the whole
+    tests/test_config_system_metrics.py, four tests that only checked the config
+    plumbing, and the eleven names of src/pyntara/config/__init__.py with the
+    loader field. Three test files that used the section as their example of a
+    document shape now use another section.
+    New guards in tests/test_values.py: five check_file_mode rules for
+    COMMAND_FILE_MODE, QUEUE_FILE_MODE, SPOOL_DIR_MODE, SYSTEM_METRICS_DIR_MODE
+    and VAULT_BACKUP_FILE_MODE.
+    Documentation followed: docs/spec/system-metrics.md (the names are upper
+    case and the file names the values module), docs/spec/i2pd-service.md,
+    docs/spec/config-content.md (the list of key names now names the two lists
+    that are left) and docs/guides/project-structure.md.
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 2012 unit tests and the four bash suites. The live production run
+    waits for the end of stage F, on the user's decision 149. What is left of
+    stage F: three_x_ui_xray_setup, the largest coupled section.

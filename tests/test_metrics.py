@@ -14,9 +14,10 @@ from support import make_config
 
 from pyntara.metrics import main
 from pyntara.utils import backoff_delay
+from pyntara.values import system_metrics_setup as values
 
 
-def test_main_journals_under_the_configured_service_identifier(
+def test_main_journals_under_the_declared_service_identifier(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The deployed service announces itself in the journal under the
@@ -35,7 +36,7 @@ def test_main_journals_under_the_configured_service_identifier(
     monkeypatch.setattr("pyntara.metrics.load_config", fake_load)
     monkeypatch.setattr("pyntara.metrics.configure_journal", configured.append)
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
-    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda cfg: None)
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda: None)
     monkeypatch.setattr(
         "pyntara.metrics_send.send_google_queue",
         lambda cfg, single_random=False: (0, 0),
@@ -43,8 +44,7 @@ def test_main_journals_under_the_configured_service_identifier(
     monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
-    service_identifier = config.system_metrics_setup.service_journal_identifier
-    assert configured[-1] == service_identifier
+    assert configured[-1] == values.SERVICE_JOURNAL_IDENTIFIER
 
 
 def test_main_loops_with_base_pause(
@@ -58,11 +58,10 @@ def test_main_loops_with_base_pause(
     # dispatches and sends once, then sleeps the backoff base; the loop is
     # interrupted after the first sleep, like a service stop.
     config_path = tmp_path / "config.toml"
-    config = make_config(
-        system_metrics_backoff_base_seconds=2,
-        system_metrics_backoff_multiplier=2,
-        system_metrics_backoff_max_seconds=14400,
-    )
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    config = make_config()
     seen_paths: list[Path] = []
     dispatched: list[object] = []
     sent: list[object] = []
@@ -76,8 +75,8 @@ def test_main_loops_with_base_pause(
         pauses.append(int(seconds))
         raise KeyboardInterrupt
 
-    def fake_dispatch(cfg: object) -> None:
-        dispatched.append(cfg)
+    def fake_dispatch() -> None:
+        dispatched.append(True)
 
     def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
         sent.append(cfg)
@@ -91,7 +90,7 @@ def test_main_loops_with_base_pause(
     with pytest.raises(KeyboardInterrupt):
         main()
     assert seen_paths == [config_path]
-    assert dispatched == [config]
+    assert dispatched == [True]
     assert sent == [config]
     assert pauses == [2]
 
@@ -115,11 +114,10 @@ def test_main_enters_retry_mode_and_grows_pauses(
     # Every cycle makes a send attempt and none succeeds: the loop enters
     # the retry mode after the first cycle and the pauses grow 2, 4, 8, 16.
     config_path = tmp_path / "config.toml"
-    config = make_config(
-        system_metrics_backoff_base_seconds=2,
-        system_metrics_backoff_multiplier=2,
-        system_metrics_backoff_max_seconds=14400,
-    )
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    config = make_config()
     modes: list[bool] = []
     pauses: list[int] = []
 
@@ -132,8 +130,8 @@ def test_main_enters_retry_mode_and_grows_pauses(
         if len(pauses) == 4:
             raise KeyboardInterrupt
 
-    def fake_dispatch(cfg: object) -> None:
-        del cfg
+    def fake_dispatch() -> None:
+        pass
 
     def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
         del cfg
@@ -158,11 +156,10 @@ def test_main_resets_retry_mode_after_success(
     # A successful cycle resets the counter: the pause returns to the
     # base, and the growth restarts from the base on the next failure.
     config_path = tmp_path / "config.toml"
-    config = make_config(
-        system_metrics_backoff_base_seconds=2,
-        system_metrics_backoff_multiplier=2,
-        system_metrics_backoff_max_seconds=14400,
-    )
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    config = make_config()
     results = [(1, 0), (1, 0), (1, 1), (1, 0)]
     pauses: list[int] = []
 
@@ -175,8 +172,8 @@ def test_main_resets_retry_mode_after_success(
         if len(pauses) == 4:
             raise KeyboardInterrupt
 
-    def fake_dispatch(cfg: object) -> None:
-        del cfg
+    def fake_dispatch() -> None:
+        pass
 
     def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
         del cfg
@@ -200,11 +197,10 @@ def test_main_cycle_without_attempts_stays_normal(
     # A cycle without send attempts (an empty queue) does not grow the
     # pause: the loop keeps the base.
     config_path = tmp_path / "config.toml"
-    config = make_config(
-        system_metrics_backoff_base_seconds=2,
-        system_metrics_backoff_multiplier=2,
-        system_metrics_backoff_max_seconds=14400,
-    )
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    config = make_config()
     results = [(0, 0), (1, 0)]
     pauses: list[int] = []
 
@@ -217,8 +213,8 @@ def test_main_cycle_without_attempts_stays_normal(
         if len(pauses) == 2:
             raise KeyboardInterrupt
 
-    def fake_dispatch(cfg: object) -> None:
-        del cfg
+    def fake_dispatch() -> None:
+        pass
 
     def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
         del cfg
@@ -240,11 +236,10 @@ def test_main_caps_pause_at_maximum(
     # The pause never exceeds backoff_max_seconds: with a ceiling of 16
     # the pauses grow 2, 4, 8, then stay at 16.
     config_path = tmp_path / "config.toml"
-    config = make_config(
-        system_metrics_backoff_base_seconds=2,
-        system_metrics_backoff_multiplier=2,
-        system_metrics_backoff_max_seconds=16,
-    )
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 16)
+    config = make_config()
     pauses: list[int] = []
 
     def fake_load_config(path: Path) -> object:
@@ -256,8 +251,8 @@ def test_main_caps_pause_at_maximum(
         if len(pauses) == 5:
             raise KeyboardInterrupt
 
-    def fake_dispatch(cfg: object) -> None:
-        del cfg
+    def fake_dispatch() -> None:
+        pass
 
     def fake_send(cfg: object, single_random: bool = False) -> tuple[int, int]:
         del cfg
@@ -273,26 +268,3 @@ def test_main_caps_pause_at_maximum(
     assert pauses == [2, 4, 8, 16, 16]
 
 
-def test_main_reports_a_config_without_the_retry_schedule(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # Without the retry schedule the loop has nothing to pace. The service
-    # names the keys the config does not hold and stops, so the loop is
-    # never entered and the journal carries no traceback.
-    config_path = tmp_path / "config.toml"
-    config_path.write_text('[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8")
-    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
-    main()
-    captured = capsys.readouterr()
-    assert captured.err == (
-        "error: the metrics service cannot run: [system_metrics_setup] has no "
-        "backoff_base_seconds, backoff_multiplier, backoff_max_seconds, "
-        "error_priority, system_metrics_dir, system_metrics_dir_mode, "
-        "main_outbox_dir, google_script_dir, main_sent_dir, send_order, "
-        "max_queue_file_size_bytes, queue_file_suffix_length, "
-        "google_script_key_entry_title, google_script_timeout_seconds, "
-        "google_script_answer_ok_prefix, google_script_answer_excerpt_chars\n"
-    )
-    assert "Traceback" not in captured.err

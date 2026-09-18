@@ -95,21 +95,6 @@ def test_load_config_entry_title_must_exist_in_vault_structure(tmp_path: Path) -
     )
 
 
-def test_load_config_google_script_entry_title_must_exist_in_vault_structure(
-    tmp_path: Path,
-) -> None:
-    # The Google script entry title must be part of the vault structure:
-    # a typo is caught at config load, not on the target machine.
-    assert_config_error(
-        tmp_path,
-        base_config().replace(
-            'google_script_key_entry_title = "google_script_key"',
-            'google_script_key_entry_title = "no_such_entry"',
-        ),
-        match="must name an entry",
-    )
-
-
 def test_load_config_vault_entry_reachable_in_loaded_config(tmp_path: Path) -> None:
     # The vault structure parses into typed entries; the base config has
     # nine entries including the cross-checked titles.

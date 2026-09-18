@@ -31,7 +31,6 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     assert isinstance(config.hostname.set_hostname_command, tuple)
     assert isinstance(config.vault_structure.entries, tuple)
     assert isinstance(config.vault_structure.entries[0].title, str)
-    assert isinstance(config.system_metrics_setup.collector.network_modules, tuple)
     assert isinstance(config.rustdesk_setup.options, tuple)
 
 

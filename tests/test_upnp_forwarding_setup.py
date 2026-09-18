@@ -19,6 +19,7 @@ from pyntara import __version__
 from pyntara.context import Context
 from pyntara.tasks import upnp_forwarding_setup
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as metrics_values
 from pyntara.values import upnp_forwarding_setup as values
 
 SERVICE_TEMPLATE = """\
@@ -68,10 +69,9 @@ def _install_fixtures(
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
-    config = make_config(
-        system_metrics_venv_dir=venv_dir,
-        system_metrics_system_config_path=system_config,
-    )
+    monkeypatch.setattr(metrics_values, "VENV_DIR", venv_dir)
+    monkeypatch.setattr(metrics_values, "SYSTEM_CONFIG_PATH", system_config)
+    config = make_config()
     ctx = make_context(
         task_data_root=tmp_path,
         config=config,
@@ -141,15 +141,14 @@ def _expected_timer_unit(version: str = __version__) -> str:
     )
 
 
-def _deploy_units(systemd_dir: Path, ctx: Context) -> None:
+def _deploy_units(systemd_dir: Path) -> None:
     """Write the units the task would write, as an earlier run did."""
 
-    metrics = ctx.config.system_metrics_setup
     systemd_dir.mkdir(parents=True, exist_ok=True)
     (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
         _expected_service_unit(
-            metrics.venv_dir / metrics.venv_python_relative_path,
-            metrics.system_config_path,
+            metrics_values.VENV_DIR / metrics_values.VENV_PYTHON_RELATIVE_PATH,
+            metrics_values.SYSTEM_CONFIG_PATH,
         ),
         encoding="utf-8",
     )
@@ -185,7 +184,7 @@ def test_skips_when_the_units_and_the_timer_are_in_place(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
-    _deploy_units(systemd_dir, ctx)
+    _deploy_units(systemd_dir)
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = upnp_forwarding_setup.task(ctx)
     assert result.success
@@ -262,7 +261,7 @@ def test_force_runs_the_service_again(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
-    _deploy_units(systemd_dir, ctx)
+    _deploy_units(systemd_dir)
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     ctx = make_context(
         task_data_root=tmp_path,

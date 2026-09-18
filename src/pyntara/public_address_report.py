@@ -37,6 +37,7 @@ from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 # The reason a family without an address carries into the report.
 NO_ANSWER_REASON = "no echo service reported an address of this family"
@@ -56,12 +57,12 @@ def address_records(
     keys = engine_values.REPORT_RECORD_KEYS
     words = engine_values.REPORT_FAMILY_WORDS
     records: list[dict[str, object]] = []
-    for name, values in (
+    for name, family_addresses in (
         ("ipv4", addresses.ipv4),
         ("ipv6", addresses.ipv6),
     ):
         family = words[name]
-        if not values:
+        if not family_addresses:
             records.append({keys["family"]: family, keys["reason"]: NO_ANSWER_REASON})
             continue
         records.extend(
@@ -70,7 +71,7 @@ def address_records(
                 keys["family"]: family,
                 keys["ssh"]: ssh_command(address, ssh_port),
             }
-            for address in values
+            for address in family_addresses
         )
     return records
 
@@ -111,7 +112,7 @@ def main(argv: list[str]) -> int:
     addresses = fetch_public_addresses(
         echo.server_ip_services,
         echo.server_ip_timeout_seconds,
-        cfg.system_metrics_setup.collector.command_timeout_seconds,
+        values.COLLECTOR.command_timeout_seconds,
     )
     if addresses.is_empty:
         print(

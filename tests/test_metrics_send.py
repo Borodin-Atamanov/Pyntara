@@ -12,7 +12,6 @@ from __future__ import annotations
 import base64
 import os
 import time
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +23,7 @@ from pyntara import metrics_send
 from pyntara.config import Config
 from pyntara.metrics_send import dispatch_entries, send_google_queue
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 SUFFIX_LENGTH = 12
 URL = "https://script.google.com/macros/s/abcdefghijklmnopqrstuvwxyz/exec"
@@ -31,14 +31,21 @@ AUTH_KEY = "shared-auth-key"
 VAULT_PASSWORD = "local-vault-password"
 
 
-def _send_config(tmp_path: Path, **kwargs: Any) -> Config:
-    """Config whose queue, vault and password file live in the temporary dir."""
+def _send_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any
+) -> Config:
+    """Config whose queue and vault live in the temporary directory.
 
+    The queue root is a declared value, so it is pointed at tmp_path; the
+    keyword arguments replace further declared values of the section.
+    """
+
+    monkeypatch.setattr(values, "SYSTEM_METRICS_DIR", tmp_path / "metrics")
+    for name, value in kwargs.items():
+        monkeypatch.setattr(values, name.upper(), value)
     return make_config(
-        system_metrics_dir=tmp_path / "metrics",
         local_vault_path=tmp_path / "secrets" / "pyntara.vault",
         local_vault_pass_file_path=tmp_path / "etc" / "pass",
-        **kwargs,
     )
 
 
@@ -108,17 +115,17 @@ def _input(call: tuple[list[str], dict[str, object]]) -> str:
 
 
 def test_dispatch_links_entry_into_channel_and_removes_from_outbox(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # One outbox entry appears in the channel as a hard link with the same
     # name and inode, and the name is removed from main_outbox.
-    cfg = _send_config(tmp_path)
+    _send_config(monkeypatch, tmp_path)
     outbox = tmp_path / "metrics" / "main_outbox"
     outbox.mkdir(parents=True)
     entry = outbox / "report.txt.abc123def456"
     entry.write_text("hello", encoding="utf-8")
     inode = entry.stat().st_ino
-    dispatch_entries(cfg)
+    dispatch_entries()
     channel = tmp_path / "metrics" / "google_script"
     names = list(channel.iterdir())
     assert len(names) == 1
@@ -129,21 +136,25 @@ def test_dispatch_links_entry_into_channel_and_removes_from_outbox(
     assert not entry.exists()
 
 
-def test_dispatch_creates_channel_and_sent_dirs_with_mode(tmp_path: Path) -> None:
+def test_dispatch_creates_channel_and_sent_dirs_with_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The channel queue and the sent archive appear with the strict queue
     # directory mode even when nothing is committed yet.
-    cfg = _send_config(tmp_path)
-    dispatch_entries(cfg)
+    _send_config(monkeypatch, tmp_path)
+    dispatch_entries()
     for directory in ("google_script", "main_sent"):
         path = tmp_path / "metrics" / directory
         assert path.is_dir()
         assert os.stat(path).st_mode & 0o777 == 0o700
 
 
-def test_dispatch_failed_link_keeps_entry_in_outbox(tmp_path: Path) -> None:
+def test_dispatch_failed_link_keeps_entry_in_outbox(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # A channel that cannot accept the link (a directory at the target
     # name) keeps the entry in main_outbox for the next cycle.
-    cfg = _send_config(tmp_path)
+    _send_config(monkeypatch, tmp_path)
     outbox = tmp_path / "metrics" / "main_outbox"
     outbox.mkdir(parents=True)
     entry = outbox / "report.txt.abc123def456"
@@ -151,21 +162,23 @@ def test_dispatch_failed_link_keeps_entry_in_outbox(tmp_path: Path) -> None:
     channel = tmp_path / "metrics" / "google_script"
     channel.mkdir(parents=True)
     (channel / entry.name).mkdir()
-    dispatch_entries(cfg)
+    dispatch_entries()
     assert entry.exists()
     assert len(list(channel.iterdir())) == 1
 
 
-def test_dispatch_second_run_does_not_duplicate(tmp_path: Path) -> None:
+def test_dispatch_second_run_does_not_duplicate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # A second dispatch pass finds an empty main_outbox and leaves the
     # channel queue untouched.
-    cfg = _send_config(tmp_path)
+    _send_config(monkeypatch, tmp_path)
     outbox = tmp_path / "metrics" / "main_outbox"
     outbox.mkdir(parents=True)
     entry = outbox / "a.txt.abc123def456"
     entry.write_text("x", encoding="utf-8")
-    dispatch_entries(cfg)
-    dispatch_entries(cfg)
+    dispatch_entries()
+    dispatch_entries()
     channel = tmp_path / "metrics" / "google_script"
     assert len(list(channel.iterdir())) == 1
 
@@ -181,7 +194,7 @@ def test_send_uploads_original_name_key_and_base64_and_moves_to_sent(
     # method is not forced: the data arguments make the first request a
     # POST and --location lets curl switch to GET on the 302 redirect,
     # the only method the final Apps Script endpoint accepts.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -208,7 +221,7 @@ def test_send_error_response_keeps_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The web app rejects the upload: the entry stays for the next retry.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch, stdout="ERROR: Unauthorized")
     channel = tmp_path / "metrics" / "google_script"
@@ -223,7 +236,7 @@ def test_send_curl_failure_keeps_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # curl fails (network error): the entry stays for the next retry.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch, returncode=7)
     channel = tmp_path / "metrics" / "google_script"
@@ -233,23 +246,23 @@ def test_send_curl_failure_keeps_entry(
     assert entry.exists()
 
 
-def test_the_answer_prefix_comes_from_the_config(
+def test_the_answer_prefix_comes_from_the_declared_value(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The answer prefix that means the file was stored belongs to the
     # deployed web app, so another prefix in the table makes another
     # answer a success while the shipped one refuses it.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
-    metrics = replace(cfg.system_metrics_setup, google_script_answer_ok_prefix="DONE")
-    renamed = replace(cfg, system_metrics_setup=metrics)
+    monkeypatch.setattr(values, "GOOGLE_SCRIPT_ANSWER_OK_PREFIX", "DONE")
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "report.txt", "x", time.time())
     _fake_curl(monkeypatch, stdout="DONE 42")
-    send_google_queue(renamed)
+    send_google_queue(cfg)
     assert not entry.exists()
     assert len(list((tmp_path / "metrics" / "main_sent").iterdir())) == 1
 
+    monkeypatch.setattr(values, "GOOGLE_SCRIPT_ANSWER_OK_PREFIX", "OK ")
     other = _make_entry(channel, "other.txt", "y", time.time())
     _fake_curl(monkeypatch, stdout="DONE 42")
     send_google_queue(cfg)
@@ -265,15 +278,14 @@ def test_a_refusing_answer_is_printed_as_one_bounded_line(
     # The journal of the target machine carries the length of the answer
     # and its first non-empty line cut to the configured length, never the
     # page itself, so the line stays readable and names what answered.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
-    metrics = replace(cfg.system_metrics_setup, google_script_answer_excerpt_chars=40)
-    renamed = replace(cfg, system_metrics_setup=metrics)
+    monkeypatch.setattr(values, "GOOGLE_SCRIPT_ANSWER_EXCERPT_CHARS", 40)
     page = "<html>" + "x" * 400 + "</html>"
     _fake_curl(monkeypatch, stdout=page)
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "report.txt", "x", time.time())
-    send_google_queue(renamed)
+    send_google_queue(cfg)
     captured = capsys.readouterr()
     assert entry.exists()
     assert f"answered {len(page)} characters" in captured.out
@@ -287,7 +299,7 @@ def test_send_without_vault_skips_without_upload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # No runtime vault: the drain is skipped and no upload is attempted.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "report.txt", "x", time.time())
@@ -301,7 +313,7 @@ def test_send_skips_empty_and_oversized_entries(
 ) -> None:
     # Empty and oversized entries are journaled and skipped; the entry
     # within the limit is uploaded and archived.
-    cfg = _send_config(tmp_path, system_metrics_max_queue_file_size_bytes=10)
+    cfg = _send_config(monkeypatch, tmp_path, max_queue_file_size_bytes=10)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -328,7 +340,7 @@ def test_skipped_entry_is_journaled_at_the_configured_level(
         lambda message, **kwargs: levels.append(kwargs.get("priority")),
     )
     monkeypatch.setattr(engine_values, "ERROR_PRIORITY", 5)
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "empty.txt", "", time.time())
     send_google_queue(cfg)
@@ -340,7 +352,7 @@ def test_send_oldest_first_uploads_in_commit_order(
 ) -> None:
     # With the default order the earliest committed entry is uploaded
     # first, so the drain follows the commit order.
-    cfg = _send_config(tmp_path, system_metrics_send_order="oldest_first")
+    cfg = _send_config(monkeypatch, tmp_path, send_order="oldest_first")
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -359,7 +371,7 @@ def test_send_large_entry_through_stdin(
     # A payload whose Base64 form would exceed the kernel argv limit
     # (128 KiB per argument, reached at about 96 KiB of source) is fed
     # through stdin; the upload succeeds and the entry moves to sent.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -380,7 +392,7 @@ def test_send_newest_first_uploads_newest_first(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # With newest_first the latest committed entry is uploaded first.
-    cfg = _send_config(tmp_path, system_metrics_send_order="newest_first")
+    cfg = _send_config(monkeypatch, tmp_path, send_order="newest_first")
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -398,7 +410,7 @@ def test_send_returns_attempts_and_sent_counts(
 ) -> None:
     # Two uploadable entries both succeed: the drain reports two attempts
     # and two sent entries.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
@@ -415,7 +427,7 @@ def test_send_counts_partial_failure(
 ) -> None:
     # One entry is accepted, the next is rejected: the drain reports two
     # attempts and one sent entry, and the rejected entry stays queued.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     responses = iter(["OK a", "ERROR: bad"])
 
@@ -438,7 +450,7 @@ def test_send_retry_mode_attempts_one_random_entry(
 ) -> None:
     # In the retry mode exactly one randomly chosen uploadable entry is
     # attempted; the others stay queued for later retries.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     monkeypatch.setattr("pyntara.metrics_send.random.choice", lambda seq: seq[1])
@@ -461,7 +473,7 @@ def test_send_retry_mode_failure_counts_one_attempt(
 ) -> None:
     # The web app rejects the chosen entry: the retry mode reports one
     # attempt, no sent entry, and the entry stays queued.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch, stdout="ERROR: Unauthorized")
     channel = tmp_path / "metrics" / "google_script"
@@ -478,7 +490,7 @@ def test_send_retry_mode_without_vault_returns_zero_attempts(
 ) -> None:
     # No runtime vault: the retry mode reports no attempts and no sent
     # entries, so the loop stays in the normal mode.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "a.txt", "1", time.time())
@@ -493,7 +505,7 @@ def test_send_retry_mode_without_uploadable_returns_zero_attempts(
 ) -> None:
     # Only a non-uploadable entry is queued: the retry mode reports no
     # attempts, so the loop stays in the normal mode.
-    cfg = _send_config(tmp_path)
+    cfg = _send_config(monkeypatch, tmp_path)
     _install_vault(tmp_path)
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"

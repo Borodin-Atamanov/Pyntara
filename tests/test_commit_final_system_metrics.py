@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import socket
 import subprocess
-from dataclasses import replace
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -22,6 +22,7 @@ from support import make_config, make_context
 from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import commit_final_system_metrics
+from pyntara.values import system_metrics_setup as values
 from pyntara.values import tasks as tasks_values
 
 REAL_TASKS = tasks_values.CATALOG
@@ -29,19 +30,23 @@ ALL_MODES = ("minimal", "server", "desktop")
 
 
 def _ctx(tmp_path: Path) -> Context:
-    """Context with the runtime vault and the queue rooted in tmp_path."""
+    """Context with the runtime vault in tmp_path."""
 
     vault = tmp_path / "var" / "lib" / "pyntara" / "secrets" / "pyntara.vault"
-    metrics_dir = tmp_path / "var" / "lib" / "pyntara" / "metrics"
     return make_context(
         install_mode="server",
         force_tasks=frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(
-            local_vault_path=vault,
-            system_metrics_dir=metrics_dir,
-        ),
+        config=make_config(local_vault_path=vault),
+    )
+
+
+def _use_queue_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point the declared queue root at the temporary directory."""
+
+    monkeypatch.setattr(
+        values, "SYSTEM_METRICS_DIR", tmp_path / "var" / "lib" / "pyntara" / "metrics"
     )
 
 
@@ -149,17 +154,11 @@ def test_commit_command_comes_from_the_config(
     # the collector service runs the same configured command.
     _write_vault(tmp_path)
     calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            system_metrics_setup=replace(
-                ctx.config.system_metrics_setup,
-                command_path=Path("/opt/pyntara/hand-over"),
-                commit_command=("/bin/sh", "-c", "{command_path} {file}"),
-            ),
-        ),
+    monkeypatch.setattr(values, "COMMAND_PATH", Path("/opt/pyntara/hand-over"))
+    monkeypatch.setattr(
+        values, "COMMIT_COMMAND", ("/bin/sh", "-c", "{command_path} {file}")
     )
     result = commit_final_system_metrics.task(ctx)
     assert result.success is True
@@ -174,16 +173,9 @@ def test_empty_commit_command_reports_error(
     # left behind.
     vault = _write_vault(tmp_path)
     calls, temp_path, _captured = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            system_metrics_setup=replace(
-                ctx.config.system_metrics_setup, commit_command=()
-            ),
-        ),
-    )
+    monkeypatch.setattr(values, "COMMIT_COMMAND", ())
     result = commit_final_system_metrics.task(ctx)
     assert result.success is True
     assert any("commit_command" in warning for warning in result.warnings)
@@ -260,13 +252,18 @@ def test_commits_pdf_from_queue_report(
         lambda cfg, report, hostname: pdf_bytes,
     )
     calls, vault_temp, _captured = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert result.message is not None
     assert "lusab-babad.kdbx" in result.message
-    assert "network-lusab-babad.pdf" in result.message
-    pdf_temp = tmp_path / "network-lusab-babad.pdf"
+    assert values.TELEMETRY_PDF_REPORT_FILE_NAME.format(
+        hostname="lusab-babad"
+    ) in result.message
+    pdf_temp = Path(tempfile.gettempdir()) / values.TELEMETRY_PDF_REPORT_FILE_NAME.format(
+        hostname="lusab-babad"
+    )
     assert calls == [
         ["/usr/local/bin/commit_system_metrics", str(vault_temp)],
         ["/usr/local/bin/commit_system_metrics", str(pdf_temp)],
@@ -302,6 +299,7 @@ def test_pdf_build_failure_is_a_warning(
         lambda cfg, report, hostname: None,
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -322,6 +320,7 @@ def test_pdf_build_exception_is_a_warning(
         lambda cfg, report, hostname: (_ for _ in ()).throw(RuntimeError("boom")),
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -361,6 +360,7 @@ def test_pdf_commit_failure_is_a_warning(
         "gettempdir",
         lambda: str(tmp_path),
     )
+    _use_queue_root(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -382,11 +382,14 @@ def test_vault_missing_pdf_still_committed(
         lambda cfg, report, hostname: pdf_bytes,
     )
     calls, _, _ = _install_fakes(monkeypatch, tmp_path)
+    _use_queue_root(monkeypatch, tmp_path)
     result = commit_final_system_metrics.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
     assert result.message is not None
-    assert "network-lusab-babad.pdf" in result.message
+    assert values.TELEMETRY_PDF_REPORT_FILE_NAME.format(
+        hostname="lusab-babad"
+    ) in result.message
     assert any("missing" in warning for warning in result.warnings)
     assert len(calls) == 1
 

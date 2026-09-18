@@ -20,8 +20,17 @@ import pytest
 from support import make_config
 
 from pyntara import metrics_collect, telemetry_pdf
+from pyntara.values import system_metrics_setup as values
 
-REPORT_KEYS = make_config().system_metrics_setup.collector.report_keys
+REPORT_KEYS = values.COLLECTOR.report_keys
+
+
+def _use_temporary_commit_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Point the declared commit command at a temporary program path."""
+
+    monkeypatch.setattr(values, "COMMAND_PATH", tmp_path / "commit")
 
 
 def _report(**modules: object) -> dict[str, object]:
@@ -54,7 +63,7 @@ def test_encrypt_opens_with_password_and_rejects_wrong() -> None:
     """The PDF is AES-256 and opens only with the right password."""
 
     raw = telemetry_pdf.render(
-        "hello", make_config().system_metrics_setup.telemetry_pdf, "title"
+        "hello", values.TELEMETRY_PDF, "title"
     )
     encrypted = telemetry_pdf.encrypt(raw, "secretpw")
     opened = pikepdf.open(io.BytesIO(encrypted), password="secretpw")
@@ -67,7 +76,7 @@ def test_render_sets_the_document_title() -> None:
     """The document title names the machine, not untitled."""
 
     raw = telemetry_pdf.render(
-        "hello", make_config().system_metrics_setup.telemetry_pdf, "host 2026-09-14"
+        "hello", values.TELEMETRY_PDF, "host 2026-09-14"
     )
     pdf = pikepdf.open(io.BytesIO(raw))
     assert str(pdf.docinfo["/Title"]) == "host 2026-09-14"
@@ -76,7 +85,6 @@ def test_render_sets_the_document_title() -> None:
 def test_ssh_commands_keep_working_addresses_and_drop_host_and_link() -> None:
     """Working commands are kept; loopback, link and single objects behave."""
 
-    cfg = make_config()
     keys = REPORT_KEYS
     report = {
         keys["generated_at"]: "2026-09-14-12-00-00",
@@ -120,8 +128,8 @@ def test_ssh_commands_keep_working_addresses_and_drop_host_and_link() -> None:
         ],
         keys["system"]: [],
     }
-    text = telemetry_pdf.build_text(cfg, report, [], "testhost")
-    card = text.split(cfg.system_metrics_setup.telemetry_pdf.section_json)[0]
+    text = telemetry_pdf.build_text(report, [], "testhost")
+    card = text.split(values.TELEMETRY_PDF.section_json)[0]
     assert "ssh -v -p 30222 192.168.1.5" in card
     assert "hgo5.b32.i2p" in card
     assert "ssh -v -p 30222 127.0.0.1" not in card
@@ -146,9 +154,7 @@ def test_commit_telemetry_pdf_never_raises_when_build_fails(
 ) -> None:
     """A broken PDF build drops only the PDF, never the report."""
 
-    cfg = make_config(
-        system_metrics_command_path=tmp_path / "commit",
-    )
+    _use_temporary_commit_path(monkeypatch, tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(
@@ -168,7 +174,7 @@ def test_commit_telemetry_pdf_never_raises_when_build_fails(
     monkeypatch.setattr(
         "pyntara.metrics_collect.socket.gethostname", lambda: "testhost"
     )
-    metrics_collect._commit_telemetry_pdf(cfg, _report())
+    metrics_collect._commit_telemetry_pdf(make_config(), _report())
     assert calls == []
 
 
@@ -178,9 +184,7 @@ def test_commit_telemetry_pdf_commits_the_pdf_bytes(
     """The built PDF bytes are committed under the pdf file name."""
 
     commit_path = tmp_path / "commit"
-    cfg = make_config(
-        system_metrics_command_path=commit_path,
-    )
+    _use_temporary_commit_path(monkeypatch, tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(
@@ -197,9 +201,11 @@ def test_commit_telemetry_pdf_commits_the_pdf_bytes(
     monkeypatch.setattr(
         "pyntara.metrics_collect.socket.gethostname", lambda: "testhost"
     )
-    metrics_collect._commit_telemetry_pdf(cfg, _report())
+    metrics_collect._commit_telemetry_pdf(make_config(), _report())
     assert len(calls) == 1
     argv = calls[0]
     assert argv[0] == str(commit_path)
-    assert argv[1].endswith("network-testhost.pdf")
+    assert argv[1].endswith(
+        values.TELEMETRY_PDF_REPORT_FILE_NAME.format(hostname="testhost")
+    )
     assert not Path(argv[1]).exists()

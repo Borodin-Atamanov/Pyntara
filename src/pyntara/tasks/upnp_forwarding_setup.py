@@ -36,6 +36,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as metrics_values
 from pyntara.values import upnp_forwarding_setup as values
 
 # Module-level paths and helpers are monkeypatched by the tests, which run
@@ -144,13 +145,12 @@ def task(ctx: Context) -> TaskResult:
 
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    metrics = ctx.config.system_metrics_setup
-    venv_python = metrics.venv_dir / metrics.venv_python_relative_path
+    venv_python = metrics_values.VENV_DIR / metrics_values.VENV_PYTHON_RELATIVE_PATH
     unit_dir = engine_values.SYSTEMD_UNIT_DIR
     data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
     version, version_warning = deployment.deployed_version(
-        metrics.venv_version_command, venv_python, timeout, __version__
+        metrics_values.VENV_VERSION_COMMAND, venv_python, timeout, __version__
     )
     if version_warning is not None:
         warnings.append(version_warning)
@@ -160,7 +160,7 @@ def task(ctx: Context) -> TaskResult:
         rendered[values.SERVICE_UNIT_NAME] = _render_service_unit(
             data_dir / values.SERVICE_TEMPLATE_FILE_NAME,
             venv_python,
-            metrics.system_config_path,
+            metrics_values.SYSTEM_CONFIG_PATH,
             version,
         )
     except OSError as exc:

@@ -204,7 +204,7 @@ def main(argv: list[str]) -> int:
         return 0
     forwarding = ensure_forwarding(cfg, socket.gethostname())
     if forwarding is not None and forwarding.changed:
-        trigger_collection(cfg)
+        trigger_collection()
     return 0
 
 

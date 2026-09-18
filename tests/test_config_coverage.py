@@ -26,8 +26,6 @@ from support import make_config
 
 from pyntara.config import (
     Config,
-    SystemMetricsCollectorConfig,
-    SystemMetricsSetupConfig,
     ThreeXuiXraySetupConfig,
 )
 from pyntara.config.loader import render_config_source
@@ -58,40 +56,18 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
     ),
 }
 
-# The config keys each deployed metrics component reads, with the table they
-# belong to: the list lives in the config layer, next to the fields it names,
-# and the component reads it from there, so the component names the keys it
-# cannot find instead of showing a Python error.
+# The config keys each deployed component reads from the config document,
+# with the table they belong to: the list lives in the config layer, next to
+# the fields it names, and the component reads it from there, so the component
+# names the keys it cannot find instead of showing a Python error. The metrics
+# family and the two address commands of the yggdrasil, i2pd and tor sections
+# read declared values now and keep no such list.
 COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
     (
         "pyntara.country_report",
         "pyntara.config.three_x_ui_xray_setup",
         "COUNTRY_REPORT_CONFIG_KEYS",
         ThreeXuiXraySetupConfig,
-    ),
-    (
-        "pyntara.metrics_collect",
-        "pyntara.config.system_metrics_setup",
-        "COLLECTOR_SECTION_KEYS",
-        SystemMetricsSetupConfig,
-    ),
-    (
-        "pyntara.metrics_collect",
-        "pyntara.config.system_metrics_setup",
-        "COLLECTOR_TABLE_KEYS",
-        SystemMetricsCollectorConfig,
-    ),
-    (
-        "pyntara.metrics_ingest",
-        "pyntara.config.system_metrics_setup",
-        "INGEST_CONFIG_KEYS",
-        SystemMetricsSetupConfig,
-    ),
-    (
-        "pyntara.metrics",
-        "pyntara.config.system_metrics_setup",
-        "SERVICE_CONFIG_KEYS",
-        SystemMetricsSetupConfig,
     ),
     (
         "pyntara.public_address_report",
@@ -257,9 +233,6 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
     referenced = {
         "local_vault_setup.vault_password_entry_title": (
             factory.local_vault_setup.vault_password_entry_title
-        ),
-        "system_metrics_setup.google_script_key_entry_title": (
-            factory.system_metrics_setup.google_script_key_entry_title
         ),
         "rustdesk_setup.vault_entry_title": (factory.rustdesk_setup.vault_entry_title),
         "three_x_ui_xray_setup.vault_entry_title": (

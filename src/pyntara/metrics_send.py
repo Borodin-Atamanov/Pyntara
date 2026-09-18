@@ -29,14 +29,15 @@ import subprocess
 from pathlib import Path
 
 import pyntara.metrics
-from pyntara.config import SEND_ORDER_NEWEST_FIRST, Config
+from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.utils import run_command, substituted_command
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
-def dispatch_entries(cfg: Config) -> None:
+def dispatch_entries() -> None:
     """Link every main_outbox entry into every channel queue.
 
     The channel queues and the sent archive are ensured with the
@@ -49,14 +50,13 @@ def dispatch_entries(cfg: Config) -> None:
     for the next cycle.
     """
 
-    metrics = cfg.system_metrics_setup
-    root = metrics.system_metrics_dir
-    outbox = root / metrics.main_outbox_dir
-    channels = [root / metrics.google_script_dir]
-    sent = root / metrics.main_sent_dir
+    root = values.SYSTEM_METRICS_DIR
+    outbox = root / values.MAIN_OUTBOX_DIR
+    channels = [root / values.GOOGLE_SCRIPT_DIR]
+    sent = root / values.MAIN_SENT_DIR
     for directory in (outbox, sent, *channels):
         directory.mkdir(
-            mode=metrics.system_metrics_dir_mode, parents=True, exist_ok=True
+            mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True
         )
     for entry in sorted(outbox.iterdir()):
         linked: list[Path] = []
@@ -98,19 +98,18 @@ def send_google_queue(cfg: Config, single_random: bool = False) -> tuple[int, in
     uploadable entry, so an idle queue never pays the vault open cost.
     """
 
-    metrics = cfg.system_metrics_setup
-    channel = metrics.system_metrics_dir / metrics.google_script_dir
-    sent = metrics.system_metrics_dir / metrics.main_sent_dir
-    sent.mkdir(mode=metrics.system_metrics_dir_mode, parents=True, exist_ok=True)
+    channel = values.SYSTEM_METRICS_DIR / values.GOOGLE_SCRIPT_DIR
+    sent = values.SYSTEM_METRICS_DIR / values.MAIN_SENT_DIR
+    sent.mkdir(mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True)
     if not channel.is_dir():
         _log(f"google script channel: queue {channel} missing, skipping")
         return 0, 0
     entries = [
         entry
-        for entry in _ordered_entries(channel, metrics.send_order)
+        for entry in _ordered_entries(channel, values.SEND_ORDER)
         if _entry_uploadable(
             entry,
-            metrics.max_queue_file_size_bytes,
+            values.MAX_QUEUE_FILE_SIZE_BYTES,
             engine_values.ERROR_PRIORITY,
         )
     ]
@@ -148,7 +147,7 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
     kp = pyntara.metrics.open_runtime_vault(cfg)
     if kp is None:
         return None
-    title = cfg.system_metrics_setup.google_script_key_entry_title
+    title = values.GOOGLE_SCRIPT_KEY_ENTRY_TITLE
     entry = kp.find_entries(
         title=title, group=kp.root_group, recursive=False, first=True
     )
@@ -181,7 +180,7 @@ def _ordered_entries(channel: Path, send_order: str) -> list[Path]:
         (path for path in channel.iterdir() if path.is_file()),
         key=lambda path: (path.stat().st_mtime, path.name),
     )
-    if send_order == SEND_ORDER_NEWEST_FIRST:
+    if send_order == values.SEND_ORDER_NEWEST_FIRST:
         entries.reverse()
     return entries
 
@@ -269,7 +268,6 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     call as one send attempt regardless of the outcome.
     """
 
-    metrics = cfg.system_metrics_setup
     error_priority = engine_values.ERROR_PRIORITY
     try:
         content = entry.read_bytes()
@@ -280,10 +278,10 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         )
         return False
     data = base64.b64encode(content).decode("ascii")
-    name = restore_original_name(entry.name, metrics.queue_file_suffix_length)
-    timeout = metrics.google_script_timeout_seconds
+    name = restore_original_name(entry.name, values.QUEUE_FILE_SUFFIX_LENGTH)
+    timeout = values.GOOGLE_SCRIPT_TIMEOUT_SECONDS
     command = substituted_command(
-        metrics.google_script_upload_command,
+        values.GOOGLE_SCRIPT_UPLOAD_COMMAND,
         {
             "timeout_seconds": str(timeout),
             "file_name": name,
@@ -313,12 +311,14 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         )
         return False
     output = (result.stdout or "").strip()
-    if not output.startswith(metrics.google_script_answer_ok_prefix):
-        excerpt = _answer_excerpt(output, metrics.google_script_answer_excerpt_chars)
+    if not output.startswith(values.GOOGLE_SCRIPT_ANSWER_OK_PREFIX):
+        excerpt = _answer_excerpt(
+            output, values.GOOGLE_SCRIPT_ANSWER_EXCERPT_CHARS
+        )
         _log(
             f"google script channel: sending {entry.name} failed: the web app "
             f"answered {len(output)} characters without the "
-            f"{metrics.google_script_answer_ok_prefix!r} prefix: {excerpt}",
+            f"{values.GOOGLE_SCRIPT_ANSWER_OK_PREFIX!r} prefix: {excerpt}",
             priority=error_priority,
         )
         return False

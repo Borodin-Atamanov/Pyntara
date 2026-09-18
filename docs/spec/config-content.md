@@ -208,12 +208,14 @@ tests/test_config_coverage.py.
 
 A list of the key names a deployed component reads is not a value: it belongs to
 the table it describes, so it lives in the config layer next to the fields it
-names and the component imports it (SERVICE_CONFIG_KEYS, INGEST_CONFIG_KEYS,
-COLLECTOR_SECTION_KEYS and COLLECTOR_TABLE_KEYS of
-src/pyntara/config/system_metrics_setup.py). The list is what lets a deployed
-service name an incomplete config instead of failing on a missing attribute, and
-tests/test_config_coverage.py demands that each component read the list of the
-config layer rather than a copy.
+names and the component imports it (COUNTRY_REPORT_CONFIG_KEYS and
+PUBLIC_ADDRESS_CONFIG_KEYS of src/pyntara/config/three_x_ui_xray_setup.py). The
+list is what lets a deployed component name an incomplete config instead of
+failing on a missing attribute, and tests/test_config_coverage.py demands that
+each component read the list of the config layer rather than a copy. The metrics
+family keeps no such list any more: its values are declared in
+src/pyntara/values/system_metrics_setup.py, so there is no document to be
+incomplete.
 
 ## The audit is closed
 

@@ -562,7 +562,7 @@ def run_forward_loop(
                     save_state(state)
                     changed_port = True
             if changed_port:
-                trigger_collection(cfg)
+                trigger_collection()
             _log(f"{server}: forwarding local port {local_port} to remote port {port}")
             connected_at = time.monotonic()
             proc.wait()

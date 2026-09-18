@@ -45,7 +45,6 @@ import json
 import os
 import re
 import sys
-import tomllib
 from collections.abc import Mapping
 from pathlib import Path
 from typing import NamedTuple
@@ -92,9 +91,10 @@ except ModuleNotFoundError:
         sys.exit(1)
     raise
 
-# The joined config text comes from the shared loader, the same single source
-# the engine uses; the script never re-implements the config reading.
-from pyntara.config.loader import render_config_source  # noqa: E402
+# The declared values of the metrics section live in the package, the same
+# source the deployed service reads; the script never re-implements the
+# config reading.
+from pyntara.values import system_metrics_setup as values
 
 
 class ScriptError(RuntimeError):
@@ -102,60 +102,30 @@ class ScriptError(RuntimeError):
 
 
 def _google_script_config() -> tuple[str, re.Pattern[str]]:
-    """The entry title and the compiled deployment URL pattern from config.
+    """The entry title and the compiled deployment URL pattern.
 
-    system_metrics_setup.google_script_key_entry_title names the vault
-    entry that carries the Google script credentials, and
-    system_metrics_setup.google_script_deployment_url_regex is the
-    regular expression whose single capture group yields the deployment
-    ID; the deployed service reads the same keys from the system config.
-    A missing config, a missing or non-string key, a regex that does not
-    compile or one without exactly one capture group is a loud error,
-    never a silent hardcoded fallback.
+    GOOGLE_SCRIPT_KEY_ENTRY_TITLE names the vault entry that carries the
+    Google script credentials, and GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX is
+    the regular expression whose single capture group yields the
+    deployment ID; both are declared values of
+    pyntara.values.system_metrics_setup, the same source the deployed
+    service reads, so this tool and the service can never disagree. A
+    regex that does not compile or one without exactly one capture group
+    is a loud error, never a silent hardcoded fallback.
     """
 
-    config_path = REPO_ROOT / "config"
-    try:
-        data = tomllib.loads(render_config_source(config_path))
-    except (OSError, tomllib.TOMLDecodeError) as exc:
-        raise ScriptError(
-            f"cannot read config file {config_path}: {exc}"
-        ) from exc
-    if not data:
-        # The reader never fails, so an unreadable or absent config arrives
-        # here as a document without values: the tool names it instead of
-        # reporting a missing key of a file it never read.
-        raise ScriptError(f"config file not found or empty: {config_path}")
-    try:
-        section = data["system_metrics_setup"]
-        title = section["google_script_key_entry_title"]
-        pattern = section["google_script_deployment_url_regex"]
-    except KeyError:
-        raise ScriptError(
-            "system_metrics_setup.google_script_key_entry_title and "
-            "google_script_deployment_url_regex must be present in "
-            f"{config_path}"
-        ) from None
-    if not isinstance(title, str) or not title:
-        raise ScriptError(
-            "system_metrics_setup.google_script_key_entry_title must be a "
-            "non-empty string"
-        )
-    if not isinstance(pattern, str) or not pattern:
-        raise ScriptError(
-            "system_metrics_setup.google_script_deployment_url_regex must "
-            "be a non-empty string"
-        )
+    title = values.GOOGLE_SCRIPT_KEY_ENTRY_TITLE
+    pattern = values.GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX
     try:
         compiled = re.compile(pattern)
     except re.error as exc:
         raise ScriptError(
-            "system_metrics_setup.google_script_deployment_url_regex is not "
+            "GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX is not "
             f"a valid regular expression: {exc}"
         ) from None
     if compiled.groups != 1:
         raise ScriptError(
-            "system_metrics_setup.google_script_deployment_url_regex must "
+            "GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX must "
             "contain exactly one capture group"
         )
     return title, compiled
@@ -218,7 +188,7 @@ def open_vault(
             return PyKeePass(str(vault_path), password=password)
         except CredentialsError:
             continue
-        except Exception as exc:  # noqa: BLE001 - any open failure is fatal
+        except Exception as exc:
             raise ScriptError(
                 f"cannot open the {name} vault {vault_path}: {exc}"
             ) from exc

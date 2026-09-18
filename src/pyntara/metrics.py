@@ -25,16 +25,11 @@ from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
 import pyntara.metrics_send
-from pyntara.config import (
-    SERVICE_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    describe_absent_config_keys,
-    load_config,
-)
+from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.utils import backoff_delay
+from pyntara.values import system_metrics_setup as values
 
 
 def _read_password(path: Path) -> str | None:
@@ -64,7 +59,7 @@ def open_runtime_vault(cfg: Config) -> PyKeePass | None:
     """
 
     vault = cfg.local_vault_setup.local_vault_path
-    error_priority = cfg.system_metrics_setup.error_priority
+    error_priority = values.ERROR_PRIORITY
     if not vault.is_file():
         _log(f"opening runtime vault {vault}: absent", priority=error_priority)
         return None
@@ -119,18 +114,11 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    metrics = cfg.system_metrics_setup
-    configure_journal(metrics.service_journal_identifier)
-    absent = describe_absent_config_keys(
-        (("system_metrics_setup", absent_config_keys(metrics, SERVICE_CONFIG_KEYS)),)
-    )
-    if absent:
-        print(f"error: the metrics service cannot run: {absent}", file=sys.stderr)
-        return
+    configure_journal(values.SERVICE_JOURNAL_IDENTIFIER)
     failed_cycles = 0
     while True:
         try:
-            pyntara.metrics_send.dispatch_entries(cfg)
+            pyntara.metrics_send.dispatch_entries()
             attempts, sent = pyntara.metrics_send.send_google_queue(
                 cfg, single_random=failed_cycles > 0
             )
@@ -143,9 +131,9 @@ def main() -> None:
             failed_cycles += 1
         pause = backoff_delay(
             failed_cycles,
-            metrics.backoff_base_seconds,
-            metrics.backoff_multiplier,
-            metrics.backoff_max_seconds,
+            values.BACKOFF_BASE_SECONDS,
+            values.BACKOFF_MULTIPLIER,
+            values.BACKOFF_MAX_SECONDS,
         )
         time.sleep(pause)
 

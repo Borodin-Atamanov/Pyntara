@@ -586,9 +586,9 @@ class TestRunForwardLoop:
 
         # A port change triggers the metrics collector instead of sending
         # a separate report; the trigger is recorded by a fake.
-        self.triggers: list[object] = []
+        self.triggers: list[bool] = []
         monkeypatch.setattr(
-            pf, "trigger_collection", lambda cfg: self.triggers.append(cfg)
+            pf, "trigger_collection", lambda: self.triggers.append(True)
         )
 
         # Distinguish the pauses of the loop (>= 1s) from the stderr-watch

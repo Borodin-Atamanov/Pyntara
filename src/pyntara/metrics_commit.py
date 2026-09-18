@@ -22,9 +22,9 @@ import shutil
 import stat
 from pathlib import Path
 
-from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
 def build_queue_name(original_name: str, suffix: str) -> str:
@@ -49,12 +49,11 @@ def _random_suffix(length: int, alphabet: str) -> str:
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
 
-def _queue_dirs(cfg: Config) -> tuple[Path, Path, Path]:
-    """The queue root, main_outbox and temp directories from the config."""
+def _queue_dirs() -> tuple[Path, Path, Path]:
+    """The queue root, main_outbox and temp directories."""
 
-    metrics = cfg.system_metrics_setup
-    root = metrics.system_metrics_dir
-    return root, root / metrics.main_outbox_dir, root / metrics.temp_dir
+    root = values.SYSTEM_METRICS_DIR
+    return root, root / values.MAIN_OUTBOX_DIR, root / values.TEMP_DIR
 
 
 def _ensure_dirs(root: Path, outbox: Path, temp: Path, mode: int) -> None:
@@ -64,7 +63,7 @@ def _ensure_dirs(root: Path, outbox: Path, temp: Path, mode: int) -> None:
         directory.mkdir(mode=mode, parents=True, exist_ok=True)
 
 
-def ingest_spool(cfg: Config) -> None:
+def ingest_spool() -> None:
     """Move every spool file into the queue; log each action.
 
     Each spool entry that is a regular non-empty file no larger than
@@ -76,17 +75,16 @@ def ingest_spool(cfg: Config) -> None:
     so the next ingest run retries it.
     """
 
-    metrics = cfg.system_metrics_setup
-    spool_dir = metrics.spool_dir
-    root, outbox, temp = _queue_dirs(cfg)
-    _ensure_dirs(root, outbox, temp, metrics.system_metrics_dir_mode)
+    spool_dir = values.SPOOL_DIR
+    root, outbox, temp = _queue_dirs()
+    _ensure_dirs(root, outbox, temp, values.SYSTEM_METRICS_DIR_MODE)
     if not spool_dir.is_dir():
         _log(f"ingesting spool {spool_dir}: directory missing, nothing to do")
         return
     for entry in sorted(spool_dir.iterdir()):
-        if entry.name.startswith(metrics.spool_temp_prefix):
+        if entry.name.startswith(values.SPOOL_TEMP_PREFIX):
             continue
-        reason = _reject_reason(entry, metrics.max_queue_file_size_bytes)
+        reason = _reject_reason(entry, values.MAX_QUEUE_FILE_SIZE_BYTES)
         if reason is not None:
             _log(
                 f"ingesting spool entry {entry}: {reason}, removing",
@@ -104,11 +102,11 @@ def ingest_spool(cfg: Config) -> None:
             entry,
             outbox,
             temp,
-            metrics.queue_file_mode,
-            metrics.queue_file_suffix_length,
-            metrics.queue_file_suffix_alphabet,
-            metrics.temp_name_random_bytes,
-            metrics.queue_link_attempts,
+            values.QUEUE_FILE_MODE,
+            values.QUEUE_FILE_SUFFIX_LENGTH,
+            values.QUEUE_FILE_SUFFIX_ALPHABET,
+            values.TEMP_NAME_RANDOM_BYTES,
+            values.QUEUE_LINK_ATTEMPTS,
             engine_values.NANOSECONDS_PER_SECOND,
             engine_values.ERROR_PRIORITY,
         )

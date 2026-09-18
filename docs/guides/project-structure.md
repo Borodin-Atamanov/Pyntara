@@ -116,7 +116,7 @@ nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetup
 port_forwarding_setup -> src/pyntara/values/port_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
 upnp_forwarding_setup -> src/pyntara/values/upnp_forwarding_setup.py -> READ_VALUE_NAMES -> the task, the deployed service and the state command
 playwright_setup -> config/playwright_setup.py -> PlaywrightSetupConfig -> playwright_setup
-system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
+system_metrics_setup -> src/pyntara/values/system_metrics_setup.py -> READ_VALUE_NAMES -> the deployed service, the collector, the ingest, the commit command and the tasks
 vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  
 local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup  
 tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py

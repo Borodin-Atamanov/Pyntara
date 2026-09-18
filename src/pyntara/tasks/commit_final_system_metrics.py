@@ -23,19 +23,19 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from pyntara.config import Config, SystemMetricsSetupConfig
+from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, substituted_command
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
 def _commit_runtime_vault(
     vault_path: Path,
     hostname: str,
-    metrics: SystemMetricsSetupConfig,
     timeout: int,
 ) -> tuple[bool, list[str]]:
     """Commit the runtime vault; return (changed, warnings).
@@ -45,7 +45,7 @@ def _commit_runtime_vault(
     copy is removed in all cases.
     """
 
-    backup_name = metrics.vault_backup_file_name.format(hostname=hostname)
+    backup_name = values.VAULT_BACKUP_FILE_NAME.format(hostname=hostname)
     warnings: list[str] = []
 
     if not vault_path.is_file():
@@ -66,7 +66,7 @@ def _commit_runtime_vault(
     _log(f"committing runtime vault {vault_path} as {backup_name}")
     try:
         shutil.copyfile(vault_path, temp_path)
-        os.chmod(temp_path, metrics.vault_backup_file_mode)
+        os.chmod(temp_path, values.VAULT_BACKUP_FILE_MODE)
     except OSError as exc:
         temp_path.unlink(missing_ok=True)
         warnings.append(f"cannot copy runtime vault to {temp_path}: {exc}")
@@ -74,8 +74,8 @@ def _commit_runtime_vault(
     try:
         result = run_command(
             substituted_command(
-                metrics.commit_command,
-                {"command_path": str(metrics.command_path), "file": str(temp_path)},
+                values.COMMIT_COMMAND,
+                {"command_path": str(values.COMMAND_PATH), "file": str(temp_path)},
             ),
             timeout=timeout,
             capture=True,
@@ -95,9 +95,7 @@ def _commit_runtime_vault(
     return True, []
 
 
-def _latest_report(
-    metrics: SystemMetricsSetupConfig, hostname: str
-) -> dict[str, object] | None:
+def _latest_report(hostname: str) -> dict[str, object] | None:
     """The latest network-<hostname>.json report in the queue, or None.
 
     The report the collector committed last sits in main_sent or, when
@@ -110,10 +108,10 @@ def _latest_report(
     when no report is found or the read fails, None is returned.
     """
 
-    report_name = metrics.collector.report_file_name.format(hostname=hostname)
-    root = metrics.system_metrics_dir
+    report_name = values.COLLECTOR.report_file_name.format(hostname=hostname)
+    root = values.SYSTEM_METRICS_DIR
     candidates: list[Path] = []
-    for directory_name in (metrics.main_sent_dir, metrics.main_outbox_dir):
+    for directory_name in (values.MAIN_SENT_DIR, values.MAIN_OUTBOX_DIR):
         directory = root / directory_name
         try:
             entries = list(directory.iterdir())
@@ -123,7 +121,7 @@ def _latest_report(
             if not entry.is_file():
                 continue
             original = restore_original_name(
-                entry.name, metrics.queue_file_suffix_length
+                entry.name, values.QUEUE_FILE_SUFFIX_LENGTH
             )
             if original == report_name:
                 candidates.append(entry)
@@ -140,7 +138,6 @@ def _latest_report(
 def _commit_telemetry_pdf_from_queue(
     cfg: Config,
     hostname: str,
-    metrics: SystemMetricsSetupConfig,
     timeout: int,
 ) -> tuple[bool, list[str]]:
     """Build and commit the telemetry PDF from the latest report.
@@ -154,7 +151,7 @@ def _commit_telemetry_pdf_from_queue(
     """
 
     warnings: list[str] = []
-    report = _latest_report(metrics, hostname)
+    report = _latest_report(hostname)
     if report is None:
         _log("no report found in the queue, skipping the telemetry PDF")
         return False, warnings
@@ -168,11 +165,11 @@ def _commit_telemetry_pdf_from_queue(
     if pdf_bytes is None:
         warnings.append("telemetry PDF build returned no bytes")
         return False, warnings
-    pdf_name = metrics.telemetry_pdf_report_file_name.format(hostname=hostname)
+    pdf_name = values.TELEMETRY_PDF_REPORT_FILE_NAME.format(hostname=hostname)
     pdf_path = Path(tempfile.gettempdir()) / pdf_name
     try:
         pdf_path.write_bytes(pdf_bytes)
-        os.chmod(pdf_path, metrics.collector.report_file_mode)
+        os.chmod(pdf_path, values.COLLECTOR.report_file_mode)
     except OSError as exc:
         pdf_path.unlink(missing_ok=True)
         warnings.append(f"cannot write telemetry PDF to {pdf_path}: {exc}")
@@ -180,8 +177,8 @@ def _commit_telemetry_pdf_from_queue(
     try:
         result = run_command(
             substituted_command(
-                metrics.commit_command,
-                {"command_path": str(metrics.command_path), "file": str(pdf_path)},
+                values.COMMIT_COMMAND,
+                {"command_path": str(values.COMMAND_PATH), "file": str(pdf_path)},
             ),
             timeout=timeout,
             capture=True,
@@ -203,8 +200,9 @@ def _commit_telemetry_pdf_from_queue(
 def task(ctx: Context) -> TaskResult:
     """Commit the runtime vault and the telemetry PDF into System Metrics.
 
-    The vault path comes from the local_vault_setup config, the file
-    names and the commit command from the system_metrics_setup config.
+    The vault path comes from the local_vault_setup config, and the file
+    names and the commit command from the declared values of
+    pyntara.values.system_metrics_setup.
     The vault is committed first; then the latest network-<hostname>.json
     report in the queue is read and an encrypted telemetry PDF is built
     from it and committed through the same command. Both documents are
@@ -213,12 +211,11 @@ def task(ctx: Context) -> TaskResult:
     stops both, because nothing can be committed without it.
     """
 
-    metrics = ctx.config.system_metrics_setup
     vault_path = ctx.config.local_vault_setup.local_vault_path
     hostname = socket.gethostname()
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
 
-    if not metrics.commit_command:
+    if not values.COMMIT_COMMAND:
         _log("system_metrics_setup names no commit_command, cannot commit")
         warning = "system_metrics_setup.commit_command is empty"
         return TaskResult(
@@ -232,14 +229,14 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     vault_changed, vault_warnings = _commit_runtime_vault(
-        vault_path, hostname, metrics, timeout
+        vault_path, hostname, timeout
     )
     if vault_changed:
         changed = True
     warnings.extend(vault_warnings)
 
     pdf_changed, pdf_warnings = _commit_telemetry_pdf_from_queue(
-        ctx.config, hostname, metrics, timeout
+        ctx.config, hostname, timeout
     )
     if pdf_changed:
         changed = True
@@ -250,12 +247,12 @@ def task(ctx: Context) -> TaskResult:
         if vault_changed:
             parts.append(
                 "runtime vault committed as "
-                + metrics.vault_backup_file_name.format(hostname=hostname)
+                + values.VAULT_BACKUP_FILE_NAME.format(hostname=hostname)
             )
         if pdf_changed:
             parts.append(
                 "telemetry PDF committed as "
-                + metrics.telemetry_pdf_report_file_name.format(hostname=hostname)
+                + values.TELEMETRY_PDF_REPORT_FILE_NAME.format(hostname=hostname)
             )
         message = "; ".join(parts)
     else:

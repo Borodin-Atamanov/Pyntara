@@ -41,19 +41,6 @@ from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
-from .system_metrics_setup import (
-    COLLECTOR_SECTION_KEYS,
-    COLLECTOR_TABLE_KEYS,
-    INGEST_CONFIG_KEYS,
-    SEND_ORDER_NEWEST_FIRST,
-    SEND_ORDER_OLDEST_FIRST,
-    SEND_ORDERS,
-    SERVICE_CONFIG_KEYS,
-    CollectorModuleConfig,
-    SystemMetricsCollectorConfig,
-    SystemMetricsSetupConfig,
-    TelemetryPdfConfig,
-)
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import (
     COUNTRY_REPORT_CONFIG_KEYS,
@@ -72,20 +59,12 @@ from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
 __all__ = [
-    "COLLECTOR_SECTION_KEYS",
-    "COLLECTOR_TABLE_KEYS",
     "COUNTRY_REPORT_CONFIG_KEYS",
-    "INGEST_CONFIG_KEYS",
     "MODES",
     "PUBLIC_ADDRESS_CONFIG_KEYS",
-    "SEND_ORDERS",
-    "SEND_ORDER_NEWEST_FIRST",
-    "SEND_ORDER_OLDEST_FIRST",
-    "SERVICE_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",
-    "CollectorModuleConfig",
     "Config",
     "DnsproxySetupConfig",
     "FfmpegSetupConfig",
@@ -100,10 +79,7 @@ __all__ = [
     "ScrcpySetupConfig",
     "SotavpnSetupConfig",
     "SwapfileServiceInstallConfig",
-    "SystemMetricsCollectorConfig",
-    "SystemMetricsSetupConfig",
     "TelegramSetupConfig",
-    "TelemetryPdfConfig",
     "ThreeXuiXraySetupConfig",
     "VaultEntry",
     "VaultGroup",

@@ -41,6 +41,7 @@ from pyntara.utils import (
 )
 from pyntara.values import engine as engine_values
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import system_metrics_setup as metrics_values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -161,13 +162,12 @@ def task(ctx: Context) -> TaskResult:
 
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    metrics = ctx.config.system_metrics_setup
-    venv_python = metrics.venv_dir / metrics.venv_python_relative_path
-    system_config_path = metrics.system_config_path
+    venv_python = metrics_values.VENV_DIR / metrics_values.VENV_PYTHON_RELATIVE_PATH
+    system_config_path = metrics_values.SYSTEM_CONFIG_PATH
     service_name = values.SERVICE_UNIT_NAME
     warnings: list[str] = []
     version, version_warning = deployment.deployed_version(
-        metrics.venv_version_command, venv_python, timeout, __version__
+        metrics_values.VENV_VERSION_COMMAND, venv_python, timeout, __version__
     )
     if version_warning is not None:
         warnings.append(version_warning)

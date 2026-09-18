@@ -9,10 +9,10 @@ so the network report reaches the queue right after provisioning instead of
 waiting for the boot run. The start is non-blocking (systemctl start
 --no-block): the collector may wait up to its retry window inside the
 service, and the installer must not block on it. The task depends on
-system_metrics_setup and reads the service unit name from the config through
-Context; when the unit file is missing, the deployment did not happen and
-the task skips. A failed start is an error: the install log must show it
-(no silent failures).
+system_metrics_setup and reads the collector unit name and start command
+from the declared values of pyntara.values.system_metrics_setup; when the
+unit file is missing, the deployment did not happen and the task skips. A
+failed start is an error: the install log must show it (no silent failures).
 """
 
 from __future__ import annotations
@@ -24,22 +24,23 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, substituted_command
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
 def task(ctx: Context) -> TaskResult:
     """Start the collector service once; skip when the unit is not deployed.
 
-    The unit name and the command come from the config through Context: the
-    collector service unit of the system_metrics_setup section and the
-    start command of the collector table, with {service_unit_name}
-    substituted. When the unit file is absent, the deployment did not
-    happen and the task skips with changed=False. Otherwise the service is
-    started through the shared run_command with the engine timeout; a
-    failed start is a warning of a completed task, so the run continues
-    and the collector retries through its own restart policy.
+    The unit name and the command are declared values: the collector
+    service unit name and the start command of the collector table, with
+    {service_unit_name} substituted. When the unit file is absent, the
+    deployment did not happen and the task skips with changed=False.
+    Otherwise the service is started through the shared run_command with
+    the engine timeout; a failed start is a warning of a completed task,
+    so the run continues and the collector retries through its own restart
+    policy.
     """
 
-    collector = ctx.config.system_metrics_setup.collector
+    collector = values.COLLECTOR
     service_name = collector.service_unit_name
     unit_path = engine_values.SYSTEMD_UNIT_DIR / service_name
     if not unit_path.is_file():

@@ -18,7 +18,6 @@ from pathlib import Path
 from config_helpers import base_config
 
 from pyntara.config import (
-    CollectorModuleConfig,
     Config,
     RustdeskOptionConfig,
     load_config,
@@ -300,52 +299,6 @@ def make_config(
     scrcpy_setup_download_dir: Path = Path("/var/cache/pyntara/scrcpy"),
     telegram_home_dir: str = "/home/i",
     telegram_download_dir: Path = Path("/var/cache/pyntara/telegram"),
-    system_metrics_backoff_base_seconds: int = 2,
-    system_metrics_backoff_multiplier: int = 2,
-    system_metrics_backoff_max_seconds: int = 14400,
-    system_metrics_venv_dir: Path = Path("/usr/local/lib/pyntara/venv"),
-    system_metrics_system_config_path: Path = Path("/etc/pyntara/config.toml"),
-    system_metrics_command_path: Path = Path("/usr/local/bin/commit_system_metrics"),
-    system_metrics_commit_command: tuple[str, ...] = (
-        "{command_path}",
-        "{file}",
-    ),
-    system_metrics_dir: Path = Path("/var/lib/pyntara/metrics"),
-    system_metrics_dir_mode: int = 0o700,
-    system_metrics_max_queue_file_size_bytes: int = 104857600,
-    system_metrics_send_order: str = "oldest_first",
-    system_metrics_spool_dir: Path = Path("/var/spool/system_metrics"),
-    system_metrics_temp_name_random_bytes: int = 8,
-    system_metrics_unit_template_file_name: str = "system_metrics.service",
-    system_metrics_collector_boot_delay_seconds: int = 30,
-    system_metrics_collector_daily_send_times: tuple[str, ...] = (
-        "12:00:00",
-        "00:00:00",
-    ),
-    system_metrics_collector_threshold_percent: int = 50,
-    system_metrics_collector_retry_base_seconds: int = 2,
-    system_metrics_collector_retry_multiplier: int = 2,
-    system_metrics_collector_retry_max_seconds: int = 600,
-    system_metrics_collector_command_timeout_seconds: int = 15,
-    system_metrics_collector_service_unit_name: str = (
-        "system_metrics_collector.service"
-    ),
-    system_metrics_collector_timer_unit_name: str = ("system_metrics_collector.timer"),
-    system_metrics_collector_start_command: tuple[str, ...] = (
-        "systemctl",
-        "start",
-        "--no-block",
-        "{service_unit_name}",
-    ),
-    system_metrics_collector_journal_identifier: str = ("system_metrics_collector"),
-    system_metrics_collector_lock_file_path: Path = Path(
-        "/run/pyntara/system_metrics_collector.lock"
-    ),
-    system_metrics_collector_report_file_name: str = "network-{hostname}.json",
-    system_metrics_collector_report_keys: dict[str, str] | None = None,
-    system_metrics_collector_report_status_words: dict[str, str] | None = None,
-    system_metrics_collector_network_modules: tuple[CollectorModuleConfig, ...] = (),
-    system_metrics_collector_system_modules: tuple[CollectorModuleConfig, ...] = (),
     local_vault_source_production: Path = Path("secrets/production.vault"),
     local_vault_source_default: Path = Path("secrets/default.vault"),
     local_vault_path: Path = Path("/var/lib/pyntara/secrets/pyntara.vault"),
@@ -473,72 +426,6 @@ def make_config(
             probe_listener_start_seconds=three_x_ui_probe_listener_start_seconds,
             upnp_enabled=three_x_ui_upnp_enabled,
             upnp_package=three_x_ui_upnp_package,
-        ),
-        system_metrics_setup=replace(
-            base.system_metrics_setup,
-            backoff_base_seconds=system_metrics_backoff_base_seconds,
-            backoff_multiplier=system_metrics_backoff_multiplier,
-            backoff_max_seconds=system_metrics_backoff_max_seconds,
-            venv_dir=system_metrics_venv_dir,
-            system_config_path=system_metrics_system_config_path,
-            command_path=system_metrics_command_path,
-            commit_command=system_metrics_commit_command,
-            system_metrics_dir=system_metrics_dir,
-            system_metrics_dir_mode=system_metrics_dir_mode,
-            max_queue_file_size_bytes=system_metrics_max_queue_file_size_bytes,
-            send_order=system_metrics_send_order,
-            spool_dir=system_metrics_spool_dir,
-            temp_name_random_bytes=system_metrics_temp_name_random_bytes,
-            unit_template_file_name=system_metrics_unit_template_file_name,
-            collector=replace(
-                base.system_metrics_setup.collector,
-                boot_delay_seconds=system_metrics_collector_boot_delay_seconds,
-                daily_send_times=system_metrics_collector_daily_send_times,
-                threshold_percent=system_metrics_collector_threshold_percent,
-                retry_base_seconds=system_metrics_collector_retry_base_seconds,
-                retry_multiplier=system_metrics_collector_retry_multiplier,
-                retry_max_seconds=system_metrics_collector_retry_max_seconds,
-                command_timeout_seconds=system_metrics_collector_command_timeout_seconds,
-                service_unit_name=system_metrics_collector_service_unit_name,
-                timer_unit_name=system_metrics_collector_timer_unit_name,
-                start_command=system_metrics_collector_start_command,
-                journal_identifier=system_metrics_collector_journal_identifier,
-                lock_file_path=system_metrics_collector_lock_file_path,
-                report_file_name=system_metrics_collector_report_file_name,
-                report_keys=(
-                    system_metrics_collector_report_keys
-                    if system_metrics_collector_report_keys is not None
-                    else base.system_metrics_setup.collector.report_keys
-                ),
-                report_status_words=(
-                    system_metrics_collector_report_status_words
-                    if system_metrics_collector_report_status_words is not None
-                    else base.system_metrics_setup.collector.report_status_words
-                ),
-                network_modules=system_metrics_collector_network_modules,
-                system_modules=system_metrics_collector_system_modules,
-            ),
-        ),
-        nextdns_setup_system_wide=replace(
-            base.nextdns_setup_system_wide,
-            vault_group_title=nextdns_vault_group_title,
-            profile_id_file_path=nextdns_profile_id_file_path,
-            profile_id_file_mode=nextdns_profile_id_file_mode,
-            error_priority=nextdns_error_priority,
-        ),
-        rustdesk_setup=replace(
-            base.rustdesk_setup,
-            asset_name_template=rustdesk_asset_name_template,
-            download_dir=rustdesk_download_dir,
-            id_file_path=rustdesk_id_file_path,
-            config_dir=rustdesk_config_dir,
-            service_settle_delay_seconds=rustdesk_service_settle_delay_seconds,
-            options=rustdesk_options,
-        ),
-        scrcpy_setup=replace(
-            base.scrcpy_setup,
-            home_dir=scrcpy_setup_home_dir,
-            download_dir=scrcpy_setup_download_dir,
         ),
         telegram_setup=replace(
             base.telegram_setup,

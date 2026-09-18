@@ -2,54 +2,32 @@
 
 The deployed systemd service system_metrics-ingest.service, started by
 the path unit system_metrics-ingest.path whenever a file appears in the
-spool, runs this module through the venv python. The module loads the
-single system config from the command line argument and moves every
-spool file into the queue main_outbox
-(docs/spec/system-metrics.md, section Queue architecture).
+spool, runs this module through the venv python. Every path of the queue
+and of the spool is a declared value of pyntara.values.system_metrics_setup,
+so the module takes no argument and moves every spool file into the queue
+main_outbox (docs/spec/system-metrics.md, section Queue architecture).
 """
 
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
-from pyntara.config import (
-    INGEST_CONFIG_KEYS,
-    absent_config_keys,
-    describe_absent_config_keys,
-    load_config,
-)
 from pyntara.logger import configure_journal
 from pyntara.metrics_commit import ingest_spool
+from pyntara.values import system_metrics_setup as values
 
 
 def main() -> None:
-    """Load the system config and ingest the spool once.
+    """Ingest the spool once.
 
-    The config path is the first command line argument; the ingest
-    service unit renders the configured system_config_path into the
-    ExecStart line. A missing argument is an explicit error: without a
-    config the ingest cannot know the queue and spool paths.
+    The ingest reads every path it needs from the declared values of
+    pyntara.values.system_metrics_setup, so it takes no argument at all
+    and the unit starts it the same way whatever the machine carries.
     """
 
-    if len(sys.argv) < 2:
-        print("error: missing config path argument", file=sys.stderr)
-        raise SystemExit(1)
-    cfg = load_config(Path(sys.argv[1]))
-    configure_journal(cfg.system_metrics_setup.service_journal_identifier)
-    absent = describe_absent_config_keys(
-        (
-            (
-                "system_metrics_setup",
-                absent_config_keys(cfg.system_metrics_setup, INGEST_CONFIG_KEYS),
-            ),
-        )
-    )
-    if absent:
-        print(f"error: the ingest cannot run: {absent}", file=sys.stderr)
-        return
+    configure_journal(values.SERVICE_JOURNAL_IDENTIFIER)
     try:
-        ingest_spool(cfg)
+        ingest_spool()
     except Exception as exc:  # noqa: BLE001 - a failed run reports one line, never a traceback
         print(
             f"error: the ingest failed: {exc}",

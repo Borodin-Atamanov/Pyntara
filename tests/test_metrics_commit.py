@@ -12,7 +12,6 @@ import os
 import shutil
 import string
 import time
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,7 @@ from pyntara.metrics_commit import (
     restore_original_name,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 SUFFIX_LENGTH = 12
 SUFFIX_ALPHABET = set(string.ascii_letters + string.digits)
@@ -34,14 +34,20 @@ OUTBOX = "main_outbox"
 TEMP = "temp"
 
 
-def _spool_config(tmp_path: Path, **kwargs: Any) -> Config:
-    """Config whose spool and metrics queue live in the temporary directory."""
+def _spool_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, **kwargs: Any
+) -> Config:
+    """Point the declared paths at the temporary directory.
 
-    return make_config(
-        system_metrics_dir=tmp_path / "metrics",
-        system_metrics_spool_dir=tmp_path / "spool",
-        **kwargs,
-    )
+    The queue root and the spool are declared values, so they are set on
+    the module; every further keyword replaces one more declared value.
+    """
+
+    monkeypatch.setattr(values, "SYSTEM_METRICS_DIR", tmp_path / "metrics")
+    monkeypatch.setattr(values, "SPOOL_DIR", tmp_path / "spool")
+    for name, value in kwargs.items():
+        monkeypatch.setattr(values, name.upper(), value)
+    return make_config()
 
 
 def _spool_file(tmp_path: Path, name: str = "report.txt", body: str = "data") -> Path:
@@ -61,14 +67,15 @@ def stat_mode(path: Path) -> int:
 
 
 def test_ingest_moves_file_into_outbox_with_suffix(
+    monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     # The spool file is moved into main_outbox under the original name
     # plus a random suffix of the configured length; the spool entry is
     # removed after the ingest.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "report.txt", "hello")
-    ingest_spool(cfg)
+    ingest_spool()
     outbox = tmp_path / "metrics" / OUTBOX
     names = list(outbox.iterdir())
     assert len(names) == 1
@@ -91,23 +98,23 @@ def test_queue_name_roundtrip_restores_original_name() -> None:
     assert restore_original_name(queue_name, SUFFIX_LENGTH) == original
 
 
-def test_ingest_strips_suffix_and_keeps_original_name(tmp_path: Path) -> None:
+def test_ingest_strips_suffix_and_keeps_original_name(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The committed entry carries the original name; the sender recovers
     # it by stripping exactly the suffix.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     _spool_file(tmp_path, "report.txt", "x")
-    ingest_spool(cfg)
+    ingest_spool()
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     assert restore_original_name(committed.name, SUFFIX_LENGTH) == "report.txt"
 
 
-def test_dirs_and_entry_carry_configured_modes(tmp_path: Path) -> None:
+def test_dirs_and_entry_carry_configured_modes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Every queue directory is 0700 and the entry is 0600, the strictest
     # modes, regardless of the spool entry mode.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "modes.txt", "x")
     os.chmod(entry, 0o644)
-    ingest_spool(cfg)
+    ingest_spool()
     for directory in (
         tmp_path / "metrics",
         tmp_path / "metrics" / OUTBOX,
@@ -118,31 +125,31 @@ def test_dirs_and_entry_carry_configured_modes(tmp_path: Path) -> None:
     assert stat_mode(committed) == 0o600
 
 
-def test_suffix_alphabet_comes_from_the_config(tmp_path: Path) -> None:
+def test_suffix_alphabet_comes_from_the_declared_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The proof of the value: the random part of a queue name is drawn
     # from the alphabet of the table, so a queue whose names must avoid a
     # character says so in the config.
-    cfg = _spool_config(tmp_path)
-    metrics = replace(
-        cfg.system_metrics_setup,
+    _spool_config(
+        monkeypatch,
+        tmp_path,
         queue_file_suffix_alphabet="a",
         queue_file_suffix_length=6,
     )
     _spool_file(tmp_path, "alpha.txt", "x")
-    ingest_spool(replace(cfg, system_metrics_setup=metrics))
+    ingest_spool()
     names = [path.name for path in (tmp_path / "metrics" / OUTBOX).iterdir()]
     assert names == ["alpha.txt.aaaaaa"]
 
 
-def test_entry_mtime_is_commit_time(tmp_path: Path) -> None:
+def test_entry_mtime_is_commit_time(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The modification time of the entry equals the spool entry time,
     # which the commit command sets to the commit time: the queue order
     # is the commit order.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "time.txt", "x")
     old = time.time() - 3600
     os.utime(entry, (old, old))
-    ingest_spool(cfg)
+    ingest_spool()
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     entry_mtime = os.stat(committed).st_mtime
     assert abs(entry_mtime - old) < 2
@@ -155,11 +162,11 @@ def test_commit_time_uses_the_configured_nanosecond_factor(
     # the unit the kernel takes is a declared value, so another factor is
     # the modification time the entry receives.
     monkeypatch.setattr(engine_values, "NANOSECONDS_PER_SECOND", 1_000_000)
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "factor.txt", "x")
     commit_time = 1_700_000_000.25
     os.utime(entry, (commit_time, commit_time))
-    ingest_spool(cfg)
+    ingest_spool()
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     expected = int(commit_time * 1_000_000)
     assert abs(os.stat(committed).st_mtime_ns - expected) < 1_000_000
@@ -179,32 +186,32 @@ def test_temp_name_length_comes_from_the_config(
         return str(real_copy(source, target))
 
     monkeypatch.setattr(metrics_commit.shutil, "copy2", recording_copy)
-    cfg = _spool_config(tmp_path, system_metrics_temp_name_random_bytes=4)
+    _spool_config(monkeypatch, tmp_path, temp_name_random_bytes=4)
     _spool_file(tmp_path, "entry.txt", "x")
-    ingest_spool(cfg)
+    ingest_spool()
     assert seen
     assert len(seen[0].removeprefix(".ingest-")) == 8
 
 
-def test_temp_prefix_entries_are_skipped(tmp_path: Path) -> None:
+def test_temp_prefix_entries_are_skipped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The commit command temporaries carry the spool_temp_prefix and are
     # never ingested; a real entry is moved alongside them.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     _spool_file(tmp_path, "real.txt", "x")
     temp = tmp_path / "spool" / ".commit-abcdef"
     temp.write_text("partial", encoding="utf-8")
-    ingest_spool(cfg)
+    ingest_spool()
     names = [path.name for path in (tmp_path / "metrics" / OUTBOX).iterdir()]
     assert len(names) == 1
     assert names[0].startswith("real.txt.")
     assert temp.exists()
 
 
-def test_empty_file_is_rejected_and_removed(tmp_path: Path) -> None:
+def test_empty_file_is_rejected_and_removed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # An empty spool entry never reaches the queue and is removed.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "empty.txt", "")
-    ingest_spool(cfg)
+    ingest_spool()
     outbox = tmp_path / "metrics" / OUTBOX
     assert not outbox.exists() or not any(outbox.iterdir())
     assert not entry.exists()
@@ -222,71 +229,71 @@ def test_rejected_entry_is_journaled_at_the_configured_level(
         lambda message, **kwargs: levels.append(kwargs.get("priority")),
     )
     monkeypatch.setattr(engine_values, "ERROR_PRIORITY", 5)
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     _spool_file(tmp_path, "empty.txt", "")
-    ingest_spool(cfg)
+    ingest_spool()
     assert levels == [5]
 
 
-def test_oversized_file_is_rejected_and_removed(tmp_path: Path) -> None:
+def test_oversized_file_is_rejected_and_removed(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A spool entry larger than the configured limit is rejected and
     # removed; an entry exactly at the limit is ingested.
-    cfg = _spool_config(tmp_path, system_metrics_max_queue_file_size_bytes=10)
+    _spool_config(monkeypatch, tmp_path, max_queue_file_size_bytes=10)
     too_big = _spool_file(tmp_path, "big.txt", "12345678901")
-    ingest_spool(cfg)
+    ingest_spool()
     outbox = tmp_path / "metrics" / OUTBOX
     assert not outbox.exists() or not any(outbox.iterdir())
     assert not too_big.exists()
     at_limit = _spool_file(tmp_path, "limit.txt", "1234567890")
-    ingest_spool(cfg)
+    ingest_spool()
     committed = next(outbox.iterdir())
     assert committed.read_text(encoding="utf-8") == "1234567890"
     assert not at_limit.exists()
 
 
-def test_directory_in_spool_is_rejected_and_kept(tmp_path: Path) -> None:
+def test_directory_in_spool_is_rejected_and_kept(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A subdirectory inside the spool is not a regular file: it is
     # reported, never removed recursively and never ingested.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     spool = tmp_path / "spool"
     spool.mkdir(parents=True)
     nested = spool / "sub"
     nested.mkdir()
-    ingest_spool(cfg)
+    ingest_spool()
     assert nested.is_dir()
     outbox = tmp_path / "metrics" / OUTBOX
     assert not outbox.exists() or not any(outbox.iterdir())
 
 
-def test_symlink_spool_entry_commits_target_content(tmp_path: Path) -> None:
+def test_symlink_spool_entry_commits_target_content(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A symlink spool entry is treated as the file it points to: the
     # content of the target is committed, the name of the entry is used.
-    cfg = _spool_config(tmp_path)
+    _spool_config(monkeypatch, tmp_path)
     spool = tmp_path / "spool"
     spool.mkdir(parents=True)
     target = tmp_path / "target.txt"
     target.write_text("through link", encoding="utf-8")
     link = spool / "alias.txt"
     os.symlink(target, link)
-    ingest_spool(cfg)
+    ingest_spool()
     committed = next((tmp_path / "metrics" / OUTBOX).iterdir())
     assert committed.name.startswith("alias.txt.")
     assert committed.read_text(encoding="utf-8") == "through link"
     assert not link.exists()
 
 
-def test_no_temp_files_left_in_queue_after_ingest(tmp_path: Path) -> None:
-    cfg = _spool_config(tmp_path)
+def test_no_temp_files_left_in_queue_after_ingest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _spool_config(monkeypatch, tmp_path)
     _spool_file(tmp_path, "ok.txt", "x")
-    ingest_spool(cfg)
+    ingest_spool()
     temp = tmp_path / "metrics" / TEMP
     assert not any(temp.iterdir())
 
 
-def test_missing_spool_creates_queue_dirs(tmp_path: Path) -> None:
+def test_missing_spool_creates_queue_dirs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Without a spool directory there is nothing to ingest, but the queue
     # directories are still ensured, like the previous commit utility did.
-    cfg = _spool_config(tmp_path)
-    ingest_spool(cfg)
+    _spool_config(monkeypatch, tmp_path)
+    ingest_spool()
     assert (tmp_path / "metrics" / OUTBOX).is_dir()
     assert (tmp_path / "metrics" / TEMP).is_dir()

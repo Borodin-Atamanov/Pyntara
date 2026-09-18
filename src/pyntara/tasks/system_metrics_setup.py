@@ -21,7 +21,7 @@ path unit system_metrics-ingest.path whenever a file appears in the spool.
 The report collector service system_metrics_collector.service gathers the
 network and system report and is started by the timer
 system_metrics_collector.timer after boot and at the configured daily
-time; all waiting happens inside the collector (docs/spec/system-metrics.md,
+time; all waiting happens inside the collector (docs/spec/system-values.MD,
 section Report collector).
 All unit names, journal identifiers and the spool path come from config
 (architecture contract, Configuration). The task generates the thin
@@ -46,7 +46,6 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__, deployment
-from pyntara.config import SystemMetricsSetupConfig
 from pyntara.config.loader import render_config_source
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -60,6 +59,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -76,7 +76,6 @@ def _uv_path() -> str | None:
 
 
 def _ensure_venv(
-    cfg: SystemMetricsSetupConfig,
     repo_root: Path,
     uv: str,
     force: bool,
@@ -108,7 +107,7 @@ def _ensure_venv(
         try:
             run_command(
                 substituted_command(
-                    cfg.venv_create_command,
+                    values.VENV_CREATE_COMMAND,
                     {
                         "uv": uv,
                         "venv_dir": str(venv_dir),
@@ -122,10 +121,10 @@ def _ensure_venv(
         _log("venv created")
         created = True
     sync = substituted_command(
-        cfg.venv_sync_command, {"uv": uv, "repo_root": str(repo_root)}
+        values.VENV_SYNC_COMMAND, {"uv": uv, "repo_root": str(repo_root)}
     )
     if force or (not venv_up_to_date and not created):
-        sync += list(cfg.venv_reinstall_flags)
+        sync += list(values.VENV_REINSTALL_FLAGS)
     _log(f"installing pyntara into the venv from the lockfile of {repo_root}")
     try:
         run_command(
@@ -168,7 +167,6 @@ def _write_system_config(system_config_path: Path, config_source_dir: Path) -> N
 
 
 def _render_service_unit(
-    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -186,7 +184,7 @@ def _render_service_unit(
 
     command = " ".join(
         substituted_command(
-            cfg.send_service_command,
+            values.SEND_SERVICE_COMMAND,
             {"python": str(venv_python), "config_path": str(system_config_path)},
         )
     )
@@ -195,7 +193,6 @@ def _render_service_unit(
 
 
 def _render_ingest_service_unit(
-    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -210,8 +207,8 @@ def _render_ingest_service_unit(
 
     command = " ".join(
         substituted_command(
-            cfg.ingest_service_command,
-            {"python": str(venv_python), "config_path": str(system_config_path)},
+            values.INGEST_SERVICE_COMMAND,
+            {"python": str(venv_python)},
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
@@ -230,7 +227,6 @@ def _render_ingest_path_unit(template_path: Path, spool_dir: Path, version: str)
 
 
 def _render_collector_service_unit(
-    cfg: SystemMetricsSetupConfig,
     template_path: Path,
     venv_python: Path,
     system_config_path: Path,
@@ -247,7 +243,7 @@ def _render_collector_service_unit(
 
     command = " ".join(
         substituted_command(
-            cfg.collector_service_command,
+            values.COLLECTOR_SERVICE_COMMAND,
             {"python": str(venv_python), "config_path": str(system_config_path)},
         )
     )
@@ -267,7 +263,7 @@ def _render_collector_timer_unit(
     The collector does all waiting itself, so the timer only schedules
     the start: OnBootSec comes from the config, and every configured time
     of day becomes one OnCalendar line, because systemd reads one line
-    per calendar event (docs/spec/system-metrics.md, section Report
+    per calendar event (docs/spec/system-values.MD, section Report
     collector). The version line is the mark of the deployment that wrote
     the timer.
     """
@@ -428,20 +424,19 @@ def task(ctx: Context) -> TaskResult:
     owner_uid = engine_values.ROOT_OWNER_UID
     owner_gid = engine_values.ROOT_OWNER_GID
     warnings: list[str] = []
-    metrics = ctx.config.system_metrics_setup
-    venv_dir = metrics.venv_dir
-    venv_python = venv_dir / metrics.venv_python_relative_path
-    system_config_path = metrics.system_config_path
-    command_path = metrics.command_path
-    service_name = metrics.service_unit_name
-    ingest_service_name = metrics.ingest_service_unit_name
-    ingest_path_name = metrics.ingest_path_unit_name
-    collector_service_name = metrics.collector.service_unit_name
-    collector_timer_name = metrics.collector.timer_unit_name
-    spool_dir = metrics.spool_dir
+    venv_dir = values.VENV_DIR
+    venv_python = venv_dir / values.VENV_PYTHON_RELATIVE_PATH
+    system_config_path = values.SYSTEM_CONFIG_PATH
+    command_path = values.COMMAND_PATH
+    service_name = values.SERVICE_UNIT_NAME
+    ingest_service_name = values.INGEST_SERVICE_UNIT_NAME
+    ingest_path_name = values.INGEST_PATH_UNIT_NAME
+    collector_service_name = values.COLLECTOR.service_unit_name
+    collector_timer_name = values.COLLECTOR.timer_unit_name
+    spool_dir = values.SPOOL_DIR
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     unit_version, version_warning = deployment.deployed_version(
-        metrics.venv_version_command, venv_python, timeout, __version__
+        values.VENV_VERSION_COMMAND, venv_python, timeout, __version__
     )
     venv_ok = version_warning is None and unit_version == __version__
     _log(
@@ -454,43 +449,40 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(version_warning)
 
     service_unit = _render_service_unit(
-        metrics,
-        template_dir / metrics.unit_template_file_name,
+        template_dir / values.UNIT_TEMPLATE_FILE_NAME,
         venv_python,
         system_config_path,
         unit_version,
     )
     ingest_service_unit = _render_ingest_service_unit(
-        metrics,
-        template_dir / metrics.ingest_unit_template_file_name,
+        template_dir / values.INGEST_UNIT_TEMPLATE_FILE_NAME,
         venv_python,
         system_config_path,
         unit_version,
     )
     ingest_path_unit = _render_ingest_path_unit(
-        template_dir / metrics.ingest_path_template_file_name,
+        template_dir / values.INGEST_PATH_TEMPLATE_FILE_NAME,
         spool_dir,
         unit_version,
     )
     collector_service_unit = _render_collector_service_unit(
-        metrics,
-        template_dir / metrics.collector_unit_template_file_name,
+        template_dir / values.COLLECTOR_UNIT_TEMPLATE_FILE_NAME,
         venv_python,
         system_config_path,
         unit_version,
     )
     collector_timer_unit = _render_collector_timer_unit(
-        template_dir / metrics.collector_timer_template_file_name,
-        metrics.collector.boot_delay_seconds,
-        metrics.collector.daily_send_times,
+        template_dir / values.COLLECTOR_TIMER_TEMPLATE_FILE_NAME,
+        values.COLLECTOR.boot_delay_seconds,
+        values.COLLECTOR.daily_send_times,
         collector_service_name,
         unit_version,
     )
     command_content = _render_commit_command(
-        template_dir / metrics.commit_command_template_file_name,
+        template_dir / values.COMMIT_COMMAND_TEMPLATE_FILE_NAME,
         spool_dir,
-        metrics.commit_journal_identifier,
-        metrics.spool_temp_prefix,
+        values.COMMIT_JOURNAL_IDENTIFIER,
+        values.SPOOL_TEMP_PREFIX,
     )
 
     config_ok = _system_config_matches(system_config_path, ctx.repo_root / "config")
@@ -524,14 +516,14 @@ def task(ctx: Context) -> TaskResult:
     command_ok = _command_file_matches(
         command_path,
         command_content,
-        metrics.command_file_mode,
-        metrics.command_permission_mask,
+        values.COMMAND_FILE_MODE,
+        values.COMMAND_PERMISSION_MASK,
     )
     _log(
         f"checking command {command_path}: {'ok' if command_ok else 'missing or stale'}"
     )
     spool_ok = _spool_dir_ok(
-        spool_dir, metrics.spool_dir_mode, metrics.spool_dir_permission_mask
+        spool_dir, values.SPOOL_DIR_MODE, values.SPOOL_DIR_PERMISSION_MASK
     )
     _log(f"checking spool {spool_dir}: {'ok' if spool_ok else 'missing or wrong mode'}")
 
@@ -563,13 +555,12 @@ def task(ctx: Context) -> TaskResult:
         venv_changed = False
     else:
         venv_changed, error = _ensure_venv(
-            metrics,
             ctx.repo_root,
             uv,
             force,
             timeout,
             venv_dir,
-            metrics.python_version,
+            values.PYTHON_VERSION,
             venv_ok,
         )
         if error is not None:
@@ -628,7 +619,7 @@ def task(ctx: Context) -> TaskResult:
         try:
             _log("reloading systemd: systemctl daemon-reload")
             run_command(
-                list(metrics.systemctl_daemon_reload_command),
+                list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
                 timeout=timeout,
             )
             _log("systemd reloaded")
@@ -637,7 +628,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"enabling unit: systemctl enable {name}")
                     run_command(
                         substituted_command(
-                            metrics.systemctl_enable_command,
+                            values.SYSTEMCTL_ENABLE_COMMAND,
                             {"unit_name": name},
                         ),
                         timeout=timeout,
@@ -648,7 +639,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"restarting service: systemctl restart {service_name}")
                 run_command(
                     substituted_command(
-                        metrics.systemctl_restart_command,
+                        values.SYSTEMCTL_RESTART_COMMAND,
                         {"unit_name": service_name},
                     ),
                     timeout=timeout,
@@ -658,7 +649,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"starting service: systemctl start {service_name}")
                 run_command(
                     substituted_command(
-                        metrics.systemctl_start_command,
+                        values.SYSTEMCTL_START_COMMAND,
                         {"unit_name": service_name},
                     ),
                     timeout=timeout,
@@ -670,7 +661,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"restarting path unit: systemctl restart {ingest_path_name}")
                     run_command(
                         substituted_command(
-                            metrics.systemctl_restart_command,
+                            values.SYSTEMCTL_RESTART_COMMAND,
                             {"unit_name": ingest_path_name},
                         ),
                         timeout=timeout,
@@ -680,7 +671,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"starting path unit: systemctl start {ingest_path_name}")
                     run_command(
                         substituted_command(
-                            metrics.systemctl_start_command,
+                            values.SYSTEMCTL_START_COMMAND,
                             {"unit_name": ingest_path_name},
                         ),
                         timeout=timeout,
@@ -695,7 +686,7 @@ def task(ctx: Context) -> TaskResult:
                     )
                     run_command(
                         substituted_command(
-                            metrics.systemctl_restart_command,
+                            values.SYSTEMCTL_RESTART_COMMAND,
                             {"unit_name": collector_timer_name},
                         ),
                         timeout=timeout,
@@ -708,7 +699,7 @@ def task(ctx: Context) -> TaskResult:
                     )
                     run_command(
                         substituted_command(
-                            metrics.systemctl_start_command,
+                            values.SYSTEMCTL_START_COMMAND,
                             {"unit_name": collector_timer_name},
                         ),
                         timeout=timeout,
@@ -725,7 +716,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"writing command {command_path}")
         try:
             _write_command_file(
-                command_path, command_content, metrics.command_file_mode
+                command_path, command_content, values.COMMAND_FILE_MODE
             )
             apply_owner(command_path, owner_uid, owner_gid)
         except OSError as exc:
@@ -735,9 +726,9 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if not spool_ok or force:
-        _log(f"creating spool {spool_dir} with mode {metrics.spool_dir_mode:04o}")
+        _log(f"creating spool {spool_dir} with mode {values.SPOOL_DIR_MODE:04o}")
         try:
-            _ensure_spool_dir(spool_dir, metrics.spool_dir_mode, owner_uid, owner_gid)
+            _ensure_spool_dir(spool_dir, values.SPOOL_DIR_MODE, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot create spool directory {spool_dir}: {exc}")
         else:

@@ -9,8 +9,11 @@ hostname at collection time, obtained from socket.gethostname(). The
 systemd timer system_metrics_collector.timer, deployed by the
 system_metrics_setup task, starts the oneshot service
 system_metrics_collector.service after boot and at the configured daily
-time; the service reads the single system config from the command line
-argument and does all waiting itself, so systemd never sleeps for it
+time; every parameter of the collector is a declared value of
+pyntara.values.system_metrics_setup, and the command line carries the
+path of the single system config for the sections that still live in the
+config document (the runtime vault and the telemetry PDF). The service
+does all waiting itself, so systemd never sleeps for it
 (docs/spec/system-metrics.md, section Report collector). The report is a
 JSON document: generated_at in the project datetime format,
 ready_percent, and the network and system module results, each with its
@@ -39,15 +42,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TextIO
 
-from pyntara.config import (
-    COLLECTOR_SECTION_KEYS,
-    COLLECTOR_TABLE_KEYS,
-    CollectorModuleConfig,
-    Config,
-    absent_config_keys,
-    describe_absent_config_keys,
-    load_config,
-)
+from pyntara.config import Config, load_config
 from pyntara.logger import configure_journal
 from pyntara.logger import log_progress as _log
 from pyntara.utils import (
@@ -57,6 +52,7 @@ from pyntara.utils import (
     trim_whitespace,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import system_metrics_setup as values
 
 
 def _structured_document(output: str) -> object | None:
@@ -80,7 +76,7 @@ def _structured_document(output: str) -> object | None:
 
 
 def _run_module(
-    module: CollectorModuleConfig,
+    module: values.CollectorModule,
     timeout_seconds: int,
     keys: dict[str, str],
     words: dict[str, str],
@@ -158,7 +154,7 @@ def percent_ready(
     return int(ready * percent_scale / len(entries))
 
 
-def collect(cfg: Config) -> dict[str, object]:
+def collect() -> dict[str, object]:
     """Run every configured module; return the report body.
 
     The network modules form the network section and drive
@@ -169,7 +165,7 @@ def collect(cfg: Config) -> dict[str, object]:
     status comes from the config.
     """
 
-    collector = cfg.system_metrics_setup.collector
+    collector = values.COLLECTOR
     keys = collector.report_keys
     words = collector.report_status_words
     timeout_seconds = collector.command_timeout_seconds
@@ -202,7 +198,7 @@ def collect(cfg: Config) -> dict[str, object]:
     }
 
 
-def collect_until_ready(cfg: Config) -> dict[str, object]:
+def collect_until_ready() -> dict[str, object]:
     """Collect until the threshold is reached or the window is exhausted.
 
     The first collection runs immediately. While the share of ok network
@@ -215,12 +211,12 @@ def collect_until_ready(cfg: Config) -> dict[str, object]:
     readiness (docs/spec/system-metrics.md, section Report collector).
     """
 
-    collector = cfg.system_metrics_setup.collector
+    collector = values.COLLECTOR
     deadline = time.monotonic() + collector.retry_max_seconds
     attempts = 0
     while True:
         attempts += 1
-        report = collect(cfg)
+        report = collect()
         ready_percent = report[collector.report_keys["ready_percent"]]
         remaining = deadline - time.monotonic()
         # ready_percent is always an int from collect; the isinstance check
@@ -242,7 +238,7 @@ def collect_until_ready(cfg: Config) -> dict[str, object]:
         time.sleep(pause)
 
 
-def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
+def _commit_report(report: dict[str, object]) -> bool:
     """Write the report under its configured name and commit it.
 
     The report file name is the configured report_file_name template
@@ -254,9 +250,9 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
     the System Metrics error priority and reported as False.
     """
 
-    collector = cfg.system_metrics_setup.collector
-    error_priority = cfg.system_metrics_setup.error_priority
-    commit_template = cfg.system_metrics_setup.commit_command
+    collector = values.COLLECTOR
+    error_priority = values.ERROR_PRIORITY
+    commit_template = values.COMMIT_COMMAND
     if not commit_template:
         _log(
             "collecting report: the config names no commit_command",
@@ -281,7 +277,7 @@ def _commit_report(cfg: Config, report: dict[str, object]) -> bool:
             substituted_command(
                 commit_template,
                 {
-                    "command_path": str(cfg.system_metrics_setup.command_path),
+                    "command_path": str(values.COMMAND_PATH),
                     "file": str(report_path),
                 },
             ),
@@ -313,13 +309,12 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
     unencrypted PDF never touches the disk.
     """
 
-    metrics = cfg.system_metrics_setup
-    collector = metrics.collector
-    commit_template = metrics.commit_command
+    collector = values.COLLECTOR
+    commit_template = values.COMMIT_COMMAND
     if not commit_template:
         _log(
-            "collecting telemetry pdf: the config names no commit_command",
-            priority=metrics.error_priority,
+            "collecting telemetry pdf: no commit_command is declared",
+            priority=values.ERROR_PRIORITY,
         )
         return
     try:
@@ -329,7 +324,7 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
         pdf_bytes = telemetry_pdf.build(cfg, report, hostname)
         if pdf_bytes is None:
             return
-        pdf_name = metrics.telemetry_pdf_report_file_name.format(hostname=hostname)
+        pdf_name = values.TELEMETRY_PDF_REPORT_FILE_NAME.format(hostname=hostname)
         pdf_path = Path(tempfile.gettempdir()) / pdf_name
         pdf_path.write_bytes(pdf_bytes)
         os.chmod(pdf_path, collector.report_file_mode)
@@ -337,7 +332,7 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
             substituted_command(
                 commit_template,
                 {
-                    "command_path": str(metrics.command_path),
+                    "command_path": str(values.COMMAND_PATH),
                     "file": str(pdf_path),
                 },
             ),
@@ -351,12 +346,12 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
             detail = (result.stderr or result.stdout).strip()
             _log(
                 f"collecting telemetry pdf: commit failed: {detail}",
-                priority=metrics.error_priority,
+                priority=values.ERROR_PRIORITY,
             )
     except Exception as exc:  # noqa: BLE001 - the PDF is best effort
         _log(
             f"collecting telemetry pdf: {exc}",
-            priority=metrics.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
 
 
@@ -389,7 +384,7 @@ def _acquire_lock(path: Path, error_priority: int) -> TextIO | None:
     return handle
 
 
-def trigger_collection(cfg: Config) -> bool:
+def trigger_collection() -> bool:
     """Start the report collector once; report whether the call went through.
 
     A producer of a positive availability change wakes the collector
@@ -404,7 +399,7 @@ def trigger_collection(cfg: Config) -> bool:
     and the priority are config values of the collector table.
     """
 
-    collector = cfg.system_metrics_setup.collector
+    collector = values.COLLECTOR
     command = substituted_command(
         collector.start_command,
         {"service_unit_name": collector.service_unit_name},
@@ -419,13 +414,13 @@ def trigger_collection(cfg: Config) -> bool:
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(
             f"cannot trigger the metrics collector: {exc}",
-            priority=cfg.system_metrics_setup.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         return False
     if result.returncode != 0:
         _log(
             f"cannot trigger the metrics collector: exited {result.returncode}",
-            priority=cfg.system_metrics_setup.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         return False
     _log("metrics collector triggered for a fresh network report")
@@ -446,31 +441,15 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    metrics = cfg.system_metrics_setup
-    collector = metrics.collector
+    collector = values.COLLECTOR
     configure_journal(collector.journal_identifier)
-    absent = describe_absent_config_keys(
-        (
-            (
-                "system_metrics_setup",
-                absent_config_keys(metrics, COLLECTOR_SECTION_KEYS),
-            ),
-            (
-                "system_metrics_setup.collector",
-                absent_config_keys(collector, COLLECTOR_TABLE_KEYS),
-            ),
-        )
-    )
-    if absent:
-        print(f"error: the collector cannot run: {absent}", file=sys.stderr)
-        return
     try:
-        lock = _acquire_lock(collector.lock_file_path, engine_values.ERROR_PRIORITY)
+        lock = _acquire_lock(collector.lock_file_path, values.ERROR_PRIORITY)
         if lock is None:
             _log("another collector instance is running, exiting")
             return
-        report = collect_until_ready(cfg)
-        if not _commit_report(cfg, report):
+        report = collect_until_ready()
+        if not _commit_report(report):
             raise SystemExit(1)
         _commit_telemetry_pdf(cfg, report)
     except SystemExit:

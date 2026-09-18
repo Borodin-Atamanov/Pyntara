@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import shutil
 from pathlib import Path
 from types import ModuleType
 
@@ -59,24 +58,6 @@ DEPLOYMENT_PATTERN = r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/ex
 TEMPLATE_TEXT = "const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;\n"
 
 IDENTIFIER_LINES = "script_id=production-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
-
-
-def _write_config(
-    tmp_path: Path,
-    *,
-    title: str = "google_script_key",
-    pattern: str = DEPLOYMENT_PATTERN,
-) -> None:
-    """Write a config/system_metrics_setup.toml with the Google keys."""
-
-    config_dir = tmp_path / "config"
-    config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / "system_metrics_setup.toml").write_text(
-        "[system_metrics_setup]\n"
-        f'google_script_key_entry_title = "{title}"\n'
-        f"google_script_deployment_url_regex = '{pattern}'\n",
-        encoding="utf-8",
-    )
 
 
 @pytest.fixture(scope="module")
@@ -136,7 +117,6 @@ def _point_at(
     production = tmp_path / "secrets" / "production.vault"
     default = tmp_path / "secrets" / "default.vault"
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
-    _write_config(tmp_path)
     # The password files are written before the vaults exist, so the
     # directory has to be there first.
     production.parent.mkdir(parents=True, exist_ok=True)
@@ -161,7 +141,6 @@ def test_deployment_id_from_url_valid(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
-    _write_config(tmp_path)
     assert (
         gen.deployment_id_from_url(
             "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
@@ -191,7 +170,6 @@ def test_deployment_id_from_url_rejects_other_shapes(
     # A url that is not the exact web app endpoint shape is a fatal error:
     # the deploy helper must never guess a deployment ID.
     monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
-    _write_config(tmp_path)
     with pytest.raises(gen.ScriptError):
         gen.deployment_id_from_url(url)
 
@@ -383,34 +361,36 @@ def test_invalid_url_is_an_error(
         gen.read_deploy_credentials({})
 
 
-def test_entry_title_comes_from_config(
+def test_entry_title_comes_from_the_declared_value(
     gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # A vault entry under a custom title configured in config.toml is
-    # found: the title is not hardcoded in the script.
+    # A vault entry under another declared title is found: the title is a
+    # declared value, never hardcoded in the script.
     production, default = _point_at(gen, tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        gen.values, "GOOGLE_SCRIPT_KEY_ENTRY_TITLE", "custom_key_title"
+    )
     production_entry = dict(PRODUCTION_ENTRY)
     production_entry["title"] = "custom_key_title"
     default_entry = dict(DEFAULT_ENTRY)
     default_entry["title"] = "custom_key_title"
     _make_vault(production, PRODUCTION_PASSWORD, production_entry)
     _make_vault(default, DEFAULT_PASSWORD, default_entry)
-    _write_config(tmp_path, title="custom_key_title")
     credentials = gen.read_deploy_credentials({})
     assert credentials.script_id == "production-script-id"
     assert credentials.auth_keys == ("production-key", "default-key")
 
 
-def test_deployment_pattern_comes_from_config(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_deployment_pattern_comes_from_the_declared_value(
+    gen: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The deployment URL pattern is not hardcoded: a custom pattern from
-    # config.toml drives the ID extraction, and a URL outside the pattern
-    # is rejected even when it matches the old Google shape.
-    monkeypatch.setattr(gen, "REPO_ROOT", tmp_path)
-    _write_config(
-        tmp_path,
-        pattern=r"^https://example\.com/deploy/([A-Za-z0-9_-]+)/exec$",
+    # The deployment URL pattern is a declared value: another pattern
+    # drives the ID extraction, and a URL outside the pattern is rejected
+    # even when it matches the old Google shape.
+    monkeypatch.setattr(
+        gen.values,
+        "GOOGLE_SCRIPT_DEPLOYMENT_URL_REGEX",
+        r"^https://example\.com/deploy/([A-Za-z0-9_-]+)/exec$",
     )
     assert (
         gen.deployment_id_from_url("https://example.com/deploy/ABC123/exec") == "ABC123"
@@ -419,19 +399,6 @@ def test_deployment_pattern_comes_from_config(
         gen.deployment_id_from_url(
             "https://script.google.com/macros/s/AKfycbwEXAMPLE/exec"
         )
-
-
-def test_missing_config_is_an_error(
-    gen: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Without config.toml the entry title is unknown: a loud error, never
-    # a silent hardcoded fallback.
-    production, default = _point_at(gen, tmp_path, monkeypatch)
-    shutil.rmtree(tmp_path / "config")
-    _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
-    _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
-    with pytest.raises(gen.ScriptError, match="config file not found"):
-        gen.read_deploy_credentials({})
 
 
 def test_renders_every_key_into_the_placeholder(
