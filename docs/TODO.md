@@ -1154,8 +1154,9 @@ machine in this turn, and the probe is named with the figure.
     (kde_settings_home_dir, kde_settings_virtual_keyboard_enabled,
     kde_settings_system_look_and_feel_dir, kde_settings_kconfig) and import
     KdeSettingsConfig, KConfigRecord, KCONFIG_BOOL_TYPE, KCONFIG_STRING_TYPE and
-    KCONFIG_TYPES from pyntara.config, which is why about forty tests of the
-    section fail on this commit; the idiom to copy is the one of every migrated
+    KCONFIG_TYPES from pyntara.config, which is why 58 of the 77 tests of the
+    section fail on this commit (measured, not estimated); the idiom to copy is
+    the one of every migrated
     section, a test helper that points the values module at the tmp_path
     fixtures. The config copy of the section, its check, its fragment of the
     shared test document and its spec section follow in stage 4.
