@@ -1556,3 +1556,20 @@ machine in this turn, and the probe is named with the figure.
     ("forwarding local port 30222 to remote port 37892") with the values read from
     the package. Every gate passes: ruff, ruff format, mypy strict over 137 source
     files, mypy over the tests, 2252 unit tests and the four bash suites.
+
+149. Two user decisions on 2026-09-18, asked before the next section of stage F.
+    First: the config document goes away completely. When the last section moves
+    to the values package, config/ with its TOML files, src/pyntara/config/ with
+    its parsers, load_config, the Config object and the config field of Context
+    are all removed, and no task or service receives a document any more; a value
+    is changed in the code and installed, never edited on the machine. The reason
+    the user gave is the goal of the project itself: one place for a value, no
+    second source that can drift, and a target machine that carries no editable
+    copy of the run values. tests/config_checks.py and docs/spec/config-content.md
+    lose their subject with it and are removed in the same stage.
+    Second: the live production run on the local machine is done ONCE, at the end
+    of stage F, not after every section; a section is proven by the full gate
+    (ruff, ruff format, mypy strict, mypy over the tests, the unit suite and the
+    four bash suites) until then. The live run of the port_forwarding_setup
+    section on 2026-09-18 stays as it is, being the one that proved the values
+    package works on the machine.
