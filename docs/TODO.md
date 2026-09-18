@@ -871,6 +871,25 @@ machine in this turn, and the probe is named with the figure.
     moves with the system_metrics_setup commit, in the same change as the module
     that reads it and every test that configures it, which is what point 93
     already asks. The shortcut was abandoned before any edit.
+117. The opening probe of stage E, run on 2026-09-17 before its turn, measured with
+    an AST walk over every source file and a tomllib read of both files. engine
+    .toml holds 98 values and not 97, and every one of them is read as an
+    attribute somewhere, so the stage declares all of them and none is dead. The
+    names the task modules read are 22 and not the 12 counted before, with
+    command_timeout_seconds first (29 task modules), then root_owner_uid and
+    root_owner_gid (11 each), systemd_unit_dir (8), and three each for
+    session_environment_command, session_environment_keys, system_python,
+    release_asset_architectures and partial_download_file_suffix. The blast radius
+    is the real risk of the stage: 47 modules outside the config package touch the
+    engine config, 31 of them task modules and 16 runtime modules (upnp, logger,
+    public_address, network_addresses, public_address_report, location, augeas,
+    xray_certificate, xray_client, ssh_access, xray_facts, github_release,
+    pyntara, task_runner, utils and xray_panel). The catalog is smaller than its
+    figure suggests: config/tasks.toml holds 31 task records with the four fields
+    name, description, depends and modes, which is the 124 of the earlier point
+    counted as key-value pairs and never as tasks; the modes are desktop, minimal
+    and server, and 22 records name dependencies. 59 test files use make_config or
+    a real vault, so the stage's test work is broad rather than deep.
 105. Stage E, the engine and the task catalog, unchanged from point 92: the values
     of the run itself in values/engine.py (97 names in engine.toml today), the
     catalog as a tuple of TaskSpec records in values/tasks.py (124 keys today),
