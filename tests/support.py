@@ -23,7 +23,6 @@ from pyntara.config import (
     KConfigRecord,
     RustdeskOptionConfig,
     SshDirective,
-    TaskConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -541,7 +540,6 @@ def make_config(
     port_forwarding_state_file_path: Path = Path(
         "/var/lib/pyntara/port_forwarding_state.json"
     ),
-    tasks: tuple[TaskConfig, ...] = (),
 ) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
@@ -899,7 +897,6 @@ def make_config(
             username=sotavpn_setup_username,
             home_dir=sotavpn_setup_home_dir,
         ),
-        tasks=tasks,
     )
 
 

@@ -1,15 +1,14 @@
 """Task catalog logic: mode defaults, validation and dependency resolution.
 
-The catalog data lives in config.toml under the [[tasks]] section; this
+The catalog data lives in pyntara.values.tasks, in the values package; this
 module holds only the logic that operates on it. Every function takes the
 catalog as an explicit parameter so it can be tested with any data. inst.sh
-never parses the catalog file; the engine is the only place that knows the
-task list.
+never parses the catalog; the engine is the only place that knows the task list.
 """
 
 from __future__ import annotations
 
-from pyntara.config import MODES, TaskConfig
+from pyntara.values.tasks import MODES, TaskSpec
 
 
 def validate_mode(mode: str) -> None:
@@ -21,7 +20,7 @@ def validate_mode(mode: str) -> None:
         )
 
 
-def by_name(name: str, tasks: tuple[TaskConfig, ...]) -> TaskConfig | None:
+def by_name(name: str, tasks: tuple[TaskSpec, ...]) -> TaskSpec | None:
     """Return the task definition for a name, or None.
 
     Names are compared case-insensitively; the catalog name is returned as
@@ -35,19 +34,19 @@ def by_name(name: str, tasks: tuple[TaskConfig, ...]) -> TaskConfig | None:
     return None
 
 
-def unknown_tasks(names: list[str], tasks: tuple[TaskConfig, ...]) -> list[str]:
+def unknown_tasks(names: list[str], tasks: tuple[TaskSpec, ...]) -> list[str]:
     """Names not present in the catalog, in input order."""
 
     return [name for name in names if by_name(name, tasks) is None]
 
 
-def default_tasks(mode: str, tasks: tuple[TaskConfig, ...]) -> list[str]:
+def default_tasks(mode: str, tasks: tuple[TaskSpec, ...]) -> list[str]:
     """Default task set for a mode: tasks whose modes list the mode."""
 
     return [task.name for task in tasks if mode in task.modes]
 
 
-def resolve(selected: list[str], tasks: tuple[TaskConfig, ...]) -> list[str]:
+def resolve(selected: list[str], tasks: tuple[TaskSpec, ...]) -> list[str]:
     """Expand selected tasks with all transitive dependencies.
 
     The result lists every selected task and its dependencies in catalog
@@ -72,7 +71,7 @@ def resolve(selected: list[str], tasks: tuple[TaskConfig, ...]) -> list[str]:
     return result
 
 
-def _dependencies_of(name: str, tasks: tuple[TaskConfig, ...]) -> set[str]:
+def _dependencies_of(name: str, tasks: tuple[TaskSpec, ...]) -> set[str]:
     """All transitive dependencies of a task, by name."""
 
     found: set[str] = set()

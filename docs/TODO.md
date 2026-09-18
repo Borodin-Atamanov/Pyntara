@@ -1012,6 +1012,62 @@ machine in this turn, and the probe is named with the figure.
     port_forwarding_setup 12, i2pd_service_setup 11 (2) and
     upnp_forwarding_setup 5. The sections already migrated keep their part of the
     document as dead data, which stage G removes together with the document.
+119. Stage E, part E1, landed on 2026-09-17: the task catalog left the config for
+    src/pyntara/values/tasks.py. The module declares the record type TaskSpec
+    (name, description, depends, modes), the install mode vocabulary MODES and
+    the catalog CATALOG with all 31 records, and READ_VALUE_NAMES names both
+    values. The catalog was verified record for record and field for field
+    against config/tasks.toml with a read-only script before the TOML was
+    removed: 31 records, 31 identical, modes identical. The runtime readers
+    follow the values: pyntara.py reads tasks_values.CATALOG in its three sites
+    and tasks_values.MODES for the mode check, task_catalog.py imports MODES and
+    TaskSpec from pyntara.values.tasks and keeps only the logic. Twelve test
+    files that took the catalog from load_config(...).tasks now take
+    tasks_values.CATALOG, and three of them iterate modes over
+    tasks_values.MODES instead of the config vocabulary.
+    The config copy went at the same time, because the architecture contract
+    already says that a migrated section keeps no copy in TOML and a second
+    source of task names would be a silent defect: config/tasks.toml,
+    src/pyntara/config/tasks.py, the tasks field of the Config dataclass, the
+    TaskConfig re-export, the tasks parameter of make_config, the _tasks_table
+    check and the [[tasks]] fragment of the shared test document went to the
+    trash, tests/test_config_tasks.py with them. The empty-catalog path is now
+    proven by patching the catalog itself, and the engine says "the task catalog
+    is empty, nothing to run" instead of naming a config section that no longer
+    exists. The catalog-location sentences of README.md, architecture.md,
+    task-model.md, install-modes.md, project-structure.md,
+    developer-guide.md, simplified-architecture.md and the package docstring of
+    pyntara/tasks follow the move. Full gate green; the tests of the removed
+    config-side catalog checks are gone with them.
+120. Stage E, part E2, is the engine values: engine.toml holds 98 values, 22 of
+    them read by task modules and 47 modules outside the config package touching
+    the engine config (point 117). Its size is why it is not a plain section
+    commit: the values module, the reads of 47 modules and the test work of 59
+    files that use make_config must land together under the green-commit rule.
+121. What the green-commit rule costs, learned from the kde_settings blocker of
+    point 115 and confirmed by E1: a section cannot be landed in two commits,
+    because the values guard fails on a values module no task reads and a task
+    that reads a module the same commit writes fails its own tests, so nothing
+    intermediate is green. Two ways out were offered to the user and both wait
+    for a decision: one long uninterrupted stretch that writes the values module,
+    the task, the tests and the guards before the first gate run, or an explicit
+    exception that lands the branch in several commits with a squashed merge, so
+    main still receives one green commit while the branch is red in between.
+122. The remainder, in the order it must land: kde_settings (blocked on point
+    121, its values module is recoverable from the trash and from
+    /tmp/kde_settings_values_backup.py, its 327 records from
+    /tmp/kconfig_records.txt), then E2, then the coupled sections of stage F
+    (ssh_daemon_setup with nine live readers through pyntara/ssh.py, and the
+    sections that read another section's values), then stage G, which removes
+    every TOML file, the config package, tests/config_checks.py,
+    tests/config_helpers.py and the config coverage guard, then stage H for the
+    documents that still describe the config, and stage I, the live proof, which
+    waits for the name of the target machine.
+123. The candidate killed on 2026-09-17 and not to be revived: closing point 104
+    (the two homes of the vault pair) before the system_metrics_setup commit.
+    Point 116 shows why: seven modules read the pair through one helper and
+    several tests build a real vault in a temporary directory, so a helper that
+    stopped reading the config would write to /var during a test run.
 
 
 

@@ -1196,8 +1196,6 @@ def base_config() -> str:
         'vault_password_entry_title = "pyntara_local_vault_password"\n'
         'secrets_dir_mode = "0700"\nlocal_vault_file_mode = "0640"\n'
         'pass_dir_mode = "0700"\npass_file_mode = "0400"\npass_file_writable_mode = "0600"\nerror_priority = 3\n'
-        '[[tasks]]\nname = "users"\ndescription = "Create users."\n'
-        "depends = []\nmodes = [\"minimal\"]\n"
     )
 
 

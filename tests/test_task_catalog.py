@@ -1,12 +1,12 @@
 """Unit tests for the task catalog logic.
 
-The catalog data lives in config.toml under the [[tasks]] section; this
-module tests the logic that operates on it. The mechanics of dependency
-resolution are tested on a small synthetic catalog so they never depend on
-specific task names. Data checks against the real config only reference
-implemented tasks: future tasks are expected to change and must not be
-mentioned by name in tests. inst.sh never parses the catalog file: the
-engine owns defaults, validation and dependency resolution.
+The catalog data lives in pyntara.values.tasks; this module tests the logic
+that operates on it. The mechanics of dependency resolution are tested on a
+small synthetic catalog so they never depend on specific task names. Data
+checks against the real catalog only reference implemented tasks: future
+tasks are expected to change and must not be mentioned by name in tests.
+inst.sh never parses the catalog: the engine owns defaults, validation and
+dependency resolution.
 """
 
 from __future__ import annotations
@@ -17,10 +17,10 @@ from pathlib import Path
 import pytest
 
 from pyntara import task_catalog
-from pyntara.config import MODES, TaskConfig, load_config
+from pyntara.values.tasks import CATALOG, MODES, TaskSpec
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-TASKS = load_config(REPO_ROOT / "config").tasks
+TASKS = CATALOG
 
 
 # A synthetic three-task chain with one transitive dependency. Mechanics
@@ -28,10 +28,10 @@ TASKS = load_config(REPO_ROOT / "config").tasks
 # implemented; only the two implemented tasks are referenced by name in
 # data tests. All three tasks belong to every mode.
 _ALL_MODES = ("minimal", "server", "desktop")
-SYNTHETIC_TASKS: tuple[TaskConfig, ...] = (
-    TaskConfig(name="a", description="A.", modes=_ALL_MODES),
-    TaskConfig(name="b", description="B.", depends=("a",), modes=_ALL_MODES),
-    TaskConfig(name="c", description="C.", depends=("b",), modes=_ALL_MODES),
+SYNTHETIC_TASKS: tuple[TaskSpec, ...] = (
+    TaskSpec(name="a", description="A.", modes=_ALL_MODES),
+    TaskSpec(name="b", description="B.", depends=("a",), modes=_ALL_MODES),
+    TaskSpec(name="c", description="C.", depends=("b",), modes=_ALL_MODES),
 )
 
 
@@ -47,7 +47,7 @@ def test_default_tasks_match_mode_membership_exactly() -> None:
 
 def test_default_tasks_use_configured_mode_membership() -> None:
     # A task listed only for desktop must never appear in minimal defaults.
-    desktop_only = TaskConfig(name="desktop", description="D.", modes=("desktop",))
+    desktop_only = TaskSpec(name="desktop", description="D.", modes=("desktop",))
     catalog = SYNTHETIC_TASKS + (desktop_only,)
     assert task_catalog.default_tasks("minimal", catalog) == ["a", "b", "c"]
 
@@ -144,8 +144,8 @@ def test_dependencies_refer_to_known_tasks() -> None:
             assert dep in known
 
 
-def test_task_config_is_frozen() -> None:
-    task = TaskConfig(name="x", description="X")
+def test_task_spec_is_frozen() -> None:
+    task = TaskSpec(name="x", description="X")
     with pytest.raises(AttributeError):
         task.name = "y"  # type: ignore[misc]
 

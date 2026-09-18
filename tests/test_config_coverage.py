@@ -140,8 +140,8 @@ COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
 def _top_level_tables(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return the TOML tables of a parsed document.
 
-    Arrays of tables such as [[tasks]] are left out: they are validated by
-    their own parser and have no key set of a section.
+    An array of tables, such as the vault entries, is left out: it is
+    validated by its own parser and has no key set of a section.
     """
 
     tables: dict[str, dict[str, Any]] = {}

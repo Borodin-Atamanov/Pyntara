@@ -14,18 +14,18 @@ from support import FakeProc as _FakeProc
 from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import imagemagick_setup
 from pyntara.values import imagemagick_setup as imagemagick_values
+from pyntara.values import tasks as tasks_values
 
 # Package set used by the tests; mirrors the real config but stays small.
 TEST_PACKAGES = ("imagemagick",)
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # dependency tests use it so they cover the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 POLICY_CONTENT = (
     '<policymap><policy domain="resource" name="memory" value="128GiB"/></policymap>'
@@ -126,7 +126,7 @@ def _install_fake(
 
 
 def test_imagemagick_setup_is_in_every_mode_default_set() -> None:
-    for mode in MODES:
+    for mode in tasks_values.MODES:
         assert "imagemagick_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
 
 

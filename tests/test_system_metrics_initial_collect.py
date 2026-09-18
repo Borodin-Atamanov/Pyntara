@@ -18,12 +18,11 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_initial_collect
+from pyntara.values import tasks as tasks_values
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 ALL_MODES = ("minimal", "server", "desktop")
 
 

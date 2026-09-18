@@ -22,10 +22,8 @@ from pykeepass.exceptions import CredentialsError
 
 from pyntara import task_catalog
 from pyntara.config import (
-    MODES,
     Config,
     EngineConfig,
-    TaskConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -40,6 +38,7 @@ from pyntara.utils import (
     session_environment,
     substituted_command,
 )
+from pyntara.values import tasks as tasks_values
 
 app = typer.Typer(invoke_without_command=True)
 
@@ -263,7 +262,7 @@ def _resolve_mode(cfg: EngineConfig) -> str:
         detected = detect_default_mode(cfg)
         log_event(f"Install mode not set, using detected default: {detected}")
         return detected
-    if mode in MODES:
+    if mode in tasks_values.MODES:
         return mode
     detected = detect_default_mode(cfg)
     _warn_and_continue(
@@ -277,7 +276,7 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 
 
 def _resolve_task_names(
-    mode: str, notice_timeout: int | None, tasks: tuple[TaskConfig, ...]
+    mode: str, notice_timeout: int | None, tasks: tuple[tasks_values.TaskSpec, ...]
 ) -> list[str]:
     """Task set from PYNTARA_TASKS, or the resolved mode defaults.
 
@@ -307,7 +306,7 @@ def _resolve_force_tasks(
     engine: EngineConfig,
     names: list[str],
     notice_timeout: int | None,
-    tasks: tuple[TaskConfig, ...],
+    tasks: tuple[tasks_values.TaskSpec, ...],
 ) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
@@ -357,7 +356,7 @@ def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
     """
 
     force_tasks = _resolve_force_tasks(
-        cfg.engine, names, cfg.engine.notice_timeout, cfg.tasks
+        cfg.engine, names, cfg.engine.notice_timeout, tasks_values.CATALOG
     )
     return Context(
         install_mode=mode,
@@ -378,16 +377,16 @@ def run() -> None:
     cfg = _load_config()
     configure_journal(cfg.engine)
     _export_desktop_session(cfg.engine)
-    if not cfg.tasks:
+    if not tasks_values.CATALOG:
         # Without the catalog there is nothing to run, so the run reports the
         # state instead of finishing as if the machine were provisioned.
         log_event(
-            "Error! the config has no [[tasks]] catalog, nothing to run",
+            "Error! the task catalog is empty, nothing to run",
             to_stderr=True,
         )
         raise typer.Exit(1)
     mode = _resolve_mode(cfg.engine)
-    names = _resolve_task_names(mode, cfg.engine.notice_timeout, cfg.tasks)
+    names = _resolve_task_names(mode, cfg.engine.notice_timeout, tasks_values.CATALOG)
     ctx = _run_context(cfg, mode, names)
     log_event(f"Install mode: {mode}")
     log_event(f"Tasks: {' '.join(names)}")

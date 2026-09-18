@@ -40,7 +40,6 @@ from .sotavpn_setup import SotavpnSetupConfig
 from .ssh import SshClientSetupConfig, SshDaemonSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import SystemMetricsSetupConfig
-from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .tor_setup import TorSetupConfig
@@ -92,7 +91,6 @@ class Config:
     system_metrics_setup: SystemMetricsSetupConfig
     vault_structure: VaultStructureConfig
     local_vault_setup: LocalVaultSetupConfig
-    tasks: tuple[TaskConfig, ...]
 
 
 def render_config_source(path: Path) -> str:

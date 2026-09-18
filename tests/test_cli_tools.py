@@ -15,21 +15,21 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import cli_tools
 from pyntara.values import cli_tools as cli_tools_values
 from pyntara.values import common as common_values
+from pyntara.values import tasks as tasks_values
 
 # Package set used by the tests; the real set stays in the values module.
 # Four packages keep the threshold math clean: one failure gives 75 percent,
 # above the shipped 70 percent threshold.
 TEST_PACKAGES = ("mc", "htop", "hollywood", "wget")
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # dependency tests use it so they cover the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 
 @pytest.fixture(autouse=True)
@@ -78,7 +78,7 @@ def _install_fake(
 
 
 def test_cli_tools_is_in_every_mode_default_set() -> None:
-    for mode in MODES:
+    for mode in tasks_values.MODES:
         assert "cli_tools" in task_catalog.default_tasks(mode, REAL_TASKS)
 
 

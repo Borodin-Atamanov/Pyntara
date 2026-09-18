@@ -16,18 +16,18 @@ from support import FakeProc as _FakeProc
 from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import MODES, load_config
 from pyntara.context import Context
 from pyntara.tasks import ffmpeg_setup
 from pyntara.values import ffmpeg_setup as ffmpeg_values
+from pyntara.values import tasks as tasks_values
 
 # Package set used by the tests; mirrors the real config but stays small.
 TEST_PACKAGES = ("ffmpeg",)
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # dependency tests use it so they cover the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 # Clone root the ffmpeg fixtures use: _wayrecord_env writes the C sources
 # under it, and _ctx hands it to the task through the Context.
@@ -169,7 +169,7 @@ def _command_fake(
 
 
 def test_ffmpeg_setup_is_in_every_mode_default_set() -> None:
-    for mode in MODES:
+    for mode in tasks_values.MODES:
         assert "ffmpeg_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
 
 

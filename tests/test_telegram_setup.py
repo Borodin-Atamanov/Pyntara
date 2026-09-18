@@ -17,10 +17,10 @@ from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
 from pyntara import task_catalog
-from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import telegram_setup
 from pyntara.values import common as common_values
+from pyntara.values import tasks as tasks_values
 from pyntara.values import telegram_setup as values
 
 # The release url the fake redirect resolves to and its archive name. The
@@ -37,10 +37,10 @@ UPDATER_BYTES = b"sentinel-updater-binary\n"
 ARCHIVE_BYTES = b"sentinel-archive\n"
 ICON_BYTES = b"sentinel-icon-png\n"
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 
 @pytest.fixture(autouse=True)

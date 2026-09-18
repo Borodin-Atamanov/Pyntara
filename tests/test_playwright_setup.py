@@ -15,19 +15,18 @@ from support import FakeProc as _FakeProc
 from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import playwright_setup
 from pyntara.values import common as common_values
 from pyntara.values import playwright_setup as playwright_values
+from pyntara.values import tasks as tasks_values
 
 # The version the fake playwright-cli --version probe reports.
 VERSION = "1.2.3"
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # dependency tests use it so they cover the actual task set.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 
 def _use_playwright_values(

@@ -36,7 +36,6 @@ def test_missing_file_returns_a_config_with_absent_values(
     assert isinstance(config, Config)
     assert config.engine.notice_timeout is None
     assert config.hostname.hostname_file is None
-    assert config.tasks == ()
 
 
 def test_empty_directory_returns_a_config_with_absent_values(
@@ -46,7 +45,6 @@ def test_empty_directory_returns_a_config_with_absent_values(
     config_dir.mkdir()
     config = load_config(config_dir)
     assert config.engine.notice_timeout is None
-    assert config.tasks == ()
 
 
 def test_broken_toml_is_read_as_a_document_without_values(
@@ -113,18 +111,6 @@ def test_values_keep_the_shape_their_field_declares(tmp_path: Path) -> None:
         "hostnamectl",
         "set-hostname",
     )
-
-
-def test_nested_tables_become_their_dataclasses(tmp_path: Path) -> None:
-    config = load_config(
-        _write(
-            tmp_path,
-            "[[tasks]]\nname = \"users\"\ndescription = \"Create users.\"\n"
-            'depends = []\nmodes = ["minimal"]\n',
-        )
-    )
-    assert config.tasks[0].name == "users"
-    assert config.tasks[0].modes == ("minimal",)
 
 
 def test_absent_config_keys_names_the_values_a_section_does_not_hold(

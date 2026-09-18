@@ -65,7 +65,6 @@ from .system_metrics_setup import (
     SystemMetricsSetupConfig,
     TelemetryPdfConfig,
 )
-from .tasks import TaskConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import (
     COUNTRY_REPORT_CONFIG_KEYS,
@@ -139,7 +138,6 @@ __all__ = [
     "SwapfileServiceInstallConfig",
     "SystemMetricsCollectorConfig",
     "SystemMetricsSetupConfig",
-    "TaskConfig",
     "TelegramSetupConfig",
     "TelemetryPdfConfig",
     "ThreeXuiXraySetupConfig",

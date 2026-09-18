@@ -19,16 +19,15 @@ from support import FakeProc as _FakeProc
 from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import rustdesk_setup
 from pyntara.utils import curl_flags
 from pyntara.values import rustdesk_setup as values
+from pyntara.values import tasks as tasks_values
 
-# The real catalog and config from the repository; the mode-membership
-# and dependency tests use them so they cover the actual task set.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+# The real catalog from the values package; the mode-membership and
+# dependency tests use it so they cover the actual task set.
+REAL_TASKS = tasks_values.CATALOG
 
 RELEASE_TAG = "1.4.9"
 ASSET_NAME = f"rustdesk-{RELEASE_TAG}-x86_64.deb"

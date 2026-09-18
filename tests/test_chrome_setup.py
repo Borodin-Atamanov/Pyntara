@@ -23,11 +23,12 @@ from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
 from pyntara.values import common as common_values
+from pyntara.values import tasks as tasks_values
 
-# The real catalog from the repository config; the mode-membership and
+# The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 # Fixture content of the browser settings repository: the profile
 # preferences and the system/ tree files.

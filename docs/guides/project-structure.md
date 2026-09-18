@@ -16,7 +16,7 @@ The helpers fit files where one setting is one line and the line order does not 
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
-config/ — Engine configuration and the task catalog, single source of truth for the Python part. One TOML file per top-level section (engine.toml, cli_tools.toml, tasks.toml, ...); the loader joins them in sorted order into one document. See docs/contracts/architecture.md.  
+config/ — Engine configuration, single source of truth for the Python part. One TOML file per top-level section still kept there (engine.toml, cli_tools.toml, ...); the loader joins them in sorted order into one document. The task catalog is not here: it lives in src/pyntara/values/tasks.py. See docs/contracts/architecture.md.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the four bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline. Its --fast argument checks only the touched python files and the test modules that match them by name.
@@ -44,7 +44,7 @@ src/pyntara/_version.py — Build version carrier: the single line __version__, 
 src/pyntara/bump_version.py — Version bumping: reads the build carrier, computes the next patch version and writes the carrier, the PYNTARA_VERSION line of inst.sh and the README title through config_edit.replace_line_by_string, then verifies that every carrier carries the new number and raises ValueError naming the ones that do not. Consumed by hooks/pre-commit (--build-only) and by the landing step hooks/land_version_commit.sh, which commits the carrier list this module reports.  
 src/pyntara/pyntara.py — Command entry (check-vault, run) and composition root. The only module that reads the environment.  
 src/pyntara/config/ — Config.toml reading: the Config frozen dataclass, load_config and the runtime reader, one module per section holding its frozen dataclass, the install mode vocabulary in _fields.py, the public surface re-exported from the package __init__. The reader takes every value as it is and never fails; no rule of the config is checked here, the checks and the vocabularies they validate against live in tests/config_checks.py.  
-src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog loaded from the config/ directory.  
+src/pyntara/task_catalog.py — Task catalog logic: validate_mode, default_tasks, resolve, unknown_tasks operating on the catalog from src/pyntara/values/tasks.py.  
 src/pyntara/models.py — TaskResult dataclass.  
 src/pyntara/context.py — Context frozen dataclass.  
 src/pyntara/task_runner.py — Task execution engine: loads task modules by name, runs them in order, collects results.  
@@ -90,7 +90,7 @@ Modules planned but not implemented yet are listed in [What is next](../simplifi
 
 ### src/pyntara/tasks/
 
-One module per task, each exposing task(ctx) -> TaskResult. Task names come from the [[tasks]] section of the config/ directory, the single source of truth; the module list is not repeated here so renames in the config cannot leave stale names behind.
+One module per task, each exposing task(ctx) -> TaskResult. Task names come from the catalog in src/pyntara/values/tasks.py, the single source of truth; the module list is not repeated here so renames in the catalog cannot leave stale names behind.
 
 ## Config section map
 
@@ -119,7 +119,7 @@ playwright_setup -> config/playwright_setup.py -> PlaywrightSetupConfig -> playw
 system_metrics_setup -> config/system_metrics_setup.py -> SystemMetricsSetupConfig -> system_metrics_setup
 vault_structure -> config/vault.py -> VaultStructureConfig -> local_vault_setup, nextdns_setup_system_wide  
 local_vault_setup -> config/vault.py -> LocalVaultSetupConfig -> local_vault_setup  
-tasks -> config/tasks.py -> tuple[TaskConfig, ...] -> task_catalog.py
+tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py
 
 ## Public API surface
 
@@ -172,7 +172,7 @@ A new section needs no parser and no change to the reader: the runtime reader bu
 
 ## Config coverage guards
 
-tests/config_checks.py holds the strict checks of the config: the types, the allowed sets, the ranges, the cross-checks between sections and the task catalog rules. They are the checks that used to run inside the package; nothing in the package checks anything now.
+tests/config_checks.py holds the strict checks of the config: the types, the allowed sets, the ranges and the cross-checks between sections. They are the checks that used to run inside the package; nothing in the package checks anything now.
 
 tests/test_config_coverage.py applies those checks to the repository config and compares the forms of the configuration: the repository config, the shared test document in tests/config_helpers.py and the Config the checks build from each of them.
 

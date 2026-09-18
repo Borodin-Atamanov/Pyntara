@@ -23,13 +23,14 @@ from pyntara.pyntara import (
     app,
     detect_default_mode,
 )
+from pyntara.values import tasks as tasks_values
 
 runner = CliRunner()
 
-# The real catalog from the repository config; the run tests use it so the
-# mocked Config matches the actual default task sets and the app output.
+# The real catalog from the values package; the run tests use it so the
+# default task sets the app resolves are the actual ones.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 # Process names that mark a desktop session in the mode detection tests.
 DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell")
@@ -46,7 +47,6 @@ def _test_config(notice_timeout: int = 7) -> Config:
         notice_timeout=notice_timeout,
         task_start_delay_seconds=0,
         cli_tools_packages=("mc", "htop", "hollywood"),
-        tasks=REAL_TASKS,
     )
 
 
@@ -131,9 +131,7 @@ def test_run_skips_the_export_without_a_desktop_user(
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setattr(
         "pyntara.pyntara.load_config",
-        lambda path: make_config(
-            engine_desktop_username="", notice_timeout=0, tasks=REAL_TASKS
-        ),
+        lambda path: make_config(engine_desktop_username="", notice_timeout=0),
     )
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
@@ -358,7 +356,6 @@ def test_run_configures_the_journal_from_config(
         lambda path: make_config(
             journal_identifier="pyntara-journal-test",
             task_start_delay_seconds=0,
-            tasks=REAL_TASKS,
         ),
     )
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
@@ -798,18 +795,14 @@ def test_run_skip_apt_update_zero_is_false(
     assert _captured_skip_flag(monkeypatch, "0") is False
 
 
-def test_run_reports_when_config_has_no_task_catalog(
+def test_run_reports_when_the_task_catalog_is_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A config without the [[tasks]] catalog leaves nothing to run. The run
-    # reports the state and exits nonzero instead of crashing or claiming
-    # success for a machine it could not provision (architecture contract,
-    # Configuration). The reader itself never fails.
+    # An empty catalog leaves nothing to run. The run reports the state and
+    # exits nonzero instead of crashing or claiming success for a machine it
+    # could not provision (architecture contract, Configuration).
     _clear_env(monkeypatch)
-    monkeypatch.setattr(
-        "pyntara.pyntara.load_config",
-        lambda path: load_config(Path("/nonexistent-config")),
-    )
+    monkeypatch.setattr("pyntara.pyntara.tasks_values.CATALOG", ())
     result = runner.invoke(app, [])
     assert result.exit_code == 1
-    assert "no [[tasks]] catalog" in result.output
+    assert "the task catalog is empty" in result.output

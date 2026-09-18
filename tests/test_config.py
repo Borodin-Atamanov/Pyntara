@@ -1,8 +1,8 @@
 """Integration tests for config.toml loading.
 
 The section-specific wrong-type tests live in test_config_engine.py,
-test_config_memory.py, test_config_network.py, test_config_system_metrics.py,
-test_config_vault.py and test_config_tasks.py; each uses the shared
+test_config_memory.py, test_config_network.py, test_config_system_metrics.py
+and test_config_vault.py; each uses the shared
 base_config() from config_helpers.py. This module keeps the end-to-end
 cases: a full valid document, typed value round-trip and the whole-file
 failure modes.
@@ -38,8 +38,6 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
         config.system_metrics_setup.collector.network_modules, tuple
     )
     assert isinstance(config.rustdesk_setup.options, tuple)
-    assert isinstance(config.tasks, tuple)
-    assert config.tasks[0].name == "users"
 
 
 def test_load_config_missing_file_raises(tmp_path: Path) -> None:
@@ -78,7 +76,6 @@ def test_load_config_directory_joins_files(tmp_path: Path) -> None:
     config = load_checked_config(config_dir)
     assert config.engine.notice_timeout == 7
     assert config.cli_tools.package_install_retries == 3
-    assert config.tasks[0].name == "users"
 
 
 def test_load_config_directory_duplicate_table_raises(tmp_path: Path) -> None:

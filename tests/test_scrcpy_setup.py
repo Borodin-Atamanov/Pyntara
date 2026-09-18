@@ -20,16 +20,16 @@ from support import FakeProc as _FakeProc
 from support import make_context
 
 from pyntara import task_catalog
-from pyntara.config import load_config
 from pyntara.context import Context
 from pyntara.tasks import scrcpy_setup
 from pyntara.values import common as common_values
 from pyntara.values import scrcpy_setup as values
+from pyntara.values import tasks as tasks_values
 
-# The real catalog from the repository config, so the mode-membership test
+# The real catalog from the values package, so the mode-membership test
 # covers the actual task set.
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REAL_TASKS = load_config(REPO_ROOT / "config").tasks
+REAL_TASKS = tasks_values.CATALOG
 
 TAG = "v4.1"
 VERSION = "4.1"

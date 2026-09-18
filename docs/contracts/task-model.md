@@ -32,13 +32,13 @@ A meaningful task: install and configure SSH server, patch daemon config, add pr
 
 ## Task catalog
 
-The catalog lives in the config/ directory under the [[tasks]] section (tasks.toml). Each entry has name, description, dependencies and mode membership; dependencies must name tasks listed earlier in the file. The config is the single source of truth for task names: the docs never repeat the catalog, so a rename in the config cannot leave stale names behind. Per-task behavior is described in the spec documents (docs/spec/). An empty modes list is allowed: the task stays in the catalog but belongs to no install mode, so it never runs in a default task set and only runs when selected explicitly.
+The catalog lives in src/pyntara/values/tasks.py. Each record has name, description, dependencies and mode membership; dependencies must name tasks listed earlier. The catalog module is the single source of truth for task names: the docs never repeat the catalog, so a rename in the catalog cannot leave stale names behind. Per-task behavior is described in the spec documents (docs/spec/). An empty modes list is allowed: the task stays in the catalog but belongs to no install mode, so it never runs in a default task set and only runs when selected explicitly.
 
 ## Task dependencies
 
 Enabling a task auto-enables all its required dependencies transitively.  
 Disabling a task does not auto-disable dependent tasks.  
-Task set and metadata are defined in the config/ directory under the [[tasks]] section; task_catalog.py holds the resolution logic.
+Task set and metadata live in src/pyntara/values/tasks.py; task_catalog.py holds the resolution logic.
 
 ## Task contract (Python)
 

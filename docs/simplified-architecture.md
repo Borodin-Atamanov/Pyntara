@@ -8,7 +8,7 @@ The contract architecture describes an enterprise-style runtime: a config preced
 
 ## What changed
 
-Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in the config/ directory under the [[tasks]] section. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.  
+Dialog layer removed. dialog and bsdutils packages, select_tasks, select_install_mode, prompt_password_input, load_task_catalog, resolve_tasks, the task-catalog command and tasks.yaml are gone. The task catalog lives in src/pyntara/values/tasks.py. inst.sh passes only environment variables; the engine resolves defaults and dependencies inside the process. This removes the most fragile protocol in the project: the shell no longer parses Python output.  
 Task state machine removed. No JSON state files, no statuses, no input fingerprints. Idempotency is achieved the classic way: each task checks the real system state and is done when the goal is already reached. Force mode and task selection are environment variables resolved by the engine ([Task selection](spec/install-modes.md#task-selection), [Force task selection](spec/install-modes.md#force-task-selection)); invalid names follow the [Resilience rule](#resilience-rule).  
 Single config source added as the source of truth for the Python part: the config/ directory at the repository root, one TOML file per top-level section, joined into a single document; a config problem never stops the run: the config/ directory is the single source of truth for the Python part, the reader takes every value as it is and invents none, and the rules of the config live in the test suite ([Configuration](contracts/architecture.md#configuration)). Environment variables remain the inst.sh interface for per-run selection (mode, tasks, force) and secrets. Env-over-config priority is deferred.  
 DI framework removed. No typing.Protocol, no task registry, no read-only catalog wrapper. One small frozen Context dataclass carries install mode, vault credentials, the force task list and the task data root. Tasks are plain functions task(ctx) -> TaskResult, one module per task in src/pyntara/tasks/.  
@@ -30,7 +30,7 @@ tests/: pytest for the engine, bash tests for inst.sh.
 inst.sh bootstrap core: root check, FHS directories, apt update before install, uv install, git fetch, uv sync, vault password resolution through check-vault, install mode detection.  
 check-vault command and its tests.  
 mypy --strict and ruff mandatory; pytest covers both the Python application and the bootstrap installer.  
-The tasks from the catalog (config/tasks.toml) as the main implementation work.
+The tasks from the catalog (src/pyntara/values/tasks.py) as the main implementation work.
 
 ## What is next (separate changes)
 
