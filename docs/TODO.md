@@ -1104,6 +1104,17 @@ machine in this turn, and the probe is named with the figure.
     tests/config_helpers.py and the config coverage guard, then stage H for the
     documents that still describe the config, and stage I, the live proof, which
     waits for the name of the target machine.
+128. Where the kde_settings branch stands on 2026-09-17: stage 1 is committed and
+    the branch is pushed, so the recovered values module is safe in the
+    repository and main is untouched. Stage 2 is the task refactor, measured as
+    108 reads that map to a constant of the module by upper casing the name, 4
+    reads that map to the shared module (username, home_dir,
+    global_shortcuts_file_name, kconfig_true_value) and the records read
+    cfg.kconfig, which becomes values.KCONFIG_RECORDS; each of the about forty
+    helper functions loses its cfg parameter and the call site loses the
+    argument. Stage 1 of this branch is the only one of the four whose gate is
+    green: stage 2 leaves the tests reading the config section, which is the red
+    window the user allowed inside a branch.
 
 
 
