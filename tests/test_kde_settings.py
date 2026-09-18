@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -466,12 +465,7 @@ def test_missing_packages_are_installed(
     _, _, _, installs, _, _, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
-    assert installs == [
-        "plasma-workspace",
-        "libkf6config-bin",
-        "kubuntu-settings-desktop",
-        "python3-dbus",
-    ]
+    assert installs == list(values.PACKAGES)
 
 
 def test_package_install_failure_is_a_warning_and_settings_still_apply(
@@ -712,8 +706,10 @@ def test_touchpad_writes_to_each_found(
     click_writes = [command for command in writes if "ClickMethod" in command]
     assert click_writes
     assert "Libinput" in " ".join(click_writes[0])
-    # clickfinger maps to 1.
-    assert click_writes[0][-1] == "1"
+    # The configured click method maps to the value the file stores.
+    assert (
+        click_writes[0][-1] == values.CLICK_METHOD_VALUES[values.TOUCHPAD_CLICK_METHOD]
+    )
 
 
 def test_touchpad_missing_skips(
@@ -1272,11 +1268,9 @@ def test_apply_shortcuts_live_runs_the_shared_client(
     # actions, and the state the client reports back decides whether the
     # task changed anything.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
-    cfg = ctx.config.kde_settings
     calls: list[list[str]] = []
     _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        cfg,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1310,14 +1304,14 @@ def test_apply_shortcuts_live_runs_the_shared_client(
             "keys": [],
         },
         {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
+            "component_unique": values.KWIN_COMPONENT_UNIQUE,
+            "component_friendly": values.KWIN_COMPONENT_FRIENDLY,
             "action": "Grow Window by 5px",
             "keys": ["Meta+Ctrl+Up"],
         },
         {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
+            "component_unique": values.KWIN_COMPONENT_UNIQUE,
+            "component_friendly": values.KWIN_COMPONENT_FRIENDLY,
             "action": "Shrink Window by 5px",
             "keys": ["Meta+Ctrl+Down"],
         },
@@ -1343,7 +1337,6 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
         ],
     )
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1352,7 +1345,7 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
     )
     assert changed is True
     assert len(calls) == 2
-    assert pauses == [ctx.config.kde_settings.shortcut_apply_retry_delay_seconds]
+    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
 
 
 def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
@@ -1375,7 +1368,6 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
         assign_unsupported={"MinimizeAll": ["meta+u"]},
     )
     task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1413,7 +1405,6 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         assign_after={"MinimizeAll": []},
     )
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1422,7 +1413,7 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         warnings=warnings,
     )
     assert changed is True
-    assert len(calls) == ctx.config.kde_settings.shortcut_apply_attempts
+    assert len(calls) == values.SHORTCUT_APPLY_ATTEMPTS
     assert len(warnings) == 1
     assert "MinimizeAll" in warnings[0]
     written = {command[command.index("--key") + 1]: command[-1] for command in writes}
@@ -1450,7 +1441,6 @@ def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
     calls: list[list[str]] = []
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=None,
@@ -1705,8 +1695,11 @@ def _kconfig_ctx(
     *,
     force: bool = False,
 ):
-    """Context whose kconfig list carries the given records."""
+    """Context whose kconfig list carries the given records and whose theme
+    state is the fixed dark theme, so an idempotent run has nothing to do."""
 
+    values.AUTOMATIC_LOOK_AND_FEEL = 0
+    values.SYSTEM_LOOK_AND_FEEL_DIR = tmp_path / "no-system-themes"
     values.KCONFIG_RECORDS = records
     return make_context(
         task_name="kde_settings",
@@ -1830,7 +1823,7 @@ def test_kconfig_records_skip_when_matching(
     _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch,
         currents=currents,
-        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
+        assign_state=_granted_script_hotkeys(),
     )
     result = task_module.task(ctx)
     assert result.success is True
@@ -1937,14 +1930,11 @@ def test_the_desktop_dbus_names_come_from_the_config(
     # and the shipped names stop appearing.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),)
     ctx = _kconfig_ctx(tmp_path, records)
-    renamed = replace(
-        ctx.config.kde_settings,
-        kwin_bus_name="org.example.KWin",
-        virtual_desktop_manager_object_path="/ExampleDesktopManager",
-        virtual_desktop_manager_interface_name="org.example.DesktopManager",
-        virtual_desktops_property_name="screens",
-        dbus_properties_interface_name="org.example.Properties",
-    )
+    values.KWIN_BUS_NAME = "org.example.KWin"
+    values.VIRTUAL_DESKTOP_MANAGER_OBJECT_PATH = "/ExampleDesktopManager"
+    values.VIRTUAL_DESKTOP_MANAGER_INTERFACE_NAME = "org.example.DesktopManager"
+    values.VIRTUAL_DESKTOPS_PROPERTY_NAME = "screens"
+    values.DBUS_PROPERTIES_INTERFACE_NAME = "org.example.Properties"
     calls: list[list[str]] = []
     client_texts: list[str] = []
 
@@ -1974,7 +1964,6 @@ def test_the_desktop_dbus_names_come_from_the_config(
     client_path = tmp_path / "list_desktop_ids.py"
     client_path.write_text(shipped_client.read_text(encoding="utf-8"), encoding="utf-8")
     error = task_module._apply_desktop_count_live(
-        renamed,
         script_path=client_path,
         timeout=30.0,
         env=env,

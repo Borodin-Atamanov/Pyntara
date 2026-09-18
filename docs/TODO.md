@@ -1225,6 +1225,19 @@ machine in this turn, and the probe is named with the figure.
     pass the section config first, the kconfig record skip test whose fake state
     still asks for the granted script hotkeys with the config, and the dbus
     names test that still renames the section config.
+134. Stage 3 of kde_settings finished on 2026-09-17: all 77 tests of the section
+    pass and ruff is clean on the file. The last stride bound three expectations
+    to the values instead of the test document spelling (the package list, the
+    click method through CLICK_METHOD_VALUES, and the DBus names, which the test
+    now writes on the values module), and gave the second test helper the same
+    expected state as the first one: the fixed dark theme with a system theme
+    directory that does not exist, because the shipped value turns the native
+    day and night switch on and a task test that expects an idempotent run must
+    state the state it expects. Two lessons for the remaining sections: a helper
+    that builds a context must state every value its tests expect, and an
+    expectation copied from the shared test document is a defect once the task
+    reads the values module. Stage 4, the removal of the config copy of the
+    section, is next.
 
 
 
