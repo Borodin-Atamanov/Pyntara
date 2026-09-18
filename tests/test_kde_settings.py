@@ -98,6 +98,7 @@ def _ctx(
     system_look_and_feel_dir: Path | None = None,
     repo_root: Path | None = None,
     kconfig: tuple[KconfigRecord, ...] = (),
+    automatic_look_and_feel: int = 0,
 ):
     """Context with the target user home and the values rooted in tmp_path.
 
@@ -105,7 +106,9 @@ def _ctx(
     the touchpad discovery reads it. system_look_and_feel_dir is the system
     theme directory of the test; the default one does not exist, so the
     theme cursor overrides skip the copy unless a test points it at its own
-    fixture.
+    fixture. automatic_look_and_feel is off unless a test asks for the
+    native day and night switch, so a task test applies the dark theme
+    directly and the switch has its own tests.
     """
 
     if kcminputrc is not None:
@@ -113,6 +116,7 @@ def _ctx(
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "kcminputrc").write_text(kcminputrc, encoding="utf-8")
     values.VIRTUAL_KEYBOARD_ENABLED = virtual_keyboard_enabled
+    values.AUTOMATIC_LOOK_AND_FEEL = automatic_look_and_feel
     values.SYSTEM_LOOK_AND_FEEL_DIR = (
         system_look_and_feel_dir or tmp_path / "no-system-themes"
     )
@@ -1056,7 +1060,7 @@ def test_apply_user_dirs_writes_configured_dirs(
     changed = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed is True
     text = (config_dir / "user-dirs.dirs").read_text(encoding="utf-8")
-    assert 'XDG_MUSIC_DIR="$HOME/Downloads"' in text
+    assert f'XDG_MUSIC_DIR="{values.USER_DIRS["XDG_MUSIC_DIR"]}"' in text
     assert 'XDG_DESKTOP_DIR="$HOME/Desktop"' in text
     changed2 = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed2 is False

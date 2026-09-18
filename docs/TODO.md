@@ -1185,28 +1185,31 @@ machine in this turn, and the probe is named with the figure.
     migrated section applies: a test moves a value with monkeypatch.setattr on
     the values module.
 132. Stage 3 of kde_settings, second half, in progress on 2026-09-17. Passing
-    tests in the section file: 44 of 77, up from 37 after the environment, file
-    mode, touchpad word, cursor theme, user dirs and Konsole profile groups and
-    from 30 before the KWin script, script hotkey record and SDDM call sites.
-    One regression of this round is fixed and recorded: a helper call removed as
-    unused context carried a side effect (it pointed the system theme directory
-    at the temporary tree), so the call stays and only its result is dropped.
-    The 33 tests that still fail, by group, as the map for the next stride:
-    the task level tests that still build the section through make_config
-    (first run, skip when configured, force, only theme or only colour scheme
-    differs, appearance tool failure, no desktop session, missing packages,
-    touchpad writes, one failing write, kconfig records skip);
-    the three make_config calls that carry automatic_look_and_feel;
-    the shortcuts group (the five live tests and the script hotkey pair test);
-    the desktop count group (three live tests and the dbus names test);
-    the Places group (the marker test, the idempotent test, the metadata owner,
-    the namespace address and the xbel hidden test);
-    and the command tests at the end of the file that rename a value through
-    dataclasses.replace(cfg, ...) (the user command prefix, the kconfig calls,
-    the file operations, the plasma apply calls and the recursive owner).
-    One test that passed before the last group now fails and is not yet
-    understood (test_apply_user_dirs_writes_configured_dirs); it is the first
-    thing to look at in the next stride.
+    tests in the section file: 52 of 77, reached in strides of 25 (first half),
+    30 (Places and touchpad), 37 (six helper groups), 44 (KWin scripts, hotkey
+    records, SDDM) and 52 (the helper of the file now also states the state its
+    tests expect: the native day and night switch is off unless a test asks for
+    it, because the shipped value is on while the old test document had it off).
+    Two regressions of these strides are recorded. One is fixed: a helper call
+    removed as unused context carried a side effect, so the call stays and only
+    its result is dropped. One is understood: the XDG user directories test
+    asserted the test document spelling of the directive while the task now
+    reads the shipped one, and the assertion now binds to values.USER_DIRS. The
+    same divergence between the test document and the shipped values explains
+    the two remaining assertion failures (the package list of the missing
+    package test and the click method of the touchpad test).
+    The 25 tests that still fail are, with the exact reason, a list the next
+    stride can work through: 15 of them pass the section config as the first
+    argument of a helper that no longer takes one (one site each for
+    _granted_script_hotkeys, _script_hotkey_pairs, _shortcut_record_changes,
+    _notify_flag, _declare_missing_prefixes, _preconfigure_user_files,
+    _as_user_command, _appearance_command, _kconfig_command, _write_user_file
+    and _apply_theme_cursor_overrides; three for _places_xbel_hidden; five for
+    _apply_shortcuts_live; four for _apply_desktop_count_live), two are the
+    assertion failures above, and five are the command tests at the end of the
+    file that rename a value through dataclasses.replace(cfg, ...) and must move
+    to writing the values module.
+
 
 
 
