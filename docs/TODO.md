@@ -1489,3 +1489,32 @@ machine in this turn, and the probe is named with the figure.
     The suite counts 2267 tests now (the 72 of the removed config file are gone);
     every gate passes: ruff, ruff format, mypy strict over 137 source files, mypy
     over the tests, and the four bash suites.
+
+147. The live proof of the engine values migration, on the user's order of
+    2026-09-18: a full production run of the bootstrap on the local machine
+    (dozor-gunid), which is the machine the values are read on. The run used the
+    local clone as the source (PYNTARA_REPO_URL=/home/i/Downloads/Pyntara) and
+    the production vault password, and it ran the code of the last commit, not a
+    copy: the working clone the installer fetched is
+    /var/cache/pyntara/repo, it holds src/pyntara/values/engine.py and it does
+    not hold config/engine.toml any more, and its HEAD is the same commit as the
+    repository under work.
+    Result: exit code 0, "All 31 tasks finished", 106 seconds, not one task
+    failed, was skipped or warned, and no line of the run reports a missing
+    value. Sixteen tasks reported their target state already reached (zram,
+    zswap, swapfile, ssh daemon and client, kde keyboard, i2pd, yggdrasil, tor,
+    three_x_ui_xray, cli_tools, playwright, telegram, scrcpy, nextdns), which is
+    the idempotency contract working on a configured machine, and the tasks that
+    do work reported it in full: system_metrics_setup deployed the service and
+    its venv, port_forwarding_setup and upnp_forwarding_setup deployed their
+    units, chrome_setup registered the apt repository, local_vault_setup opened
+    the production vault, commit_final_system_metrics committed the telemetry
+    PDF. Every unit the run owns answers active and enabled afterwards
+    (system_metrics.service, system_metrics_collector.timer,
+    auto_port_forwarding.service, upnp_forwarding.timer, zram, zswap,
+    swapfile).
+    The journal of that window carries no error of the engine; the errors in
+    /tmp/production_run.log and in the journal belong to the test run of the same
+    morning (09:31) and to the x-ui REALITY client of an unrelated connection
+    (09:47), and the curl lines that look like errors only carry the --show-error
+    flag.
