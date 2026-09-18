@@ -1068,6 +1068,42 @@ machine in this turn, and the probe is named with the figure.
     Point 116 shows why: seven modules read the pair through one helper and
     several tests build a real vault in a temporary directory, so a helper that
     stopped reading the config would write to /var during a test run.
+124. The user allowed a multi-commit branch on 2026-09-17, which replaces the
+    two options of point 121: a section that does not fit one turn is written on
+    one branch in several commits, main receives one green commit through a
+    squash merge, and the rule that the full suite runs before a commit applies
+    to the state that reaches main, not to every intermediate commit of the
+    branch. Main therefore stays clean and green while the branch is red in
+    between, and the branch is never left as the only home of a finished change:
+    it is merged and deleted in the turn that finishes it.
+125. The kde_settings stages, and each is a commit of the branch: stage 1 the
+    values module in src/pyntara/values/kde_settings.py, recovered and verified
+    against the TOML, which leaves the gate green because nothing reads it yet;
+    stage 2 the task reads the values module at the point of use, registered in
+    VALUES_MODULE_NAMES and MIGRATED_SECTIONS; stage 3 the tests read the values
+    module instead of configuring the section; stage 4 the TOML copy and the
+    config side go, that is config/kde_settings.toml,
+    src/pyntara/config/kde_settings.py, the section of tests/config_checks.py,
+    the fragment of tests/config_helpers.py, tests/test_config_kde_settings.py
+    and the Parameters section of docs/spec/kde-settings.md.
+126. The sizes of kde_settings, measured on 2026-09-17 before starting: the TOML
+    is 2501 lines, the task 2244 lines and the tests 2420 lines, the config
+    dataclass 207 lines, and the recovered values module 51 KB, holding 109
+    declared values (5 settings of the TOML moved to the shared module) and 327
+    Kconfig records. The task reads the section through
+    one binding, cfg = ctx.config.kde_settings, and passes cfg into about forty
+    helper functions, so every one of those signatures loses its parameter and
+    each of the 201 reads of the 113 settings becomes a read of the values
+    module. This is the largest section of the migration by an order of
+    magnitude, which is why it is the only one written across several commits.
+127. The remainder after kde_settings, unchanged in order: E2 the engine values
+    (98 values, 22 of them read by task modules, 47 modules outside the config
+    package), then stage F, the coupled sections such as ssh_daemon_setup with
+    its nine live readers through pyntara/ssh.py, then stage G, which removes
+    the remaining TOML files, the config package, tests/config_checks.py,
+    tests/config_helpers.py and the config coverage guard, then stage H for the
+    documents that still describe the config, and stage I, the live proof, which
+    waits for the name of the target machine.
 
 
 
