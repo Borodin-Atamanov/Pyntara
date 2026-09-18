@@ -10,28 +10,22 @@ collector that keeps the document keeps the error instead of losing it.
 When neither source yields an address, the command exits nonzero with an
 explanation on stderr.
 
-The virtual port and the SOCKS port come from the single system config
-the command is given, which is the same source the tor_setup task writes
-into the drop-in file, so the report can never name a port the machine
-does not serve (docs/spec/system-metrics.md, section Report collector).
-Runs as `python -m pyntara.tor_address CONFIG_PATH`.
+The virtual port and the SOCKS port are declared values of the tor_setup
+section, the same ones the task renders into the drop-in file, so the
+report can never name a port the machine does not serve
+(docs/spec/system-metrics.md, section Report collector). Runs as
+`python -m pyntara.tor_address`, without an argument.
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
-from pyntara.config import (
-    TOR_ADDRESS_CONFIG_KEYS,
-    Config,
-    absent_config_keys,
-    load_config,
-)
 from pyntara.ssh_access import socks_proxy_address, ssh_command
 from pyntara.tor import onion_address_from_hostname_file
 from pyntara.values import engine as engine_values
+from pyntara.values import tor_setup as values
 
 # The identity may have been recreated between two provisioning runs
 # without the task noticing, so the saved address file is the fallback of
@@ -41,7 +35,7 @@ FALLBACK_NOTE = (
 )
 
 
-def resolve_address(hidden_service_dir: Path, saved_path: Path) -> tuple[str, str]:
+def resolve_address() -> tuple[str, str]:
     """The (address, note) of the onion service.
 
     The live hostname file is the primary source; the saved address file
@@ -49,11 +43,13 @@ def resolve_address(hidden_service_dir: Path, saved_path: Path) -> tuple[str, st
     the caller reports the failure.
     """
 
-    address = onion_address_from_hostname_file(hidden_service_dir / "hostname")
+    address = onion_address_from_hostname_file(
+        values.HIDDEN_SERVICE_DIR / values.HOSTNAME_FILE_NAME
+    )
     if address:
         return address, ""
     try:
-        saved = saved_path.read_text(encoding="utf-8").strip()
+        saved = values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         saved = ""
     if saved:
@@ -61,31 +57,25 @@ def resolve_address(hidden_service_dir: Path, saved_path: Path) -> tuple[str, st
     return "", ""
 
 
-def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
+def access_record() -> tuple[dict[str, object] | None, str]:
     """The report record of the Tor channel, or (None, reason).
 
-    Every value of the record comes from the config, so the virtual port
-    of the onion service and the SOCKS proxy of the daemon are the ones
-    the machine really serves.
+    Every value of the record is declared, so the virtual port of the
+    onion service and the SOCKS proxy of the daemon are the ones the
+    machine really serves.
     """
 
-    setup = cfg.tor_setup
-    missing = absent_config_keys(setup, TOR_ADDRESS_CONFIG_KEYS)
-    if missing:
-        return None, (
-            "the tor_setup section of the config has no " + ", ".join(missing)
-        )
-    address, note = resolve_address(setup.hidden_service_dir, setup.address_file_path)
+    address, note = resolve_address()
     if not address:
         return None, "Tor SSH onion address is not available"
     keys = engine_values.REPORT_RECORD_KEYS
-    proxy = socks_proxy_address(setup.socks_port)
+    proxy = socks_proxy_address(values.SOCKS_PORT)
     record: dict[str, object] = {
-        keys["channel"]: setup.report_channel_name,
+        keys["channel"]: values.REPORT_CHANNEL_NAME,
         keys["address"]: address,
-        keys["port"]: setup.onion_ssh_port,
+        keys["port"]: values.ONION_SSH_PORT,
         keys["proxy"]: proxy,
-        keys["ssh"]: ssh_command(address, setup.onion_ssh_port, proxy),
+        keys["ssh"]: ssh_command(address, values.ONION_SSH_PORT, proxy),
     }
     if note:
         record[keys["note"]] = note
@@ -95,11 +85,10 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
 def main(argv: list[str]) -> int:
     """Print the record; 0 when found, 2 on a usage error, 1 otherwise."""
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    record, error = access_record(cfg)
+    record, error = access_record()
     if record is None:
         print(error, file=sys.stderr)
         return 1

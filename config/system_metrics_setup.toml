@@ -350,7 +350,7 @@ command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.yggdrasil_ad
 
 [[system_metrics_setup.collector.network_modules]]
 name = "tor_onion"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address", "/etc/pyntara/config.toml"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.tor_address"]
 
 # The nextdns module prints the applied NextDNS profile ID from the file
 # the nextdns_setup_system_wide task writes after a successful

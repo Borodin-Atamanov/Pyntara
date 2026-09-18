@@ -38,7 +38,6 @@ from .swapfile_service_install import SwapfileServiceInstallConfig
 from .system_metrics_setup import SystemMetricsSetupConfig
 from .telegram_setup import TelegramSetupConfig
 from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
-from .tor_setup import TorSetupConfig
 from .vault import LocalVaultSetupConfig, VaultStructureConfig
 from .vocalinux_setup import VocalinuxSetupConfig
 from .yggdrasil_service_setup import YggdrasilServiceSetupConfig
@@ -70,7 +69,6 @@ class Config:
     yggdrasil_service_setup: YggdrasilServiceSetupConfig
     three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     sotavpn_setup: SotavpnSetupConfig
-    tor_setup: TorSetupConfig
     ssh_daemon_setup: SshDaemonSetupConfig
     ssh_client_setup: SshClientSetupConfig
     vocalinux_setup: VocalinuxSetupConfig

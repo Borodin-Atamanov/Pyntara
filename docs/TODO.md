@@ -1665,3 +1665,54 @@ machine in this turn, and the probe is named with the figure.
     Every gate passes: ruff check, mypy strict over 137 source files, mypy over
     the tests, 2219 unit tests and the four bash suites. The live production run
     waits for the end of stage F, on the user's decision 149.
+
+152. The tor_setup section migrated on 2026-09-18 (branch tor-setup-values), the
+    fourth section of stage F. Its values live in
+    src/pyntara/values/tor_setup.py, registered in VALUES_MODULE_NAMES, and the
+    section has no config table any more: config/tor_setup.toml,
+    src/pyntara/config/tor_setup.py, the _tor_setup_table validator of
+    tests/config_checks.py, the tor log level list, the fragment of
+    tests/config_helpers.py, the tor block and the tor_* parameters of
+    tests/support.py, the coverage entry of tests/test_config_coverage.py, the
+    tor case of tests/test_report_component_config_keys.py, the 36 tor cases of
+    tests/test_config_network.py, the two names of src/pyntara/config/__init__.py
+    and the loader field went, the two files to the trash.
+    One simplification is worth naming: the section carried two values with the
+    same content, torrc_dropin_path and torrc_include_path, and nothing kept
+    them equal. They are one value now, TORRC_DROPIN_PATH, and the include line
+    is built from it, so the directive can never name another file. A guard in
+    tests/test_values.py proves the drop-in lives in the configuration
+    directory of the main file, which the AppArmor profile of the package
+    requires, and that the include line carries the declared path.
+    The deployed command tor_address.py lost its argument completely, like
+    upnp_forwarding_state before it: it reads every value of its record from the
+    values package, so main takes the program name only and a path on the
+    command line is a usage error. config/system_metrics_setup.toml lost the
+    path in the command of the tor_onion module, and
+    tests/test_config_system_metrics.py gained test_tor_module_command_carries_no_config_path
+    and one more name in the filter of modules that still read the config. The
+    task lost the config object entirely, and seven helpers lost a parameter
+    each, the same shape as in the two sections before; only the sshd Port
+    directive of ssh_daemon_setup still arrives through the config.
+    Documentation followed: docs/spec/tor-service.md (the whole Parameters
+    section and the include line), docs/guides/project-structure.md (the section
+    row and the command line) and docs/spec/system-metrics.md (tor_address takes
+    no argument). Every gate passes: ruff check, mypy strict over 137 source
+    files, mypy over the tests, 2183 unit tests and the four bash suites. The
+    live production run waits for the end of stage F, on the user's decision 149.
+
+153. Restored the working tree on 2026-09-18 after a rollback that was not made
+    by the agent: README.md, docs/TODO.md, src/pyntara/github_release.py,
+    tests/config_checks.py, tests/config_helpers.py, tests/support.py,
+    src/pyntara/config/__init__.py and src/pyntara/config/loader.py had gone
+    back to states older than the engine migration, so
+    src/pyntara/github_release.py imported pyntara.config.engine, a module that
+    no longer exists, and the import of the package failed while the plan file
+    was down to five lines. Git had no trace of the rollback: no stash, no
+    merge, no revert, and the reflog held only the agent's own commits. The
+    files were restored from HEAD, the previous contents were copied to
+    /tmp/pyntara-rollback-4meQfQ first so nothing was lost, and the tor_setup
+    edits that had been made on the rolled-back base were redone on the restored
+    one. A lesson for the next time: check `git status --short` and
+    `git diff --stat` at the start of a turn, because the working tree can
+    change between two turns without a git operation to explain it.

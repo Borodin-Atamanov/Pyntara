@@ -37,6 +37,7 @@ import pyntara
 from pyntara.values import engine as engine_values
 from pyntara.values import i2pd_service_setup as i2pd_values
 from pyntara.values import port_forwarding_setup as port_forwarding_values
+from pyntara.values import tor_setup as tor_values
 from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 
 # Every values module of the package, by its name inside pyntara.values.
@@ -65,6 +66,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "swapfile_service_install",
     "tasks",
     "telegram_setup",
+    "tor_setup",
     "vault_structure",
     "vocalinux_setup",
     "zram_service",
@@ -86,8 +88,7 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("common", "LAUNCHER_FILE_MODE", check_file_mode),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
-    ("i2pd_service_setup", "ADDRESS_FILE_MODE", check_file_mode),
-    ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
+    ("i2pd_service_setup", "ADDRESS_FILE_MODE", check_file_mode),    ("local_vault_setup", "LOCAL_VAULT_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_DIR_MODE", check_file_mode),
     ("local_vault_setup", "PASS_FILE_MODE", check_file_mode),
     ("local_vault_setup", "PASS_FILE_WRITABLE_MODE", check_file_mode),
@@ -109,6 +110,9 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
     ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
     ("telegram_setup", "ICON_FILE_MODE", check_file_mode),
+    ("tor_setup", "ADDRESS_FILE_MODE", check_file_mode),
+    ("tor_setup", "DROPIN_FILE_MODE", check_file_mode),
+    ("tor_setup", "HIDDEN_SERVICE_DIR_MODE", check_file_mode),
     ("zram_service", "HOT_ADD_READABLE_MODE_BIT", check_file_mode),
 )
 
@@ -472,3 +476,22 @@ def test_the_i2pd_asset_name_templates_carry_the_release_tag() -> None:
     ):
         assert "{release_tag}" in template
         assert template.endswith(".deb")
+
+
+def test_the_tor_log_level_is_one_the_daemon_accepts() -> None:
+    # Tor refuses to start on a level outside its own vocabulary, and the
+    # drop-in carries the value as it stands: a wrong spelling would leave the
+    # machine with a daemon that never comes up while the task reported a
+    # written configuration.
+    assert tor_values.LOG_LEVEL in ("debug", "info", "notice", "warn", "err")
+
+
+def test_the_tor_drop_in_lives_beside_the_main_configuration() -> None:
+    # The include line of the main configuration is built from the drop-in
+    # path, so the directive can never point at another file; and the file
+    # must sit directly in the tor configuration directory, because the
+    # AppArmor profile of the package allows reading /etc/tor/* but not its
+    # subdirectories.
+    assert tor_values.TORRC_DROPIN_PATH.parent == tor_values.TORRC_PATH.parent
+    include_line = f"{tor_values.INCLUDE_DIRECTIVE} {tor_values.TORRC_DROPIN_PATH}"
+    assert str(tor_values.TORRC_DROPIN_PATH) in include_line

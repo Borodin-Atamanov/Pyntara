@@ -29,7 +29,6 @@ from pyntara.config import (
     SystemMetricsCollectorConfig,
     SystemMetricsSetupConfig,
     ThreeXuiXraySetupConfig,
-    TorSetupConfig,
     YggdrasilServiceSetupConfig,
 )
 from pyntara.config.loader import render_config_source
@@ -100,12 +99,6 @@ COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
         "pyntara.config.three_x_ui_xray_setup",
         "PUBLIC_ADDRESS_CONFIG_KEYS",
         ThreeXuiXraySetupConfig,
-    ),
-    (
-        "pyntara.tor_address",
-        "pyntara.config.tor_setup",
-        "TOR_ADDRESS_CONFIG_KEYS",
-        TorSetupConfig,
     ),
     (
         "pyntara.yggdrasil_address",

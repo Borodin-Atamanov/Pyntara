@@ -44,7 +44,6 @@ from pyntara.config import (
     TelegramSetupConfig,
     TelemetryPdfConfig,
     ThreeXuiXraySetupConfig,
-    TorSetupConfig,
     VaultEntry,
     VaultGroup,
     VaultGroupSeed,
@@ -68,8 +67,6 @@ from pyntara.config.vault import GENERATED_PASSWORD_RE
 class ConfigError(RuntimeError):
     """Raised by a check when a config value is missing or invalid."""
 
-
-TOR_LOG_LEVELS: tuple[str, ...] = ("debug", "info", "notice", "warn", "err")
 
 DNS_OVER_TLS_VALUES: tuple[str, ...] = ("yes", "opportunistic", "no")
 
@@ -4052,159 +4049,6 @@ def _subscription_path_field(value: object, name: str) -> str:
     return text
 
 
-# from tor_setup.py
-
-
-def _tor_setup_table(raw: object) -> TorSetupConfig:
-    """Validate the [tor_setup] table and build the config.
-
-    package_name, service_unit_name, torrc_path, torrc_dropin_path,
-    torrc_include_path, hidden_service_dir and tor_user are non-empty
-    strings; dropin_file_mode, hidden_service_dir_mode and
-    address_file_mode are octal strings; log_level is one of the
-    TOR_LOG_LEVELS values; socks_port and onion_ssh_port are port numbers
-    between 1 and 65535; num_introduction_points, install_retries and
-    start_check_attempts are positive integers;
-    start_check_retry_delay_seconds is positive, so the readiness loop
-    always waits between attempts; address_file_path is a non-empty
-    string.
-    """
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[tor_setup] section is missing or not a table")
-    package_name = _nonempty_string_field(
-        raw.get("package_name"), "tor_setup.package_name"
-    )
-    service_unit_name = _nonempty_string_field(
-        raw.get("service_unit_name"), "tor_setup.service_unit_name"
-    )
-    torrc_path = Path(
-        _nonempty_string_field(raw.get("torrc_path"), "tor_setup.torrc_path")
-    )
-    torrc_dropin_path = Path(
-        _nonempty_string_field(
-            raw.get("torrc_dropin_path"), "tor_setup.torrc_dropin_path"
-        )
-    )
-    torrc_include_path = _nonempty_string_field(
-        raw.get("torrc_include_path"), "tor_setup.torrc_include_path"
-    )
-    dropin_file_mode = _octal_mode_field(
-        raw.get("dropin_file_mode"), "tor_setup.dropin_file_mode"
-    )
-    hidden_service_dir = Path(
-        _nonempty_string_field(
-            raw.get("hidden_service_dir"), "tor_setup.hidden_service_dir"
-        )
-    )
-    hidden_service_dir_mode = _octal_mode_field(
-        raw.get("hidden_service_dir_mode"),
-        "tor_setup.hidden_service_dir_mode",
-    )
-    tor_user = _nonempty_string_field(raw.get("tor_user"), "tor_setup.tor_user")
-    socks_port = _int_field(raw.get("socks_port"), "tor_setup.socks_port")
-    if not 1 <= socks_port <= 65535:
-        raise ConfigError("tor_setup.socks_port must be between 1 and 65535")
-    onion_ssh_port = _int_field(raw.get("onion_ssh_port"), "tor_setup.onion_ssh_port")
-    if not 1 <= onion_ssh_port <= 65535:
-        raise ConfigError("tor_setup.onion_ssh_port must be between 1 and 65535")
-    num_introduction_points = _int_field(
-        raw.get("num_introduction_points"),
-        "tor_setup.num_introduction_points",
-    )
-    if num_introduction_points < 1:
-        raise ConfigError("tor_setup.num_introduction_points must be positive")
-    log_level = _nonempty_string_field(raw.get("log_level"), "tor_setup.log_level")
-    if log_level not in TOR_LOG_LEVELS:
-        raise ConfigError(
-            f"tor_setup.log_level must be one of {', '.join(TOR_LOG_LEVELS)}"
-        )
-    dropin_template_file_name = _nonempty_string_field(
-        raw.get("dropin_template_file_name"),
-        "tor_setup.dropin_template_file_name",
-    )
-    include_directive = _nonempty_string_field(
-        raw.get("include_directive"), "tor_setup.include_directive"
-    )
-    torrc_comment_sign = _nonempty_string_field(
-        raw.get("torrc_comment_sign"), "tor_setup.torrc_comment_sign"
-    )
-    hostname_file_name = _nonempty_string_field(
-        raw.get("hostname_file_name"), "tor_setup.hostname_file_name"
-    )
-    verify_config_command = _string_list(
-        raw.get("verify_config_command"),
-        "tor_setup.verify_config_command",
-    )
-    service_enable_command = _string_list(
-        raw.get("service_enable_command"),
-        "tor_setup.service_enable_command",
-    )
-    service_start_command = _string_list(
-        raw.get("service_start_command"),
-        "tor_setup.service_start_command",
-    )
-    service_restart_command = _string_list(
-        raw.get("service_restart_command"),
-        "tor_setup.service_restart_command",
-    )
-    install_retries = _int_field(
-        raw.get("install_retries"), "tor_setup.install_retries"
-    )
-    if install_retries < 1:
-        raise ConfigError("tor_setup.install_retries must be positive")
-    start_check_attempts = _int_field(
-        raw.get("start_check_attempts"), "tor_setup.start_check_attempts"
-    )
-    if start_check_attempts < 1:
-        raise ConfigError("tor_setup.start_check_attempts must be positive")
-    start_check_retry_delay_seconds = _float_field(
-        raw.get("start_check_retry_delay_seconds"),
-        "tor_setup.start_check_retry_delay_seconds",
-    )
-    if start_check_retry_delay_seconds <= 0:
-        raise ConfigError("tor_setup.start_check_retry_delay_seconds must be positive")
-    address_file_path = Path(
-        _nonempty_string_field(
-            raw.get("address_file_path"), "tor_setup.address_file_path"
-        )
-    )
-    address_file_mode = _octal_mode_field(
-        raw.get("address_file_mode"), "tor_setup.address_file_mode"
-    )
-    return TorSetupConfig(
-        package_name=package_name,
-        service_unit_name=service_unit_name,
-        torrc_path=torrc_path,
-        torrc_dropin_path=torrc_dropin_path,
-        torrc_include_path=torrc_include_path,
-        dropin_file_mode=dropin_file_mode,
-        hidden_service_dir=hidden_service_dir,
-        hidden_service_dir_mode=hidden_service_dir_mode,
-        tor_user=tor_user,
-        socks_port=socks_port,
-        onion_ssh_port=onion_ssh_port,
-        num_introduction_points=num_introduction_points,
-        log_level=log_level,
-        dropin_template_file_name=dropin_template_file_name,
-        include_directive=include_directive,
-        torrc_comment_sign=torrc_comment_sign,
-        hostname_file_name=hostname_file_name,
-        verify_config_command=verify_config_command,
-        service_enable_command=service_enable_command,
-        service_start_command=service_start_command,
-        service_restart_command=service_restart_command,
-        report_channel_name=_nonempty_string_field(
-            raw.get("report_channel_name"), "tor_setup.report_channel_name"
-        ),
-        install_retries=install_retries,
-        start_check_attempts=start_check_attempts,
-        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
-        address_file_path=address_file_path,
-        address_file_mode=address_file_mode,
-    )
-
-
 # from vault.py
 
 
@@ -5382,7 +5226,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
         three_x_ui_xray_setup=_three_x_ui_xray_setup_table(
             document.get("three_x_ui_xray_setup")
         ),
-        tor_setup=_tor_setup_table(document.get("tor_setup")),
         ssh_daemon_setup=_ssh_daemon_setup_table(document.get("ssh_daemon_setup")),
         ssh_client_setup=_ssh_client_setup_table(document.get("ssh_client_setup")),
         vocalinux_setup=_vocalinux_setup_table(document.get("vocalinux_setup")),

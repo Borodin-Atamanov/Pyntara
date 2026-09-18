@@ -61,7 +61,6 @@ from .three_x_ui_xray_setup import (
     PUBLIC_ADDRESS_CONFIG_KEYS,
     ThreeXuiXraySetupConfig,
 )
-from .tor_setup import TOR_ADDRESS_CONFIG_KEYS, TorSetupConfig
 from .vault import (
     LocalVaultSetupConfig,
     VaultEntry,
@@ -89,7 +88,6 @@ __all__ = [
     "SEND_ORDER_NEWEST_FIRST",
     "SEND_ORDER_OLDEST_FIRST",
     "SERVICE_CONFIG_KEYS",
-    "TOR_ADDRESS_CONFIG_KEYS",
     "YGGDRASIL_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
@@ -117,7 +115,6 @@ __all__ = [
     "TelegramSetupConfig",
     "TelemetryPdfConfig",
     "ThreeXuiXraySetupConfig",
-    "TorSetupConfig",
     "VaultEntry",
     "VaultGroup",
     "VaultGroupSeed",

@@ -76,7 +76,7 @@ src/pyntara/upnp_forwarding.py — Deployed oneshot service that asks the home r
 src/pyntara/upnp_forwarding_state.py — Deployed command that reads the rules of the home router live and prints one JSON record per rule of this machine with the router address, the published port, the scope of the address and the ssh command; the System Metrics collector runs it as the upnp network module. Runs as `python -m pyntara.upnp_forwarding_state`.
 src/pyntara/ssh.py — Shared SSH helpers: read the sshd listen port from the ssh_daemon_setup directives. Imported by i2pd_service_setup and tor_setup.
 src/pyntara/tor.py — Shared Tor helpers: read the onion address from the hidden service hostname file. Imported by tor_setup and tor_address.  
-src/pyntara/tor_address.py — Deployed address command: prints one JSON record with the Tor onion address and the ssh command that reaches the SSH daemon through the onion service, from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address CONFIG_PATH`.  
+src/pyntara/tor_address.py — Deployed address command: prints one JSON record with the Tor onion address and the ssh command that reaches the SSH daemon through the onion service, from the live hostname file or the saved fallback. Runs as `python -m pyntara.tor_address`.  
 src/pyntara/yggdrasil.py — Shared Yggdrasil helpers: parse the node self address from yggdrasilctl JSON output. Imported by yggdrasil_service_setup and yggdrasil_address.  
 src/pyntara/yggdrasil_address.py — Deployed address command: prints one JSON record with the yggdrasil self address and the ssh command that reaches the SSH daemon over the overlay, from the admin socket or the saved fallback. Runs as `python -m pyntara.yggdrasil_address CONFIG_PATH`.  
 src/pyntara/metrics.py — Long-running System Metrics service: periodic runtime vault availability check with journal logging (current placeholder, docs/spec/system-metrics.md).  
@@ -109,7 +109,7 @@ i2pd_service_setup -> src/pyntara/values/i2pd_service_setup.py -> READ_VALUE_NAM
 yggdrasil_service_setup -> config/yggdrasil_service_setup.py -> YggdrasilServiceSetupConfig -> yggdrasil_service_setup  
 three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupConfig -> three_x_ui_xray_setup  
 sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
-tor_setup -> config/tor_setup.py -> TorSetupConfig -> tor_setup  
+tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
 ssh_daemon_setup -> config/ssh.py -> SshDaemonSetupConfig -> ssh_daemon_setup  
 ssh_client_setup -> config/ssh.py -> SshClientSetupConfig -> ssh_client_setup  
 nextdns_setup_system_wide -> config/nextdns_setup_system_wide.py -> NextdnsSetupSystemWideConfig -> nextdns_setup_system_wide

@@ -408,34 +408,6 @@ def base_config() -> str:
         "subscription_fetch_wait_seconds = 90\n"
         "bridge_ready_wait_seconds = 60\n"
         "readiness_check_delay_seconds = 2\n"
-        "[tor_setup]\n"
-        'package_name = "tor"\n'
-        'service_unit_name = "tor@default.service"\n'
-        'torrc_path = "/etc/tor/torrc"\n'
-        'torrc_dropin_path = "/etc/tor/pyntara.conf"\n'
-        'torrc_include_path = "/etc/tor/pyntara.conf"\n'
-        'dropin_file_mode = "0644"\n'
-        'hidden_service_dir = "/var/lib/tor/ssh"\n'
-        'hidden_service_dir_mode = "0700"\n'
-        'tor_user = "debian-tor"\n'
-        "socks_port = 9050\n"
-        "onion_ssh_port = 22\n"
-        "num_introduction_points = 6\n"
-        'log_level = "notice"\n'
-        "install_retries = 3\n"
-        "start_check_attempts = 5\n"
-        "start_check_retry_delay_seconds = 1\n"
-        'address_file_path = "/var/lib/pyntara/tor_ssh_address"\n'
-        'address_file_mode = "0644"\n'
-        'dropin_template_file_name = "torrc.conf"\n'
-        'include_directive = "%include"\n'
-        'torrc_comment_sign = "#"\n'
-        'hostname_file_name = "hostname"\n'
-        'verify_config_command = ["runuser", "-u", "{tor_user}", "--", "tor", "--verify-config"]\n'
-        'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
-        'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
-        'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
-        'report_channel_name = "tor"\n'
         "[ssh_daemon_setup]\n"
         'package_name = "openssh-server"\n'
         'augeas_tools_package_name = "augeas-tools"\n'

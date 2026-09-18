@@ -10,7 +10,7 @@ The package comes from the Ubuntu archive (universe, enabled by add_extra_repos)
 
 ## Configuration ownership
 
-The task never rewrites the main configuration file at the configured torrc_path: it only guarantees the %include line named by torrc_include_path through the shared add_line_to_file helper (config_edit.py), which appends the line when it is absent and leaves every other line untouched, so unrelated content and comments of the file survive. The included value is a plain file path directly in the /etc/tor directory: the AppArmor profile of the package allows reading /etc/tor/* but not its subdirectories, and a plain path avoids the directory listing a glob would need. The package postinst creates /etc/tor/torrc, so the line is guaranteed after the install; a still missing main file is a warning of a completed task, because the drop-in would be silently ignored, and the drop-in is written anyway so the settings start to work as soon as the file appears. The task's own settings are rendered into the drop-in at torrc_dropin_path, which the task owns and rewrites whenever the rendered content differs, so manual edits of the drop-in are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
+The task never rewrites the main configuration file at the declared TORRC_PATH: it only guarantees the include line, built from the declared INCLUDE_DIRECTIVE and TORRC_DROPIN_PATH, through the shared add_line_to_file helper (config_edit.py), which appends the line when it is absent and leaves every other line untouched, so unrelated content and comments of the file survive. The included value is a plain file path directly in the /etc/tor directory: the AppArmor profile of the package allows reading /etc/tor/* but not its subdirectories, and a plain path avoids the directory listing a glob would need. The package postinst creates /etc/tor/torrc, so the line is guaranteed after the install; a still missing main file is a warning of a completed task, because the drop-in would be silently ignored, and the drop-in is written anyway so the settings start to work as soon as the file appears. The task's own settings are rendered into the drop-in at TORRC_DROPIN_PATH, which the task owns and rewrites whenever the rendered content differs, so manual edits of the drop-in are reverted on the next run. The render starts with an ownership comment, and the order of the lines is fixed, because the idempotency comparison is textual. The rendered options:
 
 SocksPort 127.0.0.1:{socks_port} — the SOCKS proxy, bound to the loopback interface only. A client routes its SSH connection through this proxy to reach the onion address.  
 Log {log_level} syslog — the verbosity, written to syslog so the journal shows the Tor diagnostics.  
@@ -25,7 +25,7 @@ After a change of the drop-in or the include line the task verifies the whole co
 
 ## Identity and the hidden service directory
 
-The identity lives in the hidden service directory at the configured hidden_service_dir. The directory must live inside the Tor data directory (/var/lib/tor): the AppArmor profile of the package confines Tor to its data directory, the same lesson as the i2pd data directory. The task creates the directory when it is absent, sets the configured mode (0700 by default, because Tor refuses to serve an onion service from a world-readable directory) and hands the ownership to the configured tor_user (the system user the service runs as), so Tor can write the keys and the hostname file. The contents of the directory are never removed or overwritten: the identity is stable, so the onion address survives restarts and reconfigurations.
+The identity lives in the hidden service directory at the declared HIDDEN_SERVICE_DIR. The directory must live inside the Tor data directory (/var/lib/tor): the AppArmor profile of the package confines Tor to its data directory, the same lesson as the i2pd data directory. The task creates the directory when it is absent, sets the declared mode (0700, because Tor refuses to serve an onion service from a world-readable directory) and hands the ownership to the declared TOR_USER (the system user the service runs as), so Tor can write the keys and the hostname file. The contents of the directory are never removed or overwritten: the identity is stable, so the onion address survives restarts and reconfigurations.
 
 Tor generates the identity on the first start. A missing hostname file is not an error, it is the first-run state: the task reports that the address appears after the first start, and the next run reports it.
 
@@ -33,11 +33,11 @@ Tor generates the identity on the first start. A missing hostname file is not an
 
 The .onion address is available on the target system through a shared reader and a command. The reader lives in the pyntara.tor module and is imported by the task and the command, never copied. The address from the hostname file crosses an external boundary, so it passes through the shared trim_whitespace helper before it is stored or reported (project rules, the trim rule).
 
-The task saves the address into the configured address_file_path with the mode address_file_mode once the hostname file exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644 by default) and any user can read the file. The deployed command venv/bin/python -m pyntara.tor_address CONFIG_PATH (the venv python from system_metrics_setup.venv_dir) reads the live hostname file first and falls back to the saved file when the hostname file is missing or empty, because the identity may have been recreated between two provisioning runs; it prints one JSON record with the channel, the address, the virtual port of the onion service, the SOCKS proxy and the ssh command that reaches the daemon through the service, and a fallback reason travels inside the record as a note. The ports come from the single config named by the argument, which is the same source the task writes into the drop-in. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
+The task saves the address into the declared ADDRESS_FILE_PATH with the mode ADDRESS_FILE_MODE once the hostname file exists, and rewrites the file whenever the address differs. The address is not secret, so the mode is world-readable (0644) and any user can read the file. The deployed command venv/bin/python -m pyntara.tor_address (the venv python from system_metrics_setup.venv_dir) reads the live hostname file first and falls back to the saved file when the hostname file is missing or empty, because the identity may have been recreated between two provisioning runs; it prints one JSON record with the channel, the address, the virtual port of the onion service, the SOCKS proxy and the ssh command that reaches the daemon through the service, and a fallback reason travels inside the record as a note. The command reads every value of the record from the values package and takes no argument at all, so the report can never name a port the machine does not serve. The shared reporting convention is defined in [Address commands](system-metrics.md#address-commands).
 
 ## Service lifecycle
 
-The service unit comes from the package; the task never renders or writes it. The Ubuntu package uses the multi-instance design: the daemon runs in the configured instance unit (tor@default.service), while the master unit tor.service is an empty oneshot that always reports active, so the task manages the instance unit and never the master. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to start_check_attempts times with a pause of start_check_retry_delay_seconds between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a warning of a completed task. A missing hostname file keeps the task active: it restarts the service so Tor regenerates the identity.
+The service unit comes from the package; the task never renders or writes it. The Ubuntu package uses the multi-instance design: the daemon runs in the declared instance unit (tor@default.service), while the master unit tor.service is an empty oneshot that always reports active, so the task manages the instance unit and never the master. The task enables the unit when it is not enabled, then starts the unit when it is inactive or restarts it when it is active and the configuration changed. After a start or restart the task waits for the unit to report active, repeating the is-active check up to START_CHECK_ATTEMPTS times with a pause of START_CHECK_RETRY_DELAY_SECONDS between the attempts, because the forking service may report activating for a moment. A unit that stays inactive after the loop is a warning of a completed task. A missing hostname file keeps the task active: it restarts the service so Tor regenerates the identity.
 
 The task follows the recoverable failure policy of the task contract: a step that cannot run is a warning of a completed task and the missing mechanism skips that step alone. A failed package install, a missing main configuration file, a failed verification, a Tor system user that does not exist, a failed enable, start or restart, a readiness wait that ran out, an unwritable address file and a missing SSH Port directive are all reported while the remaining steps keep their result; a missing or non-numeric SSH Port directive skips the drop-in alone, because the forward target is unknown.
 
@@ -47,44 +47,44 @@ The target state is reached when the package is installed, the %include line is 
 
 ## Parameters
 
-All parameters live in the [tor_setup] table of the config/ directory.
+All parameters live in src/pyntara/values/tor_setup.py, and the system config holds no copy of them.
 
-package_name - the Tor package from the Ubuntu archive
-service_unit_name - the systemd instance unit the task manages
-torrc_path - the main configuration file, which the task never rewrites
-torrc_dropin_path - the drop-in the task owns and renders
-torrc_include_path - the plain path inside /etc/tor that the include line names
-dropin_file_mode - the mode of the rendered drop-in
-hidden_service_dir - the directory of the onion service identity
-hidden_service_dir_mode - the mode of that directory, 0700 because Tor refuses a world-readable one
-tor_user - the system user Tor runs as; the task owns the hardcoded parts of the run to it
-socks_port - the loopback SOCKS proxy port
-onion_ssh_port - the virtual port clients connect to on the onion address
-num_introduction_points - how many introduction points the service maintains
-log_level - the Tor verbosity written to syslog
-dropin_template_file_name - the drop-in template under task_data/tor_setup/ of the clone, with $socks_port, $log_level, $hidden_service_dir, $num_introduction_points, $onion_ssh_port and $ssh_port as its placeholders
-include_directive - the directive that pulls the drop-in into the main configuration
-torrc_comment_sign - the sign that marks a comment in the main configuration, so a directive the operator commented out stays commented when the include line is appended
-hostname_file_name - the file Tor writes the onion hostname into inside hidden_service_dir
-verify_config_command - the command that checks the whole configuration, with {tor_user} as its placeholder
-service_enable_command - the command that enables the unit, with {service_unit_name} as its placeholder
-service_start_command - the command that starts the unit when it is inactive
-service_restart_command - the command that restarts the unit when it is active
-install_retries - retry attempts after a failed package install
-start_check_attempts - how many is-active checks the readiness loop runs
-start_check_retry_delay_seconds - the pause between those checks
-address_file_path - the file that saves the onion address once it is known
-address_file_mode - the mode of that file, world-readable because the address is not secret
+PACKAGE_NAME - the Tor package from the Ubuntu archive
+SERVICE_UNIT_NAME - the systemd instance unit the task manages
+TORRC_PATH - the main configuration file, which the task never rewrites
+TORRC_DROPIN_PATH - the drop-in the task owns and renders; the include line is built from this path, so the directive can never name another file
+DROPIN_FILE_MODE - the mode of the rendered drop-in
+HIDDEN_SERVICE_DIR - the directory of the onion service identity
+HIDDEN_SERVICE_DIR_MODE - the mode of that directory, 0700 because Tor refuses a world-readable one
+TOR_USER - the system user Tor runs as; the task owns the hardcoded parts of the run to it
+SOCKS_PORT - the loopback SOCKS proxy port
+ONION_SSH_PORT - the virtual port clients connect to on the onion address
+NUM_INTRODUCTION_POINTS - how many introduction points the service maintains
+LOG_LEVEL - the Tor verbosity written to syslog
+DROPIN_TEMPLATE_FILE_NAME - the drop-in template under task_data/tor_setup/ of the clone, with $socks_port, $log_level, $hidden_service_dir, $num_introduction_points, $onion_ssh_port and $ssh_port as its placeholders
+INCLUDE_DIRECTIVE - the directive that pulls the drop-in into the main configuration
+TORRC_COMMENT_SIGN - the sign that marks a comment in the main configuration, so a directive the operator commented out stays commented when the include line is appended
+HOSTNAME_FILE_NAME - the file Tor writes the onion hostname into inside HIDDEN_SERVICE_DIR
+VERIFY_CONFIG_COMMAND - the command that checks the whole configuration, with {tor_user} as its placeholder
+SERVICE_ENABLE_COMMAND - the command that enables the unit, with {service_unit_name} as its placeholder
+SERVICE_START_COMMAND - the command that starts the unit when it is inactive
+SERVICE_RESTART_COMMAND - the command that restarts the unit when it is active
+INSTALL_RETRIES - retry attempts after a failed package install
+START_CHECK_ATTEMPTS - how many is-active checks the readiness loop runs
+START_CHECK_RETRY_DELAY_SECONDS - the pause between those checks
+ADDRESS_FILE_PATH - the file that saves the onion address once it is known
+ADDRESS_FILE_MODE - the mode of that file, world-readable because the address is not secret
+REPORT_CHANNEL_NAME - the channel name the record of this network carries in the report
 
 ## Connecting over Tor
 
-An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1 at socks_port of the [tor_setup] table, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
+An SSH client reaches the service through a Tor SOCKS proxy. The proxy of the target machine listens on 127.0.0.1 at the declared SOCKS_PORT, so the target machine itself is already a client; any other machine needs its own Tor with a SocksPort. The client routes the connection through the proxy with a ProxyCommand:
 
 ```bash
 ssh -v -p <onion_ssh_port> -o ProxyCommand="nc -X 5 -x 127.0.0.1:<socks_port> %h %p" <user>@<address>.onion
 ```
 
-The placeholders are the configured virtual port and the configured SOCKS port of the [tor_setup] table, so the example carries no value to remember and each port keeps one home; the network telemetry writes the same invocation with the values, and without a user, because the operator chooses the user and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
+The placeholders are the declared virtual port and the declared SOCKS port of the tor_setup values, so the example carries no value to remember and each port keeps one home; the network telemetry writes the same invocation with the values, and without a user, because the operator chooses the user and the deployed key is offered by the ssh agent. The same connection can be kept as a named host in the client configuration, so the invocation shortens to a single alias:
 
 ```text
 Host <alias>
