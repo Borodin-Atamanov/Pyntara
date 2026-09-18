@@ -1115,6 +1115,26 @@ machine in this turn, and the probe is named with the figure.
     argument. Stage 1 of this branch is the only one of the four whose gate is
     green: stage 2 leaves the tests reading the config section, which is the red
     window the user allowed inside a branch.
+129. Stage 2 of kde_settings, first half, committed on 2026-09-17 in the red
+    window of the branch. Converted: the KConfig vocabulary helpers
+    (_kconfig_command, _kreadconfig, _kwriteconfig, _delete_kconfig_key,
+    _sync_config_value, _notify_flag, _as_user_command, _home_env), the
+    appearance commands, the automatic theme switch, NumLock, the touchpad, the
+    Wayland virtual keyboard, the cursor theme, the cursor overrides of the two
+    themes, the loop over the KConfig records and the test that recognises a
+    shortcut record. The values module gained KCONFIG_BOOL_TYPE, the type word
+    the records carry, and the --type flag now takes that constant instead of a
+    second copy of the word.
+    Remaining when the commit was written, counted with grep and mypy:
+    23 annotations still naming KdeSettingsConfig, about 50 call sites still
+    passing cfg, about 110 reads, 77 mypy errors and 23 ruff F821 errors. The
+    completion does not need a search: ruff names every leftover annotation, and
+    mypy names every call site with the wrong argument count or type, so the
+    next turn works from those two lists and finishes the file.
+    The numbers are the reason a section is written in one turn when it fits:
+    the mechanical part of kde_settings alone is about 320 edits across a
+    2244-line task, so it is the only section of the migration that needs the
+    multi-commit branch the user allowed.
 
 
 

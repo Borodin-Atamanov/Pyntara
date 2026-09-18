@@ -333,6 +333,10 @@ USER_DIRS: dict[str, str] = {
 # files the user owns; {username} is filled from the shared module.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
+# The type word of a KConfig flag: a record whose type is this word is written
+# with --type bool, and the flag takes the same word as its argument.
+KCONFIG_BOOL_TYPE: str = "bool"
+
 # Vocabulary of the KConfig tools the task reads, writes and deletes the desktop
 # configuration with: the two base calls carry the file as {file_name}, a group is
 # selected with CONFIG_GROUP_FLAG, a key with CONFIG_KEY_FLAG, a boolean value
@@ -342,7 +346,7 @@ KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
 KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
 CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
 CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
-CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
+CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", KCONFIG_BOOL_TYPE)
 CONFIG_NOTIFY_FLAG: tuple[str, ...] = ("--notify",)
 CONFIG_DELETE_FLAG: tuple[str, ...] = ("--delete",)
 
@@ -1089,6 +1093,7 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
+    "KCONFIG_BOOL_TYPE",
     "COLOR_SCHEME",
     "LOOK_AND_FEEL",
     "LOOK_AND_FEEL_LIGHT",
