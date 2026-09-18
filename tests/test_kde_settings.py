@@ -1664,25 +1664,13 @@ def test_apply_places_hidden_writes_when_changed(
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
     (places_dir / "user-places.xbel").write_text(XBEL, encoding="utf-8")
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is True
     text = (places_dir / "user-places.xbel").read_text(encoding="utf-8")
     assert "IsHidden" in text
-    changed2 = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1690,24 +1678,14 @@ def test_apply_places_hidden_skips_when_matching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A file that already hides the configured places changes nothing.
-    already = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
+    already = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert already is not None
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
     (places_dir / "user-places.xbel").write_text(already, encoding="utf-8")
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1715,19 +1693,9 @@ def test_apply_places_hidden_missing_file_skips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Without the Places file the hiding is skipped and not an error.
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1739,7 +1707,7 @@ def test_places_xbel_hidden_tolerates_undeclared_bookmark_prefix() -> None:
         'xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"',
         'xmlns:ns0="http://www.freedesktop.org/standards/desktop-bookmarks"',
     )
-    out = task_module._places_xbel_hidden(_places_cfg(), malformed, {"Home"})
+    out = task_module._places_xbel_hidden(malformed, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home
@@ -1756,19 +1724,9 @@ def test_apply_places_hidden_unparseable_file_skips(
     (places_dir / "user-places.xbel").write_text(
         "<xbel><bookmark>", encoding="utf-8"
     )
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1776,15 +1734,8 @@ def test_touchpad_clickareas_writes_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The clickareas method maps to the ClickMethod value 2.
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_touchpad_click_method="clickareas",
-        ),
-    )
+    values.TOUCHPAD_CLICK_METHOD = "clickareas"
+    ctx = make_context(install_mode="desktop", task_data_root=tmp_path)
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "kcminputrc").write_text(TOUCHPAD_RC, encoding="utf-8")

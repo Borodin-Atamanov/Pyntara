@@ -1166,18 +1166,24 @@ machine in this turn, and the probe is named with the figure.
     one autouse fixture that registers each value for restoration (so a value a
     test moves comes back after that test), builds its context without a config
     section, and reads the kconfig records from values.KCONFIG_RECORDS. The
-    number of passing tests in the file went from 19 of 77 to 25 of 77.
+    number of passing tests in the file went from 19 of 77 to 30 of 77 after the
+    first half and the group of the Places panel and the touchpad click method,
+    which now move a value with a plain assignment on the values module that the
+    autouse fixture restores.
     What stage 3 still owes, measured with a grep over the test file: ten make_config
     calls that still pass kde_settings_ parameters (kde_settings_home_dir five
-    times, kde_settings_places_hidden four, kde_settings_automatic_look_and_feel
-    three, kde_settings_system_look_and_feel_dir three,
-    kde_settings_touchpad_click_method once), the helpers _places_cfg and
-    _preconfigure_user_files that still take or return the section config, the
-    tests that rename a value through dataclasses.replace(cfg, ...) and must
+    times, kde_settings_automatic_look_and_feel three,
+    kde_settings_system_look_and_feel_dir three), the helper _places_cfg and the
+    helper _preconfigure_user_files that still take or return the section config,
+    the tests that rename a value through dataclasses.replace(cfg, ...) and must
     move to monkeypatch.setattr on the values module, and the call sites of
-    _granted_script_hotkeys and _apply_desktop_count_live that still pass the
-    section config. The idiom of every migrated section applies: a test moves a
-    value with monkeypatch.setattr on the values module.
+    _granted_script_hotkeys and of the helpers the tests call directly
+    (_apply_env, _apply_theme_cursor_overrides, _apply_user_dirs,
+    _apply_konsole_profile, _apply_kwin_scripts, _apply_shortcuts_live,
+    _write_script_hotkey_records, _apply_sddm, _apply_desktop_count_live) that
+    still pass the section config as their first argument. The idiom of every
+    migrated section applies: a test moves a value with monkeypatch.setattr on
+    the values module.
 
 
 
