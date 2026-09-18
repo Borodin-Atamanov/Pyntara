@@ -74,12 +74,12 @@ KWIN_RELOAD_COMMAND: tuple[str, ...] = (
 )
 
 # Command that restarts the Plasma panel so the indicator re-reads its
-# configuration.
+# configuration; {username} is the account of the machine.
 PANEL_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "--user",
     "--machine",
-    "i@.host",
+    "{username}@.host",
     "restart",
     "plasma-plasmashell.service",
 )

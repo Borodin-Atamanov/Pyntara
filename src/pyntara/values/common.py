@@ -48,7 +48,11 @@ SOURCE_VAULT_DEFAULT: str = "secrets/default.vault"
 # sections carry an install under that home or run a command as that user
 # (chrome_setup, kde_keyboard_setup, kde_settings, playwright_setup,
 # scrcpy_setup, sotavpn_setup, telegram_setup, vocalinux_setup), so the pair is
-# written once here.
+# written once here. The declared pair is the fallback: the composition root
+# resolves the real account of the machine once before the tasks and overwrites
+# both names here (pyntara.get_desktop_username_and_home), so a machine whose
+# desktop account is not the one this package was written for still provisions
+# that account.
 DESKTOP_USERNAME: str = "i"
 DESKTOP_HOME_DIR: str = "/home/i"
 

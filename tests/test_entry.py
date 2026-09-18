@@ -33,8 +33,6 @@ REAL_TASKS = tasks_values.CATALOG
 DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell")
 
 
-
-
 @pytest.fixture(autouse=True)
 def _point_the_run_at_the_test_machine(
     monkeypatch: pytest.MonkeyPatch,
@@ -82,6 +80,21 @@ def _no_live_desktop_session(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(
         "pyntara.pyntara.session_environment", lambda username, **kwargs: {}
+    )
+
+
+@pytest.fixture(autouse=True)
+def _fixed_desktop_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Pin the resolved desktop account, so a run test needs no logged-in user.
+
+    The run resolves the desktop account of the machine before the tasks; a
+    unit test must never depend on who is logged in, so the resolver reports
+    the shipped pair unless a test replaces this fixture.
+    """
+
+    monkeypatch.setattr(
+        "pyntara.pyntara.get_desktop_username_and_home",
+        lambda: ("i", "/home/i"),
     )
 
 

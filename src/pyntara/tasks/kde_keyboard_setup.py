@@ -616,7 +616,13 @@ def task(ctx: Context) -> TaskResult:
 
     if applet_changed:
         try:
-            run_command(list(values.PANEL_RESTART_COMMAND), timeout=timeout)
+            run_command(
+                substituted_command(
+                    values.PANEL_RESTART_COMMAND,
+                    {"username": common_values.DESKTOP_USERNAME},
+                ),
+                timeout=timeout,
+            )
             _log("restarted Plasma panel")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"cannot restart panel: {exc}")

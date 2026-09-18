@@ -9,6 +9,7 @@ themselves (docs/contracts/architecture.md).
 from __future__ import annotations
 
 import os
+import pwd
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,7 @@ from pyntara.logger import (
 from pyntara.task_runner import run_tasks
 from pyntara.utils import (
     export_session_environment,
+    run_command,
     session_environment,
     substituted_command,
 )
@@ -119,6 +121,158 @@ def _env_flag(name: str) -> bool:
     return answer in {
         word.casefold() for word in engine_values.ENVIRONMENT_FLAG_TRUE_VALUES
     }
+
+
+def _environment_username(name: str) -> str | None:
+    """Read one account name from the environment; None when unset or blank."""
+
+    value = os.environ.get(name)
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
+def _account_home(username: str) -> str | None:
+    """Home directory of one account, or None when the account is unknown."""
+
+    try:
+        entry = pwd.getpwnam(username)
+    except KeyError:
+        return None
+    return entry.pw_dir or None
+
+
+def _loginctl_session_properties(session_id: str) -> dict[str, str]:
+    """The Name, Seat and Class of one login session, or an empty mapping.
+
+    One session of LOGINCTL_LIST_SESSIONS_COMMAND is described by the
+    LOGINCTL_SHOW_SESSION_COMMAND query, one KEY=VALUE line per property, so
+    the properties are read by name and never by the column order of the list
+    output. A missing tool, a failed query and a timeout all answer an empty
+    mapping, because the resolution must never stop the run.
+    """
+
+    command = substituted_command(
+        engine_values.LOGINCTL_SHOW_SESSION_COMMAND, {"session_id": session_id}
+    )
+    try:
+        result = run_command(
+            command,
+            check=False,
+            capture=True,
+            log_command=False,
+            timeout=engine_values.DESKTOP_USER_QUERY_TIMEOUT_SECONDS,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return {}
+    if result.returncode != 0:
+        return {}
+    properties: dict[str, str] = {}
+    for line in result.stdout.splitlines():
+        name, separator, value = line.partition(
+            engine_values.SESSION_PROPERTY_SEPARATOR
+        )
+        if separator:
+            properties[name.strip()] = value.strip()
+    return properties
+
+
+def _seated_session_username() -> str | None:
+    """Account of the live desktop login, or None when no session answers.
+
+    The account is the one whose session carries SEATED_SEAT_NAME and
+    SEATED_CLASS_NAME: a session on a seat is a local login, and the class
+    user excludes the manager sessions that root opens for itself.
+    """
+
+    executable = shutil.which(engine_values.LOGINCTL_LIST_SESSIONS_COMMAND[0])
+    if executable is None:
+        return None
+    command = [executable, *engine_values.LOGINCTL_LIST_SESSIONS_COMMAND[1:]]
+    try:
+        listed = run_command(
+            command,
+            check=False,
+            capture=True,
+            log_command=False,
+            timeout=engine_values.DESKTOP_USER_QUERY_TIMEOUT_SECONDS,
+        )
+    except OSError, subprocess.TimeoutExpired:
+        return None
+    if listed.returncode != 0:
+        return None
+    for line in listed.stdout.splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        properties = _loginctl_session_properties(fields[0])
+        if (
+            properties.get(engine_values.SESSION_SEAT_PROPERTY)
+            == engine_values.SEATED_SEAT_NAME
+            and properties.get(engine_values.SESSION_CLASS_PROPERTY)
+            == engine_values.SEATED_CLASS_NAME
+        ):
+            return properties.get(engine_values.SESSION_NAME_PROPERTY) or None
+    return None
+
+
+def _single_human_username() -> str | None:
+    """The one human account of this machine, or None when there are none or many.
+
+    An account counts when its uid is inside the declared range and its home
+    lies below the declared home prefix, so a service account never answers and
+    a machine with several people answers None and the engine keeps the
+    declared fallback.
+    """
+
+    homes = [
+        entry.pw_name
+        for entry in pwd.getpwall()
+        if engine_values.HUMAN_UID_MIN <= entry.pw_uid < engine_values.HUMAN_UID_MAX
+        and entry.pw_dir.startswith(engine_values.HUMAN_HOME_PREFIX)
+    ]
+    if len(homes) == 1:
+        return homes[0]
+    return None
+
+
+def get_desktop_username_and_home() -> tuple[str, str]:
+    """Resolve the desktop account of this machine and its home directory.
+
+    One package runs on every machine, so the account of the desktop session
+    cannot stand in the values: the run resolves it once before the tasks and
+    every task reads the shared pair. The signals are tried in order of
+    certainty: the explicit environment override, the account that invoked the
+    installer through sudo, the account of the seated login session, and the
+    single human account of a machine without a session. A signal that names an
+    account that does not exist is skipped. The chosen account and the signal
+    are reported, and an unanswered resolution keeps the declared pair of the
+    shared module, so the resolution never stops the run.
+    """
+
+    candidates: tuple[tuple[str, str | None], ...] = (
+        (
+            "desktop user override",
+            _environment_username(engine_values.DESKTOP_USER_ENV_NAME),
+        ),
+        ("sudo invoker", _environment_username(engine_values.SUDO_USER_ENV_NAME)),
+        ("seated session", _seated_session_username()),
+        ("single human account", _single_human_username()),
+    )
+    for signal_name, username in candidates:
+        if not username:
+            continue
+        home_dir = _account_home(username)
+        if home_dir is None:
+            continue
+        log_event(f"Desktop user {username}, home {home_dir}, from the {signal_name}")
+        return username, home_dir
+    log_event(
+        "No desktop user detected, using "
+        f"{common_values.DESKTOP_USERNAME} with home {common_values.DESKTOP_HOME_DIR}"
+    )
+    return common_values.DESKTOP_USERNAME, common_values.DESKTOP_HOME_DIR
 
 
 def _export_desktop_session() -> None:
@@ -347,6 +501,9 @@ def run() -> None:
     """Run the Pyntara provisioning engine."""
 
     configure_journal(engine_values.JOURNAL_IDENTIFIER)
+    desktop_username, desktop_home_dir = get_desktop_username_and_home()
+    common_values.DESKTOP_USERNAME = desktop_username
+    common_values.DESKTOP_HOME_DIR = desktop_home_dir
     _export_desktop_session()
     if not tasks_values.CATALOG:
         # Without the catalog there is nothing to run, so the run reports the

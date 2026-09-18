@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from pyntara.values import common as common_values
+
 
 @dataclass(frozen=True)
 class KconfigRecord:
@@ -171,7 +173,7 @@ DEFAULT_FILE_MODE: int = 0o600
 # its defaults, and the SDDM autologin and theme settings.
 SYSTEM_LOOK_AND_FEEL_DIR: Path = Path("/usr/share/plasma/look-and-feel")
 THEME_DEFAULTS_DIR: str = "contents/defaults"
-SDDM_AUTOLOGIN_USER: str = "i"
+SDDM_AUTOLOGIN_USER: str = common_values.DESKTOP_USERNAME
 SDDM_AUTOLOGIN_SESSION: str = "plasma"
 SDDM_THEME: str = "kubuntu"
 SDDM_THEME_CURSOR_SIZE: str = "30"
@@ -622,7 +624,12 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
     KconfigRecord(
         "dolphinrc", ("ContentDisplay",), "RecursiveDirectorySizeLimit", "12"
     ),
-    KconfigRecord("dolphinrc", ("General",), "HomeUrl", "/home/i/Downloads"),
+    KconfigRecord(
+        "dolphinrc",
+        ("General",),
+        "HomeUrl",
+        f"{common_values.DESKTOP_HOME_DIR}/Downloads",
+    ),
     KconfigRecord("dolphinrc", ("General",), "AutoExpandFolders", "true", "bool"),
     KconfigRecord("dolphinrc", ("General",), "BrowseThroughArchives", "true", "bool"),
     KconfigRecord("dolphinrc", ("General",), "OpenNewTabAfterLastTab", "true", "bool"),
@@ -684,16 +691,37 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
     KconfigRecord(
         "kservicemenurc", ("Show",), "wallpaperfileitemaction", "true", "bool"
     ),
-    KconfigRecord("ktrashrc", ("/home/i/.local/share/Trash",), "Days", "211"),
-    KconfigRecord("ktrashrc", ("/home/i/.local/share/Trash",), "Percent", "23"),
     KconfigRecord(
-        "ktrashrc", ("/home/i/.local/share/Trash",), "UseSizeLimit", "true", "bool"
+        "ktrashrc",
+        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        "Days",
+        "211",
     ),
     KconfigRecord(
-        "ktrashrc", ("/home/i/.local/share/Trash",), "UseTimeLimit", "true", "bool"
+        "ktrashrc",
+        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        "Percent",
+        "23",
     ),
     KconfigRecord(
-        "ktrashrc", ("/home/i/.local/share/Trash",), "LimitReachedAction", "2"
+        "ktrashrc",
+        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        "UseSizeLimit",
+        "true",
+        "bool",
+    ),
+    KconfigRecord(
+        "ktrashrc",
+        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        "UseTimeLimit",
+        "true",
+        "bool",
+    ),
+    KconfigRecord(
+        "ktrashrc",
+        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        "LimitReachedAction",
+        "2",
     ),
     KconfigRecord("katerc", ("General",), "Allow Tab Scrolling", "true", "bool"),
     KconfigRecord("katerc", ("General",), "Auto Hide Tabs", "false", "bool"),

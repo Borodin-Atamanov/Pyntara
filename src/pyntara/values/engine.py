@@ -316,6 +316,62 @@ DESKTOP_DETECT_PROCESSES: tuple[str, ...] = (
     "gnome-shell",
 )
 
+# Account that owns the desktop session of the machine. One package runs on
+# every machine, so the account cannot stand in the values: the engine resolves
+# it once before the tasks and reports the signal it used. DESKTOP_USER_ENV_NAME
+# is the explicit override, SUDO_USER_ENV_NAME names the account that invoked
+# the installer through sudo, and the queries and the uid range below let the
+# engine find the live desktop login and the single human account of a machine
+# that carries no session yet.
+DESKTOP_USER_ENV_NAME: str = "PYNTARA_DESKTOP_USER"
+SUDO_USER_ENV_NAME: str = "SUDO_USER"
+
+# The account queries. list-sessions names the sessions and show-session
+# describes one as KEY=VALUE lines, so the seat, the class and the account are
+# read by their property names and never by the column order of the list
+# output, which differs between systemd releases. {session_id} is replaced with
+# one session of the list.
+SESSION_PROPERTY_SEPARATOR: str = "="
+SESSION_NAME_PROPERTY: str = "Name"
+SESSION_SEAT_PROPERTY: str = "Seat"
+SESSION_CLASS_PROPERTY: str = "Class"
+LOGINCTL_LIST_SESSIONS_COMMAND: tuple[str, ...] = (
+    "loginctl",
+    "list-sessions",
+    "--no-legend",
+)
+LOGINCTL_SHOW_SESSION_COMMAND: tuple[str, ...] = (
+    "loginctl",
+    "show-session",
+    "{session_id}",
+    "-p",
+    SESSION_NAME_PROPERTY,
+    "-p",
+    SESSION_SEAT_PROPERTY,
+    "-p",
+    SESSION_CLASS_PROPERTY,
+)
+
+# The seat and the class a live desktop login carries: a session attached to a
+# seat is a local graphical or console login, and the class user excludes the
+# manager sessions that root opens for itself.
+SEATED_SEAT_NAME: str = "seat0"
+SEATED_CLASS_NAME: str = "user"
+
+# Range of the human accounts of a machine. The first regular account starts at
+# the systemd default, the end stays below the nobody uid, and a home below
+# HUMAN_HOME_PREFIX marks an interactive account. A machine with exactly one
+# account in the range lets the engine name the desktop user even when no
+# session is live.
+HUMAN_UID_MIN: int = 1000
+HUMAN_UID_MAX: int = 60000
+HUMAN_HOME_PREFIX: str = "/home/"
+
+# Seconds a loginctl query may take. A query that fails, times out or finds no
+# tool answers no account, and the engine moves to the next signal, because the
+# resolution must never stop the run.
+DESKTOP_USER_QUERY_TIMEOUT_SECONDS: float = 10.0
+
 # The DBus interface of the running KGlobalAccel daemon, by its parts: the bus
 # name, the object path and the interface name. The keyboard tasks and the
 # appearance task talk to that daemon through these values, and the clients
@@ -558,6 +614,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DEFAULT_ROUTE_COMMAND",
     "DEFAULT_ROUTE_SOURCE_KEY",
     "DESKTOP_DETECT_PROCESSES",
+    "DESKTOP_USER_ENV_NAME",
+    "DESKTOP_USER_QUERY_TIMEOUT_SECONDS",
     "DIRECTLY_CONNECTED_NETWORKS_COMMAND",
     "DPKG_ARCHITECTURE_COMMAND",
     "ENVIRONMENT_FLAG_TRUE_VALUES",
@@ -566,6 +624,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GITHUB_LATEST_RELEASE_URL",
     "GITHUB_RELEASE_DOWNLOAD_URL",
     "HOST_SCOPE_NAME",
+    "HUMAN_HOME_PREFIX",
+    "HUMAN_UID_MAX",
+    "HUMAN_UID_MIN",
     "INTERFACE_ADDRESSES_COMMAND",
     "IPROUTE2_ADDRESS_FAMILY_NAMES",
     "JOURNAL_IDENTIFIER",
@@ -575,6 +636,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KGLOBALACCEL_OBJECT_PATH",
     "LINK_SCOPE_NAME",
     "LOCAL_ADDRESSES_COMMAND",
+    "LOGINCTL_LIST_SESSIONS_COMMAND",
+    "LOGINCTL_SHOW_SESSION_COMMAND",
     "NANOSECONDS_PER_SECOND",
     "NOTICE_TIMEOUT",
     "OS_RELEASE_DEBIAN_FAMILY_NAMES",
@@ -593,14 +656,21 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "REPORT_RECORD_KEYS",
     "ROOT_OWNER_GID",
     "ROOT_OWNER_UID",
+    "SEATED_CLASS_NAME",
+    "SEATED_SEAT_NAME",
     "SESSION_BUS_KEY",
+    "SESSION_CLASS_PROPERTY",
     "SESSION_DISPLAY_KEYS",
     "SESSION_ENVIRONMENT_COMMAND",
     "SESSION_ENVIRONMENT_KEYS",
+    "SESSION_NAME_PROPERTY",
+    "SESSION_PROPERTY_SEPARATOR",
+    "SESSION_SEAT_PROPERTY",
     "SSH_REPORT_COMMAND_FORMAT",
     "SSH_REPORT_PROXY_HOST",
     "SSH_REPORT_PROXY_OPTION_FORMAT",
     "SSH_REPORT_SOCKS_COMMAND_FORMAT",
+    "SUDO_USER_ENV_NAME",
     "SYSTEMD_ACTIVE_STATE",
     "SYSTEMD_ENABLED_STATES",
     "SYSTEMD_UNIT_DIR",

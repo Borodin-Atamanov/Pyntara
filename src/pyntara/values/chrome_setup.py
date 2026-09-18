@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pyntara.values import common as common_values
+
 # Repository of browser settings, cloned into SETTINGS_DIR, and the branch the
 # task follows.
 SETTINGS_REPO_URL: str = (
@@ -222,7 +224,9 @@ MENU_REFRESH_COMMAND: tuple[str, ...] = (
 # non-default one, so Chrome is started with --user-data-dir on this second
 # path: the same live profile under another directory name, cookies and logins
 # included.
-PROFILE_MIRROR_PATH: Path = Path("/home/i/.config/google-chrome-cdp")
+PROFILE_MIRROR_PATH: Path = (
+    Path(common_values.DESKTOP_HOME_DIR) / ".config/google-chrome-cdp"
+)
 
 # Name of the oneshot systemd unit that bind mounts the profile mirror, so the
 # DevTools listener keeps working after a reboot, and of its template under

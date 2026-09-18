@@ -20,6 +20,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from pyntara.values import common as common_values
+
 
 @dataclass(frozen=True)
 class SshDirective:
@@ -114,10 +116,15 @@ AUTHORIZED_KEYS_FILE_MODE: int = 0o600
 SSH_DIR_MODE: int = 0o700
 
 # Target .ssh directory of the root user, and the additional users whose .ssh
-# directories receive the keys. A user that does not exist yet is skipped with
-# a log line, so the task stays idempotent.
+# directories receive the keys. The declared fleet names stay, and the desktop
+# account of this machine is added, so a machine provisioned for another
+# account still receives the deployed keys; a repeated name is kept once. A
+# user that does not exist yet is skipped with a log line, so the task stays
+# idempotent.
 ROOT_SSH_DIR: Path = Path("/root/.ssh")
-USERS: tuple[str, ...] = ("i", "j", "k")
+USERS: tuple[str, ...] = tuple(
+    dict.fromkeys(("i", "j", "k", common_values.DESKTOP_USERNAME))
+)
 
 # Commands the task runs: the effective configuration of the daemon, the
 # listener table, and the systemctl calls on the two units. The unit is named
