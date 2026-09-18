@@ -36,8 +36,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from string import Template
 
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.utils import run_command, substituted_command, trim_whitespace
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
 def _ssl_context() -> ssl.SSLContext:
@@ -73,7 +73,7 @@ def _https_opener(
 
 
 def panel_cert_value(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    timeout: float
 ) -> str | None:
     """The panel certificate path from `x-ui setting -getCert`, or None.
 
@@ -84,8 +84,8 @@ def panel_cert_value(
 
     result = run_command(
         substituted_command(
-            cfg.panel_cert_query_command,
-            {"binary": str(cfg.install_dir / cfg.binary_file_name)},
+            panel_values.PANEL_CERT_QUERY_COMMAND,
+            {"binary": str(panel_values.INSTALL_DIR / panel_values.BINARY_FILE_NAME)},
         ),
         check=False,
         capture=True,
@@ -98,7 +98,7 @@ def panel_cert_value(
     return None
 
 
-def panel_scheme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str:
+def panel_scheme(timeout: float) -> str:
     """The panel URL scheme: the TLS scheme when a certificate is set.
 
     The panel serves TLS only when a certificate path is set. Any
@@ -107,14 +107,14 @@ def panel_scheme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str:
     because they are part of the vocabulary of the panel.
     """
 
-    schemes = cfg.panel_url_schemes
-    if panel_cert_value(cfg, timeout):
+    schemes = panel_values.PANEL_URL_SCHEMES
+    if panel_cert_value(timeout):
         return schemes["https"]
     return schemes["http"]
 
 
 def panel_environment(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    timeout: float
 ) -> dict[str, str]:
     """The install-result.env pairs plus the panel URL scheme.
 
@@ -126,10 +126,10 @@ def panel_environment(
     """
 
     env = parse_install_result_env(
-        cfg.install_result_env_path,
-        panel_required_environment_keys(cfg),
+        panel_values.INSTALL_RESULT_ENV_PATH,
+        panel_required_environment_keys(),
     )
-    env[cfg.panel_environment_keys["scheme"]] = panel_scheme(cfg, timeout)
+    env[panel_values.PANEL_ENVIRONMENT_KEYS["scheme"]] = panel_scheme(timeout)
     return env
 
 
@@ -164,11 +164,10 @@ def parse_install_result_env(
 
 
 def panel_required_environment_keys(
-    cfg: ThreeXuiXraySetupConfig,
-) -> tuple[str, ...]:
+    ) -> tuple[str, ...]:
     """The install-result.env keys the client cannot work without."""
 
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     return (keys["username"], keys["password"], keys["panel_port"])
 
 
@@ -196,7 +195,6 @@ def build_panel_url(
 
 
 def _api_call(
-    cfg: ThreeXuiXraySetupConfig,
     opener: urllib.request.OpenerDirector,
     url: str,
     *,
@@ -223,7 +221,7 @@ def _api_call(
         data=data,
         headers=headers,
         method=method,
-        timeout=min(timeout, cfg.panel_api_timeout_seconds),
+        timeout=min(timeout, panel_values.PANEL_API_TIMEOUT_SECONDS),
     )
 
 
@@ -272,7 +270,6 @@ def _json_success(body: str, success_key: str) -> bool:
 
 
 def login_and_verify(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> bool:
@@ -287,15 +284,15 @@ def login_and_verify(
     create an inbound.
     """
 
-    keys = cfg.panel_environment_keys
-    headers = cfg.panel_http_headers
-    header_values = cfg.panel_http_header_values
-    answers = cfg.panel_answer_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
+    headers = panel_values.PANEL_HTTP_HEADERS
+    header_values = panel_values.PANEL_HTTP_HEADER_VALUES
+    answers = panel_values.PANEL_ANSWER_KEYS
     base_url = build_panel_url(
-        cfg.panel_http_address,
+        panel_values.PANEL_HTTP_ADDRESS,
         env.get(keys["panel_port"], ""),
         env.get(keys["web_base_path"]),
-        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
+        scheme=env.get(keys["scheme"], panel_values.PANEL_URL_SCHEMES["http"]),
     )
 
     # Create an opener with a cookie jar so the session cookie persists.
@@ -304,9 +301,8 @@ def login_and_verify(
 
     # Step 1: fetch CSRF token.
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_csrf_token_path}",
+        f"{base_url}{panel_values.PANEL_CSRF_TOKEN_PATH}",
         headers={headers["requested_with"]: header_values["xml_http_request"]},
         timeout=timeout,
     )
@@ -320,7 +316,7 @@ def login_and_verify(
         return False
 
     # Step 2: login with username and password.
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     login_data = _form_body(
         {
             fields["username"]: env.get(keys["username"], ""),
@@ -328,17 +324,16 @@ def login_and_verify(
         }
     )
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_login_path}",
+        f"{base_url}{panel_values.PANEL_LOGIN_PATH}",
         data=login_data,
         headers={
             headers["content_type"]: header_values["form"],
             headers["csrf_token"]: token,
             headers["requested_with"]: header_values["xml_http_request"],
-            headers["referer"]: f"{base_url}{cfg.panel_root_path}",
+            headers["referer"]: f"{base_url}{panel_values.PANEL_ROOT_PATH}",
         },
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
     if status != 200 or not _json_success(body, answers["success"]):
@@ -346,9 +341,8 @@ def login_and_verify(
 
     # Step 3: verify the session by calling a protected API.
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_list_path}",
+        f"{base_url}{panel_values.PANEL_INBOUNDS_LIST_PATH}",
         headers={headers["requested_with"]: header_values["xml_http_request"]},
         timeout=timeout,
     )
@@ -356,7 +350,6 @@ def login_and_verify(
 
 
 def verify_bearer(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> bool:
@@ -367,22 +360,21 @@ def verify_bearer(
     the token is valid.
     """
 
-    keys = cfg.panel_environment_keys
-    headers = cfg.panel_http_headers
-    header_values = cfg.panel_http_header_values
-    answers = cfg.panel_answer_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
+    headers = panel_values.PANEL_HTTP_HEADERS
+    header_values = panel_values.PANEL_HTTP_HEADER_VALUES
+    answers = panel_values.PANEL_ANSWER_KEYS
     base_url = build_panel_url(
-        cfg.panel_http_address,
+        panel_values.PANEL_HTTP_ADDRESS,
         env.get(keys["panel_port"], ""),
         env.get(keys["web_base_path"]),
-        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
+        scheme=env.get(keys["scheme"], panel_values.PANEL_URL_SCHEMES["http"]),
     )
     jar = http.cookiejar.CookieJar()
     opener = _https_opener(urllib.request.HTTPCookieProcessor(jar))
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_list_path}",
+        f"{base_url}{panel_values.PANEL_INBOUNDS_LIST_PATH}",
         headers={
             headers["authorization"]: (
                 f"{header_values['bearer_prefix']}{env.get(keys['api_token'], '')}"
@@ -395,7 +387,6 @@ def verify_bearer(
 
 
 def _bearer_opener(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
 ) -> tuple[str, urllib.request.OpenerDirector]:
     """Build the panel base URL and an opener with Bearer auth headers.
@@ -405,23 +396,23 @@ def _bearer_opener(
     cookies.
     """
 
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     base_url = build_panel_url(
-        cfg.panel_http_address,
+        panel_values.PANEL_HTTP_ADDRESS,
         env.get(keys["panel_port"], ""),
         env.get(keys["web_base_path"]),
-        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
+        scheme=env.get(keys["scheme"], panel_values.PANEL_URL_SCHEMES["http"]),
     )
     opener = _https_opener()
     return base_url, opener
 
 
-def _bearer_headers(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> dict[str, str]:
+def _bearer_headers(env: dict[str, str]) -> dict[str, str]:
     """Common headers for Bearer-authenticated API calls."""
 
-    keys = cfg.panel_environment_keys
-    headers = cfg.panel_http_headers
-    header_values = cfg.panel_http_header_values
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
+    headers = panel_values.PANEL_HTTP_HEADERS
+    header_values = panel_values.PANEL_HTTP_HEADER_VALUES
     return {
         headers["authorization"]: (
             f"{header_values['bearer_prefix']}{env.get(keys['api_token'], '')}"
@@ -431,7 +422,7 @@ def _bearer_headers(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> dict[s
 
 
 def _bearer_form_headers(
-    cfg: ThreeXuiXraySetupConfig, env: dict[str, str]
+    env: dict[str, str]
 ) -> dict[str, str]:
     """Bearer headers for the calls the panel reads its fields as a form.
 
@@ -441,8 +432,8 @@ def _bearer_form_headers(
     by _form_body belong together.
     """
 
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "form"
     ]
     return headers
@@ -468,7 +459,7 @@ def _form_body(values: Mapping[str, object]) -> bytes:
 
 
 def _payload_of(
-    cfg: ThreeXuiXraySetupConfig, status: int, body: str
+    status: int, body: str
 ) -> object | None:
     """The obj field of a successful panel answer, or None.
 
@@ -483,14 +474,13 @@ def _payload_of(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
     return data.get(answers["payload"])
 
 
 def list_inbounds(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> list[dict[str, object]]:
@@ -500,22 +490,20 @@ def list_inbounds(
     failure (unreachable panel, bad token, unexpected response shape).
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_list_path}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{panel_values.PANEL_INBOUNDS_LIST_PATH}",
+        headers=_bearer_headers(env),
         timeout=timeout,
     )
-    obj = _payload_of(cfg, status, body)
+    obj = _payload_of(status, body)
     if not isinstance(obj, list):
         return []
     return obj
 
 
 def find_inbound_by_port(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     port: int,
     timeout: float,
@@ -526,8 +514,8 @@ def find_inbound_by_port(
     inbound uses the given port.
     """
 
-    inbounds = list_inbounds(cfg, env, timeout)
-    port_key = cfg.panel_field_keys["port"]
+    inbounds = list_inbounds(env, timeout)
+    port_key = panel_values.PANEL_FIELD_KEYS["port"]
     for inbound in inbounds:
         if isinstance(inbound, dict) and inbound.get(port_key) == port:
             return inbound
@@ -535,7 +523,6 @@ def find_inbound_by_port(
 
 
 def find_inbound_by_tag(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     tag: str,
     timeout: float,
@@ -548,8 +535,8 @@ def find_inbound_by_tag(
     dict or None when no inbound carries that tag.
     """
 
-    inbounds = list_inbounds(cfg, env, timeout)
-    tag_key = cfg.panel_field_keys["tag"]
+    inbounds = list_inbounds(env, timeout)
+    tag_key = panel_values.PANEL_FIELD_KEYS["tag"]
     for inbound in inbounds:
         if isinstance(inbound, dict) and inbound.get(tag_key) == tag:
             return inbound
@@ -557,7 +544,7 @@ def find_inbound_by_tag(
 
 
 def _message_result(
-    cfg: ThreeXuiXraySetupConfig, status: int, body: str, ok_default: str
+    status: int, body: str, ok_default: str
 ) -> tuple[bool, str]:
     """Parse a panel write response into (success, message).
 
@@ -576,7 +563,7 @@ def _message_result(
         return False, f"unexpected response (HTTP {status})"
     if not isinstance(resp, dict):
         return False, f"unexpected response (HTTP {status})"
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     msg = resp.get(answers["message"], "")
     if resp.get(answers["success"]):
         return True, msg or ok_default
@@ -584,7 +571,6 @@ def _message_result(
 
 
 def create_inbound(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     payload: dict[str, object],
     timeout: float,
@@ -596,26 +582,24 @@ def create_inbound(
     unreachable panel, etc.).
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     data = json.dumps(payload).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_add_path}",
+        f"{base_url}{panel_values.PANEL_INBOUNDS_ADD_PATH}",
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "inbound created")
+    return _message_result(status, body, "inbound created")
 
 
 def generate_reality_key(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> tuple[str, str] | None:
@@ -624,12 +608,11 @@ def generate_reality_key(
     Returns (private_key, public_key) on success, or None on failure.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_x25519_cert_path}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{panel_values.PANEL_X25519_CERT_PATH}",
+        headers=_bearer_headers(env),
         timeout=timeout,
     )
     if status != 200:
@@ -638,13 +621,13 @@ def generate_reality_key(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
     obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return None
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     private_key = obj.get(fields["private_key"], "")
     public_key = obj.get(fields["public_key"], "")
     if not private_key or not public_key:
@@ -698,7 +681,6 @@ def build_vless_reality_payload(
 
 
 def panel_settings(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> dict[str, object] | None:
@@ -709,18 +691,17 @@ def panel_settings(
     panel, a bad token or an unexpected response shape.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    base_url, opener = _bearer_opener(env)
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_setting_all_path}",
+        f"{base_url}{panel_values.PANEL_SETTING_ALL_PATH}",
         data=b"{}",
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -729,7 +710,7 @@ def panel_settings(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
     obj = data.get(answers["payload"])
@@ -739,7 +720,6 @@ def panel_settings(
 
 
 def update_panel_settings(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     settings: dict[str, object],
     timeout: float,
@@ -753,26 +733,24 @@ def update_panel_settings(
     (success, message).
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     data = json.dumps(settings).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_setting_update_path}",
+        f"{base_url}{panel_values.PANEL_SETTING_UPDATE_PATH}",
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "settings updated")
+    return _message_result(status, body, "settings updated")
 
 
 def ensure_subscription_paths(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> tuple[bool, str]:
@@ -784,30 +762,29 @@ def ensure_subscription_paths(
     message); a failure returns (False, error) with changed False.
     """
 
-    settings = panel_settings(cfg, env, timeout)
+    settings = panel_settings(env, timeout)
     if settings is None:
         return False, "cannot read panel settings"
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     wanted = {
-        fields["sub_path"]: cfg.subscription_path,
-        fields["sub_json_path"]: cfg.subscription_json_path,
-        fields["sub_clash_path"]: cfg.subscription_clash_path,
+        fields["sub_path"]: panel_values.SUBSCRIPTION_PATH,
+        fields["sub_json_path"]: panel_values.SUBSCRIPTION_JSON_PATH,
+        fields["sub_clash_path"]: panel_values.SUBSCRIPTION_CLASH_PATH,
     }
     if all(settings.get(key) == value for key, value in wanted.items()):
         return False, ""
     settings.update(wanted)
-    ok, message = update_panel_settings(cfg, env, settings, timeout)
+    ok, message = update_panel_settings(env, settings, timeout)
     if not ok:
         return False, message
     return True, (
         "subscription paths set to "
-        f"{cfg.subscription_path}, {cfg.subscription_json_path}, "
-        f"{cfg.subscription_clash_path}"
+        f"{panel_values.SUBSCRIPTION_PATH}, {panel_values.SUBSCRIPTION_JSON_PATH}, "
+        f"{panel_values.SUBSCRIPTION_CLASH_PATH}"
     )
 
 
 def update_inbound(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     inbound: dict[str, object],
     timeout: float,
@@ -819,28 +796,26 @@ def update_inbound(
     is taken from the object itself.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     data = json.dumps(inbound).encode("utf-8")
-    fields = cfg.panel_field_keys
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    fields = panel_values.PANEL_FIELD_KEYS
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     inbound_id = inbound.get(fields["id"])
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_update_path.format(inbound_id=inbound_id)}",
+        f"{base_url}{panel_values.PANEL_INBOUNDS_UPDATE_PATH.format(inbound_id=inbound_id)}",
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "inbound updated")
+    return _message_result(status, body, "inbound updated")
 
 
 def upsert_inbound(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     payload: dict[str, object],
     timeout: float,
@@ -854,41 +829,38 @@ def upsert_inbound(
     for the log.
     """
 
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     tag = payload.get(fields["tag"])
     if not isinstance(tag, str) or not tag:
         return False, "inbound payload has no tag to identify it by"
-    existing = find_inbound_by_tag(cfg, env, tag, timeout)
+    existing = find_inbound_by_tag(env, tag, timeout)
     if existing is None:
-        return create_inbound(cfg, env, payload, timeout)
+        return create_inbound(env, payload, timeout)
     replacement = dict(payload)
     replacement[fields["id"]] = existing.get(fields["id"])
-    ok, message = update_inbound(cfg, env, replacement, timeout)
+    ok, message = update_inbound(env, replacement, timeout)
     return ok, message if not ok else f"inbound {tag} updated: {message}"
 
 
 def delete_inbound(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     inbound_id: int,
     timeout: float,
 ) -> tuple[bool, str]:
     """Delete one inbound by its id through the Bearer API."""
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_inbounds_delete_path.format(inbound_id=inbound_id)}",
-        headers=_bearer_headers(cfg, env),
-        method=cfg.panel_http_methods["post"],
+        f"{base_url}{panel_values.PANEL_INBOUNDS_DELETE_PATH.format(inbound_id=inbound_id)}",
+        headers=_bearer_headers(env),
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "inbound deleted")
+    return _message_result(status, body, "inbound deleted")
 
 
 def list_outbound_subscriptions(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> list[dict[str, object]]:
@@ -901,22 +873,20 @@ def list_outbound_subscriptions(
     list_inbounds.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_outbound_subs_path}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{panel_values.PANEL_OUTBOUND_SUBS_PATH}",
+        headers=_bearer_headers(env),
         timeout=timeout,
     )
-    obj = _payload_of(cfg, status, body)
+    obj = _payload_of(status, body)
     if not isinstance(obj, list):
         return []
     return obj
 
 
 def find_outbound_subscription_by_remark(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     remark: str,
     timeout: float,
@@ -928,15 +898,14 @@ def find_outbound_subscription_by_remark(
     the subscription object or None when no subscription carries it.
     """
 
-    key = cfg.panel_field_keys["subscription_remark"]
-    for subscription in list_outbound_subscriptions(cfg, env, timeout):
+    key = panel_values.PANEL_FIELD_KEYS["subscription_remark"]
+    for subscription in list_outbound_subscriptions(env, timeout):
         if isinstance(subscription, dict) and subscription.get(key) == remark:
             return subscription
     return None
 
 
 def create_outbound_subscription(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     payload: dict[str, object],
     timeout: float,
@@ -948,23 +917,21 @@ def create_outbound_subscription(
     panel would refuse the subscription.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     data = _form_body(payload)
-    headers = _bearer_form_headers(cfg, env)
+    headers = _bearer_form_headers(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_outbound_subs_path}",
+        f"{base_url}{panel_values.PANEL_OUTBOUND_SUBS_PATH}",
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "subscription created")
+    return _message_result(status, body, "subscription created")
 
 
 def update_outbound_subscription(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     subscription: dict[str, object],
     timeout: float,
@@ -976,28 +943,26 @@ def update_outbound_subscription(
     it wants stored together with the id of the row it replaces.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     data = _form_body(subscription)
-    fields = cfg.panel_field_keys
-    headers = _bearer_form_headers(cfg, env)
+    fields = panel_values.PANEL_FIELD_KEYS
+    headers = _bearer_form_headers(env)
     subscription_id = subscription.get(fields["id"])
     status, body = _api_call(
-        cfg,
         opener,
         f"{base_url}"
-        + cfg.panel_outbound_subs_item_path.format(
+        + panel_values.PANEL_OUTBOUND_SUBS_ITEM_PATH.format(
             subscription_id=subscription_id
         ),
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "subscription updated")
+    return _message_result(status, body, "subscription updated")
 
 
 def upsert_outbound_subscription(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     payload: dict[str, object],
     timeout: float,
@@ -1011,21 +976,20 @@ def upsert_outbound_subscription(
     payload is the identity, as the tag is for upsert_inbound.
     """
 
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     remark = payload.get(fields["subscription_remark"])
     if not isinstance(remark, str) or not remark:
         return False, "subscription payload has no remark to identify it by"
-    existing = find_outbound_subscription_by_remark(cfg, env, remark, timeout)
+    existing = find_outbound_subscription_by_remark(env, remark, timeout)
     if existing is None:
-        return create_outbound_subscription(cfg, env, payload, timeout)
+        return create_outbound_subscription(env, payload, timeout)
     replacement = dict(payload)
     replacement[fields["id"]] = existing.get(fields["id"])
-    ok, message = update_outbound_subscription(cfg, env, replacement, timeout)
+    ok, message = update_outbound_subscription(env, replacement, timeout)
     return ok, message if not ok else f"subscription {remark} updated: {message}"
 
 
 def refresh_outbound_subscription(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     subscription_id: object,
     timeout: float,
@@ -1037,28 +1001,26 @@ def refresh_outbound_subscription(
     the same run need.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    base_url, opener = _bearer_opener(env)
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     status, body = _api_call(
-        cfg,
         opener,
         f"{base_url}"
-        + cfg.panel_outbound_subs_refresh_path.format(
+        + panel_values.PANEL_OUTBOUND_SUBS_REFRESH_PATH.format(
             subscription_id=subscription_id
         ),
         data=b"{}",
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "subscription refreshed")
+    return _message_result(status, body, "subscription refreshed")
 
 
 def list_balancer_status(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     tags: tuple[str, ...],
     timeout: float,
@@ -1075,20 +1037,19 @@ def list_balancer_status(
     an unexpected shape answer an empty list.
     """
 
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     form = _form_body({fields["balancer_status_query"]: ",".join(tags)})
-    base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_form_headers(cfg, env)
+    base_url, opener = _bearer_opener(env)
+    headers = _bearer_form_headers(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_balancer_status_path}",
+        f"{base_url}{panel_values.PANEL_BALANCER_STATUS_PATH}",
         data=form,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    obj = _payload_of(cfg, status, body)
+    obj = _payload_of(status, body)
     if isinstance(obj, dict):
         return [entry for entry in obj.values() if isinstance(entry, dict)]
     if isinstance(obj, list):
@@ -1097,7 +1058,6 @@ def list_balancer_status(
 
 
 def find_client(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     email: str,
     timeout: float,
@@ -1110,12 +1070,11 @@ def find_client(
     None, so the caller can create the client.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_client_get_path.format(email=urllib.parse.quote(email))}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{panel_values.PANEL_CLIENT_GET_PATH.format(email=urllib.parse.quote(email))}",
+        headers=_bearer_headers(env),
         timeout=timeout,
     )
     if status != 200:
@@ -1124,18 +1083,17 @@ def find_client(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
     obj = data.get(answers["payload"])
     if not isinstance(obj, dict):
         return None
-    client = obj.get(cfg.panel_field_keys["client"])
+    client = obj.get(panel_values.PANEL_FIELD_KEYS["client"])
     return client if isinstance(client, dict) else None
 
 
 def create_client(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     inbound_id: int,
     client_id: str,
@@ -1152,36 +1110,34 @@ def create_client(
     from the panel response.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    fields = cfg.panel_field_keys
+    base_url, opener = _bearer_opener(env)
+    fields = panel_values.PANEL_FIELD_KEYS
     payload = {
         fields["client"]: {
             fields["id"]: client_id,
             fields["email"]: email,
-            fields["enable"]: cfg.client_enabled,
+            fields["enable"]: panel_values.CLIENT_ENABLED,
             fields["sub_id"]: sub_id,
         },
         fields["inbound_ids"]: [inbound_id],
     }
     data = json.dumps(payload).encode("utf-8")
-    headers = _bearer_headers(cfg, env)
-    headers[cfg.panel_http_headers["content_type"]] = cfg.panel_http_header_values[
+    headers = _bearer_headers(env)
+    headers[panel_values.PANEL_HTTP_HEADERS["content_type"]] = panel_values.PANEL_HTTP_HEADER_VALUES[
         "json"
     ]
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_client_add_path}",
+        f"{base_url}{panel_values.PANEL_CLIENT_ADD_PATH}",
         data=data,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "client created")
+    return _message_result(status, body, "client created")
 
 
 def client_links(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     email: str,
     timeout: float,
@@ -1193,12 +1149,11 @@ def client_links(
     parameter including pbk and the share address.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_client_links_path.format(email=urllib.parse.quote(email))}",
-        headers=_bearer_headers(cfg, env),
+        f"{base_url}{panel_values.PANEL_CLIENT_LINKS_PATH.format(email=urllib.parse.quote(email))}",
+        headers=_bearer_headers(env),
         timeout=timeout,
     )
     if status != 200:
@@ -1207,7 +1162,7 @@ def client_links(
         data = json.loads(body)
     except json.JSONDecodeError:
         return []
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return []
     obj = data.get(answers["payload"])
@@ -1231,7 +1186,6 @@ class XrayTemplate:
 
 
 def read_xray_template(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> XrayTemplate | None:
@@ -1245,13 +1199,12 @@ def read_xray_template(
     caller must not write a template it never read.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
+    base_url, opener = _bearer_opener(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_xray_status_path}",
-        headers=_bearer_headers(cfg, env),
-        method=cfg.panel_http_methods["post"],
+        f"{base_url}{panel_values.PANEL_XRAY_STATUS_PATH}",
+        headers=_bearer_headers(env),
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -1260,10 +1213,10 @@ def read_xray_template(
         data = json.loads(body)
     except json.JSONDecodeError:
         return None
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return None
-    fields = cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     blob = _decoded_json_object(data.get(answers["payload"]))
     if blob is None:
         return None
@@ -1322,7 +1275,6 @@ def _last_line(text: str) -> str:
 
 
 def core_diagnostics(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> str:
@@ -1335,16 +1287,15 @@ def core_diagnostics(
     this runs while a warning of a completed task is composed.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    headers = _bearer_headers(cfg, env)
-    method = cfg.panel_http_methods["get"]
-    answers = cfg.panel_answer_keys
-    keys = cfg.panel_status_keys
+    base_url, opener = _bearer_opener(env)
+    headers = _bearer_headers(env)
+    method = panel_values.PANEL_HTTP_METHODS["get"]
+    answers = panel_values.PANEL_ANSWER_KEYS
+    keys = panel_values.PANEL_STATUS_KEYS
     parts: list[str] = []
     status_code, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_status_path}",
+        f"{base_url}{panel_values.PANEL_STATUS_PATH}",
         headers=headers,
         method=method,
         timeout=timeout,
@@ -1368,9 +1319,8 @@ def core_diagnostics(
         else:
             parts.append("the panel reported no core state")
     result_code, result_body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_xray_result_path}",
+        f"{base_url}{panel_values.PANEL_XRAY_RESULT_PATH}",
         headers=headers,
         method=method,
         timeout=timeout,
@@ -1383,7 +1333,6 @@ def core_diagnostics(
 
 
 def write_xray_template(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     template: XrayTemplate,
     timeout: float,
@@ -1400,29 +1349,27 @@ def write_xray_template(
     already been observed to disagree with what the core routes.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    fields = cfg.panel_field_keys
+    base_url, opener = _bearer_opener(env)
+    fields = panel_values.PANEL_FIELD_KEYS
     form = _form_body(
         {
             fields["xray_setting"]: json.dumps(template.settings),
             fields["outbound_test_url"]: template.outbound_test_url,
         }
     )
-    headers = _bearer_form_headers(cfg, env)
+    headers = _bearer_form_headers(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_xray_update_path}",
+        f"{base_url}{panel_values.PANEL_XRAY_UPDATE_PATH}",
         data=form,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
-    return _message_result(cfg, status, body, "xray template applied")
+    return _message_result(status, body, "xray template applied")
 
 
 def validate_geodata_tokens(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     kind: str,
     tokens: list[str],
@@ -1440,24 +1387,23 @@ def validate_geodata_tokens(
     an unverified token as a working one.
     """
 
-    known_kinds = (cfg.panel_geodata_domain_kind, cfg.panel_geodata_ip_kind)
+    known_kinds = (panel_values.PANEL_GEODATA_DOMAIN_KIND, panel_values.PANEL_GEODATA_IP_KIND)
     if kind not in known_kinds:
         raise ValueError(
             f"unknown geodata kind {kind!r}, expected one of {known_kinds}"
         )
     if not tokens:
         return {}
-    base_url, opener = _bearer_opener(cfg, env)
-    fields = cfg.panel_field_keys
+    base_url, opener = _bearer_opener(env)
+    fields = panel_values.PANEL_FIELD_KEYS
     form = _form_body({fields["kind"]: kind, fields["tokens"]: ",".join(tokens)})
-    headers = _bearer_form_headers(cfg, env)
+    headers = _bearer_form_headers(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_xray_geodata_validate_path}",
+        f"{base_url}{panel_values.PANEL_XRAY_GEODATA_VALIDATE_PATH}",
         data=form,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
     if status != 200:
@@ -1466,7 +1412,7 @@ def validate_geodata_tokens(
         data = json.loads(body)
     except json.JSONDecodeError:
         return {token: f"unexpected response (HTTP {status})" for token in tokens}
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not isinstance(data, dict) or not data.get(answers["success"]):
         return {token: "the panel rejected the check" for token in tokens}
     obj = data.get(answers["payload"])
@@ -1485,7 +1431,6 @@ def validate_geodata_tokens(
 
 
 def route_test(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     *,
     inbound_tag: str,
@@ -1514,8 +1459,8 @@ def route_test(
     panel may do by restarting it, so None is the state a caller waits on.
     """
 
-    base_url, opener = _bearer_opener(cfg, env)
-    fields = cfg.panel_field_keys
+    base_url, opener = _bearer_opener(env)
+    fields = panel_values.PANEL_FIELD_KEYS
     request: dict[str, str] = {
         fields["port"]: str(port),
         fields["network"]: network,
@@ -1529,14 +1474,13 @@ def route_test(
     else:
         raise ValueError("route_test needs a domain or an address")
     form = _form_body(request)
-    headers = _bearer_form_headers(cfg, env)
+    headers = _bearer_form_headers(env)
     status, body = _api_call(
-        cfg,
         opener,
-        f"{base_url}{cfg.panel_xray_route_test_path}",
+        f"{base_url}{panel_values.PANEL_XRAY_ROUTE_TEST_PATH}",
         data=form,
         headers=headers,
-        method=cfg.panel_http_methods["post"],
+        method=panel_values.PANEL_HTTP_METHODS["post"],
         timeout=timeout,
     )
     if status == 0:
@@ -1547,7 +1491,7 @@ def route_test(
         return None, f"unexpected response (HTTP {status})"
     if not isinstance(data, dict):
         return None, f"unexpected response (HTTP {status})"
-    answers = cfg.panel_answer_keys
+    answers = panel_values.PANEL_ANSWER_KEYS
     if not data.get(answers["success"]):
         message = data.get(answers["message"])
         return None, message if isinstance(message, str) and message else "route test failed"

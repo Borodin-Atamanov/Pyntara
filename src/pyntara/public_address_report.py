@@ -10,34 +10,29 @@ disagree about what a public address is. Both families are asked in the
 same parallel call: a machine behind NAT often has no public IPv4
 address but does have a public IPv6 address, and the report shows both.
 
-The service list and its timeouts come from the [three_x_ui_xray_setup]
-section of the single system config, never duplicated here, and the
-process bound is the collector command timeout, because a module that
-outlives it is killed anyway.
+The service list and its timeouts are the values of the
+three_x_ui_xray_setup section, never duplicated here, and the process
+bound is the collector command timeout, because a module that outlives
+it is killed anyway.
 
 A family without an answer contributes a reason record instead of an
 address, so the report shows which detection failed instead of dropping
 it silently; when neither family answers, the command exits nonzero with
-the reason on stderr. Runs as `python -m pyntara.public_address_report
-CONFIG_PATH` (docs/spec/system-metrics.md, section Report collector).
+the reason on stderr. Runs as `python -m pyntara.public_address_report`
+(docs/spec/system-metrics.md, section Report collector).
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
-from pyntara.config import (
-    PUBLIC_ADDRESS_CONFIG_KEYS,
-    absent_config_keys,
-    load_config,
-)
 from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.values import engine as engine_values
 from pyntara.values import system_metrics_setup as values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 # The reason a family without an address carries into the report.
 NO_ANSWER_REASON = "no echo service reported an address of this family"
@@ -84,23 +79,13 @@ def main(argv: list[str]) -> int:
     error instead of an empty module.
     """
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    echo = cfg.three_x_ui_xray_setup
-    missing = absent_config_keys(echo, PUBLIC_ADDRESS_CONFIG_KEYS)
-    if missing:
+    if not panel_values.SERVER_IP_SERVICES:
         print(
-            "error: the three_x_ui_xray_setup section of the config has no "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return 1
-    if not echo.server_ip_services:
-        print(
-            "error: no echo service is configured in the "
-            "three_x_ui_xray_setup section of the config",
+            "error: no echo service is declared in the "
+            "three_x_ui_xray_setup values",
             file=sys.stderr,
         )
         return 1
@@ -110,8 +95,8 @@ def main(argv: list[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     addresses = fetch_public_addresses(
-        echo.server_ip_services,
-        echo.server_ip_timeout_seconds,
+        panel_values.SERVER_IP_SERVICES,
+        panel_values.SERVER_IP_TIMEOUT_SECONDS,
         values.COLLECTOR.command_timeout_seconds,
     )
     if addresses.is_empty:

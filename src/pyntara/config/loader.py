@@ -35,7 +35,6 @@ from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .telegram_setup import TelegramSetupConfig
-from .three_x_ui_xray_setup import ThreeXuiXraySetupConfig
 from .vault import LocalVaultSetupConfig, VaultStructureConfig
 from .vocalinux_setup import VocalinuxSetupConfig
 from .zram_service import ZramServiceConfig
@@ -63,7 +62,6 @@ class Config:
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig
     telegram_setup: TelegramSetupConfig
-    three_x_ui_xray_setup: ThreeXuiXraySetupConfig
     sotavpn_setup: SotavpnSetupConfig
     vocalinux_setup: VocalinuxSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig

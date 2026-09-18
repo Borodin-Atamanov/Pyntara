@@ -1844,3 +1844,55 @@ machine in this turn, and the probe is named with the figure.
     the tests, 2012 unit tests and the four bash suites. The live production run
     waits for the end of stage F, on the user's decision 149. What is left of
     stage F: three_x_ui_xray_setup, the largest coupled section.
+
+157. The three_x_ui_xray_setup section migrated on 2026-09-18 (branch
+    three-x-ui-values), the eighth section of stage F and the largest one: the
+    panel, its certificate, its inbound, its client half and the Sotavpn
+    subscription all read it. Its 172 names live in
+    src/pyntara/values/three_x_ui_xray_setup.py. Two decisions were stated
+    before the change: the fields of the panel JSON (CLIENT_ENABLED, the
+    sniffing switches, POOL_ENABLE_CONCURRENCY) stay booleans, because the
+    panel distinguishes true from 1 in its answers, while the two switches that
+    only steer the task (SSL_ENABLED, UPNP_ENABLED) answer 1 and 0.
+    A real loss was found and closed on the way: the config loader used to
+    derive cert_fullchain, cert_privkey and the two self-signed paths from
+    cert_dir, and the values names for them did not exist, so the panel stages
+    would have written into /root/cert on the machine. They are declared now as
+    CERT_FULLCHAIN_PATH, CERT_PRIVKEY_PATH and the two SELF_SIGNED_CERT_*_PATH
+    values next to their directories, and the two file modes became whole
+    numbers (0o600, 0o644), because os.chmod is their only reader.
+    Readers converted: xui, xray_panel, xray_certificate, xray_client,
+    xray_inbound, xray_local_proxy, xray_facts, the three tasks that touch the
+    panel and the two report commands. Every module reads the values as
+    panel_values and no function carries the section as a parameter. The two
+    report commands lost more than the parameter: they read the config only for
+    this section, so public_address_report and country_report lost their
+    CONFIG_PATH argument and the load_config import, and their commands in
+    values/system_metrics_setup.py lost the SYSTEM_CONFIG_PATH argument. The
+    last two key lists of the config layer, PUBLIC_ADDRESS_CONFIG_KEYS and
+    COUNTRY_REPORT_CONFIG_KEYS, are gone with them.
+    Config side removed: config/three_x_ui_xray_setup.toml,
+    src/pyntara/config/three_x_ui_xray_setup.py and tests/test_config_three_x_ui.py
+    went to the trash, together with the 988-line block of tests/config_checks.py,
+    the section of the shared document in tests/config_helpers.py, the section
+    parameters and the replace block of tests/support.py, the Config field with
+    its loader import and the re-exports of src/pyntara/config/__init__.py, the
+    meanings and validators that only that section used, the
+    DERIVED_SECTION_FIELDS entries and the whole component key list machinery of
+    tests/test_config_coverage.py, tests/test_report_component_config_keys.py,
+    and the tests that used the section as their example of a document shape.
+    Tests: the 4685-line file of the section was rewritten around the values, and
+    its seven per-class config helpers are gone; the other files follow the same
+    pattern (the class helper declares the values a test needs, the tests of a
+    stage state the temporary paths, and the monkeypatch stand-ins take the
+    parameters of the real functions). tests/test_values.py registers the module
+    and guards the two file modes with check_file_mode.
+    Documentation followed: docs/spec/3x-ui.md (the config reference became a
+    values section that names the module), docs/spec/config-content.md (no
+    component keeps a key list any more), docs/spec/system-metrics.md (the two
+    report commands take no argument), docs/spec/chrome-setup.md,
+    docs/spec/sotavpn-setup.md and docs/guides/project-structure.md.
+    Every gate passes: ruff check, mypy strict over 137 source files, mypy over
+    the tests, 1965 unit tests and the four bash suites. The live production run
+    waits for the end of stage F, on the user's decision 149. What is left of
+    stage F: nothing; the config layer itself goes in stage G.

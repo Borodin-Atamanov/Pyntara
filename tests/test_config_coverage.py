@@ -14,7 +14,6 @@ These tests read the real config directory and compare the two forms.
 
 from __future__ import annotations
 
-import importlib
 import re
 import tomllib
 from dataclasses import fields, is_dataclass
@@ -26,9 +25,9 @@ from support import make_config
 
 from pyntara.config import (
     Config,
-    ThreeXuiXraySetupConfig,
 )
 from pyntara.config.loader import render_config_source
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 REPOSITORY_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 
@@ -60,22 +59,10 @@ DERIVED_SECTION_FIELDS: dict[str, frozenset[str]] = {
 # with the table they belong to: the list lives in the config layer, next to
 # the fields it names, and the component reads it from there, so the component
 # names the keys it cannot find instead of showing a Python error. The metrics
-# family and the two address commands of the yggdrasil, i2pd and tor sections
-# read declared values now and keep no such list.
-COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = (
-    (
-        "pyntara.country_report",
-        "pyntara.config.three_x_ui_xray_setup",
-        "COUNTRY_REPORT_CONFIG_KEYS",
-        ThreeXuiXraySetupConfig,
-    ),
-    (
-        "pyntara.public_address_report",
-        "pyntara.config.three_x_ui_xray_setup",
-        "PUBLIC_ADDRESS_CONFIG_KEYS",
-        ThreeXuiXraySetupConfig,
-    ),
-)
+# family and the address commands of the yggdrasil, i2pd, tor, three_x_ui_xray
+# and the two report commands of the three_x_ui_xray_setup section read
+# declared values now and keep no such list.
+COMPONENT_KEY_LISTS: tuple[tuple[str, str, str, type[Any]], ...] = ()
 
 
 def _top_level_tables(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -199,31 +186,6 @@ def test_test_document_leaves_out_only_recorded_optional_keys() -> None:
     assert not absent, f"config keys missing from the test document: {absent}"
 
 
-def test_component_key_lists_name_keys_of_their_table() -> None:
-    # Each list lives in the config layer next to the fields it names, the
-    # component reads that same list, and the component reports an incomplete
-    # config by naming those keys. A name that is not a key of the table it
-    # belongs to would make that report point at a value nobody can set,
-    # while the key that truly prevented the run would stay unnamed. The
-    # reverse direction is not provable here: a component reads its keys
-    # through the shared modules it calls (the ingest delegates to
-    # metrics_commit.ingest_spool), so the list cannot be derived from one
-    # module source, and a key read without being listed still meets the
-    # catch-all line of the component.
-    unknown: list[str] = []
-    for consumer_name, source_name, list_name, table_type in COMPONENT_KEY_LISTS:
-        source = importlib.import_module(source_name)
-        consumer = importlib.import_module(consumer_name)
-        assert getattr(consumer, list_name) is getattr(source, list_name), (
-            f"{consumer_name}.{list_name} is not the list of {source_name}: "
-            "a component must read the list of the config layer"
-        )
-        names = set(getattr(source, list_name))
-        for name in sorted(names - _section_field_names(table_type)):
-            unknown.append(f"{source_name}.{list_name}: {table_type.__name__}.{name}")
-    assert not unknown, f"component key lists naming no config key: {unknown}"
-
-
 def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
     # The factory overrides whole sections, so it can produce a Config the
     # real loader would reject. Every vault entry title a section names must
@@ -236,10 +198,10 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
         ),
         "rustdesk_setup.vault_entry_title": (factory.rustdesk_setup.vault_entry_title),
         "three_x_ui_xray_setup.vault_entry_title": (
-            factory.three_x_ui_xray_setup.vault_entry_title
+            panel_values.VAULT_ENTRY_TITLE
         ),
         "three_x_ui_xray_setup.connection_vault_entry_title": (
-            factory.three_x_ui_xray_setup.connection_vault_entry_title
+            panel_values.CONNECTION_VAULT_ENTRY_TITLE
         ),
         "sotavpn_setup.key_entry_title": (factory.sotavpn_setup.key_entry_title),
     }

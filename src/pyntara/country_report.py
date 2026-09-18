@@ -12,12 +12,11 @@ it. The geographic position itself lives in the values, so the report
 shows what the services saw instead of a bare yes or no, which is what
 makes the record useful for a machine that moves.
 
-The service list, the word and the timeouts come from the
-[three_x_ui_xray_setup] section of the single system config, never
-duplicated here. No answer at all is an error with the reason on stderr,
-so a silent detection is visible; a machine outside the word's country
-is a normal answer, not a failure. Runs as `python -m
-pyntara.country_report CONFIG_PATH` (docs/spec/system-metrics.md,
+The service list, the word and the timeouts are the values of the
+three_x_ui_xray_setup section, never duplicated here. No answer at all
+is an error with the reason on stderr, so a silent detection is visible;
+a machine outside the word's country is a normal answer, not a failure.
+Runs as `python -m pyntara.country_report` (docs/spec/system-metrics.md,
 section Report collector).
 """
 
@@ -25,15 +24,10 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
-from pyntara.config import (
-    COUNTRY_REPORT_CONFIG_KEYS,
-    absent_config_keys,
-    load_config,
-)
 from pyntara.location import CountryReport, detect_country
 from pyntara.values import engine as engine_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
 def country_document(report: CountryReport, word: str) -> dict[str, object]:
@@ -70,31 +64,21 @@ def main(argv: list[str]) -> int:
     collector shows a failed detection instead of an empty module.
     """
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    setup = cfg.three_x_ui_xray_setup
-    missing = absent_config_keys(setup, COUNTRY_REPORT_CONFIG_KEYS)
-    if missing:
+    if not panel_values.COUNTRY_SERVICES:
         print(
-            "error: the three_x_ui_xray_setup section of the config has no "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return 1
-    if not setup.country_services:
-        print(
-            "error: no country service is configured in the "
-            "three_x_ui_xray_setup section of the config",
+            "error: no country service is declared in the "
+            "three_x_ui_xray_setup values",
             file=sys.stderr,
         )
         return 1
     report = detect_country(
-        setup.country_services,
-        setup.country_word,
-        setup.country_query_timeout_seconds,
-        setup.country_command_timeout_seconds,
+        panel_values.COUNTRY_SERVICES,
+        panel_values.COUNTRY_WORD,
+        panel_values.COUNTRY_QUERY_TIMEOUT_SECONDS,
+        panel_values.COUNTRY_COMMAND_TIMEOUT_SECONDS,
     )
     if not report.answers:
         print(
@@ -104,7 +88,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         json.dumps(
-            country_document(report, setup.country_word),
+            country_document(report, panel_values.COUNTRY_WORD),
             ensure_ascii=False,
             indent=engine_values.REPORT_JSON_INDENT,
         )

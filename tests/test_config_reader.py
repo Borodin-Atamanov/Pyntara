@@ -145,9 +145,9 @@ def test_absent_config_keys_ignores_a_missing_section(tmp_path: Path) -> None:
     # A section that is not in the document keeps an object with absent
     # values, so a service reads a section the same way in every case.
     config = load_config(_write(tmp_path, "[engine]\nnotice_timeout = 7\n"))
-    assert absent_config_keys(config.three_x_ui_xray_setup, ("panel_port",)) == (
-        "panel_port",
-    )
+    assert absent_config_keys(
+        config.hostname, ("hostname_random_bytes",)
+    ) == ("hostname_random_bytes",)
 
 
 def test_describe_absent_config_keys_names_each_table_once(
@@ -159,18 +159,18 @@ def test_describe_absent_config_keys_names_each_table_once(
     described = describe_absent_config_keys(
         (
             (
-                "three_x_ui_xray_setup",
+                "hostname",
                 absent_config_keys(
-                    config.three_x_ui_xray_setup, ("panel_port", "panel_path")
+                    config.hostname, ("hostname_random_bytes", "hostname_path")
                 ),
             ),
             (
-                "three_x_ui_xray_setup.ssh",
-                absent_config_keys(config.three_x_ui_xray_setup, ()),
+                "hostname.ssh",
+                absent_config_keys(config.hostname, ()),
             ),
         )
     )
-    assert described == "[three_x_ui_xray_setup] has no panel_port, panel_path"
+    assert described == "[hostname] has no hostname_random_bytes, hostname_path"
 
 
 def test_describe_absent_config_keys_says_nothing_when_all_keys_are_there(

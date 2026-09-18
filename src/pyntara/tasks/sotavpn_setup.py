@@ -45,7 +45,6 @@ import time
 from pathlib import Path
 
 from pyntara import xui as xui_client
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -61,6 +60,7 @@ from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import sotavpn_setup as values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
 def _read_access_key(ctx: Context) -> str | None:
@@ -341,27 +341,26 @@ def _wait_for_the_bridge(
 
 
 def _subscription_payload(
-    sub_cfg: ThreeXuiXraySetupConfig,
     *,
     port: int,
     key: str,
 ) -> dict[str, object]:
     """The outbound subscription the panel stores, with the key inside.
 
-    The field names are the panel vocabulary of the [three_x_ui_xray_setup]
-    table, so a panel version that renames one is answered in the config.
-    allow_private is what lets the panel fetch from the loopback address of
-    the bridge, and the update interval is the panel job that keeps the
-    node list fresh on its own.
+    The field names are the panel vocabulary of the three_x_ui_xray_setup
+    section, so a panel version that renames one is answered in its values
+    module. allow_private is what lets the panel fetch from the loopback
+    address of the bridge, and the update interval is the panel job that
+    keeps the node list fresh on its own.
     """
 
-    fields = sub_cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     return {
         fields["subscription_remark"]: values.SUBSCRIPTION_REMARK,
         fields["subscription_url"]: values.SUBSCRIPTION_URL_TEMPLATE.format(
             port=port, key=key
         ),
-        fields["subscription_tag_prefix"]: sub_cfg.pool_member_prefix,
+        fields["subscription_tag_prefix"]: panel_values.POOL_MEMBER_PREFIX,
         fields["subscription_update_interval"]: (
             values.SUBSCRIPTION_UPDATE_INTERVAL_SECONDS
         ),
@@ -387,7 +386,6 @@ def _subscription_matches(
 
 
 def _wait_for_the_nodes(
-    sub_cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
 ) -> tuple[int | None, str | None, bool]:
@@ -406,11 +404,11 @@ def _wait_for_the_nodes(
     written and the panel fetches it again on its own schedule.
     """
 
-    fields = sub_cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     started = time.monotonic()
     while True:
         current = xui_client.find_outbound_subscription_by_remark(
-            sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
+            env, values.SUBSCRIPTION_REMARK, timeout
         )
         if current is not None:
             last_error = current.get(fields["subscription_last_error"])
@@ -442,7 +440,6 @@ def _wait_for_the_nodes(
 
 
 def _wait_for_the_pool(
-    sub_cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     warnings: list[str],
@@ -452,40 +449,41 @@ def _wait_for_the_pool(
     The panel rebuilds the core wherever a written configuration changes,
     and the outbounds the subscription brought in are such a change, so the
     first question can land in that window. The budget and the pause are
-    the values of the three_x_ui table, the same ones its own stages wait
-    with. A core that never reports the pool is a warning naming it.
+    the values of the three_x_ui_xray_setup section, the same ones its own
+    stages wait with. A core that never reports the pool is a warning
+    naming it.
     """
 
-    tag_key = sub_cfg.xray_field_keys["tag"]
-    fields = sub_cfg.panel_field_keys
+    tag_key = panel_values.XRAY_FIELD_KEYS["tag"]
+    fields = panel_values.PANEL_FIELD_KEYS
     started = time.monotonic()
     while True:
         entries = xui_client.list_balancer_status(
-            sub_cfg, env, (sub_cfg.pool_balancer_tag,), timeout
+            env, (panel_values.POOL_BALANCER_TAG,), timeout
         )
         entry = next(
             (
                 item
                 for item in entries
-                if item.get(tag_key) == sub_cfg.pool_balancer_tag
+                if item.get(tag_key) == panel_values.POOL_BALANCER_TAG
             ),
             None,
         )
         if entry is not None:
             _log(
-                f"the pool {sub_cfg.pool_balancer_tag}: "
+                f"the pool {panel_values.POOL_BALANCER_TAG}: "
                 f"running={entry.get(fields['balancer_running'])}, "
                 f"selected={entry.get(fields['balancer_selected'])}"
             )
             return
-        if time.monotonic() - started >= sub_cfg.core_ready_wait_seconds:
+        if time.monotonic() - started >= panel_values.CORE_READY_WAIT_SECONDS:
             warnings.append(
                 f"the running core does not report the pool "
-                f"{sub_cfg.pool_balancer_tag} yet: the pool of the panel "
+                f"{panel_values.POOL_BALANCER_TAG} yet: the pool of the panel "
                 "applies with its next start"
             )
             return
-        time.sleep(sub_cfg.readiness_check_delay_seconds)
+        time.sleep(panel_values.READINESS_CHECK_DELAY_SECONDS)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -520,9 +518,8 @@ def task(ctx: Context) -> TaskResult:
                 "the sotavpn_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    # The panel vocabulary belongs to another section, which is not migrated yet:
-    # this task reads it from the config document until that section's own turn.
-    sub_cfg = ctx.config.three_x_ui_xray_setup
+    # The panel vocabulary belongs to the three_x_ui_xray_setup section, so
+    # this task reads it from that section's values module.
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
 
@@ -579,23 +576,23 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        env = xui_client.panel_environment(sub_cfg, timeout)
+        env = xui_client.panel_environment(timeout)
     except (FileNotFoundError, RuntimeError) as exc:
         warnings.append(f"the Sota subscription was not configured: {exc}")
         return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
 
-    payload = _subscription_payload(sub_cfg, port=port, key=key)
+    payload = _subscription_payload(port=port, key=key)
     existing = xui_client.find_outbound_subscription_by_remark(
-        sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
+        env, values.SUBSCRIPTION_REMARK, timeout
     )
-    fields = sub_cfg.panel_field_keys
+    fields = panel_values.PANEL_FIELD_KEYS
     if existing is not None and _subscription_matches(existing, payload) and not force:
         _log(
             f"the panel subscription {values.SUBSCRIPTION_REMARK} is configured already"
         )
     else:
         ok, message = xui_client.upsert_outbound_subscription(
-            sub_cfg, env, payload, timeout
+            env, payload, timeout
         )
         if not ok:
             warnings.append(
@@ -610,7 +607,7 @@ def task(ctx: Context) -> TaskResult:
         )
 
     current = xui_client.find_outbound_subscription_by_remark(
-        sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
+        env, values.SUBSCRIPTION_REMARK, timeout
     )
     subscription_id = None if current is None else current.get(fields["id"])
     nodes: int | None = None
@@ -621,7 +618,7 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         ok, message = xui_client.refresh_outbound_subscription(
-            sub_cfg, env, subscription_id, timeout
+            env, subscription_id, timeout
         )
         _log(f"the panel fetched the node list: {_without_the_key(message, key)}")
         if not ok:
@@ -629,7 +626,7 @@ def task(ctx: Context) -> TaskResult:
                 "the panel did not fetch the node list: "
                 f"{_without_the_key(message, key)}"
             )
-        nodes, note, failed = _wait_for_the_nodes(sub_cfg, env, timeout)
+        nodes, note, failed = _wait_for_the_nodes(env, timeout)
         if note is not None:
             if failed:
                 warnings.append(_without_the_key(note, key))
@@ -638,7 +635,7 @@ def task(ctx: Context) -> TaskResult:
         elif nodes is not None:
             _log(f"the subscription carries {nodes} nodes")
 
-    _wait_for_the_pool(sub_cfg, env, timeout, warnings)
+    _wait_for_the_pool(env, timeout, warnings)
 
     if nodes is None:
         message = (

@@ -10,29 +10,22 @@ codes without a network.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from config_helpers import base_config, write_config
 
 from pyntara import public_address_report
 from pyntara.public_address import PublicAddresses
 from pyntara.values import engine as engine_values
 from pyntara.values import ssh_daemon_setup as ssh_daemon_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.values.ssh_daemon_setup import SshDirective
 
 
-def _config(tmp_path: Path) -> Path:
-    """A config whose sshd Port directive exists, as the target has one."""
+def _use_the_ssh_port(monkeypatch: pytest.MonkeyPatch, port: str) -> None:
+    """Declare the sshd Port directive the ssh command needs."""
 
-    content = base_config().replace(
-        "[ssh_client_setup]",
-        "[[ssh_daemon_setup.directives]]\n"
-        'name = "Port"\n'
-        'value = "30222"\n'
-        "[ssh_client_setup]",
+    monkeypatch.setattr(
+        ssh_daemon_values, "DIRECTIVES", (SshDirective(name="Port", value=port),)
     )
-    return write_config(tmp_path, content)
 
 
 def _fake_detection(addresses: PublicAddresses):
@@ -75,15 +68,14 @@ def test_a_silent_family_carries_its_reason() -> None:
 def test_main_prints_the_records(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
-    config_path = _config(tmp_path)
+    _use_the_ssh_port(monkeypatch, "30222")
     monkeypatch.setattr(
         public_address_report,
         "fetch_public_addresses",
         _fake_detection(PublicAddresses(ipv4=("190.55.165.52",))),
     )
-    assert public_address_report.main(["public_address_report", str(config_path)]) == 0
+    assert public_address_report.main(["public_address_report"]) == 0
     captured = capsys.readouterr()
     assert "190.55.165.52" in captured.out
     assert "ssh -v -p 30222 190.55.165.52" in captured.out
@@ -93,17 +85,16 @@ def test_main_prints_the_records(
 def test_main_reports_a_silent_detection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
     # No service answering is an error, so the collector shows a failed
     # detection instead of an empty module.
-    config_path = _config(tmp_path)
+    _use_the_ssh_port(monkeypatch, "30222")
     monkeypatch.setattr(
         public_address_report,
         "fetch_public_addresses",
         _fake_detection(PublicAddresses()),
     )
-    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
+    assert public_address_report.main(["public_address_report"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "no echo service reported a public address" in captured.err
@@ -112,9 +103,7 @@ def test_main_reports_a_silent_detection(
 def test_main_without_a_port_directive_fails_loudly(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
-    config_path = write_config(tmp_path, base_config())
     monkeypatch.setattr(
         ssh_daemon_values,
         "DIRECTIVES",
@@ -125,40 +114,20 @@ def test_main_without_a_port_directive_fails_loudly(
         "fetch_public_addresses",
         _fake_detection(PublicAddresses(ipv4=("190.55.165.52",))),
     )
-    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
+    assert public_address_report.main(["public_address_report"]) == 1
     assert "Port" in capsys.readouterr().err
 
 
-def test_empty_service_list_is_reported(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+def test_a_value_that_is_not_declared_is_reported(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An empty service list is a configuration gap, not a silent answer:
-    # the reason says that nothing was configured.
-    content = base_config().replace(
-        'server_ip_services = ["https://api4.ipify.org", '
-        '"https://ipv4.icanhazip.com", "https://v4.api.ipinfo.io/ip", '
-        '"https://ipv4.myexternalip.com/raw", "https://4.ident.me", '
-        '"https://check-host.net/ip"]',
-        "server_ip_services = []",
-    )
-    config_path = write_config(tmp_path, content)
-    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
+    # Nothing is asked of a silent network when no echo service is declared:
+    # the reason says that the value carries no service.
+    monkeypatch.setattr(panel_values, "SERVER_IP_SERVICES", ())
+    assert public_address_report.main(["public_address_report"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "no echo service is configured" in captured.err
-
-
-def test_a_key_missing_from_the_config_is_named(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    # A config without the timeout key reports the key itself, so the reader
-    # of the message knows what to add to the file.
-    content = base_config().replace("server_ip_timeout_seconds = 60\n", "")
-    config_path = write_config(tmp_path, content)
-    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "has no server_ip_timeout_seconds" in captured.err
+    assert "no echo service is declared" in captured.err
 
 
 def test_the_family_words_and_the_reason_field_come_from_the_values(
@@ -197,6 +166,6 @@ def test_both_families_of_the_model_carry_a_word() -> None:
     assert all(record["reason"] for record in records)
 
 
-def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:
-    assert public_address_report.main(["public_address_report"]) == 2
+def test_usage_rejects_a_config_path(capsys: pytest.CaptureFixture[str]) -> None:
+    assert public_address_report.main(["public_address_report", "/etc/pyntara.toml"]) == 2
     assert "usage" in capsys.readouterr().err

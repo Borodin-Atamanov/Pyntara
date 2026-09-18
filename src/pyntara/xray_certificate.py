@@ -18,7 +18,6 @@ import time
 from pathlib import Path
 
 from pyntara import xui as xui_client
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -28,6 +27,7 @@ from pyntara.utils import (
     run_command,
     substituted_command,
 )
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_facts import _detect_server_ip, _RunFacts
 from pyntara.xray_panel import _panel_command
 
@@ -53,7 +53,7 @@ def _is_private_ipv4(address: str, networks: tuple[str, ...]) -> bool:
 
 
 def _probe_port_80_forward(
-    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+    timeout: float, facts: _RunFacts
 ) -> bool:
     """True when external port 80 is forwarded back to this machine.
 
@@ -67,12 +67,12 @@ def _probe_port_80_forward(
     public_ip = _detect_server_ip(facts)
     if public_ip is None:
         return False
-    _log(f"probing whether external port {cfg.acme_port} reaches {public_ip} here")
+    _log(f"probing whether external port {panel_values.ACME_PORT} reaches {public_ip} here")
     try:
         listener = subprocess.Popen(
             substituted_command(
-                cfg.acme_port_listener_command,
-                {"port": str(cfg.acme_port)},
+                panel_values.ACME_PORT_LISTENER_COMMAND,
+                {"port": str(panel_values.ACME_PORT)},
             ),
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -80,15 +80,15 @@ def _probe_port_80_forward(
     except OSError:
         return False
     try:
-        time.sleep(cfg.probe_listener_start_seconds)
-        probe_url = cfg.port_forward_probe_url_format.format(
-            host=public_ip, port=cfg.acme_port
+        time.sleep(panel_values.PROBE_LISTENER_START_SECONDS)
+        probe_url = panel_values.PORT_FORWARD_PROBE_URL_FORMAT.format(
+            host=public_ip, port=panel_values.ACME_PORT
         )
         try:
             result = run_command(
                 substituted_command(
-                    cfg.port_forward_probe_command,
-                    {"timeout_seconds": str(cfg.probe_port_80_timeout_seconds)},
+                    panel_values.PORT_FORWARD_PROBE_COMMAND,
+                    {"timeout_seconds": str(panel_values.PROBE_PORT_80_TIMEOUT_SECONDS)},
                 )
                 + [probe_url],
                 check=False,
@@ -96,23 +96,23 @@ def _probe_port_80_forward(
                 timeout=timeout,
             )
         except subprocess.TimeoutExpired, OSError:
-            _log(f"port {cfg.acme_port} did not answer: no forward confirmed")
+            _log(f"port {panel_values.ACME_PORT} did not answer: no forward confirmed")
             return False
         if result.returncode != 0:
-            _log(f"port {cfg.acme_port} did not answer: no forward confirmed")
+            _log(f"port {panel_values.ACME_PORT} did not answer: no forward confirmed")
         else:
-            _log(f"port {cfg.acme_port} answered: the forward is confirmed")
+            _log(f"port {panel_values.ACME_PORT} answered: the forward is confirmed")
         return result.returncode == 0
     finally:
         listener.terminate()
         try:
-            listener.wait(timeout=cfg.probe_timeout_seconds)
+            listener.wait(timeout=panel_values.PROBE_TIMEOUT_SECONDS)
         except subprocess.TimeoutExpired:
             listener.kill()
 
 
 def _ssl_reachable(
-    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+    timeout: float, facts: _RunFacts
 ) -> bool:
     """Whether the Let's Encrypt HTTP-01 challenge can be served.
 
@@ -124,34 +124,34 @@ def _ssl_reachable(
     """
 
     local = facts.local_addresses
-    if not local or not _is_private_ipv4(local[0], cfg.private_ipv4_networks):
+    if not local or not _is_private_ipv4(local[0], panel_values.PRIVATE_IPV4_NETWORKS):
         return True
-    return _probe_port_80_forward(cfg, timeout, facts)
+    return _probe_port_80_forward(timeout, facts)
 
 
-def _acme_path(cfg: ThreeXuiXraySetupConfig) -> Path:
+def _acme_path() -> Path:
     """The acme.sh binary under the current user's home directory.
 
     The directory and the file name of the tool are config values, so a
     release that installs itself elsewhere is a config change.
     """
 
-    return Path.home() / cfg.acme_dir_relative_path / cfg.acme_file_name
+    return Path.home() / panel_values.ACME_DIR_RELATIVE_PATH / panel_values.ACME_FILE_NAME
 
 
-def _ensure_acme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _ensure_acme(timeout: float) -> bool:
     """Install acme.sh via get.acme.sh when it is not present yet.
 
     True when the acme.sh binary exists after the call. A missing binary
     after an install attempt is a failure.
     """
 
-    acme = _acme_path(cfg)
+    acme = _acme_path()
     if acme.is_file():
         return True
     try:
         run_command(
-            list(cfg.acme_install_command),
+            list(panel_values.ACME_INSTALL_COMMAND),
             timeout=timeout,
         )
     except subprocess.CalledProcessError, subprocess.TimeoutExpired:
@@ -160,7 +160,7 @@ def _ensure_acme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
 
 
 def _issue_ip_certificate(
-    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+    ip: str, timeout: float
 ) -> tuple[bool, str]:
     """Issue and install a Let's Encrypt IP certificate for the address.
 
@@ -170,30 +170,30 @@ def _issue_ip_certificate(
     it through `x-ui cert`. Returns (ok, message).
     """
 
-    if not _ensure_acme(cfg, timeout):
+    if not _ensure_acme(timeout):
         return False, "acme.sh install failed"
     # acme.sh installcert does not create the certificate directory
     # itself; the installer creates it with mkdir -p before the call.
-    cfg.cert_dir.mkdir(parents=True, exist_ok=True)
-    acme = str(_acme_path(cfg))
-    reload_cmd = cfg.acme_reload_command.format(service_unit_name=cfg.service_unit_name)
+    panel_values.CERT_DIR.mkdir(parents=True, exist_ok=True)
+    acme = str(_acme_path())
+    reload_cmd = panel_values.ACME_RELOAD_COMMAND.format(service_unit_name=panel_values.SERVICE_UNIT_NAME)
     steps = [
-        substituted_command(cfg.acme_set_default_ca_command, {"acme": acme}),
+        substituted_command(panel_values.ACME_SET_DEFAULT_CA_COMMAND, {"acme": acme}),
         substituted_command(
-            cfg.acme_issue_command,
-            {"acme": acme, "domain": ip, "http_port": str(cfg.acme_port)},
+            panel_values.ACME_ISSUE_COMMAND,
+            {"acme": acme, "domain": ip, "http_port": str(panel_values.ACME_PORT)},
         ),
         substituted_command(
-            cfg.acme_installcert_command,
+            panel_values.ACME_INSTALLCERT_COMMAND,
             {
                 "acme": acme,
                 "domain": ip,
-                "key_file": str(cfg.cert_privkey),
-                "fullchain_file": str(cfg.cert_fullchain),
+                "key_file": str(panel_values.CERT_PRIVKEY_PATH),
+                "fullchain_file": str(panel_values.CERT_FULLCHAIN_PATH),
                 "reload_command": reload_cmd,
             },
         ),
-        substituted_command(cfg.acme_upgrade_command, {"acme": acme}),
+        substituted_command(panel_values.ACME_UPGRADE_COMMAND, {"acme": acme}),
     ]
     for command in steps:
         try:
@@ -205,20 +205,19 @@ def _issue_ip_certificate(
                 f"acme.sh step failed (exit {result.returncode}): "
                 f"{' '.join(command[1:3])}"
             )
-    if not cfg.cert_fullchain.is_file() or not cfg.cert_privkey.is_file():
+    if not panel_values.CERT_FULLCHAIN_PATH.is_file() or not panel_values.CERT_PRIVKEY_PATH.is_file():
         return False, "certificate files missing after acme.sh installcert"
     try:
-        os.chmod(cfg.cert_privkey, cfg.cert_privkey_file_mode)
-        os.chmod(cfg.cert_fullchain, cfg.cert_fullchain_file_mode)
+        os.chmod(panel_values.CERT_PRIVKEY_PATH, panel_values.CERT_PRIVKEY_FILE_MODE)
+        os.chmod(panel_values.CERT_FULLCHAIN_PATH, panel_values.CERT_FULLCHAIN_FILE_MODE)
     except OSError as exc:
         return False, f"cannot secure certificate permissions: {exc}"
     try:
         run_command(
             _panel_command(
-                cfg,
-                cfg.panel_certificate_command,
-                fullchain=str(cfg.cert_fullchain),
-                privkey=str(cfg.cert_privkey),
+                panel_values.PANEL_CERTIFICATE_COMMAND,
+                fullchain=str(panel_values.CERT_FULLCHAIN_PATH),
+                privkey=str(panel_values.CERT_PRIVKEY_PATH),
             ),
             timeout=timeout,
         )
@@ -230,13 +229,13 @@ def _issue_ip_certificate(
     try:
         run_command(
             substituted_command(
-                cfg.service_restart_command,
-                {"service_unit_name": cfg.service_unit_name},
+                panel_values.SERVICE_RESTART_COMMAND,
+                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot restart {cfg.service_unit_name}: {exc}"
+        return False, f"cannot restart {panel_values.SERVICE_UNIT_NAME}: {exc}"
     return True, "certificate issued"
 
 
@@ -259,7 +258,7 @@ def _ensure_openssl(timeout: float) -> bool:
 
 
 def _certificate_subject_name(
-    cfg: ThreeXuiXraySetupConfig, timeout: float, facts: _RunFacts
+    timeout: float, facts: _RunFacts
 ) -> str:
     """The CN for the self-signed certificate: a known address if any.
 
@@ -274,7 +273,7 @@ def _certificate_subject_name(
     return ip or "3x-ui"
 
 
-def _self_signed_not_expired(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _self_signed_not_expired(timeout: float) -> bool:
     """True when the self-signed certificate is still valid.
 
     A missing or broken openssl is treated as valid so a rerun never
@@ -285,8 +284,8 @@ def _self_signed_not_expired(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bo
     try:
         result = run_command(
             substituted_command(
-                cfg.openssl_check_command,
-                {"fullchain": str(cfg.self_signed_cert_fullchain)},
+                panel_values.OPENSSL_CHECK_COMMAND,
+                {"fullchain": str(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH)},
             ),
             check=False,
             capture=True,
@@ -298,7 +297,6 @@ def _self_signed_not_expired(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bo
 
 
 def _ensure_self_signed_cert(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     facts: _RunFacts,
 ) -> tuple[bool, str]:
@@ -313,17 +311,17 @@ def _ensure_self_signed_cert(
     the panel cannot be brought to HTTPS and stays on HTTP.
     """
 
-    self_signed_path = str(cfg.self_signed_cert_fullchain)
-    current = xui_client.panel_cert_value(cfg, timeout)
+    self_signed_path = str(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH)
+    current = xui_client.panel_cert_value(timeout)
     if current is not None and current != self_signed_path:
         return False, ""
     files_ok = (
-        cfg.self_signed_cert_fullchain.is_file()
-        and cfg.self_signed_cert_privkey.is_file()
+        panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH.is_file()
+        and panel_values.SELF_SIGNED_CERT_PRIVKEY_PATH.is_file()
     )
     needs_generation = not files_ok
     if files_ok:
-        needs_generation = not _self_signed_not_expired(cfg, timeout)
+        needs_generation = not _self_signed_not_expired(timeout)
     if current == self_signed_path and not needs_generation:
         _log("self-signed certificate already configured")
         return False, ""
@@ -334,16 +332,16 @@ def _ensure_self_signed_cert(
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
             )
-        cfg.self_signed_cert_dir.mkdir(parents=True, exist_ok=True)
-        subject = _certificate_subject_name(cfg, timeout, facts)
+        panel_values.SELF_SIGNED_CERT_DIR.mkdir(parents=True, exist_ok=True)
+        subject = _certificate_subject_name(timeout, facts)
         try:
             run_command(
                 substituted_command(
-                    cfg.openssl_generate_command,
+                    panel_values.OPENSSL_GENERATE_COMMAND,
                     {
-                        "subject": cfg.openssl_subject_template.format(subject=subject),
-                        "key_file": str(cfg.self_signed_cert_privkey),
-                        "fullchain_file": str(cfg.self_signed_cert_fullchain),
+                        "subject": panel_values.OPENSSL_SUBJECT_TEMPLATE.format(subject=subject),
+                        "key_file": str(panel_values.SELF_SIGNED_CERT_PRIVKEY_PATH),
+                        "fullchain_file": str(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH),
                     },
                 ),
                 timeout=timeout,
@@ -351,24 +349,23 @@ def _ensure_self_signed_cert(
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"cannot generate a self-signed certificate: {exc}"
         try:
-            os.chmod(cfg.self_signed_cert_privkey, cfg.cert_privkey_file_mode)
-            os.chmod(cfg.self_signed_cert_fullchain, cfg.cert_fullchain_file_mode)
+            os.chmod(panel_values.SELF_SIGNED_CERT_PRIVKEY_PATH, panel_values.CERT_PRIVKEY_FILE_MODE)
+            os.chmod(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH, panel_values.CERT_FULLCHAIN_FILE_MODE)
         except OSError as exc:
             return False, f"cannot secure certificate permissions: {exc}"
     try:
         run_command(
             _panel_command(
-                cfg,
-                cfg.panel_certificate_command,
-                fullchain=str(cfg.self_signed_cert_fullchain),
-                privkey=str(cfg.self_signed_cert_privkey),
+                panel_values.PANEL_CERTIFICATE_COMMAND,
+                fullchain=str(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH),
+                privkey=str(panel_values.SELF_SIGNED_CERT_PRIVKEY_PATH),
             ),
             timeout=timeout,
         )
         run_command(
             substituted_command(
-                cfg.service_restart_command,
-                {"service_unit_name": cfg.service_unit_name},
+                panel_values.SERVICE_RESTART_COMMAND,
+                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
@@ -379,7 +376,7 @@ def _ensure_self_signed_cert(
 
 
 def _issue_trusted_cert(
-    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+    ip: str, timeout: float
 ) -> TaskResult | None:
     """Issue a trusted Let's Encrypt certificate and report the result.
 
@@ -392,16 +389,16 @@ def _issue_trusted_cert(
     _log(f"issuing Let's Encrypt IP certificate for {ip}")
     try:
         freed = ensure_port_free(
-            cfg.acme_port,
-            cfg.service_unit_name,
+            panel_values.ACME_PORT,
+            panel_values.SERVICE_UNIT_NAME,
             timeout,
-            service_process_name=cfg.service_process_name,
+            service_process_name=panel_values.SERVICE_PROCESS_NAME,
         )
     except RuntimeError as exc:
         return TaskResult(success=True, changed=False, warnings=(str(exc),))
     if freed:
-        _log(f"ACME port {cfg.acme_port}: {freed}")
-    ok, message = _issue_ip_certificate(cfg, ip, timeout)
+        _log(f"ACME port {panel_values.ACME_PORT}: {freed}")
+    ok, message = _issue_ip_certificate(ip, timeout)
     if not ok:
         return TaskResult(
             success=True,
@@ -413,7 +410,6 @@ def _issue_trusted_cert(
 
 
 def _stage_ssl(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     facts: _RunFacts,
 ) -> TaskResult | None:
@@ -431,27 +427,27 @@ def _stage_ssl(
     otherwise, so the caller merges it into the task result.
     """
 
-    if not cfg.ssl_enabled:
+    if not panel_values.SSL_ENABLED:
         return None
-    cert = xui_client.panel_cert_value(cfg, timeout)
-    self_signed = str(cfg.self_signed_cert_fullchain)
+    cert = xui_client.panel_cert_value(timeout)
+    self_signed = str(panel_values.SELF_SIGNED_CERT_FULLCHAIN_PATH)
     if cert is not None and cert != self_signed:
         _log("SSL certificate already configured")
         return None
     if cert == self_signed:
         # Our self-signed certificate is installed; only a now-reachable
         # port 80 justifies replacing it with a trusted one.
-        if not _ssl_reachable(cfg, timeout, facts):
+        if not _ssl_reachable(timeout, facts):
             _log("self-signed certificate already configured")
             return None
         ip = _detect_server_ip(facts)
         if ip is not None:
-            return _issue_trusted_cert(cfg, ip, timeout)
+            return _issue_trusted_cert(ip, timeout)
         return None
     ip = _detect_server_ip(facts)
-    if ip is not None and _ssl_reachable(cfg, timeout, facts):
-        return _issue_trusted_cert(cfg, ip, timeout)
-    ok, message = _ensure_self_signed_cert(cfg, timeout, facts)
+    if ip is not None and _ssl_reachable(timeout, facts):
+        return _issue_trusted_cert(ip, timeout)
+    ok, message = _ensure_self_signed_cert(timeout, facts)
     if ok:
         return TaskResult(
             success=True,

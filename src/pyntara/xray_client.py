@@ -22,15 +22,14 @@ import time
 
 from pyntara import routing_policy
 from pyntara import xui as xui_client
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.location import describe_answers, detect_country
 from pyntara.logger import log_progress as _log
 from pyntara.public_address import directly_connected_networks
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
 def machine_policy(
-    cfg: ThreeXuiXraySetupConfig,
     ctx: Context,
     env: dict[str, str],
     timeout: float,
@@ -47,29 +46,28 @@ def machine_policy(
     name the country answer the decision came from.
     """
 
-    lists, category_warnings = checked_category_lists(cfg, env, timeout)
+    lists, category_warnings = checked_category_lists(env, timeout)
     warnings.extend(category_warnings)
     own_networks = directly_connected_networks(timeout)
     report = detect_country(
-        cfg.country_services,
-        cfg.country_word,
-        cfg.country_query_timeout_seconds,
-        cfg.country_command_timeout_seconds,
+        panel_values.COUNTRY_SERVICES,
+        panel_values.COUNTRY_WORD,
+        panel_values.COUNTRY_QUERY_TIMEOUT_SECONDS,
+        panel_values.COUNTRY_COMMAND_TIMEOUT_SECONDS,
     )
     for line in describe_answers(report):
         _log(f"country check {line}")
     if report.in_country:
         _log(
-            f"country check: an answer named {cfg.country_word}, the machine "
+            f"country check: an answer named {panel_values.COUNTRY_WORD}, the machine "
             "is treated as inside it"
         )
     else:
         _log(
-            f"country check: no answer named {cfg.country_word}, the machine "
+            f"country check: no answer named {panel_values.COUNTRY_WORD}, the machine "
             "is treated as outside it"
         )
     return build_local_proxy_policy(
-        cfg,
         lists=lists,
         in_russia=report.in_country,
         own_networks=own_networks,
@@ -77,7 +75,7 @@ def machine_policy(
 
 
 def checked_category_lists(
-    cfg: ThreeXuiXraySetupConfig, env: dict[str, str], timeout: float
+    env: dict[str, str], timeout: float
 ) -> tuple[dict[str, tuple[str, ...]], tuple[str, ...]]:
     """The configured category lists with only the categories that resolve.
 
@@ -91,29 +89,27 @@ def checked_category_lists(
     """
 
     domain_lists: dict[str, tuple[str, ...]] = {
-        "ad_block_domain_categories": cfg.ad_block_domain_categories,
-        "direct_domains": cfg.direct_domains,
-        "russia_direct_domain_categories": cfg.russia_direct_domain_categories,
-        "russia_blocked_domain_categories": cfg.russia_blocked_domain_categories,
-        "geo_restricted_domain_categories": cfg.geo_restricted_domain_categories,
+        "ad_block_domain_categories": panel_values.AD_BLOCK_DOMAIN_CATEGORIES,
+        "direct_domains": panel_values.DIRECT_DOMAINS,
+        "russia_direct_domain_categories": panel_values.RUSSIA_DIRECT_DOMAIN_CATEGORIES,
+        "russia_blocked_domain_categories": panel_values.RUSSIA_BLOCKED_DOMAIN_CATEGORIES,
+        "geo_restricted_domain_categories": panel_values.GEO_RESTRICTED_DOMAIN_CATEGORIES,
     }
     ip_lists: dict[str, tuple[str, ...]] = {
-        "direct_ip_categories": cfg.direct_ip_categories,
-        "russia_direct_ip_categories": cfg.russia_direct_ip_categories,
-        "russia_blocked_ip_categories": cfg.russia_blocked_ip_categories,
+        "direct_ip_categories": panel_values.DIRECT_IP_CATEGORIES,
+        "russia_direct_ip_categories": panel_values.RUSSIA_DIRECT_IP_CATEGORIES,
+        "russia_blocked_ip_categories": panel_values.RUSSIA_BLOCKED_IP_CATEGORIES,
     }
     rejected = {
         **xui_client.validate_geodata_tokens(
-            cfg,
             env,
-            cfg.panel_geodata_domain_kind,
+            panel_values.PANEL_GEODATA_DOMAIN_KIND,
             [token for tokens in domain_lists.values() for token in tokens],
             timeout,
         ),
         **xui_client.validate_geodata_tokens(
-            cfg,
             env,
-            cfg.panel_geodata_ip_kind,
+            panel_values.PANEL_GEODATA_IP_KIND,
             [token for tokens in ip_lists.values() for token in tokens],
             timeout,
         ),
@@ -130,8 +126,6 @@ def checked_category_lists(
 
 
 def build_local_proxy_policy(
-    cfg: ThreeXuiXraySetupConfig,
-    *,
     lists: dict[str, tuple[str, ...]],
     in_russia: bool,
     own_networks: tuple[str, ...],
@@ -145,18 +139,18 @@ def build_local_proxy_policy(
     """
 
     return routing_policy.LocalProxyPolicy(
-        inbound_tag=cfg.local_proxy_tag,
-        remote_outbound_tag=cfg.remote_outbound_tag,
-        tor_outbound_tag=cfg.tor_outbound_tag,
-        i2p_outbound_tag=cfg.i2p_outbound_tag,
-        direct_outbound_tag=cfg.direct_outbound_tag,
-        blocked_outbound_tag=cfg.blocked_outbound_tag,
-        tor_proxy_address=cfg.tor_proxy_address,
-        i2p_proxy_address=cfg.i2p_proxy_address,
+        inbound_tag=panel_values.LOCAL_PROXY_TAG,
+        remote_outbound_tag=panel_values.REMOTE_OUTBOUND_TAG,
+        tor_outbound_tag=panel_values.TOR_OUTBOUND_TAG,
+        i2p_outbound_tag=panel_values.I2P_OUTBOUND_TAG,
+        direct_outbound_tag=panel_values.DIRECT_OUTBOUND_TAG,
+        blocked_outbound_tag=panel_values.BLOCKED_OUTBOUND_TAG,
+        tor_proxy_address=panel_values.TOR_PROXY_ADDRESS,
+        i2p_proxy_address=panel_values.I2P_PROXY_ADDRESS,
         ad_block_domain_categories=lists["ad_block_domain_categories"],
         direct_domains=lists["direct_domains"],
         direct_ip_categories=lists["direct_ip_categories"],
-        direct_ip_networks=cfg.direct_ip_networks,
+        direct_ip_networks=panel_values.DIRECT_IP_NETWORKS,
         own_networks=own_networks,
         in_russia=in_russia,
         russia_blocked_domain_categories=lists["russia_blocked_domain_categories"],
@@ -164,18 +158,17 @@ def build_local_proxy_policy(
         russia_direct_domain_categories=lists["russia_direct_domain_categories"],
         russia_direct_ip_categories=lists["russia_direct_ip_categories"],
         geo_restricted_domain_categories=lists["geo_restricted_domain_categories"],
-        russia_domain_strategy=cfg.russia_domain_strategy,
-        outside_russia_domain_strategy=cfg.outside_russia_domain_strategy,
-        panel_inbound_protocol=cfg.panel_inbound_protocol,
-        panel_blocked_rule_protocols=cfg.panel_blocked_rule_protocols,
-        panel_private_block_category=cfg.panel_private_block_category,
-        field_keys=cfg.xray_field_keys,
-        values=cfg.xray_values,
+        russia_domain_strategy=panel_values.RUSSIA_DOMAIN_STRATEGY,
+        outside_russia_domain_strategy=panel_values.OUTSIDE_RUSSIA_DOMAIN_STRATEGY,
+        panel_inbound_protocol=panel_values.PANEL_INBOUND_PROTOCOL,
+        panel_blocked_rule_protocols=panel_values.PANEL_BLOCKED_RULE_PROTOCOLS,
+        panel_private_block_category=panel_values.PANEL_PRIVATE_BLOCK_CATEGORY,
+        field_keys=panel_values.XRAY_FIELD_KEYS,
+        values=panel_values.XRAY_VALUES,
     )
 
 
 def _inbound_matches(
-    cfg: ThreeXuiXraySetupConfig,
     existing: dict[str, object],
     payload: dict[str, object],
 ) -> bool:
@@ -190,8 +183,8 @@ def _inbound_matches(
     """
 
     counters = {
-        cfg.xray_field_keys["up"],
-        cfg.xray_field_keys["down"],
+        panel_values.XRAY_FIELD_KEYS["up"],
+        panel_values.XRAY_FIELD_KEYS["down"],
     }
     for key, wanted in payload.items():
         if key in counters:
@@ -210,7 +203,6 @@ def _inbound_matches(
 
 
 def ensure_local_proxy_inbound(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     *,
@@ -232,32 +224,32 @@ def ensure_local_proxy_inbound(
     """
 
     payload = routing_policy.build_local_proxy_inbound(
-        tag=cfg.local_proxy_tag,
-        protocol=cfg.panel_inbound_protocol,
-        remark=cfg.local_proxy_tag,
-        listen_address=cfg.local_proxy_listen_address,
-        port=cfg.local_proxy_port,
-        udp_enabled=cfg.local_proxy_udp,
-        enabled=cfg.local_proxy_enabled,
-        traffic_limit_bytes=cfg.local_proxy_traffic_limit_bytes,
-        expiry_time=cfg.local_proxy_expiry_time,
-        sniffing_enabled=cfg.local_proxy_sniffing_enabled,
-        sniffing_metadata_only=cfg.local_proxy_sniffing_metadata_only,
-        sniffing_route_only=cfg.local_proxy_sniffing_route_only,
-        sniffing_protocols=cfg.local_proxy_sniffing_protocols,
-        fields=cfg.xray_field_keys,
-        values=cfg.xray_values,
+        tag=panel_values.LOCAL_PROXY_TAG,
+        protocol=panel_values.PANEL_INBOUND_PROTOCOL,
+        remark=panel_values.LOCAL_PROXY_TAG,
+        listen_address=panel_values.LOCAL_PROXY_LISTEN_ADDRESS,
+        port=panel_values.LOCAL_PROXY_PORT,
+        udp_enabled=panel_values.LOCAL_PROXY_UDP,
+        enabled=panel_values.LOCAL_PROXY_ENABLED,
+        traffic_limit_bytes=panel_values.LOCAL_PROXY_TRAFFIC_LIMIT_BYTES,
+        expiry_time=panel_values.LOCAL_PROXY_EXPIRY_TIME,
+        sniffing_enabled=panel_values.LOCAL_PROXY_SNIFFING_ENABLED,
+        sniffing_metadata_only=panel_values.LOCAL_PROXY_SNIFFING_METADATA_ONLY,
+        sniffing_route_only=panel_values.LOCAL_PROXY_SNIFFING_ROUTE_ONLY,
+        sniffing_protocols=panel_values.LOCAL_PROXY_SNIFFING_PROTOCOLS,
+        fields=panel_values.XRAY_FIELD_KEYS,
+        values=panel_values.XRAY_VALUES,
     )
     existing = xui_client.find_inbound_by_tag(
-        cfg, env, cfg.local_proxy_tag, timeout
+        env, panel_values.LOCAL_PROXY_TAG, timeout
     )
     if (
         not force
         and existing is not None
-        and _inbound_matches(cfg, existing, payload)
+        and _inbound_matches(existing, payload)
     ):
         return False, ""
-    ok, message = xui_client.upsert_inbound(cfg, env, payload, timeout)
+    ok, message = xui_client.upsert_inbound(env, payload, timeout)
     if not ok:
         raise RuntimeError(message)
     return True, message
@@ -307,7 +299,6 @@ def _own_network_address(own_networks: tuple[str, ...]) -> str | None:
 
 
 def _route_expectations(
-    cfg: ThreeXuiXraySetupConfig,
     policy: routing_policy.LocalProxyPolicy,
     *,
     remote_balancer_tag: str = "",
@@ -328,34 +319,33 @@ def _route_expectations(
 
     remote_target = remote_balancer_tag or policy.remote_outbound_tag
     checks: list[tuple[str, str, str]] = [
-        (cfg.route_check_onion_domain, "domain", policy.tor_outbound_tag),
-        (cfg.route_check_i2p_domain, "domain", policy.i2p_outbound_tag),
-        (cfg.route_check_ad_domain, "domain", policy.blocked_outbound_tag),
-        (cfg.route_check_direct_domain, "domain", policy.direct_outbound_tag),
+        (panel_values.ROUTE_CHECK_ONION_DOMAIN, "domain", policy.tor_outbound_tag),
+        (panel_values.ROUTE_CHECK_I2P_DOMAIN, "domain", policy.i2p_outbound_tag),
+        (panel_values.ROUTE_CHECK_AD_DOMAIN, "domain", policy.blocked_outbound_tag),
+        (panel_values.ROUTE_CHECK_DIRECT_DOMAIN, "domain", policy.direct_outbound_tag),
     ]
     own_address = _own_network_address(policy.own_networks)
     if own_address is not None:
         checks.append((own_address, "address", policy.direct_outbound_tag))
     if policy.in_russia:
         checks.append(
-            (cfg.route_check_foreign_domain, "domain", policy.direct_outbound_tag)
+            (panel_values.ROUTE_CHECK_FOREIGN_DOMAIN, "domain", policy.direct_outbound_tag)
         )
         checks.append(
             (
-                cfg.route_check_russia_blocked_domain,
+                panel_values.ROUTE_CHECK_RUSSIA_BLOCKED_DOMAIN,
                 "domain",
                 remote_target,
             )
         )
     else:
         checks.append(
-            (cfg.route_check_foreign_domain, "domain", remote_target)
+            (panel_values.ROUTE_CHECK_FOREIGN_DOMAIN, "domain", remote_target)
         )
     return tuple(checks)
 
 
 def _ask_core(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     *,
@@ -377,12 +367,11 @@ def _ask_core(
         {"domain": destination} if kind == "domain" else {"address": destination}
     )
     return xui_client.route_test(
-        cfg,
         env,
         inbound_tag=inbound_tag,
-        network=cfg.route_test_network,
-        protocol=cfg.route_test_protocol,
-        port=cfg.route_test_port,
+        network=panel_values.ROUTE_TEST_NETWORK,
+        protocol=panel_values.ROUTE_TEST_PROTOCOL,
+        port=panel_values.ROUTE_TEST_PORT,
         timeout=timeout,
         **question,
     )
@@ -415,7 +404,6 @@ def _answer_matches(
 
 
 def _verify_routes(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     policy: routing_policy.LocalProxyPolicy,
@@ -440,10 +428,9 @@ def _verify_routes(
 
     failures: list[str] = []
     for destination, kind, expected in _route_expectations(
-        cfg, policy, remote_balancer_tag=remote_balancer_tag
+        policy, remote_balancer_tag=remote_balancer_tag
     ):
         matched, answer = _ask_core(
-            cfg,
             env,
             timeout,
             inbound_tag=policy.inbound_tag,
@@ -480,7 +467,6 @@ def _verify_routes(
 
 
 def route_test_failures(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     timeout: float,
     policy: routing_policy.LocalProxyPolicy,
@@ -507,11 +493,10 @@ def route_test_failures(
     that is still starting or has died is not a policy the core refused.
     """
 
-    budget = cfg.core_ready_wait_seconds
-    delay = cfg.readiness_check_delay_seconds
+    budget = panel_values.CORE_READY_WAIT_SECONDS
+    delay = panel_values.READINESS_CHECK_DELAY_SECONDS
     started = time.monotonic()
     failures, undecided = _verify_routes(
-        cfg,
         env,
         timeout,
         policy,
@@ -526,7 +511,7 @@ def route_test_failures(
         )
     while undecided is not None:
         if time.monotonic() - started >= budget:
-            diagnostics = xui_client.core_diagnostics(cfg, env, timeout)
+            diagnostics = xui_client.core_diagnostics(env, timeout)
             return (
                 (
                     f"the panel core did not answer within {budget} s "
@@ -536,7 +521,6 @@ def route_test_failures(
             ), False
         time.sleep(delay)
         failures, undecided = _verify_routes(
-            cfg,
             env,
             timeout,
             policy,

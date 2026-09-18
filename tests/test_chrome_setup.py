@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -25,6 +24,7 @@ from pyntara.values import chrome_setup as values
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 # The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -485,14 +485,13 @@ def test_the_desktop_entry_key_comes_from_the_values(
     assert not any(line.startswith("Exec=") for line in content.splitlines())
 
 
-def test_local_proxy_server_reads_the_three_x_ui_section(
+def test_local_proxy_server_reads_the_three_x_ui_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
     _fake_run_factory(monkeypatch)
-    client_config = replace(ctx.config.three_x_ui_xray_setup, local_proxy_port=10888)
+    monkeypatch.setattr(panel_values, "LOCAL_PROXY_PORT", 10888)
 
-    proxy_server, note = chrome_setup._local_proxy_server(client_config, timeout=60)
+    proxy_server, note = chrome_setup._local_proxy_server(timeout=60)
 
     assert proxy_server == "socks5://127.0.0.1:10888"
     assert note is None
@@ -501,12 +500,9 @@ def test_local_proxy_server_reads_the_three_x_ui_section(
 def test_local_proxy_server_without_a_listener_returns_a_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
     _fake_run_factory(monkeypatch, local_proxy_listening=False)
 
-    proxy_server, note = chrome_setup._local_proxy_server(
-        ctx.config.three_x_ui_xray_setup, timeout=60
-    )
+    proxy_server, note = chrome_setup._local_proxy_server(timeout=60)
 
     assert proxy_server == ""
     assert note is not None
@@ -516,13 +512,10 @@ def test_local_proxy_server_without_a_listener_returns_a_note(
 def test_local_proxy_server_without_configured_address_returns_a_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    ctx = _ctx(tmp_path)
     calls = _fake_run_factory(monkeypatch)
-    client_config = replace(
-        ctx.config.three_x_ui_xray_setup, local_proxy_listen_address=""
-    )
+    monkeypatch.setattr(panel_values, "LOCAL_PROXY_LISTEN_ADDRESS", "")
 
-    proxy_server, note = chrome_setup._local_proxy_server(client_config, timeout=60)
+    proxy_server, note = chrome_setup._local_proxy_server(timeout=60)
 
     assert proxy_server == ""
     assert note is not None

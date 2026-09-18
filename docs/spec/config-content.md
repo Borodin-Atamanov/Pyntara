@@ -206,16 +206,11 @@ reports what it could not do (architecture contract, Configuration). Every rule
 of the config lives in tests/config_checks.py, applied to the shipped config by
 tests/test_config_coverage.py.
 
-A list of the key names a deployed component reads is not a value: it belongs to
-the table it describes, so it lives in the config layer next to the fields it
-names and the component imports it (COUNTRY_REPORT_CONFIG_KEYS and
-PUBLIC_ADDRESS_CONFIG_KEYS of src/pyntara/config/three_x_ui_xray_setup.py). The
-list is what lets a deployed component name an incomplete config instead of
-failing on a missing attribute, and tests/test_config_coverage.py demands that
-each component read the list of the config layer rather than a copy. The metrics
-family keeps no such list any more: its values are declared in
-src/pyntara/values/system_metrics_setup.py, so there is no document to be
-incomplete.
+A list of the key names a deployed component reads belonged to the config layer,
+next to the fields it named, and no component keeps such a list any more: the
+values of every section are declared in its module under src/pyntara/values/, so
+there is no document that can be incomplete and nothing to name when a value is
+absent.
 
 ## The audit is closed
 

@@ -107,7 +107,7 @@ zswap_service -> config/zswap_service.py -> ZswapServiceConfig -> zswap_service
 dnsproxy_setup -> config/dnsproxy_setup.py -> DnsproxySetupConfig -> dnsproxy_setup  
 i2pd_service_setup -> src/pyntara/values/i2pd_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
 yggdrasil_service_setup -> src/pyntara/values/yggdrasil_service_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
-three_x_ui_xray_setup -> config/three_x_ui_xray_setup.py -> ThreeXuiXraySetupConfig -> three_x_ui_xray_setup  
+three_x_ui_xray_setup -> src/pyntara/values/three_x_ui_xray_setup.py -> READ_VALUE_NAMES -> the task and the deployed report commands
 sotavpn_setup -> config/sotavpn_setup.py -> SotavpnSetupConfig -> sotavpn_setup  
 tor_setup -> src/pyntara/values/tor_setup.py -> READ_VALUE_NAMES -> the task and the deployed address command  
 ssh_daemon_setup -> src/pyntara/values/ssh_daemon_setup.py -> READ_VALUE_NAMES -> the task and the shared SSH port reader

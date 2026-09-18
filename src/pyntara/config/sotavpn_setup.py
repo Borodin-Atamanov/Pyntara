@@ -49,7 +49,7 @@ class SotavpnSetupConfig:
     carries the remote classes included, is built by the
     three_x_ui_xray_setup task, and the nodes of this subscription join
     that pool because the panel names them with the prefix the pool
-    covers (pool_member_prefix of that section).
+    covers (pool_member_prefix of that values module).
     subscription_fetch_wait_seconds bounds the wait for the panel to
     fetch the list after the refresh call. bridge_ready_wait_seconds and
     readiness_check_delay_seconds bound the wait for the bridge listener

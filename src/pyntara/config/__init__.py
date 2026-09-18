@@ -42,11 +42,6 @@ from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
 from .swapfile_service_install import SwapfileServiceInstallConfig
 from .telegram_setup import TelegramSetupConfig
-from .three_x_ui_xray_setup import (
-    COUNTRY_REPORT_CONFIG_KEYS,
-    PUBLIC_ADDRESS_CONFIG_KEYS,
-    ThreeXuiXraySetupConfig,
-)
 from .vault import (
     LocalVaultSetupConfig,
     VaultEntry,
@@ -59,9 +54,7 @@ from .zram_service import ZramServiceConfig
 from .zswap_service import ZswapServiceConfig
 
 __all__ = [
-    "COUNTRY_REPORT_CONFIG_KEYS",
     "MODES",
-    "PUBLIC_ADDRESS_CONFIG_KEYS",
     "AddExtraReposConfig",
     "ChromeSetupConfig",
     "CliToolsConfig",
@@ -80,7 +73,6 @@ __all__ = [
     "SotavpnSetupConfig",
     "SwapfileServiceInstallConfig",
     "TelegramSetupConfig",
-    "ThreeXuiXraySetupConfig",
     "VaultEntry",
     "VaultGroup",
     "VaultGroupSeed",

@@ -20,18 +20,18 @@ from dataclasses import replace
 
 from pyntara import routing_policy, xray_client
 from pyntara import xui as xui_client
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import run_command, substituted_command, trim_whitespace
 from pyntara.values import common as common_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_facts import _RunFacts
 
 
 def _remote_profile(
-    cfg: ThreeXuiXraySetupConfig, ctx: Context
+    ctx: Context
 ) -> tuple[routing_policy.VlessProfile | None, str]:
     """The profile of the remote server, and a reason when it is unavailable.
 
@@ -55,7 +55,7 @@ def _remote_profile(
         )
     kp, path = source
     entry = kp.find_entries(
-        title=cfg.client_profile_entry_title,
+        title=panel_values.CLIENT_PROFILE_ENTRY_TITLE,
         group=kp.root_group,
         recursive=False,
         first=True,
@@ -63,19 +63,19 @@ def _remote_profile(
     link = (entry.url or "").strip() if entry is not None else ""
     if not link:
         return None, (
-            f"no vless link in {cfg.client_profile_entry_title} of {path.name}: "
+            f"no vless link in {panel_values.CLIENT_PROFILE_ENTRY_TITLE} of {path.name}: "
             "the local proxy is not configured"
         )
     profile = routing_policy.parse_vless_link(
         link,
-        cfg.remote_link_default_port,
-        cfg.xray_values["vless"],
-        cfg.vless_link_query_keys,
-        cfg.xray_values,
+        panel_values.REMOTE_LINK_DEFAULT_PORT,
+        panel_values.XRAY_VALUES["vless"],
+        panel_values.VLESS_LINK_QUERY_KEYS,
+        panel_values.XRAY_VALUES,
     )
     if profile is None:
         return None, (
-            f"the url of {cfg.client_profile_entry_title} is not a usable "
+            f"the url of {panel_values.CLIENT_PROFILE_ENTRY_TITLE} is not a usable "
             "vless link: the local proxy is not configured"
         )
     return profile, ""
@@ -94,7 +94,6 @@ def _is_remote_server(profile: routing_policy.VlessProfile, facts: _RunFacts) ->
 
 
 def _stage_local_proxy(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     *,
     force: bool = False,
@@ -115,7 +114,7 @@ def _stage_local_proxy(
     """
 
     try:
-        env = xui_client.panel_environment(cfg, timeout)
+        env = xui_client.panel_environment(timeout)
     except (FileNotFoundError, RuntimeError) as exc:
         return TaskResult(
             success=True,
@@ -123,7 +122,7 @@ def _stage_local_proxy(
         )
     try:
         changed, message = xray_client.ensure_local_proxy_inbound(
-            cfg, env, timeout, force=force
+            env, timeout, force=force
         )
     except RuntimeError as exc:
         return TaskResult(
@@ -131,24 +130,24 @@ def _stage_local_proxy(
             warnings=(f"local proxy not configured: {exc}",),
         )
     if not changed:
-        _log(f"local proxy {cfg.local_proxy_tag} is already configured")
+        _log(f"local proxy {panel_values.LOCAL_PROXY_TAG} is already configured")
         return None
     _log(
-        f"local proxy {cfg.local_proxy_tag} on "
-        f"{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}: {message}"
+        f"local proxy {panel_values.LOCAL_PROXY_TAG} on "
+        f"{panel_values.LOCAL_PROXY_LISTEN_ADDRESS}:{panel_values.LOCAL_PROXY_PORT}: {message}"
     )
     return TaskResult(
         success=True,
         changed=True,
         message=(
             f"local proxy on "
-            f"{cfg.local_proxy_listen_address}:{cfg.local_proxy_port} configured"
+            f"{panel_values.LOCAL_PROXY_LISTEN_ADDRESS}:{panel_values.LOCAL_PROXY_PORT} configured"
         ),
     )
 
 
 def _proxy_request(
-    cfg: ThreeXuiXraySetupConfig, proxy: str, url: str
+    proxy: str, url: str
 ) -> tuple[str, str, int]:
     """One request through the local proxy: body, HTTP code, curl exit code.
 
@@ -160,21 +159,21 @@ def _proxy_request(
     attempts it got instead of being hidden by a retry loop.
     """
 
-    no_answer = cfg.tunnel_probe_no_answer_code
+    no_answer = panel_values.TUNNEL_PROBE_NO_ANSWER_CODE
     try:
         result = run_command(
             substituted_command(
-                cfg.tunnel_probe_command,
+                panel_values.TUNNEL_PROBE_COMMAND,
                 {
                     "proxy_address": proxy,
-                    "timeout_seconds": str(cfg.proxy_check_timeout_seconds),
-                    "write_out": cfg.tunnel_probe_write_out,
+                    "timeout_seconds": str(panel_values.PROXY_CHECK_TIMEOUT_SECONDS),
+                    "write_out": panel_values.TUNNEL_PROBE_WRITE_OUT,
                 },
             )
             + [url],
             check=False,
             capture=True,
-            timeout=cfg.proxy_check_command_timeout_seconds,
+            timeout=panel_values.PROXY_CHECK_COMMAND_TIMEOUT_SECONDS,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return f"the request could not be run: {exc}", no_answer, 1
@@ -194,7 +193,6 @@ def _own_addresses(facts: _RunFacts) -> tuple[str, ...]:
 
 
 def _check_egress_address(
-    cfg: ThreeXuiXraySetupConfig,
     policy: routing_policy.LocalProxyPolicy,
     profile: routing_policy.VlessProfile,
     facts: _RunFacts,
@@ -221,10 +219,10 @@ def _check_egress_address(
     _log(f"checking where a request through {proxy} leaves")
     answer = ""
     code = 0
-    http_code = cfg.tunnel_probe_no_answer_code
-    attempts = cfg.proxy_check_attempts
+    http_code = panel_values.TUNNEL_PROBE_NO_ANSWER_CODE
+    attempts = panel_values.PROXY_CHECK_ATTEMPTS
     for attempt in range(1, attempts + 1):
-        answer, http_code, code = _proxy_request(cfg, proxy, cfg.proxy_check_url)
+        answer, http_code, code = _proxy_request(proxy, panel_values.PROXY_CHECK_URL)
         if code == 0 and answer:
             break
         if attempt < attempts:
@@ -235,7 +233,7 @@ def _check_egress_address(
     if code != 0 or not answer:
         return (
             (
-                f"the local proxy answered nothing for {cfg.proxy_check_url} "
+                f"the local proxy answered nothing for {panel_values.PROXY_CHECK_URL} "
                 f"in {attempts} attempts (curl exit {code}, HTTP {http_code})"
             ),
         )
@@ -254,7 +252,7 @@ def _check_egress_address(
             return (
                 (
                     f"the local proxy answered {answer}, which is the remote "
-                    f"server, while the policy routes {cfg.proxy_check_url} "
+                    f"server, while the policy routes {panel_values.PROXY_CHECK_URL} "
                     "directly: the policy may not be in place"
                 ),
             )
@@ -276,13 +274,13 @@ def _check_egress_address(
     else:
         _log(
             f"the local proxy works: the request left by {answer} through "
-            f"the pool {cfg.pool_balancer_tag}"
+            f"the pool {panel_values.POOL_BALANCER_TAG}"
         )
     return ()
 
 
 def _check_remote_path(
-    cfg: ThreeXuiXraySetupConfig, proxy: str
+    proxy: str
 ) -> tuple[str, ...]:
     """Check that a destination the policy proxies really answers, in Russia.
 
@@ -296,14 +294,14 @@ def _check_remote_path(
     of times for the same reason as the egress check.
     """
 
-    url = cfg.proxy_check_blocked_url
+    url = panel_values.PROXY_CHECK_BLOCKED_URL
     _log(f"checking the remote path through {proxy} with {url}")
-    http_code = cfg.tunnel_probe_no_answer_code
+    http_code = panel_values.TUNNEL_PROBE_NO_ANSWER_CODE
     code = 0
-    attempts = cfg.proxy_check_attempts
+    attempts = panel_values.PROXY_CHECK_ATTEMPTS
     for attempt in range(1, attempts + 1):
-        _, http_code, code = _proxy_request(cfg, proxy, url)
-        if code == 0 and http_code not in (cfg.tunnel_probe_no_answer_code, ""):
+        _, http_code, code = _proxy_request(proxy, url)
+        if code == 0 and http_code not in (panel_values.TUNNEL_PROBE_NO_ANSWER_CODE, ""):
             _log(f"the remote path works: {url} answered HTTP {http_code}")
             return ()
         if attempt < attempts:
@@ -326,7 +324,6 @@ def _check_remote_path(
 
 
 def _check_proxy_path(
-    cfg: ThreeXuiXraySetupConfig,
     policy: routing_policy.LocalProxyPolicy,
     profile: routing_policy.VlessProfile,
     facts: _RunFacts,
@@ -346,15 +343,14 @@ def _check_proxy_path(
     what came back.
     """
 
-    proxy = f"socks5h://{cfg.local_proxy_listen_address}:{cfg.local_proxy_port}"
-    warnings = list(_check_egress_address(cfg, policy, profile, facts, proxy))
+    proxy = f"socks5h://{panel_values.LOCAL_PROXY_LISTEN_ADDRESS}:{panel_values.LOCAL_PROXY_PORT}"
+    warnings = list(_check_egress_address(policy, profile, facts, proxy))
     if policy.in_russia:
-        warnings.extend(_check_remote_path(cfg, proxy))
+        warnings.extend(_check_remote_path(proxy))
     return tuple(warnings)
 
 
 def _stage_routing_policy(
-    cfg: ThreeXuiXraySetupConfig,
     ctx: Context,
     timeout: float,
     facts: _RunFacts,
@@ -392,7 +388,7 @@ def _stage_routing_policy(
     with the change and the warnings otherwise.
     """
 
-    profile, reason = _remote_profile(cfg, ctx)
+    profile, reason = _remote_profile(ctx)
     on_the_remote_server = profile is not None and _is_remote_server(profile, facts)
     remote_outbound: dict[str, object] | None = None
     if profile is None:
@@ -405,19 +401,19 @@ def _stage_routing_policy(
         )
     else:
         remote_outbound = routing_policy.build_remote_outbound(
-            cfg.remote_outbound_tag,
+            panel_values.REMOTE_OUTBOUND_TAG,
             profile,
-            cfg.xray_field_keys,
-            cfg.xray_values,
+            panel_values.XRAY_FIELD_KEYS,
+            panel_values.XRAY_VALUES,
         )
     try:
-        env = xui_client.panel_environment(cfg, timeout)
+        env = xui_client.panel_environment(timeout)
     except (FileNotFoundError, RuntimeError) as exc:
         return TaskResult(
             success=True,
             warnings=(f"routing policy not applied: {exc}",),
         )
-    template = xui_client.read_xray_template(cfg, env, timeout)
+    template = xui_client.read_xray_template(env, timeout)
     if template is None:
         return TaskResult(
             success=True,
@@ -429,35 +425,35 @@ def _stage_routing_policy(
             ),
         )
 
-    selector: tuple[str, ...] = (cfg.pool_member_prefix,)
-    pool_fallback_tag = cfg.direct_outbound_tag
+    selector: tuple[str, ...] = (panel_values.POOL_MEMBER_PREFIX,)
+    pool_fallback_tag = panel_values.DIRECT_OUTBOUND_TAG
     if remote_outbound is not None:
-        selector = (cfg.pool_member_prefix, cfg.remote_outbound_tag)
-        pool_fallback_tag = cfg.remote_outbound_tag
+        selector = (panel_values.POOL_MEMBER_PREFIX, panel_values.REMOTE_OUTBOUND_TAG)
+        pool_fallback_tag = panel_values.REMOTE_OUTBOUND_TAG
     warnings: list[str] = []
-    policy = xray_client.machine_policy(cfg, ctx, env, timeout, warnings)
+    policy = xray_client.machine_policy(ctx, env, timeout, warnings)
     wanted, differs = xray_client.apply_policy_to_template(
         policy,
         template,
         remote_outbound=remote_outbound,
-        remote_balancer_tag=cfg.pool_balancer_tag,
+        remote_balancer_tag=panel_values.POOL_BALANCER_TAG,
     )
     settings, pool_differs = routing_policy.apply_fastest_pool(
         wanted.settings,
-        cfg.xray_field_keys,
+        panel_values.XRAY_FIELD_KEYS,
         balancer=routing_policy.build_balancer(
-            cfg.xray_field_keys,
-            tag=cfg.pool_balancer_tag,
+            panel_values.XRAY_FIELD_KEYS,
+            tag=panel_values.POOL_BALANCER_TAG,
             selector=selector,
-            strategy=cfg.xray_values["least_ping"],
+            strategy=panel_values.XRAY_VALUES["least_ping"],
             fallback_tag=pool_fallback_tag,
         ),
         observatory=routing_policy.build_observatory(
-            cfg.xray_field_keys,
+            panel_values.XRAY_FIELD_KEYS,
             subject_selector=selector,
-            probe_url=cfg.pool_probe_url,
-            probe_interval=cfg.pool_probe_interval,
-            enable_concurrency=cfg.pool_enable_concurrency,
+            probe_url=panel_values.POOL_PROBE_URL,
+            probe_interval=panel_values.POOL_PROBE_INTERVAL,
+            enable_concurrency=panel_values.POOL_ENABLE_CONCURRENCY,
         ),
     )
     if pool_differs:
@@ -471,7 +467,7 @@ def _stage_routing_policy(
     writes = 0
     applied = False
     if differs or force:
-        ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+        ok, message = xui_client.write_xray_template(env, wanted, timeout)
         if not ok:
             return TaskResult(
                 success=True,
@@ -483,11 +479,10 @@ def _stage_routing_policy(
         _log(f"routing policy applied: {message}")
 
     failures, decided = xray_client.route_test_failures(
-        cfg,
         env,
         timeout,
         policy,
-        remote_balancer_tag=cfg.pool_balancer_tag,
+        remote_balancer_tag=panel_values.POOL_BALANCER_TAG,
         balancer_selector=selector,
         pool_fallback_tag=pool_fallback_tag,
     )
@@ -496,17 +491,16 @@ def _stage_routing_policy(
         # matches, a state the panel reaches on its own after an inbound is
         # renamed. Writing the same template again is what brings the core
         # back, so it is tried once before the disagreement is reported.
-        ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+        ok, message = xui_client.write_xray_template(env, wanted, timeout)
         if ok:
             applied = True
             writes += 1
             _log(f"routing policy written again: {message}")
             failures, decided = xray_client.route_test_failures(
-                cfg,
                 env,
                 timeout,
                 policy,
-                remote_balancer_tag=cfg.pool_balancer_tag,
+                remote_balancer_tag=panel_values.POOL_BALANCER_TAG,
                 balancer_selector=selector,
                 pool_fallback_tag=pool_fallback_tag,
             )
@@ -518,13 +512,13 @@ def _stage_routing_policy(
     # above. The machine that is the remote server has no remote path of its
     # own, so nothing is checked there.
     if decided and remote_outbound is not None and profile is not None:
-        path_warnings = _check_proxy_path(cfg, policy, profile, facts)
+        path_warnings = _check_proxy_path(policy, profile, facts)
         if path_warnings and writes < 2:
             # The path is proved with real traffic, and the running core can
             # hold a rule set the stored template no longer matches, which a
             # rewrite repairs. One more write is tried before the failure is
             # reported; the count above keeps a run from writing in a loop.
-            ok, message = xui_client.write_xray_template(cfg, env, wanted, timeout)
+            ok, message = xui_client.write_xray_template(env, wanted, timeout)
             if ok:
                 applied = True
                 writes += 1
@@ -533,18 +527,17 @@ def _stage_routing_policy(
                     f"failed: {message}"
                 )
                 retry_failures, retry_decided = xray_client.route_test_failures(
-                    cfg,
                     env,
                     timeout,
                     policy,
-                    remote_balancer_tag=cfg.pool_balancer_tag,
+                    remote_balancer_tag=panel_values.POOL_BALANCER_TAG,
                     balancer_selector=selector,
                     pool_fallback_tag=pool_fallback_tag,
                 )
                 if retry_decided:
                     warnings.extend(retry_failures)
                     path_warnings = _check_proxy_path(
-                        cfg, policy, profile, facts
+                        policy, profile, facts
                     )
         warnings.extend(path_warnings)
     elif decided:

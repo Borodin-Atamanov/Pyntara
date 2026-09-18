@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pyntara import metrics
 from pyntara import xui as xui_client
-from pyntara.config import Config, ThreeXuiXraySetupConfig
+from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -36,9 +36,10 @@ from pyntara.utils import (
     substituted_command,
     version_from_output,
 )
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
-def _panel_binary(cfg: ThreeXuiXraySetupConfig) -> Path:
+def _panel_binary() -> Path:
     """The installed panel binary, from its configured file name.
 
     Every call the task makes to the panel binary is built from this one
@@ -46,11 +47,11 @@ def _panel_binary(cfg: ThreeXuiXraySetupConfig) -> Path:
     future release that renames it needs no code change.
     """
 
-    return cfg.install_dir / cfg.binary_file_name
+    return panel_values.INSTALL_DIR / panel_values.BINARY_FILE_NAME
 
 
 def _panel_command(
-    cfg: ThreeXuiXraySetupConfig, template: tuple[str, ...], **values: str
+    template: tuple[str, ...], **values: str
 ) -> list[str]:
     """The argv of one panel CLI call, with its placeholders filled in.
 
@@ -60,10 +61,10 @@ def _panel_command(
     itself.
     """
 
-    return substituted_command(template, {**values, "binary": str(_panel_binary(cfg))})
+    return substituted_command(template, {**values, "binary": str(_panel_binary())})
 
 
-def _installed_version(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | None:
+def _installed_version(timeout: float) -> str | None:
     """The installed x-ui version from the binary -v output, or None.
 
     A missing binary, a nonzero exit or a hang means 3x-ui is not
@@ -76,7 +77,7 @@ def _installed_version(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | No
 
     try:
         result = run_command(
-            _panel_command(cfg, cfg.panel_version_command),
+            _panel_command(panel_values.PANEL_VERSION_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -89,7 +90,6 @@ def _installed_version(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | No
 
 
 def _download_installer(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
 ) -> Path:
     """Download the official installer into a temporary file.
@@ -103,7 +103,7 @@ def _download_installer(
     script_path = Path(name)
     try:
         run_command(
-            download_command(script_path, cfg.install_script_url),
+            download_command(script_path, panel_values.INSTALL_SCRIPT_URL),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -112,15 +112,15 @@ def _download_installer(
         except OSError:
             pass
         raise RuntimeError(
-            f"cannot download installer {cfg.install_script_url}: {exc}"
+            f"cannot download installer {panel_values.INSTALL_SCRIPT_URL}: {exc}"
         ) from None
     return script_path
 
 
-def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
+def _credential_env() -> dict[str, str]:
     """The XUI_ credential and port env vars for the installer.
 
-    The panel port is fixed to cfg.panel_port; the username, password
+    The panel port is fixed to panel_values.PANEL_PORT; the username, password
     and webBasePath are proquint encodings of fresh random bytes, whose
     length comes from the config (docs/spec/3x-ui.md, Credentials
     boundary). The installer applies
@@ -130,19 +130,19 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
     applied values land in /etc/x-ui/install-result.env for stage 2.
     """
 
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     return {
-        keys["username"]: proquint_encode(os.urandom(cfg.random_username_bytes), ""),
-        keys["password"]: proquint_encode(os.urandom(cfg.random_secret_bytes), ""),
+        keys["username"]: proquint_encode(os.urandom(panel_values.RANDOM_USERNAME_BYTES), ""),
+        keys["password"]: proquint_encode(os.urandom(panel_values.RANDOM_SECRET_BYTES), ""),
         keys["web_base_path"]: proquint_encode(
-            os.urandom(cfg.random_secret_bytes), "-"
+            os.urandom(panel_values.RANDOM_SECRET_BYTES), "-"
         ),
-        keys["panel_port"]: str(cfg.panel_port),
+        keys["panel_port"]: str(panel_values.PANEL_PORT),
     }
 
 
 def _installer_environment(
-    cfg: ThreeXuiXraySetupConfig, extra_env: dict[str, str]
+    extra_env: dict[str, str]
 ) -> dict[str, str]:
     """The environment the official installer runs in.
 
@@ -163,13 +163,12 @@ def _installer_environment(
         and not (entry == venv_root or entry.startswith(f"{venv_root}{os.sep}"))
     )
     environment["VIRTUAL_ENV"] = ""
-    environment[cfg.panel_environment_keys["noninteractive"]] = "1"
+    environment[panel_values.PANEL_ENVIRONMENT_KEYS["noninteractive"]] = "1"
     environment.update(extra_env)
     return environment
 
 
 def _run_installer(
-    cfg: ThreeXuiXraySetupConfig,
     script_path: Path,
     timeout: float,
     extra_env: dict[str, str],
@@ -188,9 +187,9 @@ def _run_installer(
     try:
         run_command(
             substituted_command(
-                cfg.installer_run_command, {"script_path": str(script_path)}
+                panel_values.INSTALLER_RUN_COMMAND, {"script_path": str(script_path)}
             ),
-            extra_env=_installer_environment(cfg, extra_env),
+            extra_env=_installer_environment(extra_env),
             timeout=timeout,
         )
     finally:
@@ -224,7 +223,7 @@ def _wait_active(
         time.sleep(check_delay_seconds)
 
 
-def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
+def _build_notes(env: dict[str, str]) -> str:
     """Build the notes field for the vault entry from the env dict.
 
     The notes carry the additional values that do not fit into the
@@ -235,7 +234,7 @@ def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
     """
 
     lines: list[str] = []
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     for key in (
         keys["panel_port"],
         keys["web_base_path"],
@@ -249,7 +248,7 @@ def _build_notes(cfg: ThreeXuiXraySetupConfig, env: dict[str, str]) -> str:
 
 
 def _panel_environment_or_warning(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    timeout: float
 ) -> tuple[dict[str, str] | None, TaskResult | None]:
     """The panel environment, or the warning that says why it is missing.
 
@@ -262,7 +261,7 @@ def _panel_environment_or_warning(
     """
 
     try:
-        return xui_client.panel_environment(cfg, timeout), None
+        return xui_client.panel_environment(timeout), None
     except FileNotFoundError:
         return None, TaskResult(
             success=True,
@@ -278,7 +277,6 @@ def _panel_environment_or_warning(
 
 
 def _stage2(
-    cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
     timeout: float,
 ) -> TaskResult | None:
@@ -291,13 +289,13 @@ def _stage2(
     """
 
     # Read the credentials the panel generated on first start.
-    env, warning = _panel_environment_or_warning(cfg, timeout)
+    env, warning = _panel_environment_or_warning(timeout)
     if env is None:
         return warning
     _log("stage 2: read credentials from install-result.env")
 
     # Verify the session through the panel REST API.
-    if not xui_client.login_and_verify(cfg, env, timeout):
+    if not xui_client.login_and_verify(env, timeout):
         _log("stage 2: panel login failed, credentials may be stale")
         return TaskResult(
             success=True,
@@ -319,20 +317,20 @@ def _stage2(
     _log("stage 2: runtime vault opened")
 
     # Build the entry values.
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     base_url = xui_client.build_panel_url(
-        cfg.panel_http_address,
+        panel_values.PANEL_HTTP_ADDRESS,
         env.get(keys["panel_port"], ""),
         env.get(keys["web_base_path"]),
-        scheme=env.get(keys["scheme"], cfg.panel_url_schemes["http"]),
+        scheme=env.get(keys["scheme"], panel_values.PANEL_URL_SCHEMES["http"]),
     )
     username = env.get(keys["username"], "")
     password = env.get(keys["password"], "")
-    notes = _build_notes(cfg, env)
+    notes = _build_notes(env)
 
     # Find or create the entry.
     entry = kp.find_entries(
-        title=cfg.vault_entry_title,
+        title=panel_values.VAULT_ENTRY_TITLE,
         group=kp.root_group,
         recursive=False,
         first=True,
@@ -355,7 +353,7 @@ def _stage2(
     else:
         kp.add_entry(
             kp.root_group,
-            cfg.vault_entry_title,
+            panel_values.VAULT_ENTRY_TITLE,
             username,
             password,
             url=base_url,
@@ -368,7 +366,7 @@ def _stage2(
     return None
 
 
-def _actual_panel_port(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | None:
+def _actual_panel_port(timeout: float) -> str | None:
     """The panel port from `x-ui setting -show true`, or None.
 
     The setting output prints "port: N" among other values; the first
@@ -378,7 +376,7 @@ def _actual_panel_port(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | No
 
     try:
         result = run_command(
-            _panel_command(cfg, cfg.panel_settings_query_command),
+            _panel_command(panel_values.PANEL_SETTINGS_QUERY_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
@@ -393,12 +391,12 @@ def _actual_panel_port(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | No
 
 
 def _converge_panel_port(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    timeout: float
 ) -> tuple[bool, str | None]:
     """Bring the panel to the configured port; returns (changed, message).
 
     Reads the actual panel port from `x-ui setting -show true`. When it
-    differs from cfg.panel_port the target port is freed, the new port
+    differs from panel_values.PANEL_PORT the target port is freed, the new port
     is set through `x-ui setting -port` and the panel restarts so the
     change takes effect. Raises RuntimeError when the port stays
     occupied or the panel cannot be reconfigured. An unreadable panel
@@ -406,48 +404,46 @@ def _converge_panel_port(
     read failure does not fail the task.
     """
 
-    actual = _actual_panel_port(cfg, timeout)
+    actual = _actual_panel_port(timeout)
     if actual is None:
         return False, "cannot read panel port"
-    if actual == str(cfg.panel_port):
+    if actual == str(panel_values.PANEL_PORT):
         return False, None
-    _log(f"moving the panel from port {actual} to {cfg.panel_port}")
+    _log(f"moving the panel from port {actual} to {panel_values.PANEL_PORT}")
     try:
         ensure_port_free(
-            cfg.panel_port,
-            cfg.service_unit_name,
+            panel_values.PANEL_PORT,
+            panel_values.SERVICE_UNIT_NAME,
             timeout,
-            service_process_name=cfg.service_process_name,
+            service_process_name=panel_values.SERVICE_PROCESS_NAME,
         )
     except RuntimeError as exc:
         raise RuntimeError(
-            f"panel port {cfg.panel_port} still occupied: {exc}"
+            f"panel port {panel_values.PANEL_PORT} still occupied: {exc}"
         ) from None
     try:
         run_command(
             _panel_command(
-                cfg,
-                cfg.panel_port_command,
-                port=str(cfg.panel_port),
+                panel_values.PANEL_PORT_COMMAND,
+                port=str(panel_values.PANEL_PORT),
             ),
             timeout=timeout,
         )
         run_command(
             substituted_command(
-                cfg.service_restart_command,
-                {"service_unit_name": cfg.service_unit_name},
+                panel_values.SERVICE_RESTART_COMMAND,
+                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(
-            f"cannot move panel to port {cfg.panel_port}: {exc}"
+            f"cannot move panel to port {panel_values.PANEL_PORT}: {exc}"
         ) from None
-    return True, f"panel port moved to {cfg.panel_port}"
+    return True, f"panel port moved to {panel_values.PANEL_PORT}"
 
 
 def _wait_panel_http(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
 ) -> bool:
     """True when the panel answers HTTP on the configured port.
@@ -463,37 +459,37 @@ def _wait_panel_http(
     not be reported as an unreachable panel.
     """
 
-    budget = cfg.panel_listener_wait_seconds
-    delay = cfg.readiness_check_delay_seconds
+    budget = panel_values.PANEL_LISTENER_WAIT_SECONDS
+    delay = panel_values.READINESS_CHECK_DELAY_SECONDS
     _log(
-        f"waiting for the panel HTTP listener on port {cfg.panel_port} "
+        f"waiting for the panel HTTP listener on port {panel_values.PANEL_PORT} "
         f"(up to {budget} s)"
     )
     web_path = ""
     try:
         env = xui_client.parse_install_result_env(
-            Path(cfg.install_result_env_path),
-            xui_client.panel_required_environment_keys(cfg),
+            Path(panel_values.INSTALL_RESULT_ENV_PATH),
+            xui_client.panel_required_environment_keys(),
         )
-        web_path = env.get(cfg.panel_environment_keys["web_base_path"], "")
+        web_path = env.get(panel_values.PANEL_ENVIRONMENT_KEYS["web_base_path"], "")
     except FileNotFoundError, RuntimeError, OSError:
         pass
     try:
-        scheme = xui_client.panel_scheme(cfg, timeout)
+        scheme = xui_client.panel_scheme(timeout)
     except subprocess.TimeoutExpired, OSError:
         scheme = "http"
     base_url = xui_client.build_panel_url(
-        cfg.panel_http_address, str(cfg.panel_port), web_path, scheme=scheme
+        panel_values.PANEL_HTTP_ADDRESS, str(panel_values.PANEL_PORT), web_path, scheme=scheme
     )
     started = time.monotonic()
     while True:
         try:
             result = run_command(
                 substituted_command(
-                    cfg.panel_probe_command,
-                    {"timeout_seconds": str(cfg.probe_timeout_seconds)},
+                    panel_values.PANEL_PROBE_COMMAND,
+                    {"timeout_seconds": str(panel_values.PROBE_TIMEOUT_SECONDS)},
                 )
-                + [f"{base_url}{cfg.panel_csrf_token_path}"],
+                + [f"{base_url}{panel_values.PANEL_CSRF_TOKEN_PATH}"],
                 check=False,
                 capture=True,
                 timeout=timeout,
@@ -564,7 +560,7 @@ def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
     return True
 
 
-def _sync_install_result_env(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _sync_install_result_env(timeout: float) -> bool:
     """Sync install-result.env so its port, scheme and url match reality.
 
     The panel port after the convergence and the scheme after the HTTPS
@@ -573,17 +569,17 @@ def _sync_install_result_env(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bo
     serve.
     """
 
-    env_path = Path(cfg.install_result_env_path)
+    env_path = Path(panel_values.INSTALL_RESULT_ENV_PATH)
     if not env_path.is_file():
         return False
     values, _ = _env_values(env_path)
-    keys = cfg.panel_environment_keys
-    port = str(cfg.panel_port)
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
+    port = str(panel_values.PANEL_PORT)
     updates: dict[str, str] = {keys["panel_port"]: port}
     url = values.get(keys["access_url"])
     if url is not None:
         try:
-            scheme = xui_client.panel_scheme(cfg, timeout)
+            scheme = xui_client.panel_scheme(timeout)
         except subprocess.TimeoutExpired, OSError:
             scheme = None
         old_scheme = url.split("://", 1)[0] if "://" in url else "http"
@@ -603,7 +599,6 @@ def _sync_install_result_env(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bo
 
 
 def _takeover_credentials(
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     creds: dict[str, str],
 ) -> tuple[bool, str]:
@@ -617,15 +612,14 @@ def _takeover_credentials(
     Returns (changed, message); a failure returns (False, error).
     """
 
-    keys = cfg.panel_environment_keys
+    keys = panel_values.PANEL_ENVIRONMENT_KEYS
     username = creds.get(keys["username"], "")
     password = creds.get(keys["password"], "")
     web_base_path = creds.get(keys["web_base_path"], "")
     try:
         run_command(
             _panel_command(
-                cfg,
-                cfg.panel_credentials_command,
+                panel_values.PANEL_CREDENTIALS_COMMAND,
                 username=username,
                 password=password,
                 web_base_path=web_base_path,
@@ -635,7 +629,7 @@ def _takeover_credentials(
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot set panel credentials: {exc}"
     _rewrite_env(
-        Path(cfg.install_result_env_path),
+        Path(panel_values.INSTALL_RESULT_ENV_PATH),
         {
             keys["username"]: username,
             keys["password"]: password,
@@ -645,14 +639,14 @@ def _takeover_credentials(
     try:
         run_command(
             substituted_command(
-                cfg.service_restart_command,
-                {"service_unit_name": cfg.service_unit_name},
+                panel_values.SERVICE_RESTART_COMMAND,
+                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot restart {cfg.service_unit_name}: {exc}"
-    _wait_panel_http(cfg, timeout)
+        return False, f"cannot restart {panel_values.SERVICE_UNIT_NAME}: {exc}"
+    _wait_panel_http(timeout)
     return True, (
         f"panel credentials and webBasePath set to fresh proquint "
         f"values ({web_base_path})"
@@ -660,7 +654,7 @@ def _takeover_credentials(
 
 
 def _stage_settings(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
+    timeout: float
 ) -> tuple[bool, str] | None:
     """Move the panel subscription paths off the well-known defaults.
 
@@ -672,10 +666,10 @@ def _stage_settings(
     """
 
     try:
-        env = xui_client.panel_environment(cfg, timeout)
+        env = xui_client.panel_environment(timeout)
     except (FileNotFoundError, RuntimeError) as exc:
         raise RuntimeError(str(exc)) from None
-    changed, message = xui_client.ensure_subscription_paths(cfg, env, timeout)
+    changed, message = xui_client.ensure_subscription_paths(env, timeout)
     if not changed and not message:
         return None
     if not changed:

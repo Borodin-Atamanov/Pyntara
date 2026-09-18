@@ -84,7 +84,6 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.github_release import fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -96,6 +95,7 @@ from pyntara.utils import (
     version_without_tag_prefix,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_certificate import _ssl_reachable, _stage_ssl
 from pyntara.xray_facts import (
     _collect_run_facts,
@@ -125,7 +125,6 @@ from pyntara.xray_panel import (
 
 def _install_or_reuse(
     ctx: Context,
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     force: bool,
     facts: _RunFacts,
@@ -147,11 +146,11 @@ def _install_or_reuse(
     """
 
     install_warnings: list[str] = []
-    _log(f"querying the latest release of {cfg.github_repo}")
+    _log(f"querying the latest release of {panel_values.GITHUB_REPO}")
     tag = ""
     release: dict[str, object] = {}
     try:
-        release = fetch_latest_release(cfg.github_repo)
+        release = fetch_latest_release(panel_values.GITHUB_REPO)
         tag = release_tag(release)
     except RuntimeError as exc:
         # Without the release tag the installed version cannot be compared,
@@ -164,13 +163,13 @@ def _install_or_reuse(
         _log("latest release unknown, the installer step is skipped")
 
     _log("reading the installed panel version")
-    installed_version = _installed_version(cfg, timeout)
+    installed_version = _installed_version(timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    enabled = service_is_enabled(cfg.service_unit_name, timeout)
-    active = service_is_active(cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(panel_values.SERVICE_UNIT_NAME, timeout)
+    active = service_is_active(panel_values.SERVICE_UNIT_NAME, timeout)
     _log(
-        f"checking autorun service {cfg.service_unit_name}: "
+        f"checking autorun service {panel_values.SERVICE_UNIT_NAME}: "
         f"{'enabled' if enabled else 'disabled'}"
     )
     _log(f"checking service status: {'active' if active else 'inactive'}")
@@ -197,20 +196,20 @@ def _install_or_reuse(
             # The panel binds the fixed port, so the port must be free
             # before the installer runs: stop x-ui when it owns the port,
             # terminate an unknown process.
-            _log(f"checking panel port {cfg.panel_port} is free")
+            _log(f"checking panel port {panel_values.PANEL_PORT} is free")
             try:
                 freed = ensure_port_free(
-                    cfg.panel_port,
-                    cfg.service_unit_name,
+                    panel_values.PANEL_PORT,
+                    panel_values.SERVICE_UNIT_NAME,
                     timeout,
-                    service_process_name=cfg.service_process_name,
+                    service_process_name=panel_values.SERVICE_PROCESS_NAME,
                 )
             except RuntimeError as exc:
                 install_warnings.append(str(exc))
                 installer_ready = False
             else:
                 if freed:
-                    _log(f"panel port {cfg.panel_port}: {freed}")
+                    _log(f"panel port {panel_values.PANEL_PORT}: {freed}")
 
         # Decide whether the Let's Encrypt HTTP-01 challenge can reach
         # this machine before passing XUI_SSL_MODE. A machine behind NAT
@@ -218,20 +217,20 @@ def _install_or_reuse(
         # challenge unless the router forwards port 80; when it cannot,
         # the installer skips the certificate and the panel gets a
         # self-signed one after the install (stage 4), never plain HTTP.
-        if cfg.ssl_enabled and installer_ready:
-            ssl_attempt = _ssl_reachable(cfg, timeout, facts)
+        if panel_values.SSL_ENABLED and installer_ready:
+            ssl_attempt = _ssl_reachable(timeout, facts)
 
         # The installer's SSL step runs the ACME HTTP-01 challenge on
         # port 80 and fails in non-interactive mode when the port is
         # busy, so the port must be free before the installer runs.
         if installer_ready and ssl_attempt:
-            _log(f"checking ACME port {cfg.acme_port} is free")
+            _log(f"checking ACME port {panel_values.ACME_PORT} is free")
             try:
                 freed = ensure_port_free(
-                    cfg.acme_port,
-                    cfg.service_unit_name,
+                    panel_values.ACME_PORT,
+                    panel_values.SERVICE_UNIT_NAME,
                     timeout,
-                    service_process_name=cfg.service_process_name,
+                    service_process_name=panel_values.SERVICE_PROCESS_NAME,
                 )
             except RuntimeError as exc:
                 # Only the certificate step depends on this port: the
@@ -240,14 +239,13 @@ def _install_or_reuse(
                 ssl_attempt = False
             else:
                 if freed:
-                    _log(f"ACME port {cfg.acme_port}: {freed}")
+                    _log(f"ACME port {panel_values.ACME_PORT}: {freed}")
 
         script_path: Path | None = None
         if installer_ready:
-            _log(f"downloading installer {cfg.install_script_url}")
+            _log(f"downloading installer {panel_values.INSTALL_SCRIPT_URL}")
             try:
                 script_path = _download_installer(
-                    cfg,
                     timeout,
                 )
             except RuntimeError as exc:
@@ -262,15 +260,15 @@ def _install_or_reuse(
         else:
             _log("installer downloaded")
             if ssl_attempt:
-                _log(f"installer will attempt a certificate on port {cfg.acme_port}")
+                _log(f"installer will attempt a certificate on port {panel_values.ACME_PORT}")
 
             _log("running official 3x-ui installer with proquint credentials")
-            installer_env = _credential_env(cfg)
-            if cfg.ssl_enabled:
+            installer_env = _credential_env()
+            if panel_values.SSL_ENABLED:
                 installer_env["XUI_SSL_MODE"] = "ip" if ssl_attempt else "none"
             installed_now = True
             try:
-                _run_installer(cfg, script_path, timeout, installer_env)
+                _run_installer(script_path, timeout, installer_env)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 install_warnings.append(f"installer failed: {exc}")
                 installed_now = False
@@ -286,19 +284,19 @@ def _install_or_reuse(
 
                 _log(
                     f"waiting for service to become active (up to "
-                    f"{cfg.service_start_wait_seconds} s)"
+                    f"{panel_values.SERVICE_START_WAIT_SECONDS} s)"
                 )
                 if not _wait_active(
-                    cfg.service_unit_name,
-                    cfg.service_start_wait_seconds,
-                    cfg.readiness_check_delay_seconds,
+                    panel_values.SERVICE_UNIT_NAME,
+                    panel_values.SERVICE_START_WAIT_SECONDS,
+                    panel_values.READINESS_CHECK_DELAY_SECONDS,
                     timeout,
                 ):
                     install_warnings.append(
-                        f"service {cfg.service_unit_name} did not become active "
+                        f"service {panel_values.SERVICE_UNIT_NAME} did not become active "
                         f"after the installer"
                     )
-                _log(f"checking installed version: {_installed_version(cfg, timeout)}")
+                _log(f"checking installed version: {_installed_version(timeout)}")
                 # Force takeover: the installer preserves credentials and
                 # webBasePath on an existing non-default panel, so force applies
                 # the fresh proquint values it generated for the installer
@@ -307,7 +305,7 @@ def _install_or_reuse(
                 takeover_note = ""
                 if force and installed_version is not None:
                     takeover_ok, takeover_message = _takeover_credentials(
-                        cfg, timeout, installer_env
+                        timeout, installer_env
                     )
                     if takeover_ok:
                         _log(takeover_message)
@@ -349,7 +347,6 @@ def _fold_stage(
 
 def _run_panel_stages(
     ctx: Context,
-    cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     facts: _RunFacts,
     result: TaskResult,
@@ -376,7 +373,7 @@ def _run_panel_stages(
     # can find a panel on a port left by an earlier install, and the
     # installer preserves an existing port on a reinstall.
     try:
-        converged, converged_message = _converge_panel_port(cfg, timeout)
+        converged, converged_message = _converge_panel_port(timeout)
     except RuntimeError as exc:
         # The panel port could not be converged: every stage below talks to
         # the panel through its REST API and reports its own result.
@@ -389,25 +386,25 @@ def _run_panel_stages(
     # A port migration restarts the panel; the HTTP listener can trail
     # the systemd active state by a moment, so stage 2 would otherwise
     # report a false login failure. Wait for the listener before it.
-    _wait_panel_http(cfg, timeout)
+    _wait_panel_http(timeout)
 
     # Ensure the panel serves HTTPS (a trusted certificate when port 80
     # is reachable, a self-signed one otherwise) before stage 2, so the
     # stored scheme and url are correct on the first run. The stage may
     # restart the panel, so the listener is polled again after it.
-    ssl_result = _stage_ssl(cfg, timeout, facts)
+    ssl_result = _stage_ssl(timeout, facts)
     ssl_warnings, ssl_changed = _fold_stage(result, ssl_result)
     if ssl_result is not None:
-        _wait_panel_http(cfg, timeout)
+        _wait_panel_http(timeout)
 
     # Sync install-result.env so its port and scheme match reality: the
     # port after the convergence, the scheme after the HTTPS stage set
     # the certificate.
-    _sync_install_result_env(cfg, timeout)
+    _sync_install_result_env(timeout)
 
     # Stage 2: read credentials, verify session, store in vault. The stage
     # reports only warnings, so its changed flag is not collected.
-    stage2_warnings, _ = _fold_stage(result, _stage2(cfg, ctx.config, timeout))
+    stage2_warnings, _ = _fold_stage(result, _stage2(ctx.config, timeout))
 
     # Panel settings: move the subscription paths off the well-known
     # defaults so the panel does not warn about them. A failure here is a
@@ -416,7 +413,7 @@ def _run_panel_stages(
     settings_warnings: tuple[str, ...] = ()
     settings_result: tuple[bool, str] | None = None
     try:
-        settings_result = _stage_settings(cfg, timeout)
+        settings_result = _stage_settings(timeout)
     except RuntimeError as exc:
         settings_warnings = (f"panel subscription paths not set: {exc}",)
     if settings_result is not None:
@@ -433,18 +430,18 @@ def _run_panel_stages(
     stage3_warnings: tuple[str, ...] = ()
     stage3_changed = False
     try:
-        payload_template = _read_inbound_payload_template(cfg, ctx)
+        payload_template = _read_inbound_payload_template(ctx)
     except OSError as exc:
         stage3_warnings = (f"inbound payload template not read: {exc}",)
     else:
         stage3_warnings, stage3_changed = _fold_stage(
-            result, _stage3(cfg, payload_template, timeout)
+            result, _stage3(payload_template, timeout)
         )
 
     # Stage 5: ensure the panel client and store the connection profile.
     connection_warnings, connection_changed = _fold_stage(
         result,
-        _stage_connection(cfg, ctx.config, timeout, facts, force=force),
+        _stage_connection(ctx.config, timeout, facts, force=force),
     )
 
     # Stage 6: serve the local proxy of this machine through the panel,
@@ -453,11 +450,11 @@ def _run_panel_stages(
     # remote server itself gets no outbound to itself, so its pool falls
     # back to the direct outbound.
     proxy_warnings, proxy_changed = _fold_stage(
-        result, _stage_local_proxy(cfg, timeout, force=force)
+        result, _stage_local_proxy(timeout, force=force)
     )
 
     routing_warnings, routing_changed = _fold_stage(
-        result, _stage_routing_policy(cfg, ctx, timeout, facts, force=force)
+        result, _stage_routing_policy(ctx, timeout, facts, force=force)
     )
 
     # The install warnings already travel inside the result of the install
@@ -503,17 +500,16 @@ def task(ctx: Context) -> TaskResult:
     remaining tasks and never stops here.
     """
 
-    cfg = ctx.config.three_x_ui_xray_setup
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
 
     # Addresses and the UPnP router are read once per run: the stages reuse
     # them, so a machine without UPnP is not asked about its router for
     # every port and the echo services are queried once.
-    facts = _collect_run_facts(cfg, timeout)
+    facts = _collect_run_facts(timeout)
     facts = replace(
         facts,
-        client_address=_forward_upnp_ports(cfg, facts, timeout),
+        client_address=_forward_upnp_ports(facts, timeout),
     )
-    result, install_warnings = _install_or_reuse(ctx, cfg, timeout, force, facts)
-    return _run_panel_stages(ctx, cfg, timeout, facts, result, install_warnings, force)
+    result, install_warnings = _install_or_reuse(ctx, timeout, force, facts)
+    return _run_panel_stages(ctx, timeout, facts, result, install_warnings, force)

@@ -447,7 +447,6 @@ COLLECTOR: Collector = Collector(
                 deployed_python_path(),
                 "-m",
                 "pyntara.public_address_report",
-                str(SYSTEM_CONFIG_PATH),
             ),
         ),
         CollectorModule(
@@ -456,7 +455,6 @@ COLLECTOR: Collector = Collector(
                 deployed_python_path(),
                 "-m",
                 "pyntara.country_report",
-                str(SYSTEM_CONFIG_PATH),
             ),
         ),
         CollectorModule(

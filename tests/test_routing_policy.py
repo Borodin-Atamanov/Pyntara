@@ -9,7 +9,6 @@ import json
 from typing import Any, cast
 
 import pytest
-from support import make_config
 
 from pyntara.routing_policy import (
     LocalProxyPolicy,
@@ -26,6 +25,7 @@ from pyntara.routing_policy import (
     parse_vless_link,
     tag_matches_selector,
 )
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 DEFAULT_PORT = 443
 
@@ -45,15 +45,14 @@ def make_profile() -> VlessProfile:
 
 
 def parse_link(link: str, default_port: int = DEFAULT_PORT):
-    """Read a share link with the vocabulary of the test config."""
+    """Read a share link with the vocabulary of the test values."""
 
-    settings = make_config().three_x_ui_xray_setup
     return parse_vless_link(
         link,
         default_port,
-        settings.xray_values["vless"],
-        settings.vless_link_query_keys,
-        settings.xray_values,
+        panel_values.XRAY_VALUES["vless"],
+        panel_values.VLESS_LINK_QUERY_KEYS,
+        panel_values.XRAY_VALUES,
     )
 
 
@@ -86,23 +85,22 @@ def routing_strategy(template: dict[str, object]) -> object:
 def remote_outbound(
     tag: str = "pyntara-remote", profile: VlessProfile | None = None
 ) -> dict[str, object]:
-    """The remote outbound of a profile, built with the config maps.
+    """The remote outbound of a profile, built with the declared maps.
 
     The profile defaults to the REALITY one of the test link; a test that
     builds another kind of link passes its own.
     """
 
-    settings = make_config().three_x_ui_xray_setup
     return build_remote_outbound(
         tag,
         profile if profile is not None else make_profile(),
-        settings.xray_field_keys,
-        settings.xray_values,
+        panel_values.XRAY_FIELD_KEYS,
+        panel_values.XRAY_VALUES,
     )
 
 
-_FIELDS = make_config().three_x_ui_xray_setup.xray_field_keys
-_VALUES = make_config().three_x_ui_xray_setup.xray_values
+_FIELDS = panel_values.XRAY_FIELD_KEYS
+_VALUES = panel_values.XRAY_VALUES
 
 
 def make_policy(**overrides: Any) -> LocalProxyPolicy:
@@ -138,8 +136,8 @@ def make_policy(**overrides: Any) -> LocalProxyPolicy:
         "panel_inbound_protocol": "mixed",
         "panel_blocked_rule_protocols": ("bittorrent",),
         "panel_private_block_category": "geoip:private",
-        "field_keys": make_config().three_x_ui_xray_setup.xray_field_keys,
-        "values": make_config().three_x_ui_xray_setup.xray_values,
+        "field_keys": panel_values.XRAY_FIELD_KEYS,
+        "values": panel_values.XRAY_VALUES,
     }
     values.update(overrides)
     return LocalProxyPolicy(**values)

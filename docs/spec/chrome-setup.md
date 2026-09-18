@@ -1,6 +1,6 @@
 # Google Chrome setup
 
-There is a dedicated Chrome setup task: chrome_setup. The task belongs to the desktop install mode, installs Google Chrome from the official Google apt repository, applies the browser settings of the chromium-default-settings repository to the standard Chrome profile of the desktop user and writes a desktop entry override that starts Chrome through the local proxy of the three_x_ui_xray_setup section, on the mirror of the live profile, with a Chrome DevTools Protocol listener bound to the loopback address, then pins that entry to the Plasma taskbar of the desktop user. The task depends on three_x_ui_xray_setup, because the browser is started through the local proxy that task creates. The settings repository is the single source of the browser defaults: the machine policy, the external extension files and the profile preferences are applied from it, so adding an extension to the repository is enough to roll it out on the next run.
+There is a dedicated Chrome setup task: chrome_setup. The task belongs to the desktop install mode, installs Google Chrome from the official Google apt repository, applies the browser settings of the chromium-default-settings repository to the standard Chrome profile of the desktop user and writes a desktop entry override that starts Chrome through the local proxy of the three_x_ui_xray_setup values, on the mirror of the live profile, with a Chrome DevTools Protocol listener bound to the loopback address, then pins that entry to the Plasma taskbar of the desktop user. The task depends on three_x_ui_xray_setup, because the browser is started through the local proxy that task creates. The settings repository is the single source of the browser defaults: the machine policy, the external extension files and the profile preferences are applied from it, so adding an extension to the repository is enough to roll it out on the next run.
 
 ## Why the official Google apt repository
 
@@ -29,7 +29,7 @@ The Default/Preferences file of the settings repository is merged over the live 
 
 ## Local proxy
 
-The browser is started through the local proxy that three_x_ui_xray_setup creates: a mixed inbound of the panel core that serves SOCKS5 and HTTP on the loopback address, listed in that section as local_proxy_listen_address and local_proxy_port. Those two values are the single description of the local proxy of the machine, so chrome_setup reads them instead of carrying a second copy: a port changed in one place cannot leave the browser pointing at a proxy that no longer exists. Chrome resolves names on the proxy side with SOCKSv5, so the browser never asks the local resolver for a proxied name, and its implicit bypass rules keep loopback addresses, the panel among them, out of the proxy. The proxy server carries no direct fallback, because a silent direct exit would defeat the routing policy the local proxy applies.
+The browser is started through the local proxy that three_x_ui_xray_setup creates: a mixed inbound of the panel core that serves SOCKS5 and HTTP on the loopback address, declared in that values module as local_proxy_listen_address and local_proxy_port. Those two values are the single description of the local proxy of the machine, so chrome_setup reads them instead of carrying a second copy: a port changed in one place cannot leave the browser pointing at a proxy that no longer exists. Chrome resolves names on the proxy side with SOCKSv5, so the browser never asks the local resolver for a proxied name, and its implicit bypass rules keep loopback addresses, the panel among them, out of the proxy. The proxy server carries no direct fallback, because a silent direct exit would defeat the routing policy the local proxy applies.
 
 The flag enters the desktop entry only when a listener answers on the configured port: a Chrome started with a proxy flag and no proxy behind it opens every request with a connection error, while the browser without the flag keeps working. A machine that is the remote server itself never raises that inbound, and a panel that is down has no listener either; both are reported as a warning naming the address and the port, and the browser starts without the proxy until the listener is there. The UDP traffic of the browser is not touched by any of this: Chrome relays only TCP through a SOCKSv5 proxy.
 
@@ -44,7 +44,7 @@ The task confirms the mount with findmnt and asks for the mount point and the fi
 ## Desktop entry override
 
 The KDE menu launches Chrome through the packaged desktop entry at desktop_source_path, the visible google-chrome.desktop; the packaged com.google.Chrome.desktop is hidden with NoDisplay. The task writes the override to desktop_override_path, derived from the packaged entry on every run with the launch flags appended to every Exec line, in this order:  
---proxy-server on the local proxy of the three_x_ui_xray_setup section, left out while no listener answers on its port  
+--proxy-server on the local proxy of the three_x_ui_xray_setup values, left out while no listener answers on its port  
 --user-data-dir on profile_mirror_path, left out while the mirror mount is not confirmed  
 --remote-debugging-port on the configured cdp_port and --remote-debugging-address on the configured cdp_address, which binds the listener to the loopback only  
 
@@ -111,4 +111,4 @@ cdp_port - the Chrome DevTools Protocol port
 cdp_address - the address the CDP listener binds to, the loopback  
 file_mode - the mode of every deployed configuration and desktop file  
 
-The local proxy address and port are not chrome_setup values: the task reads local_proxy_listen_address and local_proxy_port of the three_x_ui_xray_setup section, the single place where the local proxy of this machine is described.
+The local proxy address and port are not chrome_setup values: the task reads local_proxy_listen_address and local_proxy_port of the three_x_ui_xray_setup values, the single place where the local proxy of this machine is described.

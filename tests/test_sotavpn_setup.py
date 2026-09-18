@@ -18,10 +18,8 @@ import stat
 import subprocess
 import tarfile
 from collections.abc import Iterable
-from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from support import FakeProc, make_config, make_context
@@ -31,6 +29,7 @@ from pyntara.context import Context
 from pyntara.tasks import sotavpn_setup as sotavpn
 from pyntara.values import common as common_values
 from pyntara.values import sotavpn_setup as values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 KEY = "11111111-2222-3333-4444-555555555555"
 INSTALLER_NAME = "install_sotavpn_bridge.py"
@@ -56,17 +55,11 @@ def _point_the_values_at_the_temporary_tree(
 def _ctx(
     tmp_path: Path,
     *,
-    three_x_ui: dict[str, Any] | None = None,
     force: bool = False,
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
     config: Config = make_config()
-    if three_x_ui:
-        config = replace(
-            config,
-            three_x_ui_xray_setup=replace(config.three_x_ui_xray_setup, **three_x_ui),
-        )
     return make_context(
         task_name="sotavpn_setup",
         install_mode="server",
@@ -201,7 +194,7 @@ class _Panel:
         self.outbound_count = outbound_count
         self.counts = counts
         self.refreshed_once = False
-        self.pool_tag = make_config().three_x_ui_xray_setup.pool_balancer_tag
+        self.pool_tag = panel_values.POOL_BALANCER_TAG
         self.status = (
             status
             if status is not None
@@ -220,7 +213,7 @@ class _Panel:
 
     def install(self, monkeypatch: pytest.MonkeyPatch) -> _Panel:
         monkeypatch.setattr(
-            "pyntara.xui.panel_environment", lambda _cfg, _timeout: {"port": "3579"}
+            "pyntara.xui.panel_environment", lambda _timeout: {"port": "3579"}
         )
         monkeypatch.setattr("pyntara.xui.read_xray_template", self._refuse_the_template)
         monkeypatch.setattr(
@@ -238,7 +231,7 @@ class _Panel:
         raise AssertionError("the task must not read or write the Xray template")
 
     def _find(
-        self, _cfg: object, _env: object, _remark: object, _timeout: object
+        self, _env: object, _remark: object, _timeout: object
     ) -> dict[str, object] | None:
         if self.subscription is None:
             return None
@@ -248,7 +241,6 @@ class _Panel:
 
     def _upsert(
         self,
-        _cfg: object,
         _env: object,
         payload: dict[str, object],
         _timeout: object,
@@ -258,7 +250,7 @@ class _Panel:
         return True, "subscription created"
 
     def _refresh(
-        self, _cfg: object, _env: object, subscription_id: object, _timeout: object
+        self, _env: object, subscription_id: object, _timeout: object
     ) -> tuple[bool, str]:
         self.refreshed.append(subscription_id)
         assert self.subscription is not None
@@ -268,7 +260,7 @@ class _Panel:
         return True, "refreshed"
 
     def _status(
-        self, _cfg: object, _env: object, tags: object, _timeout: object
+        self, _env: object, tags: object, _timeout: object
     ) -> list[dict[str, object]]:
         self.status_tags.append(tags)
         return [dict(item) for item in self.status]
@@ -381,19 +373,18 @@ class TestInstallAndSubscription:
         assert str(root / INSTALLER_NAME) in installer
         assert installer[-1] == "install"
 
-        sub_cfg = ctx.config.three_x_ui_xray_setup
         assert len(panel.upserts) == 1
         payload = panel.upserts[0]
         assert payload["remark"] == values.SUBSCRIPTION_REMARK
         assert payload["url"] == f"http://127.0.0.1:25080/sub/{KEY}/raw"
-        assert payload["tagPrefix"] == sub_cfg.pool_member_prefix
+        assert payload["tagPrefix"] == panel_values.POOL_MEMBER_PREFIX
         assert payload["updateInterval"] == (
             values.SUBSCRIPTION_UPDATE_INTERVAL_SECONDS
         )
         assert payload["allowPrivate"] is True
         assert payload["enabled"] is True
         assert panel.refreshed == [7]
-        assert panel.status_tags == [(sub_cfg.pool_balancer_tag,)]
+        assert panel.status_tags == [(panel_values.POOL_BALANCER_TAG,)]
         assert "the panel lists 2 nodes" in (result.message or "")
 
     def test_a_second_run_installs_again_and_writes_no_subscription(
@@ -458,9 +449,10 @@ class TestSubscriptionState:
     ) -> tuple[Context, _Panel]:
         ctx = _ctx(
             tmp_path,
-            three_x_ui=sections.get("three_x_ui"),
             force=force,
         )
+        for name, value in (sections.get("three_x_ui") or {}).items():
+            monkeypatch.setattr(panel_values, name.upper(), value)
         _vault(monkeypatch, key=KEY)
         _write_installed(ctx, version="1.0.9", port=25080)
         _fetched(monkeypatch, tmp_path)
@@ -565,7 +557,7 @@ class TestSubscriptionState:
                 return []
             return [
                 {
-                    "tag": ctx.config.three_x_ui_xray_setup.pool_balancer_tag,
+                    "tag": panel_values.POOL_BALANCER_TAG,
                     "running": True,
                     "override": "",
                     "selected": ["sota-node-1"],

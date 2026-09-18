@@ -8,16 +8,14 @@ from __future__ import annotations
 
 import json
 import urllib.parse
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, cast
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config
 
 from pyntara import xui as xui_client
-from pyntara.config import ThreeXuiXraySetupConfig
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
 def _payload_template() -> str:
@@ -31,372 +29,13 @@ def _payload_template() -> str:
     ).read_text(encoding="utf-8")
 
 
-def _cfg(**overrides: object) -> ThreeXuiXraySetupConfig:
-    """A minimal ThreeXuiXraySetupConfig with overridable fields."""
-
-    defaults: dict[str, object] = {
-        "github_repo": "MHSanaei/3x-ui",
-        "install_script_url": "https://raw.githubusercontent.com/MHSanaei/3x-ui/main/install.sh",
-        "install_dir": Path("/usr/local/x-ui"),
-        "binary_file_name": "x-ui",
-        "service_process_name": "x-ui",
-        "panel_version_command": ("{binary}", "-v"),
-        "panel_settings_query_command": ("{binary}", "setting", "-show", "true"),
-        "panel_cert_query_command": ("{binary}", "setting", "-getCert", "true"),
-        "panel_port_command": ("{binary}", "setting", "-port", "{port}"),
-        "panel_credentials_command": (
-            "{binary}",
-            "setting",
-            "-username",
-            "{username}",
-            "-password",
-            "{password}",
-            "-webBasePath",
-            "{web_base_path}",
-        ),
-        "panel_certificate_command": (
-            "{binary}",
-            "cert",
-            "-webCert",
-            "{fullchain}",
-            "-webCertKey",
-            "{privkey}",
-        ),
-        "installer_run_command": ("bash", "{script_path}"),
-        "acme_install_command": ("bash", "-c", "curl -s https://get.acme.sh | sh"),
-        "acme_dir_relative_path": ".acme.sh",
-        "acme_file_name": "acme.sh",
-        "acme_port_listener_command": (
-            "python3",
-            "-m",
-            "http.server",
-            "{port}",
-            "--bind",
-            "0.0.0.0",
-        ),
-        "acme_set_default_ca_command": (
-            "{acme}",
-            "--set-default-ca",
-            "--server",
-            "letsencrypt",
-            "--force",
-        ),
-        "acme_issue_command": (
-            "{acme}",
-            "--issue",
-            "-d",
-            "{domain}",
-            "--standalone",
-            "--server",
-            "letsencrypt",
-            "--certificate-profile",
-            "shortlived",
-            "--days",
-            "6",
-            "--httpport",
-            "{http_port}",
-            "--force",
-        ),
-        "acme_installcert_command": (
-            "{acme}",
-            "--installcert",
-            "--force",
-            "-d",
-            "{domain}",
-            "--key-file",
-            "{key_file}",
-            "--fullchain-file",
-            "{fullchain_file}",
-            "--reloadcmd",
-            "{reload_command}",
-        ),
-        "acme_upgrade_command": ("{acme}", "--upgrade", "--auto-upgrade"),
-        "acme_reload_command": (
-            "systemctl restart {service_unit_name} 2>/dev/null || true"
-        ),
-        "openssl_check_command": (
-            "openssl",
-            "x509",
-            "-in",
-            "{fullchain}",
-            "-noout",
-            "-checkend",
-            "0",
-        ),
-        "openssl_generate_command": (
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-days",
-            "825",
-            "-subj",
-            "{subject}",
-            "-keyout",
-            "{key_file}",
-            "-out",
-            "{fullchain_file}",
-        ),
-        "openssl_subject_template": "/CN={subject}",
-        "service_restart_command": (
-            "systemctl",
-            "restart",
-            "{service_unit_name}",
-        ),
-        "service_unit_name": "x-ui.service",
-        "service_start_wait_seconds": 60,
-        "panel_listener_wait_seconds": 60,
-        "readiness_check_delay_seconds": 1,
-        "core_ready_wait_seconds": 120,
-        "install_result_env_path": Path("/etc/x-ui/install-result.env"),
-        "inbound_payload_template_file_name": "vless_reality_inbound.json",
-        "random_username_bytes": 4,
-        "random_secret_bytes": 8,
-        "random_sub_id_bytes": 6,
-        "panel_port": 35353,
-        "ssl_enabled": True,
-        "panel_http_address": "127.0.0.1",
-        "panel_api_timeout_seconds": 120,
-        "panel_root_path": "/",
-        "panel_login_path": "/login",
-        "panel_csrf_token_path": "/csrf-token",
-        "panel_inbounds_list_path": "/panel/api/inbounds/list",
-        "panel_inbounds_add_path": "/panel/api/inbounds/add",
-        "panel_inbounds_update_path": "/panel/api/inbounds/update/{inbound_id}",
-        "panel_inbounds_delete_path": "/panel/api/inbounds/del/{inbound_id}",
-        "panel_client_get_path": "/panel/api/clients/get/{email}",
-        "panel_client_add_path": "/panel/api/clients/add",
-        "panel_client_links_path": "/panel/api/clients/links/{email}",
-        "panel_x25519_cert_path": "/panel/api/server/getNewX25519Cert",
-        "panel_setting_all_path": "/panel/api/setting/all",
-        "panel_setting_update_path": "/panel/api/setting/update",
-        "panel_xray_status_path": "/panel/api/xray/",
-        "panel_xray_update_path": "/panel/api/xray/update",
-        "panel_xray_geodata_validate_path": "/panel/api/xray/geodata/validate",
-        "panel_xray_route_test_path": "/panel/api/xray/routeTest",
-        "panel_outbound_subs_path": "/panel/api/xray/outbound-subs",
-        "panel_outbound_subs_item_path": (
-            "/panel/api/xray/outbound-subs/{subscription_id}"
-        ),
-        "panel_outbound_subs_refresh_path": (
-            "/panel/api/xray/outbound-subs/{subscription_id}/refresh"
-        ),
-        "panel_balancer_status_path": "/panel/api/xray/balancerStatus",
-        "panel_status_path": "/panel/api/server/status",
-        "panel_xray_result_path": "/panel/api/xray/getXrayResult",
-        "panel_status_keys": {
-            "xray": "xray",
-            "state": "state",
-            "error_msg": "errorMsg",
-        },
-        "vault_entry_title": "three_x_ui_credentials",
-        "connection_vault_entry_title": "xray_connection",
-        "share_addr_strategy": "custom",
-        "inbound_port": 443,
-        "route_test_port": 443,
-        "route_test_network": "tcp",
-        "route_test_protocol": "tls",
-        "remote_link_default_port": 443,
-        "inbound_remark": "universal",
-        "reality_dest": "www.google.com:443",
-        "reality_server_names": ("www.google.com",),
-        "reality_short_id": "6ba85179e30d4fc2",
-        "reality_fingerprint": "chrome",
-        "subscription_path": "/s/",
-        "subscription_json_path": "/j/",
-        "subscription_clash_path": "/c/",
-        "acme_port": 80,
-        "cert_dir": Path("/root/cert/ip"),
-        "cert_fullchain": Path("/root/cert/ip/fullchain.pem"),
-        "cert_privkey": Path("/root/cert/ip/privkey.pem"),
-        "cert_privkey_file_mode": 0o600,
-        "cert_fullchain_file_mode": 0o644,
-        "self_signed_cert_dir": Path("/root/cert/selfsigned"),
-        "self_signed_cert_fullchain": Path("/root/cert/selfsigned/fullchain.pem"),
-        "self_signed_cert_privkey": Path("/root/cert/selfsigned/privkey.pem"),
-        "server_ip_timeout_seconds": 60,
-        "server_ip_services": ("https://api4.ipify.org",),
-        "probe_timeout_seconds": 60,
-        "probe_port_80_timeout_seconds": 10,
-        "probe_listener_start_seconds": 1,
-        "upnp_enabled": True,
-        "upnp_package": "miniupnpc",
-        "upnp_client_command": "upnpc",
-        "upnp_protocol": "TCP",
-        "upnp_mapping_description": "pyntara xray",
-        "client_profile_entry_title": "xray_client_profile",
-        "local_proxy_tag": "pyntara-local-proxy",
-        "local_proxy_listen_address": "127.0.0.1",
-        "private_ipv4_networks": (
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "192.168.0.0/16",
-        ),
-        "local_proxy_port": 10800,
-        "local_proxy_udp": True,
-        "local_proxy_sniffing_protocols": ("http", "tls", "quic"),
-        "remote_outbound_tag": "pyntara-remote",
-        "tor_outbound_tag": "pyntara-tor",
-        "i2p_outbound_tag": "pyntara-i2p",
-        "pool_balancer_tag": "pyntara-fastest",
-        "pool_member_prefix": "sota-",
-        "pool_probe_url": "https://www.google.com/generate_204",
-        "pool_probe_interval": "30s",
-        "pool_enable_concurrency": True,
-        "direct_outbound_tag": "direct",
-        "blocked_outbound_tag": "blocked",
-        "tor_proxy_address": "127.0.0.1:9050",
-        "i2p_proxy_address": "127.0.0.1:4444",
-        "ad_block_domain_categories": ("geosite:category-ads-all",),
-        "direct_domains": (
-            "domain:localhost",
-            "domain:.local",
-            "domain:.home.arpa",
-            "domain:.lan",
-            "domain:.internal",
-        ),
-        "direct_ip_categories": ("geoip:private",),
-        "direct_ip_networks": ("200::/7", "300::/7"),
-        "country_services": (
-            "https://ip2c.org/self",
-            "https://ifconfig.co/json",
-            "https://ipwho.is/",
-        ),
-        "country_word": "russia",
-        "country_query_timeout_seconds": 10,
-        "country_command_timeout_seconds": 20,
-        "russia_blocked_domain_categories": ("ext-site:geosite_RU.dat:ru-blocked-all",),
-        "russia_blocked_ip_categories": (
-            "ext-ip:geoip_RU.dat:ru-blocked",
-            "ext-ip:geoip_RU.dat:ru-blocked-community",
-        ),
-        "russia_direct_domain_categories": (
-            "ext-site:geosite_RU.dat:ru-available-only-inside",
-        ),
-        "russia_direct_ip_categories": ("ext-ip:geoip_RU.dat:ru-whitelist",),
-        "geo_restricted_domain_categories": (
-            "geosite:category-ai-!cn",
-            "geosite:openai",
-            "geosite:xai",
-            "geosite:netflix",
-            "geosite:spotify",
-            "geosite:category-social-media-!cn",
-        ),
-        "russia_domain_strategy": "IPIfNonMatch",
-        "outside_russia_domain_strategy": "AsIs",
-        "route_check_ad_domain": "doubleclick.net",
-        "route_check_foreign_domain": "example.com",
-        "route_check_onion_domain": "pyntara-check.onion",
-        "route_check_i2p_domain": "pyntara-check.i2p",
-        "route_check_direct_domain": "localhost",
-        "route_check_russia_blocked_domain": "instagram.com",
-        "proxy_check_url": "https://api4.ipify.org",
-        "proxy_check_blocked_url": "https://api.openai.com/v1/models",
-        "proxy_check_timeout_seconds": 20,
-        "proxy_check_attempts": 3,
-        "proxy_check_command_timeout_seconds": 50,
-        "port_forward_probe_command": (
-            "curl",
-            "--silent",
-            "--connect-timeout",
-            "{timeout_seconds}",
-            "--max-time",
-            "{timeout_seconds}",
-        ),
-        "port_forward_probe_url_format": "http://{host}:{port}/",
-        "panel_probe_command": (
-            "curl",
-            "--silent",
-            "--max-time",
-            "{timeout_seconds}",
-            "--insecure",
-            "--output",
-            "/dev/null",
-            "--header",
-            "X-Requested-With: XMLHttpRequest",
-        ),
-        "tunnel_probe_command": (
-            "curl",
-            "--silent",
-            "--show-error",
-            "--proxy",
-            "{proxy_address}",
-            "--connect-timeout",
-            "{timeout_seconds}",
-            "--max-time",
-            "{timeout_seconds}",
-            "--write-out",
-            "{write_out}",
-        ),
-        "tunnel_probe_write_out": "\n%{http_code}",
-        "tunnel_probe_no_answer_code": "000",
-        "panel_inbound_protocol": "mixed",
-        "panel_blocked_rule_protocols": ("bittorrent",),
-        "panel_private_block_category": "geoip:private",
-        "panel_geodata_domain_kind": "domain",
-        "panel_geodata_ip_kind": "ip",
-        "inbound_sniffing_protocols": ("http", "tls"),
-        "panel_http_headers": {
-            "content_type": "Content-Type",
-            "csrf_token": "X-CSRF-Token",
-            "requested_with": "X-Requested-With",
-            "referer": "Referer",
-            "authorization": "Authorization",
-        },
-        "panel_http_header_values": {
-            "json": "application/json",
-            "form": "application/x-www-form-urlencoded",
-            "xml_http_request": "XMLHttpRequest",
-            "bearer_prefix": "Bearer ",
-        },
-        "panel_http_methods": {"post": "POST", "get": "GET"},
-        "panel_url_schemes": {"http": "http", "https": "https"},
-        "panel_environment_keys": {
-            "username": "XUI_USERNAME",
-            "password": "XUI_PASSWORD",
-            "panel_port": "XUI_PANEL_PORT",
-            "web_base_path": "XUI_WEB_BASE_PATH",
-            "scheme": "XUI_SCHEME",
-            "api_token": "XUI_API_TOKEN",
-            "db_type": "XUI_DB_TYPE",
-            "noninteractive": "XUI_NONINTERACTIVE",
-        },
-        "panel_answer_keys": {
-            "success": "success",
-            "payload": "obj",
-            "message": "msg",
-            "token": "token",
-            "reason": "reason",
-        },
-        "panel_field_keys": make_config().three_x_ui_xray_setup.panel_field_keys,
-        "xray_field_keys": make_config().three_x_ui_xray_setup.xray_field_keys,
-        "xray_values": make_config().three_x_ui_xray_setup.xray_values,
-        "vless_link_query_keys": (
-            make_config().three_x_ui_xray_setup.vless_link_query_keys
-        ),
-        "local_proxy_enabled": True,
-        "client_enabled": True,
-        "local_proxy_sniffing_enabled": True,
-        "local_proxy_sniffing_metadata_only": False,
-        "local_proxy_sniffing_route_only": False,
-        "local_proxy_traffic_limit_bytes": 0,
-        "local_proxy_expiry_time": 0,
-    }
-    defaults.update(overrides)
-    return ThreeXuiXraySetupConfig(**defaults)  # type: ignore[arg-type]
-
-
 class TestParseInstallResultEnv:
     """Tests for parse_install_result_env."""
 
     def _required_keys(self) -> tuple[str, ...]:
-        """The keys the client cannot work without, from the config."""
+        """The keys the client cannot work without, from the values."""
 
-        return xui_client.panel_required_environment_keys(
-            make_config().three_x_ui_xray_setup
-        )
+        return xui_client.panel_required_environment_keys()
 
     def test_parses_full_file(self, tmp_path: Path) -> None:
         path = tmp_path / "install-result.env"
@@ -477,9 +116,8 @@ class TestPanelScheme:
                 "cert: /root/cert/ip/fullchain.pem\nkey: /root/cert/ip/privkey.pem\n",
             ),
         )
-        cfg = _cfg()
-        assert xui_client.panel_cert_value(cfg, 30) == "/root/cert/ip/fullchain.pem"
-        assert xui_client.panel_scheme(cfg, 30) == "https"
+        assert xui_client.panel_cert_value(30) == "/root/cert/ip/fullchain.pem"
+        assert xui_client.panel_scheme(30) == "https"
 
     def test_no_cert_is_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # An empty cert value means plain HTTP.
@@ -487,14 +125,13 @@ class TestPanelScheme:
             "pyntara.xui.run_command",
             lambda command, **kwargs: _FakeProc(0, "cert: \nkey: \n"),
         )
-        cfg = _cfg()
-        assert xui_client.panel_cert_value(cfg, 30) is None
-        assert xui_client.panel_scheme(cfg, 30) == "http"
+        assert xui_client.panel_cert_value(30) is None
+        assert xui_client.panel_scheme(30) == "http"
 
-    def test_the_cert_query_comes_from_the_config(
+    def test_the_cert_query_comes_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The argv of the query is a config value: another template is
+        # The argv of the query is a declared value: another template is
         # exactly what runs, with the binary path filling its {binary} slot.
         calls: list[list[str]] = []
 
@@ -503,10 +140,16 @@ class TestPanelScheme:
             return _FakeProc(0, "cert: /root/cert/ip/fullchain.pem\n")
 
         monkeypatch.setattr("pyntara.xui.run_command", fake_run)
-        cfg = _cfg(panel_cert_query_command=("mybinary", "ask", "{binary}"))
-        assert xui_client.panel_cert_value(cfg, 30) == "/root/cert/ip/fullchain.pem"
+        monkeypatch.setattr(
+            panel_values, "PANEL_CERT_QUERY_COMMAND", ("mybinary", "ask", "{binary}")
+        )
+        assert xui_client.panel_cert_value(30) == "/root/cert/ip/fullchain.pem"
         assert calls == [
-            ["mybinary", "ask", str(cfg.install_dir / cfg.binary_file_name)]
+            [
+                "mybinary",
+                "ask",
+                str(panel_values.INSTALL_DIR / panel_values.BINARY_FILE_NAME),
+            ]
         ]
 
 
@@ -551,54 +194,49 @@ class TestLoginAndVerify:
 
     def test_successful_login(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch)
-        cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "pass",
             "XUI_PANEL_PORT": "3579",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is True
+        assert xui_client.login_and_verify(env, 5) is True
 
     def test_fails_on_csrf_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, csrf_ok=False)
-        cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "pass",
             "XUI_PANEL_PORT": "3579",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is False
+        assert xui_client.login_and_verify(env, 5) is False
 
     def test_fails_on_login_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, login_ok=False)
-        cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "wrong",
             "XUI_PANEL_PORT": "3579",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is False
+        assert xui_client.login_and_verify(env, 5) is False
 
     def test_fails_on_verify_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, verify_ok=False)
-        cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "pass",
             "XUI_PANEL_PORT": "3579",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is False
+        assert xui_client.login_and_verify(env, 5) is False
 
     def test_uses_web_base_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch)
-        cfg = _cfg()
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "pass",
             "XUI_PANEL_PORT": "3579",
             "XUI_WEB_BASE_PATH": "/xui",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is True
+        assert xui_client.login_and_verify(env, 5) is True
 
 
 class TestVerifyBearer:
@@ -624,15 +262,13 @@ class TestVerifyBearer:
 
     def test_successful(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=True)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
-        assert xui_client.verify_bearer(cfg, env, 5) is True
+        assert xui_client.verify_bearer(env, 5) is True
 
     def test_fails_on_bad_token(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=False)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
-        assert xui_client.verify_bearer(cfg, env, 5) is False
+        assert xui_client.verify_bearer(env, 5) is False
 
 
 class TestListInbounds:
@@ -647,15 +283,15 @@ class TestListInbounds:
         # answers must be reported as a failure of that call instead of
         # stopping the run for hours. The smaller of the two values is what
         # the call gets.
-        cfg = replace(_cfg(), panel_api_timeout_seconds=7)
+        monkeypatch.setattr(panel_values, "PANEL_API_TIMEOUT_SECONDS", 7)
         recorded = _record_requests(
             monkeypatch, (200, json.dumps({"success": True, "obj": []}))
         )
-        assert xui_client.list_inbounds(cfg, _ENV, 8000.0) == []
+        assert xui_client.list_inbounds(_ENV, 8000.0) == []
         assert recorded[0].kwargs["timeout"] == 7
 
         recorded.clear()
-        assert xui_client.list_inbounds(cfg, _ENV, 3.0) == []
+        assert xui_client.list_inbounds(_ENV, 3.0) == []
         assert recorded[0].kwargs["timeout"] == 3.0
 
     def _mock_request(
@@ -681,17 +317,15 @@ class TestListInbounds:
 
     def test_returns_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=True)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.list_inbounds(cfg, env, 5)
+        result = xui_client.list_inbounds(env, 5)
         assert len(result) == 1
         assert result[0]["port"] == 443
 
     def test_returns_empty_on_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=False)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.list_inbounds(cfg, env, 5)
+        result = xui_client.list_inbounds(env, 5)
         assert result == []
 
 
@@ -719,17 +353,15 @@ class TestFindInboundByPort:
 
     def test_finds_by_port(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.find_inbound_by_port(cfg, env, 443, 5)
+        result = xui_client.find_inbound_by_port(env, 443, 5)
         assert result is not None
         assert result["id"] == 1
 
     def test_returns_none_when_not_found(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.find_inbound_by_port(cfg, env, 9999, 5)
+        result = xui_client.find_inbound_by_port(env, 9999, 5)
         assert result is None
 
 
@@ -756,10 +388,9 @@ class TestCreateInbound:
 
     def test_creates_successfully(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, success=True)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
         payload = {"remark": "test", "port": 443, "protocol": "vless"}
-        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        ok, msg = xui_client.create_inbound(env, payload, 5)
         assert ok is True
         assert "created" in msg
 
@@ -769,19 +400,17 @@ class TestCreateInbound:
             success=False,
             msg="port 443 already used by inbound 'test' (#1)",
         )
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
         payload = {"remark": "test", "port": 443, "protocol": "vless"}
-        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        ok, msg = xui_client.create_inbound(env, payload, 5)
         assert ok is False
         assert "already used" in msg
 
     def test_handles_unreachable_panel(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, status=0)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
         payload = {"remark": "test", "port": 443, "protocol": "vless"}
-        ok, msg = xui_client.create_inbound(cfg, env, payload, 5)
+        ok, msg = xui_client.create_inbound(env, payload, 5)
         assert ok is False
         assert "unreachable" in msg
 
@@ -820,9 +449,8 @@ class TestGenerateRealityKey:
 
     def test_returns_keypair(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=True)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "tok123", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.generate_reality_key(cfg, env, 5)
+        result = xui_client.generate_reality_key(env, 5)
         assert result is not None
         priv, pub = result
         assert priv == "priv123"
@@ -830,9 +458,8 @@ class TestGenerateRealityKey:
 
     def test_returns_none_on_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
         self._mock_request(monkeypatch, ok=False)
-        cfg = _cfg()
         env = {"XUI_API_TOKEN": "bad", "XUI_PANEL_PORT": "3579"}
-        result = xui_client.generate_reality_key(cfg, env, 5)
+        result = xui_client.generate_reality_key(env, 5)
         assert result is None
 
 
@@ -989,7 +616,7 @@ class TestPanelSettings:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._mock_request(monkeypatch, settings={"subPath": "/sub/"})
-        assert xui_client.panel_settings(_cfg(), {"XUI_PANEL_PORT": "3579"}, 5) == {
+        assert xui_client.panel_settings({"XUI_PANEL_PORT": "3579"}, 5) == {
             "subPath": "/sub/"
         }
 
@@ -997,14 +624,14 @@ class TestPanelSettings:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._mock_request(monkeypatch, read_ok=False)
-        assert xui_client.panel_settings(_cfg(), {"XUI_PANEL_PORT": "3579"}, 5) is None
+        assert xui_client.panel_settings({"XUI_PANEL_PORT": "3579"}, 5) is None
 
     def test_update_panel_settings_reports_success(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._mock_request(monkeypatch)
         ok, message = xui_client.update_panel_settings(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, {"subPath": "/s/"}, 5
+            {"XUI_PANEL_PORT": "3579"}, {"subPath": "/s/"}, 5
         )
         assert ok is True
         assert message == "changed"
@@ -1014,7 +641,7 @@ class TestPanelSettings:
     ) -> None:
         self._mock_request(monkeypatch, write_ok=False)
         ok, message = xui_client.update_panel_settings(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, {"subPath": "/s/"}, 5
+            {"XUI_PANEL_PORT": "3579"}, {"subPath": "/s/"}, 5
         )
         assert ok is False
         assert message == "nope"
@@ -1034,7 +661,7 @@ class TestPanelSettings:
             captured=captured,
         )
         changed, message = xui_client.ensure_subscription_paths(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, 5
+            {"XUI_PANEL_PORT": "3579"}, 5
         )
         assert changed is True
         assert "/s/" in message
@@ -1057,7 +684,7 @@ class TestPanelSettings:
             captured=captured,
         )
         changed, message = xui_client.ensure_subscription_paths(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, 5
+            {"XUI_PANEL_PORT": "3579"}, 5
         )
         assert changed is False
         assert message == ""
@@ -1068,7 +695,7 @@ class TestPanelSettings:
     ) -> None:
         self._mock_request(monkeypatch, read_ok=False)
         changed, message = xui_client.ensure_subscription_paths(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, 5
+            {"XUI_PANEL_PORT": "3579"}, 5
         )
         assert changed is False
         assert message == "cannot read panel settings"
@@ -1087,7 +714,7 @@ class TestUpdateInbound:
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
         ok, message = xui_client.update_inbound(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, {"id": 7, "port": 443}, 5
+            {"XUI_PANEL_PORT": "3579"}, {"id": 7, "port": 443}, 5
         )
         assert ok is True
         assert message == "inbound updated"
@@ -1102,14 +729,14 @@ class TestUpdateInbound:
             ),
         )
         ok, message = xui_client.update_inbound(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, {"id": 7}, 5
+            {"XUI_PANEL_PORT": "3579"}, {"id": 7}, 5
         )
         assert ok is False
         assert message == "port busy"
 
 
-class TestPanelPathsComeFromConfig:
-    """Every panel call uses the path of the configuration."""
+class TestPanelPathsComeFromValues:
+    """Every panel call uses the path declared in the values module."""
 
     def test_login_session_uses_the_configured_paths(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1125,18 +752,18 @@ class TestPanelPathsComeFromConfig:
             return (200, json.dumps({"success": True}))
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
-        cfg = _cfg(
-            panel_root_path="/custom-root",
-            panel_login_path="/custom-login",
-            panel_csrf_token_path="/custom-csrf",
-            panel_inbounds_list_path="/custom-inbounds",
+        monkeypatch.setattr(panel_values, "PANEL_ROOT_PATH", "/custom-root")
+        monkeypatch.setattr(panel_values, "PANEL_LOGIN_PATH", "/custom-login")
+        monkeypatch.setattr(panel_values, "PANEL_CSRF_TOKEN_PATH", "/custom-csrf")
+        monkeypatch.setattr(
+            panel_values, "PANEL_INBOUNDS_LIST_PATH", "/custom-inbounds"
         )
         env = {
             "XUI_USERNAME": "admin",
             "XUI_PASSWORD": "pass",
             "XUI_PANEL_PORT": "3579",
         }
-        assert xui_client.login_and_verify(cfg, env, 5) is True
+        assert xui_client.login_and_verify(env, 5) is True
         assert [url for url, _headers in seen] == [
             "http://127.0.0.1:3579/custom-csrf",
             "http://127.0.0.1:3579/custom-login",
@@ -1155,15 +782,19 @@ class TestPanelPathsComeFromConfig:
             return (200, json.dumps({"success": True, "obj": {"links": []}}))
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
-        cfg = _cfg(
-            panel_inbounds_delete_path="/custom/del/{inbound_id}",
-            panel_client_links_path="/custom/links/{email}",
-            panel_xray_status_path="/custom/xray",
+        monkeypatch.setattr(
+            panel_values,
+            "PANEL_INBOUNDS_DELETE_PATH",
+            "/custom/del/{inbound_id}",
         )
+        monkeypatch.setattr(
+            panel_values, "PANEL_CLIENT_LINKS_PATH", "/custom/links/{email}"
+        )
+        monkeypatch.setattr(panel_values, "PANEL_XRAY_STATUS_PATH", "/custom/xray")
         env = {"XUI_PANEL_PORT": "3579"}
-        assert xui_client.delete_inbound(cfg, env, 9, 5)[0] is True
-        xui_client.client_links(cfg, env, "a b", 5)
-        xui_client.read_xray_template(cfg, env, 5)
+        assert xui_client.delete_inbound(env, 9, 5)[0] is True
+        xui_client.client_links(env, "a b", 5)
+        xui_client.read_xray_template(env, 5)
         assert seen == [
             "http://127.0.0.1:3579/custom/del/9",
             "http://127.0.0.1:3579/custom/links/a%20b",
@@ -1181,22 +812,30 @@ class TestPanelPathsComeFromConfig:
             return (200, json.dumps({"success": True, "obj": []}))
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
-        cfg = _cfg(
-            panel_outbound_subs_path="/custom/subs",
-            panel_outbound_subs_item_path="/custom/subs/{subscription_id}",
-            panel_outbound_subs_refresh_path="/custom/subs/{subscription_id}/refresh",
-            panel_balancer_status_path="/custom/balancers",
+        monkeypatch.setattr(
+            panel_values, "PANEL_OUTBOUND_SUBS_PATH", "/custom/subs"
+        )
+        monkeypatch.setattr(
+            panel_values,
+            "PANEL_OUTBOUND_SUBS_ITEM_PATH",
+            "/custom/subs/{subscription_id}",
+        )
+        monkeypatch.setattr(
+            panel_values,
+            "PANEL_OUTBOUND_SUBS_REFRESH_PATH",
+            "/custom/subs/{subscription_id}/refresh",
+        )
+        monkeypatch.setattr(
+            panel_values, "PANEL_BALANCER_STATUS_PATH", "/custom/balancers"
         )
         env = {"XUI_PANEL_PORT": "3579"}
-        xui_client.list_outbound_subscriptions(cfg, env, 5)
+        xui_client.list_outbound_subscriptions(env, 5)
         assert (
-            xui_client.upsert_outbound_subscription(
-                cfg, env, {"remark": "sota-bridge"}, 5
-            )[0]
+            xui_client.upsert_outbound_subscription(env, {"remark": "sota-bridge"}, 5)[0]
             is True
         )
-        xui_client.refresh_outbound_subscription(cfg, env, 4, 5)
-        monitored = xui_client.list_balancer_status(cfg, env, ("pyntara-fastest",), 5)
+        xui_client.refresh_outbound_subscription(env, 4, 5)
+        monitored = xui_client.list_balancer_status(env, ("pyntara-fastest",), 5)
         assert seen == [
             "http://127.0.0.1:3579/custom/subs",
             "http://127.0.0.1:3579/custom/subs",
@@ -1218,7 +857,7 @@ class TestFindClient:
                 json.dumps({"success": True, "obj": {"client": {"email": "a-b"}}}),
             ),
         )
-        assert xui_client.find_client(_cfg(), {"XUI_PANEL_PORT": "3579"}, "a-b", 5) == {
+        assert xui_client.find_client({"XUI_PANEL_PORT": "3579"}, "a-b", 5) == {
             "email": "a-b"
         }
 
@@ -1231,7 +870,7 @@ class TestFindClient:
             ),
         )
         assert (
-            xui_client.find_client(_cfg(), {"XUI_PANEL_PORT": "3579"}, "missing", 5)
+            xui_client.find_client({"XUI_PANEL_PORT": "3579"}, "missing", 5)
             is None
         )
 
@@ -1254,7 +893,6 @@ class TestCreateClient:
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
         ok, message = xui_client.create_client(
-            _cfg(),
             {"XUI_PANEL_PORT": "3579"},
             3,
             "hosiz-sanif-fofum-namib",
@@ -1279,17 +917,17 @@ class TestCreateClient:
             "pyntara.xui._request", lambda _opener, _url, **_kwargs: (0, "")
         )
         ok, message = xui_client.create_client(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, 3, "id", "mail", "sub", 5
+            {"XUI_PANEL_PORT": "3579"}, 3, "id", "mail", "sub", 5
         )
         assert ok is False
         assert message == "panel unreachable"
 
-    def test_the_enabled_flag_comes_from_the_config(
+    def test_the_enabled_flag_comes_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The proof of the value: a client created as a draft carries the
-        # configured flag, so staging a client without enabling it is a
-        # config change and not a code change.
+        # declared flag, so staging a client without enabling it is a
+        # change of the value and not a code change.
         captured: list[dict[str, object]] = []
 
         def fake_request(opener: object, url: str, **kwargs: object) -> tuple[int, str]:
@@ -1300,8 +938,8 @@ class TestCreateClient:
             return (200, json.dumps({"success": True, "msg": "added"}))
 
         monkeypatch.setattr("pyntara.xui._request", fake_request)
+        monkeypatch.setattr(panel_values, "CLIENT_ENABLED", False)
         xui_client.create_client(
-            _cfg(client_enabled=False),
             {"XUI_PANEL_PORT": "3579"},
             3,
             "id",
@@ -1330,7 +968,7 @@ class TestClientLinks:
             ),
         )
         assert xui_client.client_links(
-            _cfg(), {"XUI_PANEL_PORT": "3579"}, "a-b", 5
+            {"XUI_PANEL_PORT": "3579"}, "a-b", 5
         ) == ["vless://x@host:443"]
 
     def test_returns_empty_on_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1338,7 +976,7 @@ class TestClientLinks:
             "pyntara.xui._request", lambda _opener, _url, **_kwargs: (0, "")
         )
         assert (
-            xui_client.client_links(_cfg(), {"XUI_PANEL_PORT": "3579"}, "a-b", 5) == []
+            xui_client.client_links({"XUI_PANEL_PORT": "3579"}, "a-b", 5) == []
         )
 
 
@@ -1427,7 +1065,7 @@ class TestFindInboundByTag:
                 },
             ],
         )
-        found = xui_client.find_inbound_by_tag(_cfg(), _ENV, "pyntara-local-proxy", 5)
+        found = xui_client.find_inbound_by_tag(_ENV, "pyntara-local-proxy", 5)
         assert found is not None
         assert found["id"] == 2
 
@@ -1439,7 +1077,7 @@ class TestFindInboundByTag:
             [{"id": 2, "remark": "pyntara local proxy", "tag": "pyntara-local-proxy"}],
         )
         assert (
-            xui_client.find_inbound_by_tag(_cfg(), _ENV, "pyntara local proxy", 5)
+            xui_client.find_inbound_by_tag(_ENV, "pyntara local proxy", 5)
             is None
         )
 
@@ -1448,7 +1086,7 @@ class TestFindInboundByTag:
     ) -> None:
         self._mock_request(monkeypatch, [{"id": 1, "tag": "in-443-tcp"}])
         assert (
-            xui_client.find_inbound_by_tag(_cfg(), _ENV, "pyntara-local-proxy", 5)
+            xui_client.find_inbound_by_tag(_ENV, "pyntara-local-proxy", 5)
             is None
         )
 
@@ -1465,7 +1103,6 @@ class TestUpsertInbound:
             (200, json.dumps({"success": True, "msg": "inbound added"})),
         )
         ok, message = xui_client.upsert_inbound(
-            _cfg(),
             _ENV,
             {"tag": "pyntara-local-proxy", "port": 10800},
             5,
@@ -1500,7 +1137,6 @@ class TestUpsertInbound:
             (200, json.dumps({"success": True, "msg": "inbound updated"})),
         )
         ok, message = xui_client.upsert_inbound(
-            _cfg(),
             _ENV,
             {
                 "tag": "pyntara-local-proxy",
@@ -1518,7 +1154,7 @@ class TestUpsertInbound:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         recorded = _record_requests(monkeypatch, (200, "{}"))
-        ok, message = xui_client.upsert_inbound(_cfg(), _ENV, {"port": 10800}, 5)
+        ok, message = xui_client.upsert_inbound(_ENV, {"port": 10800}, 5)
         assert ok is False
         assert "tag" in message
         assert recorded == []
@@ -1530,7 +1166,7 @@ class TestUpsertInbound:
             (200, json.dumps({"success": False, "msg": "port already used"})),
         )
         ok, message = xui_client.upsert_inbound(
-            _cfg(), _ENV, {"tag": "pyntara-local-proxy", "port": 10800}, 5
+            _ENV, {"tag": "pyntara-local-proxy", "port": 10800}, 5
         )
         assert ok is False
         assert message == "port already used"
@@ -1543,7 +1179,7 @@ class TestDeleteInbound:
         recorded = _record_requests(
             monkeypatch, (200, json.dumps({"success": True, "msg": "inbound deleted"}))
         )
-        ok, message = xui_client.delete_inbound(_cfg(), _ENV, 3, 5)
+        ok, message = xui_client.delete_inbound(_ENV, 3, 5)
         assert ok is True
         assert message == "inbound deleted"
         assert recorded[0].url.endswith("/panel/api/inbounds/del/3")
@@ -1553,7 +1189,7 @@ class TestDeleteInbound:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
-        ok, message = xui_client.delete_inbound(_cfg(), _ENV, 3, 5)
+        ok, message = xui_client.delete_inbound(_ENV, 3, 5)
         assert ok is False
         assert message == "panel unreachable"
 
@@ -1574,7 +1210,7 @@ class TestOutboundSubscriptions:
                 ),
             ),
         )
-        subscriptions = xui_client.list_outbound_subscriptions(_cfg(), _ENV, 5)
+        subscriptions = xui_client.list_outbound_subscriptions(_ENV, 5)
         assert subscriptions == [{"id": 4, "remark": "sota-bridge"}]
         assert recorded[0].url.endswith("/panel/api/xray/outbound-subs")
         assert recorded[0].header("Authorization") == "Bearer tok123"
@@ -1583,7 +1219,7 @@ class TestOutboundSubscriptions:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
-        assert xui_client.list_outbound_subscriptions(_cfg(), _ENV, 5) == []
+        assert xui_client.list_outbound_subscriptions(_ENV, 5) == []
 
     def test_finds_the_subscription_by_remark(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1604,7 +1240,7 @@ class TestOutboundSubscriptions:
             ),
         )
         found = xui_client.find_outbound_subscription_by_remark(
-            _cfg(), _ENV, "sota-bridge", 5
+            _ENV, "sota-bridge", 5
         )
         assert found is not None
         assert found["id"] == 4
@@ -1618,7 +1254,7 @@ class TestOutboundSubscriptions:
         )
         assert (
             xui_client.find_outbound_subscription_by_remark(
-                _cfg(), _ENV, "sota-bridge", 5
+                _ENV, "sota-bridge", 5
             )
             is None
         )
@@ -1632,7 +1268,6 @@ class TestOutboundSubscriptions:
             (200, json.dumps({"success": True, "msg": "subscription added"})),
         )
         ok, message = xui_client.upsert_outbound_subscription(
-            _cfg(),
             _ENV,
             {"remark": "sota-bridge", "tagPrefix": "sota-"},
             5,
@@ -1654,7 +1289,6 @@ class TestOutboundSubscriptions:
             (200, json.dumps({"success": True, "msg": "subscription added"})),
         )
         ok, _ = xui_client.upsert_outbound_subscription(
-            _cfg(),
             _ENV,
             {
                 "remark": "sota-bridge",
@@ -1697,7 +1331,6 @@ class TestOutboundSubscriptions:
             (200, json.dumps({"success": True, "msg": "subscription updated"})),
         )
         ok, message = xui_client.upsert_outbound_subscription(
-            _cfg(),
             _ENV,
             {"remark": "sota-bridge", "url": "http://new"},
             5,
@@ -1715,7 +1348,7 @@ class TestOutboundSubscriptions:
     ) -> None:
         recorded = _record_requests(monkeypatch, (200, "{}"))
         ok, message = xui_client.upsert_outbound_subscription(
-            _cfg(), _ENV, {"url": "http://new"}, 5
+            _ENV, {"url": "http://new"}, 5
         )
         assert ok is False
         assert "remark" in message
@@ -1728,7 +1361,7 @@ class TestOutboundSubscriptions:
             (200, json.dumps({"success": False, "msg": "url not allowed"})),
         )
         ok, message = xui_client.upsert_outbound_subscription(
-            _cfg(), _ENV, {"remark": "sota-bridge"}, 5
+            _ENV, {"remark": "sota-bridge"}, 5
         )
         assert ok is False
         assert message == "url not allowed"
@@ -1740,7 +1373,7 @@ class TestOutboundSubscriptions:
             monkeypatch,
             (200, json.dumps({"success": True, "msg": "refreshed"})),
         )
-        ok, message = xui_client.refresh_outbound_subscription(_cfg(), _ENV, 4, 5)
+        ok, message = xui_client.refresh_outbound_subscription(_ENV, 4, 5)
         assert ok is True
         assert message == "refreshed"
         assert recorded[0].url.endswith("/panel/api/xray/outbound-subs/4/refresh")
@@ -1774,7 +1407,7 @@ class TestBalancerStatus:
                 ),
             ),
         )
-        entries = xui_client.list_balancer_status(_cfg(), _ENV, ("pyntara-fastest",), 5)
+        entries = xui_client.list_balancer_status(_ENV, ("pyntara-fastest",), 5)
         assert entries == [
             {
                 "tag": "pyntara-fastest",
@@ -1801,7 +1434,7 @@ class TestBalancerStatus:
             ),
         )
         assert xui_client.list_balancer_status(
-            _cfg(), _ENV, ("pyntara-fastest",), 5
+            _ENV, ("pyntara-fastest",), 5
         ) == [{"tag": "pyntara-fastest", "selected": "sota-node-1"}]
 
     def test_an_unreachable_panel_answers_nothing(
@@ -1809,7 +1442,7 @@ class TestBalancerStatus:
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
         assert (
-            xui_client.list_balancer_status(_cfg(), _ENV, ("pyntara-fastest",), 5) == []
+            xui_client.list_balancer_status(_ENV, ("pyntara-fastest",), 5) == []
         )
 
     def test_drops_entries_that_are_not_objects(
@@ -1827,7 +1460,7 @@ class TestBalancerStatus:
                 ),
             ),
         )
-        assert xui_client.list_balancer_status(_cfg(), _ENV, ("x",), 5) == [
+        assert xui_client.list_balancer_status(_ENV, ("x",), 5) == [
             {"tag": "good"}
         ]
 
@@ -1853,7 +1486,7 @@ class TestReadXrayTemplate:
             monkeypatch,
             self._template_body(json.dumps({"outbounds": [{"tag": "direct"}]})),
         )
-        template = xui_client.read_xray_template(_cfg(), _ENV, 5)
+        template = xui_client.read_xray_template(_ENV, 5)
         assert template is not None
         assert template.settings == {"outbounds": [{"tag": "direct"}]}
         assert template.outbound_test_url == "https://www.google.com/generate_204"
@@ -1866,7 +1499,7 @@ class TestReadXrayTemplate:
         _record_requests(
             monkeypatch, self._template_body({"outbounds": [{"tag": "direct"}]})
         )
-        template = xui_client.read_xray_template(_cfg(), _ENV, 5)
+        template = xui_client.read_xray_template(_ENV, 5)
         assert template is not None
         assert template.settings == {"outbounds": [{"tag": "direct"}]}
 
@@ -1874,7 +1507,7 @@ class TestReadXrayTemplate:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
-        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+        assert xui_client.read_xray_template(_ENV, 5) is None
 
     def test_reports_nothing_on_an_unreadable_blob(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1882,7 +1515,7 @@ class TestReadXrayTemplate:
         _record_requests(
             monkeypatch, (200, json.dumps({"success": True, "obj": "not json"}))
         )
-        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+        assert xui_client.read_xray_template(_ENV, 5) is None
 
     def test_reports_nothing_when_the_document_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1896,7 +1529,7 @@ class TestReadXrayTemplate:
                 ),
             ),
         )
-        assert xui_client.read_xray_template(_cfg(), _ENV, 5) is None
+        assert xui_client.read_xray_template(_ENV, 5) is None
 
 
 class TestWriteXrayTemplate:
@@ -1913,7 +1546,7 @@ class TestWriteXrayTemplate:
             settings={"outbounds": [{"tag": "pyntara-remote"}]},
             outbound_test_url="https://www.google.com/generate_204",
         )
-        ok, message = xui_client.write_xray_template(_cfg(), _ENV, template, 5)
+        ok, message = xui_client.write_xray_template(_ENV, template, 5)
         assert ok is True
         assert message == "xray template updated"
         request = recorded[0]
@@ -1930,7 +1563,7 @@ class TestWriteXrayTemplate:
             (200, json.dumps({"success": False, "msg": "invalid xray config: line 3"})),
         )
         template = xui_client.XrayTemplate(settings={}, outbound_test_url="")
-        ok, message = xui_client.write_xray_template(_cfg(), _ENV, template, 5)
+        ok, message = xui_client.write_xray_template(_ENV, template, 5)
         assert ok is False
         assert message == "invalid xray config: line 3"
 
@@ -1961,9 +1594,8 @@ class TestValidateGeodataTokens:
             ),
         )
         rejected = xui_client.validate_geodata_tokens(
-            _cfg(),
             _ENV,
-            _cfg().panel_geodata_domain_kind,
+            panel_values.PANEL_GEODATA_DOMAIN_KIND,
             ["geosite:openai", "geosite:nosuchcat"],
             5,
         )
@@ -1980,9 +1612,8 @@ class TestValidateGeodataTokens:
     ) -> None:
         _record_requests(monkeypatch, (0, ""))
         rejected = xui_client.validate_geodata_tokens(
-            _cfg(),
             _ENV,
-            _cfg().panel_geodata_ip_kind,
+            panel_values.PANEL_GEODATA_IP_KIND,
             ["geoip:private", "200::/7"],
             5,
         )
@@ -1993,7 +1624,7 @@ class TestValidateGeodataTokens:
         recorded = _record_requests(monkeypatch, (200, "{}"))
         assert (
             xui_client.validate_geodata_tokens(
-                _cfg(), _ENV, _cfg().panel_geodata_ip_kind, [], 5
+                _ENV, panel_values.PANEL_GEODATA_IP_KIND, [], 5
             )
             == {}
         )
@@ -2001,7 +1632,7 @@ class TestValidateGeodataTokens:
 
     def test_rejects_an_unknown_kind(self) -> None:
         with pytest.raises(ValueError, match="unknown geodata kind"):
-            xui_client.validate_geodata_tokens(_cfg(), _ENV, "hostname", ["x"], 5)
+            xui_client.validate_geodata_tokens(_ENV, "hostname", ["x"], 5)
 
 
 class TestRouteTest:
@@ -2023,7 +1654,6 @@ class TestRouteTest:
             ),
         )
         matched, answer = xui_client.route_test(
-            _cfg(),
             _ENV,
             inbound_tag="pyntara-local-proxy",
             domain="abcdef.onion",
@@ -2047,7 +1677,6 @@ class TestRouteTest:
     def test_asks_with_an_address_when_given_one(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        cfg = _cfg()
         recorded = _record_requests(
             monkeypatch,
             (
@@ -2058,11 +1687,10 @@ class TestRouteTest:
             ),
         )
         matched, answer = xui_client.route_test(
-            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
-            network=cfg.route_test_network,
-            protocol=cfg.route_test_protocol,
+            network=panel_values.ROUTE_TEST_NETWORK,
+            protocol=panel_values.ROUTE_TEST_PROTOCOL,
             address="10.10.0.1",
             port=443,
             timeout=5,
@@ -2074,7 +1702,6 @@ class TestRouteTest:
     def test_reports_a_destination_no_rule_matched(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        cfg = _cfg()
         _record_requests(
             monkeypatch,
             (
@@ -2085,11 +1712,10 @@ class TestRouteTest:
             ),
         )
         matched, answer = xui_client.route_test(
-            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
-            network=cfg.route_test_network,
-            protocol=cfg.route_test_protocol,
+            network=panel_values.ROUTE_TEST_NETWORK,
+            protocol=panel_values.ROUTE_TEST_PROTOCOL,
             domain="example.com",
             timeout=5,
         )
@@ -2097,17 +1723,15 @@ class TestRouteTest:
         assert "no routing rule" in answer
 
     def test_reports_the_panel_message(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        cfg = _cfg()
         _record_requests(
             monkeypatch,
             (200, json.dumps({"success": False, "msg": "invalid inbound tag"})),
         )
         matched, answer = xui_client.route_test(
-            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
-            network=cfg.route_test_network,
-            protocol=cfg.route_test_protocol,
+            network=panel_values.ROUTE_TEST_NETWORK,
+            protocol=panel_values.ROUTE_TEST_PROTOCOL,
             domain="example.com",
             timeout=5,
         )
@@ -2120,14 +1744,12 @@ class TestRouteTest:
     def test_reports_an_unreachable_panel(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        cfg = _cfg()
         _record_requests(monkeypatch, (0, ""))
         matched, answer = xui_client.route_test(
-            cfg,
             _ENV,
             inbound_tag="pyntara-local-proxy",
-            network=cfg.route_test_network,
-            protocol=cfg.route_test_protocol,
+            network=panel_values.ROUTE_TEST_NETWORK,
+            protocol=panel_values.ROUTE_TEST_PROTOCOL,
             domain="example.com",
             timeout=5,
         )
@@ -2135,14 +1757,12 @@ class TestRouteTest:
         assert answer == "panel unreachable"
 
     def test_refuses_a_request_without_a_destination(self) -> None:
-        cfg = _cfg()
         with pytest.raises(ValueError, match="domain or an address"):
             xui_client.route_test(
-                cfg,
                 _ENV,
                 inbound_tag="pyntara-local-proxy",
-                network=cfg.route_test_network,
-                protocol=cfg.route_test_protocol,
+                network=panel_values.ROUTE_TEST_NETWORK,
+                protocol=panel_values.ROUTE_TEST_PROTOCOL,
                 timeout=5,
             )
 
@@ -2182,7 +1802,7 @@ class TestCoreDiagnostics:
                 ),
             ),
         )
-        text = xui_client.core_diagnostics(_cfg(), _ENV, 5)
+        text = xui_client.core_diagnostics(_ENV, 5)
         assert "the panel reports its core stopped" in text
         assert "with the error process exited" in text
         assert "'failed to load geodata'" in text
@@ -2194,21 +1814,21 @@ class TestCoreDiagnostics:
         # raises: this runs while a warning is composed.
         _record_requests(monkeypatch, (0, ""), (0, ""))
         assert (
-            xui_client.core_diagnostics(_cfg(), _ENV, 5) == "the panel did not answer"
+            xui_client.core_diagnostics(_ENV, 5) == "the panel did not answer"
         )
 
 
-def test_the_panel_vocabulary_comes_from_the_config(
+def test_the_panel_vocabulary_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The sniffing protocols of the universal inbound and the two kinds of
-    # the geodata check are config values: another set of them is the
+    # the geodata check are declared values: another set of them is the
     # payload the panel receives and the kind it is asked about.
-    cfg = _cfg(
-        inbound_sniffing_protocols=("my-http", "my-tls"),
-        panel_geodata_domain_kind="my-domain",
-        panel_geodata_ip_kind="my-ip",
+    monkeypatch.setattr(
+        panel_values, "INBOUND_SNIFFING_PROTOCOLS", ("my-http", "my-tls")
     )
+    monkeypatch.setattr(panel_values, "PANEL_GEODATA_DOMAIN_KIND", "my-domain")
+    monkeypatch.setattr(panel_values, "PANEL_GEODATA_IP_KIND", "my-ip")
     payload = cast(
         dict[str, Any],
         xui_client.build_vless_reality_payload(
@@ -2221,7 +1841,7 @@ def test_the_panel_vocabulary_comes_from_the_config(
             public_key="pub123",
             short_id="6ba85179e30d4fc2",
             fingerprint="chrome",
-            sniffing_protocols=cfg.inbound_sniffing_protocols,
+            sniffing_protocols=panel_values.INBOUND_SNIFFING_PROTOCOLS,
         ),
     )
     assert payload["sniffing"]["destOverride"] == ["my-http", "my-tls"]
@@ -2230,57 +1850,73 @@ def test_the_panel_vocabulary_comes_from_the_config(
     )
     assert (
         xui_client.validate_geodata_tokens(
-            cfg, _ENV, cfg.panel_geodata_domain_kind, ["geosite:openai"], 5
+            _ENV,
+            panel_values.PANEL_GEODATA_DOMAIN_KIND,
+            ["geosite:openai"],
+            5,
         )
         == {}
     )
     assert recorded[0].form()["kind"] == "my-domain"
     with pytest.raises(ValueError, match="unknown geodata kind"):
-        xui_client.validate_geodata_tokens(cfg, _ENV, "domain", ["x"], 5)
+        xui_client.validate_geodata_tokens(_ENV, "domain", ["x"], 5)
 
 
-def test_the_http_vocabulary_comes_from_the_config(
+def test_the_http_vocabulary_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The proof of the value: another header name, another header value,
     # another success field and another payload field of the panel table
     # are the request the client sends and the answer it reads, so a panel
-    # version that renames a field is answered in the config.
-    cfg = _cfg(
-        panel_http_headers={
+    # version that renames a field is answered in the values module.
+    monkeypatch.setattr(
+        panel_values,
+        "PANEL_HTTP_HEADERS",
+        {
             "content_type": "X-Content",
             "csrf_token": "X-CSRF",
             "requested_with": "X-Wanted",
             "referer": "X-Referer",
             "authorization": "X-Auth",
         },
-        panel_http_header_values={
+    )
+    monkeypatch.setattr(
+        panel_values,
+        "PANEL_HTTP_HEADER_VALUES",
+        {
             "json": "my/json",
             "form": "my/form",
             "xml_http_request": "my-wanted",
             "bearer_prefix": "Token ",
         },
-        panel_http_methods={"post": "PUT", "get": "GET"},
-        panel_answer_keys={
+    )
+    monkeypatch.setattr(
+        panel_values, "PANEL_HTTP_METHODS", {"post": "PUT", "get": "GET"}
+    )
+    monkeypatch.setattr(
+        panel_values,
+        "PANEL_ANSWER_KEYS",
+        {
             "success": "ok",
             "payload": "data",
             "message": "note",
             "token": "token",
             "reason": "reason",
         },
-        panel_field_keys={
-            **(_cfg().panel_field_keys),
-            "port": "listenPort",
-        },
+    )
+    monkeypatch.setattr(
+        panel_values,
+        "PANEL_FIELD_KEYS",
+        {**panel_values.PANEL_FIELD_KEYS, "port": "listenPort"},
     )
     recorded = _record_requests(
         monkeypatch, (200, json.dumps({"ok": True, "data": [{"listenPort": 443}]}))
     )
-    inbounds = xui_client.list_inbounds(cfg, _ENV, 5)
+    inbounds = xui_client.list_inbounds(_ENV, 5)
     assert inbounds == [{"listenPort": 443}]
     assert recorded[0].header("X-Wanted") == "my-wanted"
-    found = xui_client.find_inbound_by_port(cfg, _ENV, 443, 5)
+    found = xui_client.find_inbound_by_port(_ENV, 443, 5)
     assert found == {"listenPort": 443}
     assert xui_client._message_result(
-        cfg, 200, json.dumps({"ok": True, "note": "fine"}), "x"
+        200, json.dumps({"ok": True, "note": "fine"}), "x"
     ) == (True, "fine")

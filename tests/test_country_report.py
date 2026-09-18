@@ -9,22 +9,16 @@ and the exit codes without a network.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
-from config_helpers import base_config, write_config
 
 from pyntara import country_report
 from pyntara.location import CountryReport, ServiceAnswer
 from pyntara.values import engine as engine_values
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 # The field names of a record, as the declared values carry them: the tests
 # never spell one themselves.
 RECORD_KEYS = engine_values.REPORT_RECORD_KEYS
-
-
-def _config(tmp_path: Path) -> Path:
-    return write_config(tmp_path, base_config())
 
 
 def _report(*answers: ServiceAnswer, word: str | None = None) -> CountryReport:
@@ -144,9 +138,7 @@ def test_document_marks_a_named_country() -> None:
 def test_main_prints_the_document(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
-    config_path = _config(tmp_path)
     monkeypatch.setattr(
         country_report,
         "detect_country",
@@ -161,7 +153,7 @@ def test_main_prints_the_document(
             )
         ),
     )
-    assert country_report.main(["country_report", str(config_path)]) == 0
+    assert country_report.main(["country_report"]) == 0
     captured = capsys.readouterr()
     assert "Argentina" in captured.out
     assert "russia" in captured.out
@@ -171,42 +163,26 @@ def test_main_prints_the_document(
 def test_main_reports_a_silent_detection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
-    tmp_path: Path,
 ) -> None:
-    config_path = _config(tmp_path)
     monkeypatch.setattr(country_report, "detect_country", _fake_detection(_report()))
-    assert country_report.main(["country_report", str(config_path)]) == 1
+    assert country_report.main(["country_report"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "no country service answered" in captured.err
 
 
-def test_empty_service_list_is_reported(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
+def test_a_value_that_is_not_declared_is_reported(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # An empty service list is a configuration gap, not a silent answer:
-    # the reason says that nothing was configured.
-    content = base_config().replace(
-        'country_services = ["https://ip2c.org/self", '
-        '"https://ifconfig.co/json", "https://ipwho.is/"]',
-        "country_services = []",
-    )
-    config_path = write_config(tmp_path, content)
-    assert country_report.main(["country_report", str(config_path)]) == 1
+    # Nothing is asked of a silent network when no country service is
+    # declared: the reason says that the value carries no service.
+    monkeypatch.setattr(panel_values, "COUNTRY_SERVICES", ())
+    assert country_report.main(["country_report"]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "no country service is configured" in captured.err
+    assert "no country service is declared" in captured.err
 
 
-def test_missing_config_key_is_reported(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    content = base_config().replace('country_word = "russia"\n', "")
-    config_path = write_config(tmp_path, content)
-    assert country_report.main(["country_report", str(config_path)]) == 1
-    assert "country_word" in capsys.readouterr().err
-
-
-def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:
-    assert country_report.main(["country_report"]) == 2
+def test_usage_rejects_a_config_path(capsys: pytest.CaptureFixture[str]) -> None:
+    assert country_report.main(["country_report", "/etc/pyntara.toml"]) == 2
     assert "usage" in capsys.readouterr().err

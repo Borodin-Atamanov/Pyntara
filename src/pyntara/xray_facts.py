@@ -20,7 +20,7 @@ import socket
 from dataclasses import dataclass
 
 from pyntara import upnp
-from pyntara.config import Config, ThreeXuiXraySetupConfig
+from pyntara.config import Config
 from pyntara.logger import log_progress as _log
 from pyntara.public_address import (
     PublicAddresses,
@@ -32,6 +32,7 @@ from pyntara.utils import (
     package_is_installed,
     trim_whitespace,
 )
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.values import yggdrasil_service_setup as yggdrasil_values
 
 
@@ -51,7 +52,7 @@ class _RunFacts:
     client_address: str | None = None
 
 
-def _public_addresses(cfg: ThreeXuiXraySetupConfig, timeout: float) -> PublicAddresses:
+def _public_addresses(timeout: float) -> PublicAddresses:
     """The public addresses the configured echo services report.
 
     The shared helper does the parallel query, so the task only decides
@@ -59,13 +60,13 @@ def _public_addresses(cfg: ThreeXuiXraySetupConfig, timeout: float) -> PublicAdd
     """
 
     return fetch_public_addresses(
-        cfg.server_ip_services,
-        cfg.server_ip_timeout_seconds,
+        panel_values.SERVER_IP_SERVICES,
+        panel_values.SERVER_IP_TIMEOUT_SECONDS,
         timeout,
     )
 
 
-def _collect_run_facts(cfg: ThreeXuiXraySetupConfig, timeout: float) -> _RunFacts:
+def _collect_run_facts(timeout: float) -> _RunFacts:
     """Collect the addresses and the router address once for this run.
 
     The UPnP client package is installed here, before the first stage
@@ -77,19 +78,19 @@ def _collect_run_facts(cfg: ThreeXuiXraySetupConfig, timeout: float) -> _RunFact
     router is never asked.
     """
 
-    public = _public_addresses(cfg, timeout)
+    public = _public_addresses(timeout)
     local = local_addresses(timeout)
     router_address: str | None = None
-    if cfg.upnp_enabled:
+    if panel_values.UPNP_ENABLED:
         if _machine_public_address(public, local) is not None:
             _log(
                 "a public address sits on this machine, "
                 "the router needs no port forwarding"
             )
-        elif _ensure_upnp_client(cfg, timeout):
+        elif _ensure_upnp_client(timeout):
             _log("looking for a UPnP router")
             router_address = upnp.router_external_address(
-                cfg.upnp_client_command, timeout
+                panel_values.UPNP_CLIENT_COMMAND, timeout
             )
             if router_address is None:
                 _log("no UPnP router on this network, port forwarding is skipped")
@@ -103,7 +104,6 @@ def _collect_run_facts(cfg: ThreeXuiXraySetupConfig, timeout: float) -> _RunFact
 
 
 def _forward_upnp_ports(
-    cfg: ThreeXuiXraySetupConfig,
     facts: _RunFacts,
     timeout: float,
 ) -> str | None:
@@ -123,28 +123,28 @@ def _forward_upnp_ports(
         return None
     observed = (*facts.public_addresses.ipv4, *facts.public_addresses.ipv6)
     description = upnp.mapping_description(
-        cfg.upnp_mapping_description, socket.gethostname()
+        panel_values.UPNP_MAPPING_DESCRIPTION, socket.gethostname()
     )
-    _log(f"asking the router to forward port {cfg.inbound_port} for clients")
+    _log(f"asking the router to forward port {panel_values.INBOUND_PORT} for clients")
     forwarded = upnp.forward_inbound_port(
-        cfg.upnp_client_command,
+        panel_values.UPNP_CLIENT_COMMAND,
         description,
-        cfg.inbound_port,
-        cfg.upnp_protocol,
+        panel_values.INBOUND_PORT,
+        panel_values.UPNP_PROTOCOL,
         observed,
         timeout,
         facts.router_address,
     )
-    if cfg.ssl_enabled:
+    if panel_values.SSL_ENABLED:
         _log(
-            f"asking the router to forward port {cfg.acme_port} "
+            f"asking the router to forward port {panel_values.ACME_PORT} "
             "for the certificate challenge"
         )
         upnp.forward_inbound_port(
-            cfg.upnp_client_command,
+            panel_values.UPNP_CLIENT_COMMAND,
             description,
-            cfg.acme_port,
-            cfg.upnp_protocol,
+            panel_values.ACME_PORT,
+            panel_values.UPNP_PROTOCOL,
             (),
             timeout,
             facts.router_address,
@@ -153,14 +153,14 @@ def _forward_upnp_ports(
         return None
     if not forwarded.globally_reachable:
         _log(
-            f"the router forwards port {cfg.inbound_port} at "
+            f"the router forwards port {panel_values.INBOUND_PORT} at "
             f"{forwarded.address}, reachable only inside the provider network"
         )
         return None
     return forwarded.address
 
 
-def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
+def _ensure_upnp_client(timeout: float) -> bool:
     """True when the UPnP client program is present, installing it if needed.
 
     The port forwarding uses the external upnpc tool, exactly like the
@@ -171,13 +171,13 @@ def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     progress line and never a warning.
     """
 
-    if package_is_installed(cfg.upnp_package, timeout):
+    if package_is_installed(panel_values.UPNP_PACKAGE, timeout):
         return True
-    installed, error = install_package_once(cfg.upnp_package, timeout)
+    installed, error = install_package_once(panel_values.UPNP_PACKAGE, timeout)
     if not installed:
-        _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
+        _log(f"UPnP client package {panel_values.UPNP_PACKAGE} is unavailable: {error}")
         return False
-    _log(f"UPnP client package {cfg.upnp_package} installed")
+    _log(f"UPnP client package {panel_values.UPNP_PACKAGE} installed")
     return True
 
 
@@ -257,7 +257,6 @@ def _machine_public_address(
 
 
 def _server_share_address(
-    cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
     inbound: dict[str, object],
     facts: _RunFacts,

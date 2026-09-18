@@ -41,7 +41,7 @@ finds the bridge up.
 The panel subscribes to the subscription address of the bridge, which
 carries the access key and asks for the raw answer: the list of vless links
 the panel turns into outbounds whose tags begin with the tag prefix, which
-is pool_member_prefix of the [three_x_ui_xray_setup] table: the pool of the
+is pool_member_prefix of the three_x_ui_xray_setup values: the pool of the
 local proxy covers every outbound whose tag begins with that prefix, so the
 nodes of the account join the pool. The subscription is created or updated
 by its remark, so a rerun with a new port, a new prefix or a new interval

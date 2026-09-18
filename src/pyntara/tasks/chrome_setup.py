@@ -55,7 +55,6 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -75,6 +74,7 @@ from pyntara.values import chrome_setup as values
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
+from pyntara.values import three_x_ui_xray_setup as panel_values
 
 # The placeholders of a configured launch flag, e.g. {proxy_server}: a
 # flag whose value is empty is left out of the Exec line.
@@ -494,7 +494,7 @@ def _ensure_profile_mirror(
 
 
 def _local_proxy_server(
-    cfg: ThreeXuiXraySetupConfig, *, timeout: float
+    timeout: float
 ) -> tuple[str, str | None]:
     """The SOCKS5 address of the local proxy; (proxy text, note).
 
@@ -508,8 +508,8 @@ def _local_proxy_server(
     reports the missing proxy instead of writing a flag that cannot work.
     """
 
-    address = cfg.local_proxy_listen_address
-    port = cfg.local_proxy_port
+    address = panel_values.LOCAL_PROXY_LISTEN_ADDRESS
+    port = panel_values.LOCAL_PROXY_PORT
     if not address or not port:
         return "", (
             "the three_x_ui_xray_setup section carries no local proxy address; "
@@ -876,9 +876,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     _log("checking the local proxy of the Xray client")
-    proxy_server, proxy_note = _local_proxy_server(
-        ctx.config.three_x_ui_xray_setup, timeout=timeout
-    )
+    proxy_server, proxy_note = _local_proxy_server(timeout=timeout)
     if proxy_note:
         warnings.append(proxy_note)
     else:

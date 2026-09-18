@@ -16,16 +16,16 @@ import os
 
 from pyntara import metrics, xray_panel
 from pyntara import xui as xui_client
-from pyntara.config import Config, ThreeXuiXraySetupConfig
+from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import proquint_encode, task_data_dir
+from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_facts import _bare_address, _RunFacts, _server_share_address
 
 
 def _ensure_inbound_security(
-    cfg: ThreeXuiXraySetupConfig,
     env: dict[str, str],
     inbound: dict[str, object],
     timeout: float,
@@ -44,7 +44,7 @@ def _ensure_inbound_security(
     an error, so the rest of the task continues.
     """
 
-    fields = cfg.xray_field_keys
+    fields = panel_values.XRAY_FIELD_KEYS
     stream = inbound.get(fields["stream_settings"])
     if not isinstance(stream, dict):
         return False, ("inbound has no stream settings",)
@@ -58,18 +58,18 @@ def _ensure_inbound_security(
     has_private = bool(reality.get(fields["private_key"]))
     if has_public and has_private:
         return False, ()
-    keypair = xui_client.generate_reality_key(cfg, env, timeout)
+    keypair = xui_client.generate_reality_key(env, timeout)
     if keypair is None:
         return False, ("cannot read the REALITY key pair from the panel",)
     private_key, public_key = keypair
     reality[fields["private_key"]] = private_key
     reality[fields["settings"]] = {
         fields["public_key"]: public_key,
-        fields["fingerprint"]: cfg.reality_fingerprint,
+        fields["fingerprint"]: panel_values.REALITY_FINGERPRINT,
     }
     stream[fields["reality_settings"]] = reality
     inbound[fields["stream_settings"]] = stream
-    ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
+    ok, message = xui_client.update_inbound(env, inbound, timeout)
     if not ok:
         return False, (f"inbound update failed: {message}",)
     _log("inbound REALITY key pair issued by the panel and stored")
@@ -77,7 +77,7 @@ def _ensure_inbound_security(
 
 
 def _stage3(
-    cfg: ThreeXuiXraySetupConfig, payload_template: str, timeout: float
+    payload_template: str, timeout: float
 ) -> TaskResult | None:
     """Run stage 3: create the universal server inbound.
 
@@ -93,17 +93,17 @@ def _stage3(
     """
 
     # Read the credentials the panel generated on first start.
-    env, warning = xray_panel._panel_environment_or_warning(cfg, timeout)
+    env, warning = xray_panel._panel_environment_or_warning(timeout)
     if env is None:
         return warning
     _log("stage 3: read credentials from install-result.env")
 
     # Check if an inbound on the configured port already exists.
-    existing = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
+    existing = xui_client.find_inbound_by_port(env, panel_values.INBOUND_PORT, timeout)
     if existing is not None:
-        _log(f"stage 3: inbound on port {cfg.inbound_port} already exists")
+        _log(f"stage 3: inbound on port {panel_values.INBOUND_PORT} already exists")
         updated, security_warnings = _ensure_inbound_security(
-            cfg, env, existing, timeout
+            env, existing, timeout
         )
         if security_warnings:
             return TaskResult(
@@ -114,10 +114,10 @@ def _stage3(
                 success=True, changed=True, message="inbound share data updated"
             )
         return None
-    _log(f"stage 3: no inbound on port {cfg.inbound_port}, will create")
+    _log(f"stage 3: no inbound on port {panel_values.INBOUND_PORT}, will create")
 
     # Generate a REALITY keypair through the panel API.
-    keypair = xui_client.generate_reality_key(cfg, env, timeout)
+    keypair = xui_client.generate_reality_key(env, timeout)
     if keypair is None:
         return TaskResult(
             success=True,
@@ -132,17 +132,17 @@ def _stage3(
     # task_data/ and not in this module.
     payload = xui_client.build_vless_reality_payload(
         payload_template,
-        port=cfg.inbound_port,
-        remark=cfg.inbound_remark,
-        dest=cfg.reality_dest,
-        server_names=cfg.reality_server_names,
+        port=panel_values.INBOUND_PORT,
+        remark=panel_values.INBOUND_REMARK,
+        dest=panel_values.REALITY_DEST,
+        server_names=panel_values.REALITY_SERVER_NAMES,
         private_key=private_key,
         public_key=public_key,
-        short_id=cfg.reality_short_id,
-        fingerprint=cfg.reality_fingerprint,
-        sniffing_protocols=cfg.inbound_sniffing_protocols,
+        short_id=panel_values.REALITY_SHORT_ID,
+        fingerprint=panel_values.REALITY_FINGERPRINT,
+        sniffing_protocols=panel_values.INBOUND_SNIFFING_PROTOCOLS,
     )
-    ok, msg = xui_client.create_inbound(cfg, env, payload, timeout)
+    ok, msg = xui_client.create_inbound(env, payload, timeout)
     if not ok:
         _log(f"stage 3: inbound creation failed: {msg}")
         return TaskResult(
@@ -167,7 +167,6 @@ def _notes_map(notes: str) -> dict[str, str]:
 
 
 def _connection_notes(
-    cfg: ThreeXuiXraySetupConfig,
     address: str,
     email: str,
     client_id: str,
@@ -184,14 +183,14 @@ def _connection_notes(
 
     lines = [
         f"SERVER_ADDRESS={address}",
-        f"SERVER_PORT={cfg.inbound_port}",
-        f"DEST={cfg.reality_dest}",
-        f"SERVER_NAME={cfg.reality_server_names[0]}",
+        f"SERVER_PORT={panel_values.INBOUND_PORT}",
+        f"DEST={panel_values.REALITY_DEST}",
+        f"SERVER_NAME={panel_values.REALITY_SERVER_NAMES[0]}",
         f"CLIENT_EMAIL={email}",
         f"CLIENT_ID={client_id}",
         f"SUB_ID={sub_id}",
-        f"SHORT_ID={cfg.reality_short_id}",
-        f"FINGERPRINT={cfg.reality_fingerprint}",
+        f"SHORT_ID={panel_values.REALITY_SHORT_ID}",
+        f"FINGERPRINT={panel_values.REALITY_FINGERPRINT}",
         f"REALITY_PUBLIC_KEY={public_key}",
         f"REALITY_PRIVATE_KEY={private_key}",
     ]
@@ -199,7 +198,6 @@ def _connection_notes(
 
 
 def _stage_connection(
-    cfg: ThreeXuiXraySetupConfig,
     full_config: Config,
     timeout: float,
     facts: _RunFacts,
@@ -216,18 +214,18 @@ def _stage_connection(
     TaskResult carrying changed and the warnings otherwise.
     """
 
-    env, warning = xray_panel._panel_environment_or_warning(cfg, timeout)
+    env, warning = xray_panel._panel_environment_or_warning(timeout)
     if env is None:
         return warning
     _log("stage 5: read credentials from install-result.env")
 
-    inbound = xui_client.find_inbound_by_port(cfg, env, cfg.inbound_port, timeout)
+    inbound = xui_client.find_inbound_by_port(env, panel_values.INBOUND_PORT, timeout)
     if inbound is None:
         return TaskResult(
             success=True,
             changed=False,
             warnings=(
-                f"no inbound on port {cfg.inbound_port}: connection profile not stored",
+                f"no inbound on port {panel_values.INBOUND_PORT}: connection profile not stored",
             ),
         )
 
@@ -240,9 +238,9 @@ def _stage_connection(
     # as well keeps the panel honest when a reset leaves the wanted address
     # behind with the default strategy, a state that would render every
     # link with the host localhost.
-    share_address_field = cfg.xray_field_keys["share_addr"]
-    share_strategy_field = cfg.xray_field_keys["share_addr_strategy"]
-    address = _server_share_address(cfg, full_config, inbound, facts)
+    share_address_field = panel_values.XRAY_FIELD_KEYS["share_addr"]
+    share_strategy_field = panel_values.XRAY_FIELD_KEYS["share_addr_strategy"]
+    address = _server_share_address(full_config, inbound, facts)
     if address is None:
         warnings.append(
             "no server address available: panel links keep the default host"
@@ -250,11 +248,11 @@ def _stage_connection(
     elif (
         force
         or inbound.get(share_address_field) != address
-        or inbound.get(share_strategy_field) != cfg.share_addr_strategy
+        or inbound.get(share_strategy_field) != panel_values.SHARE_ADDR_STRATEGY
     ):
-        inbound[share_strategy_field] = cfg.share_addr_strategy
+        inbound[share_strategy_field] = panel_values.SHARE_ADDR_STRATEGY
         inbound[share_address_field] = address
-        ok, message = xui_client.update_inbound(cfg, env, inbound, timeout)
+        ok, message = xui_client.update_inbound(env, inbound, timeout)
         if ok:
             changed = True
             _log(f"panel share address set to {address}")
@@ -270,7 +268,7 @@ def _stage_connection(
         warnings.append("runtime vault unavailable: connection profile not stored")
     else:
         entry = kp.find_entries(
-            title=cfg.connection_vault_entry_title,
+            title=panel_values.CONNECTION_VAULT_ENTRY_TITLE,
             group=kp.root_group,
             recursive=False,
             first=True,
@@ -282,22 +280,22 @@ def _stage_connection(
     # are left alone and named: deleting them is not this task's business,
     # and a warning here would make every later run of the machine look
     # broken until an operator cleans the panel.
-    served = _client_records_of_inbound(cfg, inbound)
+    served = _client_records_of_inbound(inbound)
     adopted = not stored.get("CLIENT_EMAIL") and bool(served)
     if len(served) > 1:
         _log(
             f"the inbound serves {len(served)} clients "
-            f"({', '.join(_client_emails(cfg, served))}): one identity is "
+            f"({', '.join(_client_emails(served))}): one identity is "
             "reused and the others are left alone"
         )
         if adopted:
             warnings.append(
                 f"the inbound serves {len(served)} clients while the vault "
                 "carries no client identity: the task adopted "
-                f"{_client_emails(cfg, served)[0]} from the panel and left "
+                f"{_client_emails(served)[0]} from the panel and left "
                 "the other clients in place"
             )
-    email, client_id, sub_id = _client_identity(cfg, stored, served)
+    email, client_id, sub_id = _client_identity(stored, served)
 
     inbound_id = inbound.get("id")
     if not isinstance(inbound_id, int):
@@ -307,9 +305,9 @@ def _stage_connection(
             warnings=tuple(warnings)
             + ("inbound has no id: connection profile not stored",),
         )
-    if xui_client.find_client(cfg, env, email, timeout) is None:
+    if xui_client.find_client(env, email, timeout) is None:
         ok, message = xui_client.create_client(
-            cfg, env, inbound_id, client_id, email, sub_id, timeout
+            env, inbound_id, client_id, email, sub_id, timeout
         )
         if not ok:
             return TaskResult(
@@ -320,14 +318,14 @@ def _stage_connection(
         changed = True
         _log(f"client ensured: {email}")
 
-    links = xui_client.client_links(cfg, env, email, timeout)
+    links = xui_client.client_links(env, email, timeout)
     link = links[0] if links else ""
     if not link:
         warnings.append("panel returned no share link: connection profile not stored")
     if kp is None or not link:
         return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
 
-    fields = cfg.xray_field_keys
+    fields = panel_values.XRAY_FIELD_KEYS
     stream = inbound.get(fields["stream_settings"])
     reality_map = (
         stream.get(fields["reality_settings"])
@@ -342,7 +340,6 @@ def _stage_connection(
     private_key = str(reality.get(fields["private_key"]) or "")
 
     notes = _connection_notes(
-        cfg,
         _bare_address(address) if address else "",
         email,
         client_id,
@@ -351,7 +348,7 @@ def _stage_connection(
         private_key,
     )
     entry = kp.find_entries(
-        title=cfg.connection_vault_entry_title,
+        title=panel_values.CONNECTION_VAULT_ENTRY_TITLE,
         group=kp.root_group,
         recursive=False,
         first=True,
@@ -369,14 +366,14 @@ def _stage_connection(
     else:
         kp.add_entry(
             kp.root_group,
-            cfg.connection_vault_entry_title,
+            panel_values.CONNECTION_VAULT_ENTRY_TITLE,
             _bare_address(address) if address else "",
             "",
             url=link,
             notes=notes,
         )
     kp.save(filename=str(full_config.local_vault_setup.local_vault_path))
-    _log(f"connection profile stored in {cfg.connection_vault_entry_title}")
+    _log(f"connection profile stored in {panel_values.CONNECTION_VAULT_ENTRY_TITLE}")
     return TaskResult(
         success=True,
         changed=True,
@@ -386,7 +383,7 @@ def _stage_connection(
 
 
 def _read_inbound_payload_template(
-    cfg: ThreeXuiXraySetupConfig, ctx: Context
+    ctx: Context
 ) -> str:
     """The text of the configured inbound payload template.
 
@@ -400,12 +397,12 @@ def _read_inbound_payload_template(
 
     return (
         task_data_dir(ctx.repo_root, ctx.task_name)
-        / cfg.inbound_payload_template_file_name
+        / panel_values.INBOUND_PAYLOAD_TEMPLATE_FILE_NAME
     ).read_text(encoding="utf-8")
 
 
 def _client_records_of_inbound(
-    cfg: ThreeXuiXraySetupConfig, inbound: dict[str, object]
+    inbound: dict[str, object]
 ) -> list[dict[str, object]]:
     """The client records the panel stores on one inbound.
 
@@ -418,7 +415,7 @@ def _client_records_of_inbound(
     """
 
     settings = xui_client._decoded_json_object(
-        inbound.get(cfg.xray_field_keys["settings"])
+        inbound.get(panel_values.XRAY_FIELD_KEYS["settings"])
     )
     if settings is None:
         return []
@@ -429,16 +426,15 @@ def _client_records_of_inbound(
 
 
 def _client_emails(
-    cfg: ThreeXuiXraySetupConfig, clients: list[dict[str, object]]
+    clients: list[dict[str, object]]
 ) -> tuple[str, ...]:
     """The labels of the clients of one inbound, for a message."""
 
-    field = cfg.panel_field_keys["email"]
+    field = panel_values.PANEL_FIELD_KEYS["email"]
     return tuple(str(client.get(field) or "?") for client in clients)
 
 
 def _client_identity(
-    cfg: ThreeXuiXraySetupConfig,
     stored: dict[str, str],
     served: list[dict[str, object]],
 ) -> tuple[str, str, str]:
@@ -455,7 +451,7 @@ def _client_identity(
     """
 
     if not stored.get("CLIENT_EMAIL") and served:
-        fields = cfg.panel_field_keys
+        fields = panel_values.PANEL_FIELD_KEYS
         first = served[0]
         email = str(first.get(fields["email"]) or "")
         client_id = str(first.get(fields["id"]) or "")
@@ -467,12 +463,12 @@ def _client_identity(
             )
             return email, client_id, sub_id
     email = stored.get("CLIENT_EMAIL") or proquint_encode(
-        os.urandom(cfg.random_username_bytes), "-"
+        os.urandom(panel_values.RANDOM_USERNAME_BYTES), "-"
     )
     client_id = stored.get("CLIENT_ID") or proquint_encode(
-        os.urandom(cfg.random_secret_bytes), "-"
+        os.urandom(panel_values.RANDOM_SECRET_BYTES), "-"
     )
     sub_id = stored.get("SUB_ID") or proquint_encode(
-        os.urandom(cfg.random_sub_id_bytes), ""
+        os.urandom(panel_values.RANDOM_SUB_ID_BYTES), ""
     )
     return email, client_id, sub_id

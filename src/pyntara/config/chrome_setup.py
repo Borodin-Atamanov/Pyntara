@@ -29,7 +29,7 @@ class ChromeSetupConfig:
     directory named by keyring_temp_dir_prefix.
     desktop_override_path receives the packaged desktop entry at
     desktop_source_path with launch_flags appended to every Exec line: the
-    local SOCKS5 proxy of the three_x_ui_xray_setup section when it
+    local SOCKS5 proxy of the three_x_ui_xray_setup values when it
     listens, the profile mirror at profile_mirror_path, and the debug port
     cdp_port bound to the loopback address cdp_address; a flag whose
     placeholder has no value is left out
