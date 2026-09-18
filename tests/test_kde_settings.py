@@ -2,7 +2,9 @@
 
 All external resources (subprocess, the session bus, package state) are
 mocked via monkeypatch; the tests only touch temporary fixtures. The fake
-run_command inspects the command shape and answers per key.
+run_command inspects the command shape and answers per key. The home of the
+desktop user and every value of the section are module values, so one
+autouse fixture points them at the temporary tree of the test.
 """
 
 from __future__ import annotations
@@ -17,15 +19,11 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_config, make_context
 
-from pyntara.config import KConfigRecord
-from pyntara.config.kde_settings import (
-    KCONFIG_BOOL_TYPE,
-    KCONFIG_STRING_TYPE,
-    KCONFIG_TYPES,
-    KdeSettingsConfig,
-)
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import kglobalaccel_names
+from pyntara.values import common as common_values
+from pyntara.values import kde_settings as values
+from pyntara.values.kde_settings import KconfigRecord
 
 # The templates of the task live in the clone the tests run from, so a test
 # that pre-writes the files the task expects reads the shipped template.
@@ -42,39 +40,55 @@ _SHARED_CLIENT = (
 # read, the absent word and an empty field mean no combination, and a record
 # of another file is a plain KConfig value.
 _SHORTCUT_RECORDS = (
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="Walk Through Windows",
         value="Alt+Tab,none,Walk Through Windows",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="MinimizeAll",
         value="Meta+D,meta+u,Minimize all windows",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("plasmashell",),
         key="manage activities",
         value="none,none,Show Activity Switcher",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kwinrc",
         group=("TabBox",),
         key="LayoutName",
         value="thumbnail_grid",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
 )
+
+
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own target tree and the shipped values.
+
+    The home of the desktop user and the values of the section are module
+    values, so the fixture points the home at the temporary directory of the
+    test and registers every value for restoration: a value a test points at
+    its own fixture comes back after that test.
+    """
+
+    monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "i")
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
+    for name in values.READ_VALUE_NAMES:
+        monkeypatch.setattr(values, name, getattr(values, name))
+    for name in common_values.READ_VALUE_NAMES:
+        monkeypatch.setattr(common_values, name, getattr(common_values, name))
 
 
 def _ctx(
@@ -85,9 +99,9 @@ def _ctx(
     virtual_keyboard_enabled: bool = True,
     system_look_and_feel_dir: Path | None = None,
     repo_root: Path | None = None,
-    kconfig: tuple[KConfigRecord, ...] = (),
+    kconfig: tuple[KconfigRecord, ...] = (),
 ):
-    """Context with the target user home rooted in tmp_path.
+    """Context with the target user home and the values rooted in tmp_path.
 
     kcminputrc, when given, is written into the user config directory so
     the touchpad discovery reads it. system_look_and_feel_dir is the system
@@ -100,21 +114,17 @@ def _ctx(
         config_dir = tmp_path / ".config"
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "kcminputrc").write_text(kcminputrc, encoding="utf-8")
+    values.VIRTUAL_KEYBOARD_ENABLED = virtual_keyboard_enabled
+    values.SYSTEM_LOOK_AND_FEEL_DIR = (
+        system_look_and_feel_dir or tmp_path / "no-system-themes"
+    )
+    values.KCONFIG_RECORDS = kconfig
     return make_context(
         task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
         repo_root=repo_root if repo_root is not None else _REPO_ROOT,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_virtual_keyboard_enabled=virtual_keyboard_enabled,
-            kde_settings_system_look_and_feel_dir=(
-                system_look_and_feel_dir or tmp_path / "no-system-themes"
-            ),
-            kde_settings_kconfig=kconfig,
-        ),
     )
 
 
@@ -194,13 +204,13 @@ def _assign_reply(
     return _FakeProc(0, json.dumps({"results": results}))
 
 
-def _granted_script_hotkeys(cfg: KdeSettingsConfig) -> dict[str, list[str]]:
+def _granted_script_hotkeys() -> dict[str, list[str]]:
     """The client state of a machine whose script hotkeys are granted."""
 
     return {
         action: [hotkey]
         for action, hotkey in zip(
-            cfg.kwin_script_actions, cfg.kwin_script_hotkeys
+            values.KWIN_SCRIPT_ACTIONS, values.KWIN_SCRIPT_HOTKEYS
         )
     }
 
@@ -943,7 +953,7 @@ def test_cursor_theme_applied_after_kconfig_records(
     # over any theme default the records or the day and night switch
     # write.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kcminputrc", ("Mouse",), "cursorTheme", "breeze_cursors", "string", False
         ),
     )
@@ -1600,7 +1610,7 @@ def test_notify_flag_follows_the_configured_file_names() -> None:
     assert task_module._notify_flag(renamed, "kwinrc-custom", env) == ["--notify"]
 
 
-def _places_cfg() -> KdeSettingsConfig:
+def _places_cfg():
     """Config of the task with the Places namespaces of the shared document."""
 
     return make_config().kde_settings
@@ -1826,23 +1836,18 @@ def test_apply_sddm_idempotent_when_matching(
 
 def _kconfig_ctx(
     tmp_path: Path,
-    records: tuple[KConfigRecord, ...],
+    records: tuple[KconfigRecord, ...],
     *,
     force: bool = False,
 ):
     """Context whose kconfig list carries the given records."""
 
+    values.KCONFIG_RECORDS = records
     return make_context(
         task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_kconfig=records,
-            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
-        ),
     )
 
 
@@ -1897,13 +1902,13 @@ def test_kconfig_records_write_differing_values(
     # gets the --type bool flag and the delete record removes a present
     # key.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord(
+        KconfigRecord(
             "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
         ),
-        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+        KconfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     _, _, _, _, writes, _, _ = _install_fakes(
@@ -1935,17 +1940,16 @@ def test_the_bool_type_word_comes_from_the_config_vocabulary(
     # follows it, so the task and the checks that validate a record
     # against KCONFIG_TYPES cannot drift apart.
     records = (
-        KConfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
+        KconfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents={})
-    monkeypatch.setattr(task_module, "KCONFIG_BOOL_TYPE", "flag")
+    monkeypatch.setattr(values, "KCONFIG_BOOL_TYPE", "flag")
     result = task_module.task(ctx)
     assert result.success is True
     single_writes = [command for command in writes if "SingleClick" in command]
     assert single_writes
     assert "--type" not in single_writes[0]
-    assert KCONFIG_BOOL_TYPE in KCONFIG_TYPES
 
 
 def test_kconfig_records_skip_when_matching(
@@ -1954,14 +1958,14 @@ def test_kconfig_records_skip_when_matching(
     # A value record whose key already matches skips the write; a delete
     # record whose key is absent skips the deletion, so nothing changes.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+        KconfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _preconfigure_user_files(tmp_path)
     _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch,
         currents=currents,
@@ -1979,7 +1983,7 @@ def test_kconfig_force_writes_even_when_matching(
 ) -> None:
     # Force mode writes the value regardless of the current state.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
     )
@@ -2023,7 +2027,7 @@ def test_desktop_count_live_removes_extra_desktops(
     # the desktop ids through the python3-dbus client shipped as task data
     # and removes the trailing extras.
     records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
+        KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     ids_client_path = _write_desktop_ids_client(tmp_path)
@@ -2076,7 +2080,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
     # is what the commands carry and what the desktop list client receives,
     # and the shipped names stop appearing.
     records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),
+        KconfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     renamed = replace(
@@ -2149,7 +2153,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
     # The live count is lower than the configured Number: the task creates
     # the missing desktops at the end, so existing ones keep their place.
     records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),
+        KconfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     calls: list[list[str]] = []
@@ -2196,7 +2200,7 @@ def test_desktop_count_live_reports_a_missing_client(
     # A missing task data file is reported with its path before anything is
     # removed, so the run never deletes desktops without its id list.
     records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
+        KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     missing_client = tmp_path / "missing_desktop_ids.py"
@@ -2231,10 +2235,10 @@ def test_kconfig_record_failure_keeps_other_records(
     # One record whose write fails is reported, the remaining records
     # still apply, and the task completes as done with warnings.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord(
+        KconfigRecord(
             "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
         ),
     )
