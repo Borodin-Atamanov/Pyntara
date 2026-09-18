@@ -8,7 +8,7 @@ Run uv sync to set up the Python environment.
 Run uv run pytest to execute the test suite.  
 Run uv run ruff check . for linting.  
 Run uv run mypy --strict src/ for type checking.  
-Run scripts/check_gates.sh to run every gate of this page in one command: the linting, both type checks, the test suite and the four bash suites.  
+Run scripts/check_gates.sh to run every gate of this page in one command: the linting, both type checks, the test suite and the five bash suites.  
 Add --fast to check only the touched python files and the test modules that match them by name, which is the command of the development loop; the full run stays the check before a landing.  
 The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default.
 
@@ -61,7 +61,7 @@ It bumps the build carrier, mirrors the number into inst.sh and README.md, and r
 
 The hook is local to a clone; enable it once with git config core.hooksPath hooks.
 
-The bash suites cover both halves on temporary git repositories: bash tests/test_pre_commit_hook.sh for the per-commit bump and bash tests/test_land_version_commit.sh for the landing step, alongside bash tests/test_inst.sh.
+The bash suites cover both halves on temporary git repositories: bash tests/test_pre_commit_hook.sh for the per-commit bump and bash tests/test_land_version_commit.sh for the landing step, alongside bash tests/test_inst.sh and bash tests/test_launcher.sh.
 
 ## Adding a new task
 

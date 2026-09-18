@@ -36,7 +36,7 @@ Newly created entries carry exactly the configured fields; a missing password fi
 
 ## Password prompt
 
-Deprecated: the interactive password prompt is not used and its development is stopped. The installer runs non-interactively. The production vault password is passed through the PYNTARA_VAULT_PASSWORD environment variable, entered by the user via read -s before sudo. Without a password, or with a password that matches no vault, the installer shows a countdown notice and falls back to default.vault. PYNTARA_VAULT_SOURCE (production or default) is optional: when omitted, the source is auto-detected from the password.
+Deprecated: the interactive password prompt is not used and its development is stopped. The installer runs non-interactively. The production vault password is passed through the PYNTARA_VAULT_PASSWORD environment variable, written into the launcher file pyntara.sh by the user before the run ([bootstrap contract, Launcher](../contracts/bootstrap.md#launcher-pyntarash)). Without a password, or with a password that matches no vault, the installer shows a countdown notice and falls back to default.vault. PYNTARA_VAULT_SOURCE (production or default) is optional: when omitted, the source is auto-detected from the password.
 
 Historical summary of the removed prompt (for reference):
 The user gets 3 attempts to enter the production vault password via bash read -s (VAULT_PASSWORD_TIMEOUT 333s timeout per attempt).

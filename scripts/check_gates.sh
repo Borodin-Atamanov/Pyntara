@@ -82,6 +82,7 @@ if [[ "$fast_mode" -eq 0 ]]; then
     run_gate "mypy tests" uv run mypy
     run_gate pytest uv run pytest
     run_gate "bootstrap installer" bash tests/test_inst.sh
+    run_gate "launcher" bash tests/test_launcher.sh
     run_gate "pre-commit hook" bash tests/test_pre_commit_hook.sh
     run_gate "landing step" bash tests/test_land_version_commit.sh
     run_gate "system metrics commit script" bash tests/test_commit_script.sh

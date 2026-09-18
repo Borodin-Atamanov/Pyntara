@@ -7,35 +7,49 @@ Pyntara turns a fresh Kubuntu installation into a fully configured workstation o
 in one command. It installs packages, configures ZRAM and swap, sets up SSH, DNS and
 anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment, and
 enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A
-single bootstrap script downloads the repo and launches the Python provisioning engine.
+launcher script downloads the bootstrap installer, and the installer fetches the repository
+and launches the Python provisioning engine.
 
 ## Start
 
-The main run asks for the production vault password on every invocation via read -s and
-passes it only to the installer process; the password is never stored in the shell
-environment:
+The launcher pyntara.sh downloads the bootstrap installer from the raw branch of the
+repository and runs it as root. Every parameter of the run lives inside the file, so the
+command line stays short and nothing has to be exported. Download it into the shared
+memory, edit the parameters, run it:
 
 ```bash
-inst="$(mktemp /tmp/pyntara.XXXXXXXXX)" \
-&& curl --fail --location --connect-timeout 60 --retry 17 --retry-delay 3 --retry-all-errors --retry-max-time 7777 --retry-connrefused \
--o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh \
-&& sudo --preserve-env=PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE \
-bash -c 'read -r -s -p "Enter production vault password: " p && PYNTARA_VAULT_PASSWORD="$p" bash "$1"' _ "$inst"
+curl --fail --location --connect-timeout 60 --retry 17 --retry-delay 3 --retry-all-errors --retry-max-time 7777 --retry-connrefused \
+-o /dev/shm/pyntara.sh https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/pyntara.sh
+$EDITOR /dev/shm/pyntara.sh
+sudo bash /dev/shm/pyntara.sh
 ```
 
-The installer runs non-interactively and never asks the user anything. The vault source is
-auto-detected from the password: production when it opens production.vault, default when it
-matches default.password. Without a password, or with a password that matches no vault, the
-installer shows a short countdown notice and falls back to the default vault.
+/dev/shm is a memory filesystem, so the launcher never reaches the disk and disappears at
+the next reboot, and a password written into the file is not left on the machine. The
+launcher ignores the environment of the caller: the parameters are the values of the file,
+and a variable left commented out is resolved by the installer or the engine itself.
 
-Optional environment variables can be added inside the sudo bash -c block, separated by
-spaces before the script invocation:
+The vault password is the PYNTARA_VAULT_PASSWORD line. The value shipped there is the
+published password of the default vault, and a user who knows the production vault password
+replaces it before the run; the production password is never committed and never written to
+a log. The installer runs non-interactively and never asks the user anything: the vault
+source is auto-detected from the password, production when it opens production.vault and
+default when it matches default.password. While the line keeps the shipped value, and also
+when a password opens no vault, the installer shows a short countdown notice and falls back
+to the default vault.
 
-PYNTARA_VAULT_SOURCE — production or default. When omitted, the source is auto-detected from the password.
+Parameters of the file:
 
-PYNTARA_INSTALL_MODE — minimal, server or desktop. When omitted, the mode is auto-detected from the system (desktop or server).
+PYNTARA_REPO_URL, PYNTARA_REPO_BRANCH — repository and branch of the run. The branch selects
+both the downloaded installer and the checkout the installer clones, so a branch run differs
+from a main run by one value.
 
-PYNTARA_TASKS — space-separated task names. When omitted, the default task set of the chosen mode is used.
+PYNTARA_INSTALL_MODE — minimal, server or desktop. Commented out; when omitted, the mode is
+auto-detected from the system (desktop or server).
+
+PYNTARA_TASKS — space-separated task names, the whole catalog sits in a commented line.
+When omitted, the default task set of the chosen mode is used; dependencies are resolved
+inside the engine, so a listed task always runs with what it needs.
 
 PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state
 is already reached. When omitted, no task is forced. The keyword that forces every task of
@@ -49,41 +63,13 @@ add_extra_repos and cli_tools run before package operations. The answers that me
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
-The developer run asks for the production vault password once and keeps it in a root-only
-file under /dev/shm, so repeated runs on the same machine do not ask again until the next
-reboot clears the shared memory. A non-empty PYNTARA_VAULT_PASSWORD already in the
-environment wins; otherwise the run reads the cached password, and only when the cache is
-empty does it ask interactively and write the answer to the cache. To force a new prompt
-after a password change, delete /dev/shm/pyntara/temp_pass or reboot.
-A commented PYNTARA_TASKS line inside the command names a single task for quick reruns;
-uncomment it to run only that task instead of the whole default set.
-PYNTARA_SKIP_APT_UPDATE=1 sits in the script invocation prefix, so it reaches the
-installer and the engine; a flag joined with && would only set a shell variable and never
-reach the installer:
+PYNTARA_LOG_DIR, PYNTARA_LOG_FILE, PYNTARA_JOURNAL_IDENTIFIER — one log for the whole run.
+The launcher and the installer append to the same file under /var/log/pyntara, and both
+report to the system journal under the identifier pyntara-install, which the engine mirrors
+under its own identifier. The launcher logs the download phase, which no later layer sees.
 
-```bash
-sudo --preserve-env=PYNTARA_VAULT_PASSWORD,PYNTARA_INSTALL_MODE,PYNTARA_TASKS,PYNTARA_FORCE_TASKS,PYNTARA_SKIP_APT_UPDATE bash -c '
-if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
-    pass_file=/dev/shm/pyntara/temp_pass
-    if [[ -s "$pass_file" ]]; then
-        PYNTARA_VAULT_PASSWORD="$(cat "$pass_file")"
-    else
-        read -r -s -p "Enter production vault password: " PYNTARA_VAULT_PASSWORD
-        echo
-        install -d -m 0700 "$(dirname "$pass_file")"
-        printf "%s" "$PYNTARA_VAULT_PASSWORD" > "$pass_file"
-        chmod 0600 "$pass_file"
-    fi
-    export PYNTARA_VAULT_PASSWORD
-fi
-inst="$(mktemp /tmp/pyntara.XXXXXXXXX)"
-curl --fail --location --connect-timeout 60 --retry 17 --retry-delay 3 --retry-all-errors --retry-max-time 7777 --retry-connrefused \
--o "$inst" https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara/main/inst.sh
-# Uncomment to run one task instead of the whole default set, for example:
-# export PYNTARA_TASKS="system_metrics_setup"
-PYNTARA_SKIP_APT_UPDATE=1 bash "$inst"
-'
-```
+Optional: PYNTARA_VAULT_SOURCE — production or default. The launcher leaves it unset, so the
+source is auto-detected from the password as described above.
 
 Values live in Python modules under src/pyntara/values/, one module per task, and
 a task reads the values of its own module, so a value is never written in two

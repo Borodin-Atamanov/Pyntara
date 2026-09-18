@@ -15,10 +15,11 @@ The helpers fit files where one setting is one line and the line order does not 
 ## Top-level files
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
+pyntara.sh — Launcher: downloads inst.sh from the raw branch and runs it as root, with every run parameter held in the file itself and the inherited environment ignored. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
-scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the four bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline. Its --fast argument checks only the touched python files and the test modules that match them by name.
+scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the five bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline. Its --fast argument checks only the touched python files and the test modules that match them by name.
 .github/workflows/checks.yml — Pipeline: runs scripts/check_gates.sh on every push and every pull request, with Python 3.14 and uv that never downloads an interpreter.
 .gitattributes — Marks src/pyntara/_version.py merge=union, so a version conflict resolves into two lines the version tool normalizes instead of a stopped merge (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).  
 .gitignore — Ignore rules for virtualenvs, caches, logs, and runtime task data.

@@ -48,10 +48,11 @@ LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 # Journal identifier for own installer messages, fixed by the bootstrap
 # contract (bootstrap contract, Logging). An empty value disables journal
 # forwarding, matching the engine semantics in logger.py; only an unset
-# variable falls back to the contract identifier. The variable is not
-# exported, so the Python engine keeps its own identifier, the
-# journal_identifier value of the engine values module, when launched by
-# run_pyntara.
+# variable falls back to the contract identifier. The launcher exports the
+# value, so both halves of the bootstrap report under one identifier; the
+# Python engine is unaffected and keeps its own identifier, the
+# journal_identifier value of the engine values module, because it reads that
+# value and never the environment.
 JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-pyntara-install}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).

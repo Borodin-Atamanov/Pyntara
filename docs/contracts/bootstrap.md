@@ -4,9 +4,16 @@ This document is the source of truth for the bootstrap installer inst.sh.
 
 ## Entry point
 
-The download and run command is documented in README.md under Start; README.md is the only place that holds it. The command writes the installer into a unique file in /tmp via mktemp, so it works from any working directory, including read-only roots, then runs it under sudo.
+The download and run commands are documented in README.md under Start; README.md is the only place that holds them. They download the launcher pyntara.sh into /dev/shm, where no file survives a reboot, and run it as root from there.
 The installer runs non-interactively and never asks the user anything. The production vault password is optional: without PYNTARA_VAULT_PASSWORD, or with a password that matches no vault, the installer shows a countdown notice and falls back to the default vault. Optional overrides: PYNTARA_VAULT_SOURCE, PYNTARA_INSTALL_MODE, PYNTARA_TASKS.
 Startup check: script must be running as root. If not, exit with an error.
+
+## Launcher pyntara.sh
+
+pyntara.sh is the user-facing entry point of a machine: it downloads inst.sh from the raw branch of the repository into /dev/shm and runs it as root. It carries no version line, so it is not a version carrier.
+Run parameters live in the file and only in the file. The launcher clears every PYNTARA_ name inherited from the caller before it sets its own values, so an exported variable never reaches the installer; a name left commented out stays unset and the installer or the engine resolves its own default.
+The vault password is the PYNTARA_VAULT_PASSWORD line. The shipped value is the published password of default.vault, and it is also the shape of the line a user replaces with the production password. While the value is unchanged the launcher passes no password at all, so the installer warns, waits and falls back to the default vault exactly as a run without a password does. A replaced value is passed through and the installer decides, as above: production when it opens production.vault, default when it matches default.password, and the same warning and wait when it opens neither. The launcher never sets PYNTARA_VAULT_SOURCE and never reads the terminal, so the run has no interactive input. The production password is never a value in the repository, never an argument and never a log line.
+One log for the whole run: the launcher exports PYNTARA_LOG_DIR, PYNTARA_LOG_FILE and PYNTARA_JOURNAL_IDENTIFIER, appends its own download phase to the same file the installer writes and reports under the same journal identifier, so the two halves cannot drift apart. PYNTARA_REPO_URL and PYNTARA_REPO_BRANCH are exported too, and the branch selects both the downloaded installer and the checkout the installer clones.
 
 ## Package installation: apt update before install
 
