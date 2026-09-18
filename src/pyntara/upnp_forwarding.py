@@ -52,6 +52,7 @@ from pyntara.metrics_collect import trigger_collection
 from pyntara.public_address import default_route_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.utils import install_package_once, package_is_installed
+from pyntara.values import engine as engine_values
 
 
 @dataclass(frozen=True)
@@ -82,9 +83,7 @@ def candidate_ports(cfg: Config, hostname: str) -> tuple[int, ...]:
     """
 
     attempts = cfg.upnp_forwarding_setup.mapping_attempts
-    return tuple(
-        islice(forwarding_ports.candidate_ports(cfg, hostname), attempts)
-    )
+    return tuple(islice(forwarding_ports.candidate_ports(cfg, hostname), attempts))
 
 
 def ensure_client_package(cfg: Config) -> bool:
@@ -99,16 +98,13 @@ def ensure_client_package(cfg: Config) -> bool:
     """
 
     section = cfg.upnp_forwarding_setup
-    timeout = cfg.engine.command_timeout_seconds
-    if package_is_installed(cfg.engine, section.upnp_package, timeout):
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    if package_is_installed(section.upnp_package, timeout):
         return True
-    installed, error = install_package_once(
-        cfg.engine, section.upnp_package, timeout
-    )
+    installed, error = install_package_once(section.upnp_package, timeout)
     if not installed:
         _log(
-            f"the UPnP client package {section.upnp_package} is not "
-            f"available: {error}"
+            f"the UPnP client package {section.upnp_package} is not available: {error}"
         )
         return False
     _log(f"UPnP client package {section.upnp_package} installed")
@@ -130,38 +126,36 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
     """
 
     section = cfg.upnp_forwarding_setup
-    engine = cfg.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     command = section.upnp_client_command
-    router_address = upnp.router_external_address(engine, command, timeout)
+    router_address = upnp.router_external_address(command, timeout)
     if router_address is None:
         _log("no UPnP router on this network, the port is not forwarded")
         return None
-    internal_address = default_route_address(engine, timeout)
+    internal_address = default_route_address(timeout)
     if internal_address is None:
-        _log(
-            "cannot read the address of this machine, "
-            "the port is not forwarded"
-        )
+        _log("cannot read the address of this machine, the port is not forwarded")
         return None
     internal_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
-    description = upnp.mapping_description(
-        section.upnp_mapping_description, hostname
-    )
-    listing = upnp.list_mappings(engine, command, timeout)
+    description = upnp.mapping_description(section.upnp_mapping_description, hostname)
+    listing = upnp.list_mappings(command, timeout)
     for port in candidate_ports(cfg, hostname):
         existing = upnp.mapping_for(
             listing,
             port,
             section.upnp_protocol,
-            engine.upnpc_protocol_names,
-            engine.upnpc_mapping_arrow,
+            engine_values.UPNPC_PROTOCOL_NAMES,
+            engine_values.UPNPC_MAPPING_ARROW,
         )
         target = (internal_address, internal_port)
-        if existing is not None and (
-            existing.internal_address,
-            existing.internal_port,
-        ) == target:
+        if (
+            existing is not None
+            and (
+                existing.internal_address,
+                existing.internal_port,
+            )
+            == target
+        ):
             if existing.description == description:
                 _log(
                     f"the router already forwards port {port} to "
@@ -172,17 +166,12 @@ def ensure_forwarding(cfg: Config, hostname: str) -> Forwarding | None:
                 f"port {port} already reaches this machine under another "
                 "description, the rule is written again"
             )
-        elif (
-            existing is not None
-            and existing.description != description
-        ):
+        elif existing is not None and existing.description != description:
             _log(
-                f"port {port} carries the rule of another machine, "
-                "trying the next port"
+                f"port {port} carries the rule of another machine, trying the next port"
             )
             continue
         if upnp.ensure_port_forwarding(
-            engine,
             command,
             description,
             internal_address,
@@ -217,9 +206,7 @@ def main(argv: list[str]) -> int:
         return 2
     cfg = load_config(Path(argv[1]))
     section = cfg.upnp_forwarding_setup
-    configure_journal(
-        cfg.engine.with_journal_identifier(section.journal_identifier)
-    )
+    configure_journal(section.journal_identifier)
     missing = absent_config_keys(section, UPNP_FORWARDING_CONFIG_KEYS)
     if missing:
         print(

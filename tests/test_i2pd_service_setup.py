@@ -28,6 +28,7 @@ from pyntara.context import Context
 from pyntara.i2pd import b32_address
 from pyntara.tasks import i2pd_service_setup
 from pyntara.utils import curl_flags
+from pyntara.values import engine as engine_values
 
 I2PD_TEMPLATE = """\
 loglevel = $log_level
@@ -74,8 +75,7 @@ def _release_json(
             {
                 "name": name,
                 "browser_download_url": (
-                    f"https://github.com/PurpleI2P/i2pd/releases/download/"
-                    f"{tag}/{name}"
+                    f"https://github.com/PurpleI2P/i2pd/releases/download/{tag}/{name}"
                 ),
             }
         )
@@ -85,8 +85,7 @@ def _release_json(
             {
                 "name": name,
                 "browser_download_url": (
-                    f"https://github.com/PurpleI2P/i2pd/releases/download/"
-                    f"{tag}/{name}"
+                    f"https://github.com/PurpleI2P/i2pd/releases/download/{tag}/{name}"
                 ),
             }
         )
@@ -120,7 +119,6 @@ def _ctx(
         repo_root=tmp_path,
         skip_apt_update=skip_apt_update,
         config=make_config(
-            task_data_root=tmp_path,
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -129,7 +127,11 @@ def _ctx(
             i2pd_config_path=tmp_path / "etc" / "i2pd" / "i2pd.conf",
             i2pd_tunnels_config_path=tmp_path / "etc" / "i2pd" / "tunnels.conf",
             i2pd_tunnel_keys_path=tmp_path / "etc" / "i2pd" / "ssh.dat",
-            i2pd_address_file_path=tmp_path / "var" / "lib" / "pyntara" / "i2pd_ssh_address",
+            i2pd_address_file_path=tmp_path
+            / "var"
+            / "lib"
+            / "pyntara"
+            / "i2pd_ssh_address",
             i2pd_install_retries=retries,
             i2pd_start_check_attempts=check_attempts,
             i2pd_start_check_retry_delay_seconds=0.0,
@@ -154,9 +156,7 @@ def _install_fixtures(
     template = tmp_path / "task_data" / "i2pd_service_setup" / "i2pd.conf"
     template.parent.mkdir(parents=True)
     template.write_text(I2PD_TEMPLATE, encoding="utf-8")
-    tunnels_template = (
-        tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf"
-    )
+    tunnels_template = tmp_path / "task_data" / "i2pd_service_setup" / "tunnels.conf"
     tunnels_template.write_text(TUNNELS_TEMPLATE, encoding="utf-8")
     return {
         "os_release": os_release,
@@ -246,9 +246,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup
-    )
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -282,11 +280,11 @@ def test_already_configured_skips(
     assert result.changed is False
     assert result.message == "already configured"
     expected_flags = curl_flags(
-        ctx.config.engine.curl_timeout_seconds,
-        ctx.config.engine.curl_retries,
-        ctx.config.engine.curl_connect_timeout_seconds,
-        ctx.config.engine.curl_retry_max_time_seconds,
-        ctx.config.engine.curl_retry_delay_seconds,
+        engine_values.CURL_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRIES,
+        engine_values.CURL_CONNECT_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRY_MAX_TIME_SECONDS,
+        engine_values.CURL_RETRY_DELAY_SECONDS,
     )
     release_calls = [
         call
@@ -307,10 +305,9 @@ def test_download_curl_shows_progress_and_writes_summary(
 ) -> None:
     # A package download runs the engine-wide download command: curl runs
     # without --silent, so it draws its live progress meter on a terminal,
-    # it carries --write-out with the configured summary of bytes, time and
+    # it carries --write-out with the declared summary of bytes, time and
     # speed, it writes the file the caller names, and the shared retry
     # flags follow before the URL.
-    engine = make_config().engine
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -319,7 +316,6 @@ def test_download_curl_shows_progress_and_writes_summary(
 
     monkeypatch.setattr(i2pd_service_setup, "run_command", fake_run)
     i2pd_service_setup._download_asset(
-        engine,
         tmp_path,
         "i2pd_2.61.0-1_amd64.deb",
         "https://example.invalid/i2pd_2.61.0-1_amd64.deb",
@@ -331,7 +327,7 @@ def test_download_curl_shows_progress_and_writes_summary(
     assert "--silent" not in download_call
     assert "--show-error" in download_call
     assert "--write-out" in download_call
-    assert engine.curl_download_write_out in download_call
+    assert engine_values.CURL_DOWNLOAD_WRITE_OUT in download_call
     assert download_call[download_call.index("--output") + 1] == str(
         tmp_path / "i2pd_2.61.0-1_amd64.deb"
     )
@@ -357,14 +353,10 @@ def test_missing_binary_is_treated_as_not_installed(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
-def test_installs_new_release(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_installs_new_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # i2pd is not installed and the service is not enabled: the task
     # downloads the codename-specific asset, installs it with apt, writes
     # the configuration, enables and starts the service.
@@ -378,7 +370,12 @@ def test_installs_new_release(
     assert result.changed is True
     assert TAG in (result.message or "")
     asset = f"i2pd_{TAG}-1resolute1_amd64.deb"
-    assert ["apt-get", "install", "-y", str(ctx.config.i2pd_service_setup.download_dir / asset)] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        str(ctx.config.i2pd_service_setup.download_dir / asset),
+    ] in calls
     assert ["systemctl", "enable", "i2pd.service"] in calls
     assert ["systemctl", "start", "i2pd.service"] in calls
     config = ctx.config.i2pd_service_setup.config_path
@@ -419,9 +416,7 @@ def test_install_gives_up_after_retries(
     calls = _install_fake(monkeypatch, installed_version=None, fail_install=99)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "cannot install i2pd" in warning for warning in result.warnings
-    )
+    assert any("cannot install i2pd" in warning for warning in result.warnings)
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
@@ -471,9 +466,7 @@ def test_config_rewritten_when_missing(
     assert result.changed is True
     assert ctx.config.i2pd_service_setup.config_path.is_file()
     assert ["systemctl", "restart", "i2pd.service"] in calls
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_force_rewrites_config_and_restarts(
@@ -490,9 +483,7 @@ def test_force_rewrites_config_and_restarts(
     assert result.success is True
     assert result.changed is True
     assert ["systemctl", "restart", "i2pd.service"] in calls
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_service_never_active_reports_warning(
@@ -508,12 +499,8 @@ def test_service_never_active_reports_warning(
     )
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "did not become active" in warning for warning in result.warnings
-    )
-    starts = [
-        call for call in calls if call[0] == "systemctl" and call[1] == "start"
-    ]
+    assert any("did not become active" in warning for warning in result.warnings)
+    starts = [call for call in calls if call[0] == "systemctl" and call[1] == "start"]
     assert len(starts) == 1
 
 
@@ -525,16 +512,14 @@ def test_non_debian_os_warns_and_skips_the_install(
     # the configuration is still written.
     _install_fixtures(monkeypatch, tmp_path, codename="rolling")
     os_release = tmp_path / "os-release"
-    os_release.write_text('ID=arch\nID_LIKE=archlinux\n', encoding="utf-8")
+    os_release.write_text("ID=arch\nID_LIKE=archlinux\n", encoding="utf-8")
     ctx = _ctx(tmp_path)
     calls = _install_fake(monkeypatch, installed_version=None)
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert any("Debian-based" in warning for warning in result.warnings)
     assert any("os-release ID=arch" in warning for warning in result.warnings)
-    assert any(
-        "os-release ID_LIKE=archlinux" in warning for warning in result.warnings
-    )
+    assert any("os-release ID_LIKE=archlinux" in warning for warning in result.warnings)
     assert not any(call[0] == "curl" for call in calls)
     assert ctx.config.i2pd_service_setup.config_path.is_file()
 
@@ -551,9 +536,7 @@ def test_no_matching_asset_warns_and_skips_the_install(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert any("no .deb asset" in warning for warning in result.warnings)
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
     assert ctx.config.i2pd_service_setup.config_path.is_file()
 
 
@@ -576,8 +559,7 @@ def test_generic_asset_fallback(
     assert result.success is True
     assert result.changed is True
     assert any(
-        call[0] == "apt-get" and "i2pd_2.61.0-1_amd64.deb" in call[-1]
-        for call in calls
+        call[0] == "apt-get" and "i2pd_2.61.0-1_amd64.deb" in call[-1] for call in calls
     )
 
 
@@ -618,15 +600,12 @@ def test_select_asset_prioritizes_codename() -> None:
     assert specific_asset is not None
     specific, _ = specific_asset
     assert specific == f"i2pd_{TAG}-1resolute1_amd64.deb"
-    generic_asset = i2pd_service_setup._select_asset(
-        cfg, release, TAG, None, "amd64"
-    )
+    generic_asset = i2pd_service_setup._select_asset(cfg, release, TAG, None, "amd64")
     assert generic_asset is not None
     generic, _ = generic_asset
     assert generic == f"i2pd_{TAG}-1_amd64.deb"
     assert (
-        i2pd_service_setup._select_asset(cfg, release, TAG, "resolute", "s390x")
-        is None
+        i2pd_service_setup._select_asset(cfg, release, TAG, "resolute", "s390x") is None
     )
 
 
@@ -638,16 +617,11 @@ def test_render_config_bool_spelling(tmp_path: Path) -> None:
     template.parent.mkdir(parents=True)
     template.write_text(I2PD_TEMPLATE, encoding="utf-8")
     ctx = _ctx(tmp_path)
-    config = i2pd_service_setup._render_config(
-        ctx.config.i2pd_service_setup, template
-    )
+    config = i2pd_service_setup._render_config(ctx.config.i2pd_service_setup, template)
     assert "loglevel = warn\n" in config
     assert "bandwidth = 12500\n" in config
     assert "share = 1\n" in config
-    assert (
-        f"tunconf = {ctx.config.i2pd_service_setup.tunnels_config_path}\n"
-        in config
-    )
+    assert f"tunconf = {ctx.config.i2pd_service_setup.tunnels_config_path}\n" in config
     assert "[http]\nenabled = false\n" in config
     assert "[socksproxy]\nenabled = true\n" in config
 
@@ -667,10 +641,7 @@ def test_render_tunnels_config_uses_ssh_port(tmp_path: Path) -> None:
     assert "[ssh]\ntype = server\n" in config
     assert f"host = {ctx.config.i2pd_service_setup.tunnel_host}\n" in config
     assert "port = 30222\n" in config
-    assert (
-        f"keys = {ctx.config.i2pd_service_setup.tunnel_keys_path.name}\n"
-        in config
-    )
+    assert f"keys = {ctx.config.i2pd_service_setup.tunnel_keys_path.name}\n" in config
 
 
 def test_first_run_message_without_keys_file(
@@ -697,9 +668,7 @@ def test_wait_tunnel_address_returns_the_address_once_it_appears(
 ) -> None:
     # The identity file appears only after the first start of the router:
     # the wait decodes again after a pause and finds the address.
-    cfg = make_config(
-        i2pd_tunnel_keys_path=tmp_path / "ssh.dat"
-    ).i2pd_service_setup
+    cfg = make_config(i2pd_tunnel_keys_path=tmp_path / "ssh.dat").i2pd_service_setup
     pauses: list[float] = []
 
     def create_identity_file(seconds: float) -> None:
@@ -717,9 +686,7 @@ def test_wait_tunnel_address_returns_none_when_the_identity_stays_absent(
 ) -> None:
     # Without the identity file the wait still ends after the configured
     # attempts and reports that there is no address.
-    cfg = make_config(
-        i2pd_tunnel_keys_path=tmp_path / "ssh.dat"
-    ).i2pd_service_setup
+    cfg = make_config(i2pd_tunnel_keys_path=tmp_path / "ssh.dat").i2pd_service_setup
     monkeypatch.setattr(i2pd_service_setup.time, "sleep", lambda seconds: None)
     assert i2pd_service_setup._wait_tunnel_address(cfg) is None
 
@@ -745,9 +712,7 @@ def test_missing_commands_are_reported(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert any("version_command" in warning for warning in result.warnings)
-    assert any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_missing_template_is_reported(
@@ -808,9 +773,7 @@ def test_stale_address_file_is_rewritten_without_restart(
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup
-    )
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -832,12 +795,9 @@ def test_stale_address_file_is_rewritten_without_restart(
         cfg.address_file_path.read_text(encoding="utf-8").strip()
         == i2pd_keys_b32_address()
     )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
     assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
-    assert not any(
-        call[0] == "systemctl" and call[1] in ("start", "restart")
-        for call in calls
+        call[0] == "systemctl" and call[1] in ("start", "restart") for call in calls
     )
 
 
@@ -858,9 +818,7 @@ def test_missing_keys_file_restarts_even_when_configs_match(
         ),
         encoding="utf-8",
     )
-    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(
-        ctx.config.ssh_daemon_setup
-    )
+    ssh_port = i2pd_service_setup._ssh_port_from_ssh_config(ctx.config.ssh_daemon_setup)
     cfg.tunnels_config_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.tunnels_config_path.write_text(
         i2pd_service_setup._render_tunnels_config(
@@ -875,9 +833,7 @@ def test_missing_keys_file_restarts_even_when_configs_match(
     assert result.success is True
     assert result.changed is True
     assert ["systemctl", "restart", "i2pd.service"] in calls
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_ssh_port_change_rewrites_tunnels_and_restarts(
@@ -898,9 +854,7 @@ def test_ssh_port_change_rewrites_tunnels_and_restarts(
     )
     assert "port = 30333\n" in tunnels
     assert ["systemctl", "restart", "i2pd.service"] in calls
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_missing_ssh_port_warns_and_skips_the_tunnels(

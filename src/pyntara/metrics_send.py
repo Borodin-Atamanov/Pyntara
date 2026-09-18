@@ -33,6 +33,7 @@ from pyntara.config import SEND_ORDER_NEWEST_FIRST, Config
 from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.utils import run_command, substituted_command
+from pyntara.values import engine as engine_values
 
 
 def dispatch_entries(cfg: Config) -> None:
@@ -67,7 +68,7 @@ def dispatch_entries(cfg: Config) -> None:
                 _log(
                     f"dispatching {entry.name} into {channel}: failed: {exc}, "
                     "keeping it",
-                    priority=cfg.engine.error_priority,
+                    priority=engine_values.ERROR_PRIORITY,
                 )
                 for created in linked:
                     created.unlink(missing_ok=True)
@@ -78,9 +79,7 @@ def dispatch_entries(cfg: Config) -> None:
             _log(f"dispatched {entry.name} into the channel queues")
 
 
-def send_google_queue(
-    cfg: Config, single_random: bool = False
-) -> tuple[int, int]:
+def send_google_queue(cfg: Config, single_random: bool = False) -> tuple[int, int]:
     """Drain the Google Drive channel queue into the web app.
 
     Every regular non-empty entry no larger than the configured limit is
@@ -110,7 +109,9 @@ def send_google_queue(
         entry
         for entry in _ordered_entries(channel, metrics.send_order)
         if _entry_uploadable(
-            entry, metrics.max_queue_file_size_bytes, cfg.engine.error_priority
+            entry,
+            metrics.max_queue_file_size_bytes,
+            engine_values.ERROR_PRIORITY,
         )
     ]
     if not entries:
@@ -153,18 +154,16 @@ def _google_script_credentials(cfg: Config) -> tuple[str, str] | None:
     )
     if entry is None:
         _log(
-            f"google script channel: entry {title!r} not found "
-            "in the runtime vault",
-            priority=cfg.engine.error_priority,
+            f"google script channel: entry {title!r} not found in the runtime vault",
+            priority=engine_values.ERROR_PRIORITY,
         )
         return None
     url = (entry.url or "").strip()
     key = (entry.password or "").strip()
     if not url or not key:
         _log(
-            f"google script channel: entry {title!r} has an "
-            "empty url or password",
-            priority=cfg.engine.error_priority,
+            f"google script channel: entry {title!r} has an empty url or password",
+            priority=engine_values.ERROR_PRIORITY,
         )
         return None
     return url, key
@@ -206,8 +205,7 @@ def _entry_uploadable(entry: Path, limit: int, error_priority: int) -> bool:
         return False
     if not stat.S_ISREG(entry_stat.st_mode):
         _log(
-            f"google script channel: {entry.name} is not a regular file, "
-            "skipping",
+            f"google script channel: {entry.name} is not a regular file, skipping",
             priority=error_priority,
         )
         return False
@@ -272,7 +270,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
     """
 
     metrics = cfg.system_metrics_setup
-    error_priority = cfg.engine.error_priority
+    error_priority = engine_values.ERROR_PRIORITY
     try:
         content = entry.read_bytes()
     except OSError as exc:
@@ -316,9 +314,7 @@ def _send_entry(cfg: Config, entry: Path, url: str, key: str, sent: Path) -> boo
         return False
     output = (result.stdout or "").strip()
     if not output.startswith(metrics.google_script_answer_ok_prefix):
-        excerpt = _answer_excerpt(
-            output, metrics.google_script_answer_excerpt_chars
-        )
+        excerpt = _answer_excerpt(output, metrics.google_script_answer_excerpt_chars)
         _log(
             f"google script channel: sending {entry.name} failed: the web app "
             f"answered {len(output)} characters without the "

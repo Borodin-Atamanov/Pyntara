@@ -231,9 +231,7 @@ def test_removes_stale_directive(
     assert content == _expected_dropin_content()
 
 
-def test_updates_changed_value(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_updates_changed_value(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # A directive with a different value is updated in place, the Host
     # block is not duplicated.
     ctx = _ctx(tmp_path)
@@ -344,14 +342,10 @@ def test_missing_include_is_a_warning(
     _install_fake(monkeypatch)
     result = ssh_client_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "no Include directive" in warning for warning in result.warnings
-    )
+    assert any("no Include directive" in warning for warning in result.warnings)
 
 
-def test_verify_reports_drift(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_verify_reports_drift(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # ssh -G misses a configured directive: the task reports the drift as a
     # warning of a completed task instead of a silent success.
     ctx = _ctx(tmp_path)

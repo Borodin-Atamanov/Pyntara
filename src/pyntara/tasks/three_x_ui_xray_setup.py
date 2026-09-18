@@ -84,7 +84,7 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 
-from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.github_release import fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -95,6 +95,7 @@ from pyntara.utils import (
     service_is_enabled,
     version_without_tag_prefix,
 )
+from pyntara.values import engine as engine_values
 from pyntara.xray_certificate import _ssl_reachable, _stage_ssl
 from pyntara.xray_facts import (
     _collect_run_facts,
@@ -125,7 +126,6 @@ from pyntara.xray_panel import (
 def _install_or_reuse(
     ctx: Context,
     cfg: ThreeXuiXraySetupConfig,
-    engine: EngineConfig,
     timeout: float,
     force: bool,
     facts: _RunFacts,
@@ -151,7 +151,7 @@ def _install_or_reuse(
     tag = ""
     release: dict[str, object] = {}
     try:
-        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        release = fetch_latest_release(cfg.github_repo)
         tag = release_tag(release)
     except RuntimeError as exc:
         # Without the release tag the installed version cannot be compared,
@@ -165,12 +165,10 @@ def _install_or_reuse(
 
     _log("reading the installed panel version")
     installed_version = _installed_version(cfg, timeout)
-    _log(
-        f"checking installed version: {installed_version or 'not installed'}"
-    )
+    _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(cfg.service_unit_name, timeout)
+    active = service_is_active(cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -202,7 +200,6 @@ def _install_or_reuse(
             _log(f"checking panel port {cfg.panel_port} is free")
             try:
                 freed = ensure_port_free(
-                    ctx.config.engine,
                     cfg.panel_port,
                     cfg.service_unit_name,
                     timeout,
@@ -231,7 +228,6 @@ def _install_or_reuse(
             _log(f"checking ACME port {cfg.acme_port} is free")
             try:
                 freed = ensure_port_free(
-                    ctx.config.engine,
                     cfg.acme_port,
                     cfg.service_unit_name,
                     timeout,
@@ -251,7 +247,6 @@ def _install_or_reuse(
             _log(f"downloading installer {cfg.install_script_url}")
             try:
                 script_path = _download_installer(
-                    ctx.config.engine,
                     cfg,
                     timeout,
                 )
@@ -294,7 +289,6 @@ def _install_or_reuse(
                     f"{cfg.service_start_wait_seconds} s)"
                 )
                 if not _wait_active(
-                    ctx.config.engine,
                     cfg.service_unit_name,
                     cfg.service_start_wait_seconds,
                     cfg.readiness_check_delay_seconds,
@@ -356,7 +350,6 @@ def _fold_stage(
 def _run_panel_stages(
     ctx: Context,
     cfg: ThreeXuiXraySetupConfig,
-    engine: EngineConfig,
     timeout: float,
     facts: _RunFacts,
     result: TaskResult,
@@ -383,9 +376,7 @@ def _run_panel_stages(
     # can find a panel on a port left by an earlier install, and the
     # installer preserves an existing port on a reinstall.
     try:
-        converged, converged_message = _converge_panel_port(
-            ctx.config.engine, cfg, timeout
-        )
+        converged, converged_message = _converge_panel_port(cfg, timeout)
     except RuntimeError as exc:
         # The panel port could not be converged: every stage below talks to
         # the panel through its REST API and reports its own result.
@@ -404,7 +395,7 @@ def _run_panel_stages(
     # is reachable, a self-signed one otherwise) before stage 2, so the
     # stored scheme and url are correct on the first run. The stage may
     # restart the panel, so the listener is polled again after it.
-    ssl_result = _stage_ssl(engine, cfg, timeout, facts)
+    ssl_result = _stage_ssl(cfg, timeout, facts)
     ssl_warnings, ssl_changed = _fold_stage(result, ssl_result)
     if ssl_result is not None:
         _wait_panel_http(cfg, timeout)
@@ -416,9 +407,7 @@ def _run_panel_stages(
 
     # Stage 2: read credentials, verify session, store in vault. The stage
     # reports only warnings, so its changed flag is not collected.
-    stage2_warnings, _ = _fold_stage(
-        result, _stage2(cfg, ctx.config, timeout)
-    )
+    stage2_warnings, _ = _fold_stage(result, _stage2(cfg, ctx.config, timeout))
 
     # Panel settings: move the subscription paths off the well-known
     # defaults so the panel does not warn about them. A failure here is a
@@ -515,21 +504,16 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.three_x_ui_xray_setup
-    engine = ctx.config.engine
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
 
     # Addresses and the UPnP router are read once per run: the stages reuse
     # them, so a machine without UPnP is not asked about its router for
     # every port and the echo services are queried once.
-    facts = _collect_run_facts(engine, cfg, timeout)
+    facts = _collect_run_facts(cfg, timeout)
     facts = replace(
         facts,
-        client_address=_forward_upnp_ports(engine, cfg, facts, timeout),
+        client_address=_forward_upnp_ports(cfg, facts, timeout),
     )
-    result, install_warnings = _install_or_reuse(
-        ctx, cfg, engine, timeout, force, facts
-    )
-    return _run_panel_stages(
-        ctx, cfg, engine, timeout, facts, result, install_warnings, force
-    )
+    result, install_warnings = _install_or_reuse(ctx, cfg, timeout, force, facts)
+    return _run_panel_stages(ctx, cfg, timeout, facts, result, install_warnings, force)

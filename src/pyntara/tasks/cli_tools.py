@@ -25,6 +25,7 @@ from pyntara.models import TaskResult
 from pyntara.utils import install_packages, package_is_installed
 from pyntara.values import cli_tools as cli_tools_values
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 
 
@@ -54,31 +55,25 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message="the cli_tools values are not declared, nothing was changed",
-            warnings=(
-                "the cli_tools values are not declared: " + ", ".join(absent),
-            ),
+            warnings=("the cli_tools values are not declared: " + ", ".join(absent),),
         )
-    engine = ctx.config.engine
-    percent_scale = engine.percent_scale
+    percent_scale = engine_values.PERCENT_SCALE
     status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
     missing = [
         package
         for package in cli_tools_values.PACKAGES
-        if not package_is_installed(engine, package, status_timeout)
+        if not package_is_installed(package, status_timeout)
     ]
     if not missing:
         return TaskResult(success=True, changed=False, message="already installed")
     installed, failures, warnings = install_packages(
-        engine,
         missing,
-        install_timeout=ctx.config.engine.command_timeout_seconds,
-        update_timeout=ctx.config.engine.command_timeout_seconds,
+        install_timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
+        update_timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         retries=common_values.PACKAGE_INSTALL_RETRIES,
         skip_update=ctx.skip_apt_update,
     )
-    installed_total = (
-        len(cli_tools_values.PACKAGES) - len(missing) + len(installed)
-    )
+    installed_total = len(cli_tools_values.PACKAGES) - len(missing) + len(installed)
     installed_percent = (
         installed_total * percent_scale // len(cli_tools_values.PACKAGES)
     )

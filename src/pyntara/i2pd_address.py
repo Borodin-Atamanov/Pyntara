@@ -32,6 +32,7 @@ from pyntara.config import (
 from pyntara.i2pd import b32_address
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import socks_proxy_address, ssh_command
+from pyntara.values import engine as engine_values
 
 # The identity may have been recreated between two provisioning runs
 # without the task noticing, so the saved address file is the fallback of
@@ -74,8 +75,7 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     missing = absent_config_keys(setup, I2PD_ADDRESS_CONFIG_KEYS)
     if missing:
         return None, (
-            "the i2pd_service_setup section of the config has no "
-            + ", ".join(missing)
+            "the i2pd_service_setup section of the config has no " + ", ".join(missing)
         )
     address, note = resolve_address(
         setup.tunnel_keys_path, setup.address_file_path, setup.address_suffix
@@ -86,15 +86,14 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
         port = ssh_port_from_directives(cfg.ssh_daemon_setup)
     except RuntimeError as exc:
         return None, str(exc)
-    engine = cfg.engine
-    keys = engine.report_record_keys
-    proxy = socks_proxy_address(engine, setup.socks_proxy_port)
+    keys = engine_values.REPORT_RECORD_KEYS
+    proxy = socks_proxy_address(setup.socks_proxy_port)
     record: dict[str, object] = {
         keys["channel"]: setup.report_channel_name,
         keys["address"]: address,
         keys["port"]: port,
         keys["proxy"]: proxy,
-        keys["ssh"]: ssh_command(engine, address, port, proxy),
+        keys["ssh"]: ssh_command(address, port, proxy),
     }
     if note:
         record[keys["note"]] = note
@@ -112,7 +111,13 @@ def main(argv: list[str]) -> int:
     if record is None:
         print(error, file=sys.stderr)
         return 1
-    print(json.dumps(record, ensure_ascii=False, indent=cfg.engine.report_json_indent))
+    print(
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            indent=engine_values.REPORT_JSON_INDENT,
+        )
+    )
     return 0
 
 

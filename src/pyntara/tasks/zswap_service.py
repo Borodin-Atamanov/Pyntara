@@ -31,6 +31,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import zswap_service as values
 
@@ -39,8 +40,7 @@ def _parameter_paths() -> dict[str, Path]:
     """The kernel attribute file of every configured parameter."""
 
     return {
-        parameter.attribute_name: values.PARAMETERS_DIR_PATH
-        / parameter.attribute_name
+        parameter.attribute_name: values.PARAMETERS_DIR_PATH / parameter.attribute_name
         for parameter in values.PARAMETER_VALUES
     }
 
@@ -149,7 +149,7 @@ def task(ctx: Context) -> TaskResult:
                 "the zswap_service values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     parameter_names = tuple(
         parameter.attribute_name for parameter in values.PARAMETER_VALUES
@@ -172,7 +172,7 @@ def task(ctx: Context) -> TaskResult:
         if value is None or _normalize(target[name], value) != target[name]:
             mismatches.append(name)
 
-    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
+    enabled = service_is_enabled(service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -209,8 +209,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name)
-        / values.UNIT_TEMPLATE_FILE_NAME
+        task_data_dir(ctx.repo_root, ctx.task_name) / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     try:
@@ -218,7 +217,7 @@ def task(ctx: Context) -> TaskResult:
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     else:
-        unit_dir = ctx.config.engine.systemd_unit_dir
+        unit_dir = engine_values.SYSTEMD_UNIT_DIR
         _log(f"writing unit file {unit_dir / service_name}")
         try:
             _write_unit_file(unit_dir, service_name, content)
@@ -251,9 +250,7 @@ def task(ctx: Context) -> TaskResult:
     # The closing line names every parameter with the value it was given, in
     # write order: the names come from the table and the task knows none of
     # them itself.
-    configured_values = ", ".join(
-        f"{name} {value}" for name, value in target.items()
-    )
+    configured_values = ", ".join(f"{name} {value}" for name, value in target.items())
     message = f"zswap configured: {configured_values}"
     if warnings:
         message = f"{message}; {'; '.join(warnings)}"

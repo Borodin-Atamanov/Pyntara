@@ -54,16 +54,11 @@ DEFAULT_ENTRY = {
 }
 
 # The deployment URL pattern that mirrors the real config value.
-DEPLOYMENT_PATTERN = (
-    r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
-)
+DEPLOYMENT_PATTERN = r"^https://script\.google\.com/macros/s/([A-Za-z0-9_-]+)/exec$"
 
 TEMPLATE_TEXT = "const ALLOWED_KEYS = __GOOGLE_SCRIPT_KEYS__;\n"
 
-IDENTIFIER_LINES = (
-    "script_id=production-script-id\n"
-    "deployment_id=AKfycbwEXAMPLE\n"
-)
+IDENTIFIER_LINES = "script_id=production-script-id\ndeployment_id=AKfycbwEXAMPLE\n"
 
 
 def _write_config(
@@ -150,9 +145,7 @@ def _point_at(
             PRODUCTION_PASSWORD, encoding="utf-8"
         )
     if default_password_file:
-        default.with_suffix(".password").write_text(
-            DEFAULT_PASSWORD, encoding="utf-8"
-        )
+        default.with_suffix(".password").write_text(DEFAULT_PASSWORD, encoding="utf-8")
     return production, default
 
 
@@ -177,9 +170,7 @@ def test_deployment_id_from_url_valid(
     )
     # The surrounding whitespace must not matter.
     assert (
-        gen.deployment_id_from_url(
-            "  https://script.google.com/macros/s/id_123/exec  "
-        )
+        gen.deployment_id_from_url("  https://script.google.com/macros/s/id_123/exec  ")
         == "id_123"
     )
 
@@ -263,9 +254,7 @@ def test_vault_source_is_not_a_deploy_switch(
     production, default = _point_at(gen, tmp_path, monkeypatch)
     _make_vault(production, PRODUCTION_PASSWORD, PRODUCTION_ENTRY)
     _make_vault(default, DEFAULT_PASSWORD, DEFAULT_ENTRY)
-    credentials = gen.read_deploy_credentials(
-        {"PYNTARA_VAULT_SOURCE": "default"}
-    )
+    credentials = gen.read_deploy_credentials({"PYNTARA_VAULT_SOURCE": "default"})
     assert credentials.script_id == "production-script-id"
     assert credentials.auth_keys == ("production-key", "default-key")
 
@@ -424,8 +413,7 @@ def test_deployment_pattern_comes_from_config(
         pattern=r"^https://example\.com/deploy/([A-Za-z0-9_-]+)/exec$",
     )
     assert (
-        gen.deployment_id_from_url("https://example.com/deploy/ABC123/exec")
-        == "ABC123"
+        gen.deployment_id_from_url("https://example.com/deploy/ABC123/exec") == "ABC123"
     )
     with pytest.raises(gen.ScriptError, match="not a web app URL"):
         gen.deployment_id_from_url(
@@ -492,18 +480,14 @@ def test_render_rejects_a_template_without_the_placeholder(
     assert not output.exists()
 
 
-def test_render_rejects_a_missing_template(
-    gen: ModuleType, tmp_path: Path
-) -> None:
+def test_render_rejects_a_missing_template(gen: ModuleType, tmp_path: Path) -> None:
     with pytest.raises(gen.ScriptError, match="cannot read template"):
         gen.render_web_app_file(
             tmp_path / "absent.js", ("production-key",), tmp_path / "Code.gs"
         )
 
 
-def test_render_rejects_an_empty_key_list(
-    gen: ModuleType, tmp_path: Path
-) -> None:
+def test_render_rejects_an_empty_key_list(gen: ModuleType, tmp_path: Path) -> None:
     # An app that accepts nothing is never a deploy worth making.
     template = _write_template(tmp_path)
     with pytest.raises(gen.ScriptError, match="accept nothing"):
@@ -517,10 +501,7 @@ def test_repository_template_carries_the_helper_placeholder(
     # rename on one side alone would deploy a file whose placeholder is an
     # undefined name in Apps Script.
     template = (
-        REPO_ROOT
-        / "task_data"
-        / "system_metrics_setup"
-        / "google_drive_script.js"
+        REPO_ROOT / "task_data" / "system_metrics_setup" / "google_drive_script.js"
     )
     text = template.read_text(encoding="utf-8")
     assert f"const ALLOWED_KEYS = {gen.PLACEHOLDER};" in text
@@ -534,10 +515,7 @@ def test_deploy_script_renders_through_the_helper(
     # the template and the output path to the helper and consumes the two
     # identifiers, so the keys never reach a command line.
     script = (
-        REPO_ROOT
-        / "task_data"
-        / "system_metrics_setup"
-        / "deploy_google_script.sh"
+        REPO_ROOT / "task_data" / "system_metrics_setup" / "deploy_google_script.sh"
     ).read_text(encoding="utf-8")
     assert "read_google_script_credentials.py" in script
     assert '"$SCRIPT_FILE" "$workdir/Code.gs"' in script

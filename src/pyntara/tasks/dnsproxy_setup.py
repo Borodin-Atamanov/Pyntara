@@ -15,7 +15,6 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import EngineConfig
 from pyntara.config_edit import sync_directives_by_key
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
@@ -33,13 +32,14 @@ from pyntara.utils import (
 )
 from pyntara.values import common as common_values
 from pyntara.values import dnsproxy_setup as values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 
 PROFILE_ID_PATTERN = re.compile(r"[0-9a-f]{6}\Z")
 
 
 class DiscoveredDnsServers(NamedTuple):
-    '''Validated DNS addresses found from the current network state.'''
+    """Validated DNS addresses found from the current network state."""
 
     ipv4: tuple[str, ...]
     ipv6: tuple[str, ...]
@@ -94,7 +94,7 @@ def _nmcli_dns_tokens(output: str) -> list[str]:
 
 
 def discover_dns_servers(timeout: float) -> DiscoveredDnsServers:
-    '''Discover DNS from both configured resolvectl and nmcli commands.
+    """Discover DNS from both configured resolvectl and nmcli commands.
 
     Both commands are always called and their current-state outputs are combined.
     Duplicate addresses are removed, valid IPv4 and IPv6 addresses are sorted,
@@ -103,7 +103,7 @@ def discover_dns_servers(timeout: float) -> DiscoveredDnsServers:
     of its own output, and a diagnostic names the program the configured command
     starts with, so no program name written in the code can disagree with the
     configured command.
-    '''
+    """
     addresses_v4: set[str] = set()
     addresses_v6: set[str] = set()
     errors: list[str] = []
@@ -127,9 +127,7 @@ def discover_dns_servers(timeout: float) -> DiscoveredDnsServers:
     )
 
 
-def _asset_for_architecture(
-    payload: dict[str, object], arch: str
-) -> tuple[str, str]:
+def _asset_for_architecture(payload: dict[str, object], arch: str) -> tuple[str, str]:
     """The (name, url) of the dnsproxy tarball for this architecture.
 
     The asset name comes from the configured template; the architecture
@@ -143,9 +141,7 @@ def _asset_for_architecture(
     asset_arch = values.ASSET_ARCHITECTURE_NAMES.get(arch)
     if asset_arch is None:
         raise RuntimeError(f"unsupported dnsproxy architecture: {arch}")
-    expected = values.ASSET_NAME_TEMPLATE.format(
-        asset_arch=asset_arch, release_tag=tag
-    )
+    expected = values.ASSET_NAME_TEMPLATE.format(asset_arch=asset_arch, release_tag=tag)
     if expected in assets:
         return expected, assets[expected]
     raise RuntimeError(f"release {tag} has no asset {expected}")
@@ -161,7 +157,7 @@ def _installed_version(path: Path, timeout: float) -> str | None:
             capture=True,
             timeout=timeout,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return None
     if result.returncode != 0:
         return None
@@ -176,7 +172,6 @@ def _version_from_tag(tag: str) -> str:
 
 
 def _download_binary(
-    engine: EngineConfig,
     url: str,
     name: str,
     timeout: float,
@@ -184,7 +179,7 @@ def _download_binary(
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     archive = values.DOWNLOAD_DIR / name
     run_command(
-        download_command(engine, archive, url),
+        download_command(archive, url),
         timeout=timeout,
     )
     extract_dir = values.DOWNLOAD_DIR / values.EXTRACT_DIR_NAME
@@ -213,7 +208,7 @@ def _upstreams(profile_id: str) -> tuple[str, ...]:
 
 
 def _protocol_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
-    '''Protocol forms of each address, one argument per configured form.
+    """Protocol forms of each address, one argument per configured form.
 
     Every address yields one argument per entry of
     bootstrap_form_templates, with {host} replaced by the address; an IPv6
@@ -222,7 +217,7 @@ def _protocol_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
     generated because a bare IP is not enough for it and the pool carries
     no stamps. The same forms feed both the bootstrap and the fallback
     resolver groups.
-    '''
+    """
 
     forms: list[str] = []
     for address in addresses:
@@ -232,20 +227,19 @@ def _protocol_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
             raise RuntimeError(f"invalid bootstrap address {address!r}: {exc}") from exc
         host = f"[{ip}]" if ip.version == 6 else str(ip)
         forms.extend(
-            template.format(host=host)
-            for template in values.BOOTSTRAP_FORM_TEMPLATES
+            template.format(host=host) for template in values.BOOTSTRAP_FORM_TEMPLATES
         )
     return tuple(forms)
 
 
 def _plain_udp_forms(addresses: tuple[str, ...]) -> tuple[str, ...]:
-    '''Bare address forms for plain UDP DNS on port 53.
+    """Bare address forms for plain UDP DNS on port 53.
 
     Used for the provider DNS discovered from the current network, which
     is not known to answer the encrypted protocols. IPv6 hosts are
     enclosed in square brackets, matching the plain form generated by
     _protocol_forms.
-    '''
+    """
     forms: list[str] = []
     for address in addresses:
         try:
@@ -314,18 +308,16 @@ def _render_service(
 
 
 def _read_profile_id() -> str | None:
-    '''The NextDNS profile id recorded by nextdns_setup_system_wide.
+    """The NextDNS profile id recorded by nextdns_setup_system_wide.
 
     The profile id file is the shared single source of truth written by
     the nextdns_setup_system_wide task; dnsproxy never opens the vault
     itself, so both tasks always agree on the profile. A missing or
     malformed file returns None and the task stops before any change.
-    '''
+    """
 
     try:
-        value = (
-            common_values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
-        )
+        value = common_values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
     except OSError:
         return None
     if PROFILE_ID_PATTERN.fullmatch(value) is None:
@@ -334,13 +326,13 @@ def _read_profile_id() -> str | None:
 
 
 def _listening_pids(timeout: float) -> set[int]:
-    '''PIDs of processes listening on the resolver port.
+    """PIDs of processes listening on the resolver port.
 
     The TCP and the UDP listen states are scanned through ss. A line
     belongs to the port when its local address ends with the configured
     port; every pid token in that line is collected. A failing ss
     command yields an empty set, so a missing tool cannot stop the run.
-    '''
+    """
 
     pids: set[int] = set()
     for command in (values.SS_TCP_LISTEN_COMMAND, values.SS_UDP_LISTEN_COMMAND):
@@ -348,7 +340,7 @@ def _listening_pids(timeout: float) -> set[int]:
             result = run_command(
                 list(command), check=False, capture=True, timeout=timeout
             )
-        except (OSError, subprocess.SubprocessError):
+        except OSError, subprocess.SubprocessError:
             continue
         if result.returncode != 0:
             continue
@@ -364,13 +356,13 @@ def _listening_pids(timeout: float) -> set[int]:
 
 
 def _free_listen_port(timeout: float, progress_priority: int) -> str | None:
-    '''Stop whatever listens on the resolver port; error text or None.
+    """Stop whatever listens on the resolver port; error text or None.
 
     The port belongs to dnsproxy; a leftover process from an earlier
     test run or a broken deployment would block a fresh start. Every
     process listening on the port is stopped and the user is told what
     was stopped. A port that stays occupied after the stop is an error.
-    '''
+    """
 
     pids = _listening_pids(timeout)
     if not pids:
@@ -382,9 +374,7 @@ def _free_listen_port(timeout: float, progress_priority: int) -> str | None:
         priority=progress_priority,
     )
     for pid in ordered:
-        run_command(
-            [*values.KILL_COMMAND, str(pid)], check=False, timeout=timeout
-        )
+        run_command([*values.KILL_COMMAND, str(pid)], check=False, timeout=timeout)
     remaining = _listening_pids(timeout)
     if remaining:
         return (
@@ -399,7 +389,7 @@ def _free_listen_port(timeout: float, progress_priority: int) -> str | None:
 
 
 def _dns_probe_answers(timeout: float) -> bool:
-    '''True when dnsproxy on the local port answers a direct A query.
+    """True when dnsproxy on the local port answers a direct A query.
 
     The probe sends one plain DNS query for the verification domain to
     the local listener over UDP and requires a matching response with an
@@ -407,7 +397,7 @@ def _dns_probe_answers(timeout: float) -> bool:
     that is up but cannot resolve is caught while the system still uses
     its previous DNS. Only the standard library is used, so no extra
     package is needed on the target.
-    '''
+    """
 
     ident = int.from_bytes(os.urandom(values.PROBE_IDENT_BYTES), "big")
     header = struct.pack(">HHHHHH", ident, 0x0100, 1, 0, 0, 0)
@@ -441,11 +431,11 @@ def _dns_probe_answers(timeout: float) -> bool:
 
 
 def _nmcli_available(timeout: float) -> bool:
-    '''True when nmcli runs successfully.
+    """True when nmcli runs successfully.
 
     A missing or broken nmcli makes NetworkManager management impossible;
     the caller then skips NM changes instead of raising.
-    '''
+    """
 
     try:
         result = run_command(
@@ -457,7 +447,7 @@ def _nmcli_available(timeout: float) -> bool:
 
 
 def _tun_device_names(timeout: float) -> set[str]:
-    '''Device names of type tun reported by the nmcli device status.
+    """Device names of type tun reported by the nmcli device status.
 
     The auto DNS sweep must never modify a tun device. NetworkManager
     only holds such an interface as an assumed external connection, and
@@ -466,7 +456,7 @@ def _tun_device_names(timeout: float) -> set[str]:
     the owning service panics on the already assigned address. A failed
     query returns an empty set, which makes the sweep treat every active
     connection as a regular uplink.
-    '''
+    """
 
     try:
         status = run_command(
@@ -474,7 +464,7 @@ def _tun_device_names(timeout: float) -> set[str]:
             capture=True,
             timeout=timeout,
         ).stdout
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired:
         return set()
     names: set[str] = set()
     for line in status.splitlines():
@@ -487,7 +477,7 @@ def _tun_device_names(timeout: float) -> set[str]:
 def _disable_auto_dns_active(
     timeout: float, progress_priority: int
 ) -> list[tuple[str, str]]:
-    '''Ignore auto DNS on active connections; the changed (UUID, device) pairs.
+    """Ignore auto DNS on active connections; the changed (UUID, device) pairs.
 
     NetworkManager is queried for the active connections by UUID, so a
     profile name repeated in the catalog cannot redirect the change to
@@ -500,7 +490,7 @@ def _disable_auto_dns_active(
     keeps the DHCP-provided DNS on the per-link scope until the
     connection is reapplied. The changed pairs are returned for the
     revert. A missing nmcli changes nothing.
-    '''
+    """
 
     if not _nmcli_available(timeout):
         log_progress(
@@ -526,9 +516,7 @@ def _disable_auto_dns_active(
         if device in tun_devices:
             continue
         state = run_command(
-            substituted_command(
-                values.NMCLI_DNS_STATE_COMMAND, {"connection": uuid}
-            ),
+            substituted_command(values.NMCLI_DNS_STATE_COMMAND, {"connection": uuid}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -552,18 +540,14 @@ def _disable_auto_dns_active(
         )
         if device:
             run_command(
-                substituted_command(
-                    values.NMCLI_REAPPLY_COMMAND, {"device": device}
-                ),
+                substituted_command(values.NMCLI_REAPPLY_COMMAND, {"device": device}),
                 timeout=timeout,
             )
         changed.append((uuid, device))
     return changed
 
 
-def _restore_auto_dns(
-    changed: list[tuple[str, str]], timeout: float
-) -> None:
+def _restore_auto_dns(changed: list[tuple[str, str]], timeout: float) -> None:
     for uuid, device in changed:
         run_command(
             substituted_command(
@@ -578,9 +562,7 @@ def _restore_auto_dns(
         )
         if device:
             run_command(
-                substituted_command(
-                    values.NMCLI_REAPPLY_COMMAND, {"device": device}
-                ),
+                substituted_command(values.NMCLI_REAPPLY_COMMAND, {"device": device}),
                 check=False,
                 timeout=timeout,
             )
@@ -589,13 +571,13 @@ def _restore_auto_dns(
 def _global_block_lines(
     status_lines: list[str], global_marker: str, link_prefix: str
 ) -> list[str]:
-    '''The lines of the Global block of resolvectl status output.
+    """The lines of the Global block of resolvectl status output.
 
     The block starts at the line the config names as the global marker and
     ends at the first empty line or per-link line, whichever comes first. A
     missing marker yields an empty list. Both names belong to the output of
     the tool and are config values.
-    '''
+    """
 
     started = False
     block: list[str] = []
@@ -612,7 +594,7 @@ def _global_block_lines(
 
 
 def _resolved_uses_dnsproxy(timeout: float) -> str | None:
-    '''Error text when systemd-resolved does not route through dnsproxy.
+    """Error text when systemd-resolved does not route through dnsproxy.
 
     Three facts from the Global block of resolvectl status prove that
     every system query goes through dnsproxy: the resolv.conf mode is
@@ -621,7 +603,7 @@ def _resolved_uses_dnsproxy(timeout: float) -> str | None:
     dnsproxy, and the wildcard routing domain ~. is present, so no query
     can fall through to a default-route per-link server. Any of the
     three missing means the routing guarantee is broken.
-    '''
+    """
 
     result = run_command(
         list(values.RESOLVECTL_STATUS_COMMAND),
@@ -663,13 +645,13 @@ def _resolved_uses_dnsproxy(timeout: float) -> str | None:
 
 
 def _per_link_dns_addresses(output: str, link_prefix: str) -> set[str]:
-    '''Validated DNS addresses on the per-link scopes of resolvectl dns.
+    """Validated DNS addresses on the per-link scopes of resolvectl dns.
 
     Only the lines the config marks as per-link carry servers; the Global
     and empty scopes are skipped. Each token is validated as an IP address
     so a truncated token such as 810:100::15 can never match as a substring
     of a longer address such as 2800:810:100::15.
-    '''
+    """
 
     addresses: set[str] = set()
     for line in output.splitlines():
@@ -690,7 +672,7 @@ def _verify_system(
     discovered: DiscoveredDnsServers,
     timeout: float,
 ) -> tuple[str | None, str | None]:
-    '''Error and warning text after the resolver cutover.
+    """Error and warning text after the resolver cutover.
 
     The functional check queries the verification domain through
     systemd-resolved. The routing check then reads the Global block of
@@ -700,7 +682,7 @@ def _verify_system(
     per-link provider DNS is not an error by itself: without a routing
     domain on the per-link scope it does not compete with the global ~.,
     so the leftover servers are reported as a warning, not a failure.
-    '''
+    """
 
     command = [
         part.replace("{domain}", values.VERIFICATION_DOMAIN)
@@ -708,9 +690,9 @@ def _verify_system(
     ]
     result = run_command(command, check=False, capture=True, timeout=timeout)
     if result.returncode != 0:
-        excerpt = (
-            result.stdout + result.stderr
-        ).strip()[: values.VERIFICATION_ERROR_EXCERPT_LENGTH] or "<no output>"
+        excerpt = (result.stdout + result.stderr).strip()[
+            : values.VERIFICATION_ERROR_EXCERPT_LENGTH
+        ] or "<no output>"
         return f"system DNS verification failed: {excerpt}", None
     route_error = _resolved_uses_dnsproxy(timeout)
     if route_error is not None:
@@ -731,8 +713,7 @@ def _verify_system(
         )
         if state.returncode != 0:
             warnings.append(
-                "cannot read per-link DNS state: resolvectl exited "
-                f"{state.returncode}"
+                f"cannot read per-link DNS state: resolvectl exited {state.returncode}"
             )
         else:
             leftover = [
@@ -754,7 +735,7 @@ def _verify_system(
 
 
 def _service_log(timeout: float) -> str:
-    '''The last service journal lines, for a failed start diagnosis.'''
+    """The last service journal lines, for a failed start diagnosis."""
 
     command = [
         part.replace("{unit}", values.SERVICE_UNIT_NAME)
@@ -762,11 +743,9 @@ def _service_log(timeout: float) -> str:
     ]
     try:
         result = run_command(command, check=False, capture=True, timeout=timeout)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return ""
-    return (result.stdout + result.stderr).strip()[
-        -values.SERVICE_LOG_EXCERPT_LENGTH :
-    ]
+    return (result.stdout + result.stderr).strip()[-values.SERVICE_LOG_EXCERPT_LENGTH :]
 
 
 def _revert(
@@ -776,14 +755,14 @@ def _revert(
     progress_priority: int,
     error_priority: int,
 ) -> None:
-    '''Undo the resolver cutover; never raises.
+    """Undo the resolver cutover; never raises.
 
     The drop-in is removed when this run wrote it, the modified
     NetworkManager connections return to their previous auto DNS
     handling, systemd-resolved is restarted and the dnsproxy service is
     stopped. Every step is journaled; a failed step is reported but
     cannot stop the revert.
-    '''
+    """
 
     if dropin_changed:
         path = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
@@ -843,18 +822,18 @@ def _write_resolver_dropin(owner_uid: int, owner_gid: int) -> bool:
     return changed
 
 
-def _wait_active(engine: EngineConfig, timeout: float) -> bool:
+def _wait_active(timeout: float) -> bool:
     for _ in range(values.START_CHECK_ATTEMPTS):
         time.sleep(values.START_CHECK_RETRY_DELAY_SECONDS)
-        if service_is_active(engine, values.SERVICE_UNIT_NAME, timeout):
+        if service_is_active(values.SERVICE_UNIT_NAME, timeout):
             return True
     return False
 
 
 def task(ctx: Context) -> TaskResult:
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -866,11 +845,11 @@ def task(ctx: Context) -> TaskResult:
                 "the dnsproxy_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
-    error_priority = ctx.config.engine.error_priority
-    progress_priority = ctx.config.engine.progress_priority
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
+    error_priority = engine_values.ERROR_PRIORITY
+    progress_priority = engine_values.PROGRESS_PRIORITY
     profile_id = _read_profile_id()
     if profile_id is None:
         # Without the profile id dnsproxy has no upstream to answer from,
@@ -887,10 +866,10 @@ def task(ctx: Context) -> TaskResult:
             warnings=(warning,),
         )
     try:
-        release = fetch_latest_release(values.GITHUB_REPO, ctx.config.engine)
+        release = fetch_latest_release(values.GITHUB_REPO)
         tag = release_tag(release)
         asset_name, asset_url = _asset_for_architecture(
-            release, dpkg_architecture(ctx.config.engine, timeout)
+            release, dpkg_architecture(timeout)
         )
         target_version = _version_from_tag(tag)
     except (RuntimeError, subprocess.SubprocessError) as exc:
@@ -911,7 +890,6 @@ def task(ctx: Context) -> TaskResult:
     try:
         if installed != target_version:
             staged = _download_binary(
-                ctx.config.engine,
                 asset_url,
                 asset_name,
                 timeout,
@@ -939,9 +917,7 @@ def task(ctx: Context) -> TaskResult:
             apply_owner(service_path, owner_uid, owner_gid)
             run_command(list(values.DAEMON_RELOAD_COMMAND), timeout=timeout)
             changed = True
-        active = service_is_active(
-            ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-        )
+        active = service_is_active(values.SERVICE_UNIT_NAME, timeout)
         if not active:
             error = _free_listen_port(timeout, progress_priority)
             if error is not None:
@@ -953,9 +929,7 @@ def task(ctx: Context) -> TaskResult:
                     message=error,
                     warnings=(error,),
                 )
-        if not service_is_enabled(
-            ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-        ):
+        if not service_is_enabled(values.SERVICE_UNIT_NAME, timeout):
             run_command(
                 substituted_command(
                     values.SERVICE_ENABLE_COMMAND,
@@ -977,7 +951,7 @@ def task(ctx: Context) -> TaskResult:
                 ),
                 timeout=timeout,
             )
-            if not _wait_active(ctx.config.engine, timeout):
+            if not _wait_active(timeout):
                 excerpt = _service_log(timeout)
                 detail = f"; service log: {excerpt}" if excerpt else ""
                 run_command(
@@ -992,9 +966,7 @@ def task(ctx: Context) -> TaskResult:
                     success=True,
                     changed=True,
                     message="dnsproxy service did not become active" + detail,
-                    warnings=(
-                        "dnsproxy service did not become active" + detail,
-                    ),
+                    warnings=("dnsproxy service did not become active" + detail,),
                 )
             if not _dns_probe_answers(timeout):
                 run_command(
@@ -1017,7 +989,8 @@ def task(ctx: Context) -> TaskResult:
                             "dnsproxy started but does not answer direct DNS "
                             "queries; the system resolver was not changed"
                         ),
-                    ),                )
+                    ),
+                )
             changed = True
         if _write_resolver_dropin(owner_uid, owner_gid):
             dropin_changed = True
@@ -1026,9 +999,7 @@ def task(ctx: Context) -> TaskResult:
         if dropin_changed:
             run_command(list(values.RESTART_RESOLVED_COMMAND), timeout=timeout)
         if values.MANAGE_NETWORKMANAGER:
-            auto_dns_changed = _disable_auto_dns_active(
-                timeout, progress_priority
-            )
+            auto_dns_changed = _disable_auto_dns_active(timeout, progress_priority)
         verify_error, verify_warning = _verify_system(discovered, timeout)
         if verify_error is not None:
             detail = (
@@ -1036,9 +1007,7 @@ def task(ctx: Context) -> TaskResult:
                 "service were kept, so the system stays on dnsproxy; "
                 "check the systemd-resolved routing and rerun the task"
             )
-            log_progress(
-                f"dnsproxy setup failed: {detail}", priority=error_priority
-            )
+            log_progress(f"dnsproxy setup failed: {detail}", priority=error_priority)
             # The drop-in and the service were reverted by the run that
             # produced this error, so the machine stays on the resolver it
             # had before; the reason is reported as a warning.

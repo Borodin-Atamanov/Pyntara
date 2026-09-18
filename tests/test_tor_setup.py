@@ -55,7 +55,6 @@ def _ctx(
         task_data_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
-            task_data_root=tmp_path,
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -63,7 +62,11 @@ def _ctx(
             tor_torrc_dropin_path=tmp_path / "etc" / "tor" / "pyntara.conf",
             tor_torrc_include_path=str(tmp_path / "etc" / "tor" / "pyntara.conf"),
             tor_hidden_service_dir=tmp_path / "var" / "lib" / "tor" / "ssh",
-            tor_address_file_path=tmp_path / "var" / "lib" / "pyntara" / "tor_ssh_address",
+            tor_address_file_path=tmp_path
+            / "var"
+            / "lib"
+            / "pyntara"
+            / "tor_ssh_address",
             tor_install_retries=retries,
             tor_start_check_attempts=check_attempts,
             tor_start_check_retry_delay_seconds=0.0,
@@ -177,9 +180,7 @@ def _install_fake(
                 if write_hostname:
                     hidden = ctx.config.tor_setup.hidden_service_dir
                     hidden.mkdir(parents=True, exist_ok=True)
-                    (hidden / "hostname").write_text(
-                        f"{ADDRESS}\n", encoding="utf-8"
-                    )
+                    (hidden / "hostname").write_text(f"{ADDRESS}\n", encoding="utf-8")
             return _FakeProc(0)
         return _FakeProc(0)
 
@@ -192,9 +193,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
     the saved address."""
 
     cfg = ctx.config.tor_setup
-    ssh_port = tor_setup.ssh_port_from_directives(
-        ctx.config.ssh_daemon_setup
-    )
+    ssh_port = tor_setup.ssh_port_from_directives(ctx.config.ssh_daemon_setup)
     _write_torrc(ctx, include=True)
     cfg.torrc_dropin_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.torrc_dropin_path.write_text(
@@ -202,9 +201,7 @@ def _write_state_as_rendered(ctx: Context) -> None:
         encoding="utf-8",
     )
     cfg.hidden_service_dir.mkdir(parents=True, exist_ok=True)
-    (cfg.hidden_service_dir / "hostname").write_text(
-        f"{ADDRESS}\n", encoding="utf-8"
-    )
+    (cfg.hidden_service_dir / "hostname").write_text(f"{ADDRESS}\n", encoding="utf-8")
     cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.address_file_path.write_text(f"{ADDRESS}\n", encoding="utf-8")
 
@@ -218,9 +215,7 @@ def test_already_configured_skips(
     # task skips and runs only the status queries.
     ctx = _ctx(tmp_path)
     _write_state_as_rendered(ctx)
-    calls = _install_fake(
-        monkeypatch, ctx, installed=True, enabled=True, active=True
-    )
+    calls = _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
@@ -233,9 +228,7 @@ def test_already_configured_skips(
     assert not any(call[0] == "runuser" for call in calls)
 
 
-def test_installs_and_starts(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_installs_and_starts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Tor is not installed and the service is not enabled: the task
     # installs the package, adds the include line, writes the drop-in,
     # verifies the configuration, prepares the hidden service directory,
@@ -271,9 +264,10 @@ def test_include_line_is_not_duplicated(
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
-    assert ctx.config.tor_setup.torrc_path.read_text(
-        encoding="utf-8"
-    ).count("%include") == 1
+    assert (
+        ctx.config.tor_setup.torrc_path.read_text(encoding="utf-8").count("%include")
+        == 1
+    )
 
 
 def test_the_comment_sign_protects_the_line_it_marks(
@@ -314,9 +308,7 @@ def test_dropin_rewritten_when_missing_and_restarts(
     ctx = _ctx(tmp_path)
     _write_state_as_rendered(ctx)
     ctx.config.tor_setup.torrc_dropin_path.unlink()
-    calls = _install_fake(
-        monkeypatch, ctx, installed=True, enabled=True, active=True
-    )
+    calls = _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -335,13 +327,10 @@ def test_verify_config_failure_is_a_warning(
     calls = _install_fake(monkeypatch, ctx, verify_ok=False)
     result = tor_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "tor --verify-config" in warning for warning in result.warnings
-    )
+    assert any("tor --verify-config" in warning for warning in result.warnings)
     assert any("Reading config failed" in warning for warning in result.warnings)
     assert any(
-        call[0] == "systemctl" and call[1] in ("start", "restart")
-        for call in calls
+        call[0] == "systemctl" and call[1] in ("start", "restart") for call in calls
     )
 
 
@@ -415,9 +404,8 @@ def test_first_start_reports_address_appears_later(
     assert result.success is True
     assert result.changed is True
     assert "appears after the first start" in (result.message or "")
-    assert (
-        f"virtual port {ctx.config.tor_setup.onion_ssh_port}"
-        in (result.message or "")
+    assert f"virtual port {ctx.config.tor_setup.onion_ssh_port}" in (
+        result.message or ""
     )
     assert not ctx.config.tor_setup.address_file_path.exists()
 
@@ -431,9 +419,7 @@ def test_hidden_service_dir_gets_configured_mode(
     _install_fake(monkeypatch, ctx)
     result = tor_setup.task(ctx)
     assert result.success is True
-    mode = stat.S_IMODE(
-        ctx.config.tor_setup.hidden_service_dir.stat().st_mode
-    )
+    mode = stat.S_IMODE(ctx.config.tor_setup.hidden_service_dir.stat().st_mode)
     assert mode == ctx.config.tor_setup.hidden_service_dir_mode
 
 
@@ -459,9 +445,7 @@ def test_service_that_stays_inactive_is_a_warning(
     _install_fake(monkeypatch, ctx, active_becomes=False)
     result = tor_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "did not become active" in warning for warning in result.warnings
-    )
+    assert any("did not become active" in warning for warning in result.warnings)
 
 
 def test_missing_ssh_port_directive_is_a_warning(
@@ -499,9 +483,7 @@ def test_force_mode_restarts_and_rewrites(
     # package.
     ctx = _ctx(tmp_path, force=True)
     _write_state_as_rendered(ctx)
-    calls = _install_fake(
-        monkeypatch, ctx, installed=True, enabled=True, active=True
-    )
+    calls = _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
     result = tor_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -517,23 +499,15 @@ def test_render_config_uses_ssh_port_and_virtual_port(
     # options follow HiddenServiceDir.
     ctx = _ctx(tmp_path)
     cfg = ctx.config.tor_setup
-    ssh_port = tor_setup.ssh_port_from_directives(
-        ctx.config.ssh_daemon_setup
-    )
+    ssh_port = tor_setup.ssh_port_from_directives(ctx.config.ssh_daemon_setup)
     rendered = tor_setup._render_config(cfg, ssh_port, _template_path(ctx))
     assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
     assert f"HiddenServiceDir {cfg.hidden_service_dir}" in rendered
     assert (
-        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}"
-        in rendered
+        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}" in rendered
     )
-    assert (
-        f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:{ssh_port}"
-        in rendered
-    )
-    assert rendered.index("HiddenServiceDir") < rendered.index(
-        "HiddenServicePort"
-    )
+    assert f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:{ssh_port}" in rendered
+    assert rendered.index("HiddenServiceDir") < rendered.index("HiddenServicePort")
     assert rendered.endswith("\n")
 
 
@@ -543,16 +517,13 @@ def test_render_config_follows_the_config_values(tmp_path: Path) -> None:
     # from the template would otherwise be a hardcoded literal that the
     # config only pretends to own.
     ctx = _ctx(tmp_path)
-    cfg = replace(
-        ctx.config.tor_setup, socks_port=12345, log_level="debug"
-    )
+    cfg = replace(ctx.config.tor_setup, socks_port=12345, log_level="debug")
     rendered = tor_setup._render_config(cfg, 2222, _template_path(ctx))
     assert f"SocksPort 127.0.0.1:{cfg.socks_port}" in rendered
     assert f"Log {cfg.log_level} syslog" in rendered
     assert f"HiddenServiceDir {cfg.hidden_service_dir}" in rendered
     assert (
-        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}"
-        in rendered
+        f"HiddenServiceNumIntroductionPoints {cfg.num_introduction_points}" in rendered
     )
     assert "HiddenServiceVersion 3" in rendered
     assert f"HiddenServicePort {cfg.onion_ssh_port} 127.0.0.1:2222" in rendered

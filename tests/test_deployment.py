@@ -41,9 +41,7 @@ def test_the_reported_version_is_trimmed(
         deployment, "run_command", lambda *args, **kwargs: FakeProc(0, "0.3.516\n")
     )
     assert (
-        deployment.venv_package_version(
-            VERSION_COMMAND, _venv_python(tmp_path), 5
-        )
+        deployment.venv_package_version(VERSION_COMMAND, _venv_python(tmp_path), 5)
         == "0.3.516"
     )
 
@@ -95,9 +93,7 @@ def test_a_failed_import_reports_nothing(
         deployment, "run_command", lambda *args, **kwargs: FakeProc(1, "")
     )
     assert (
-        deployment.venv_package_version(
-            VERSION_COMMAND, _venv_python(tmp_path), 5
-        )
+        deployment.venv_package_version(VERSION_COMMAND, _venv_python(tmp_path), 5)
         is None
     )
 
@@ -112,9 +108,7 @@ def test_a_call_that_does_not_answer_reports_nothing(
 
     monkeypatch.setattr(deployment, "run_command", fake_run)
     assert (
-        deployment.venv_package_version(
-            VERSION_COMMAND, _venv_python(tmp_path), 5
-        )
+        deployment.venv_package_version(VERSION_COMMAND, _venv_python(tmp_path), 5)
         is None
     )
 

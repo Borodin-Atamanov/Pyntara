@@ -67,9 +67,7 @@ def _point_the_values_at_the_temporary_tree(
     afterwards, so no test writes into a real home or a real cache.
     """
 
-    monkeypatch.setattr(
-        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
-    )
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
 
 
@@ -138,9 +136,7 @@ def _apt_install_calls(calls: list[list[str]]) -> list[list[str]]:
     """The apt calls that install a package."""
 
     return [
-        call
-        for call in calls
-        if Path(call[0]).name == "apt-get" and "install" in call
+        call for call in calls if Path(call[0]).name == "apt-get" and "install" in call
     ]
 
 
@@ -305,9 +301,7 @@ def test_missing_asset_falls_back_to_the_ubuntu_archive(
     release_json = json.dumps(
         {
             "tag_name": TAG,
-            "assets": [
-                {"name": CHECKSUM_NAME, "browser_download_url": CHECKSUM_URL}
-            ],
+            "assets": [{"name": CHECKSUM_NAME, "browser_download_url": CHECKSUM_URL}],
         }
     )
     apt_binary = tmp_path / "usr-bin-scrcpy"
@@ -433,9 +427,9 @@ def test_menu_entries_are_rendered_from_the_real_templates(
         ),
     ):
         template = Template(
-            (
-                REPO_ROOT / "task_data" / "scrcpy_setup" / template_name
-            ).read_text(encoding="utf-8")
+            (REPO_ROOT / "task_data" / "scrcpy_setup" / template_name).read_text(
+                encoding="utf-8"
+            )
         )
         expected = template.substitute(
             binary=str(_version_dir() / values.BINARY_FILE_NAME),

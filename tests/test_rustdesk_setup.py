@@ -22,6 +22,7 @@ from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import rustdesk_setup
 from pyntara.utils import curl_flags
+from pyntara.values import engine as engine_values
 from pyntara.values import rustdesk_setup as values
 from pyntara.values import tasks as tasks_values
 
@@ -69,13 +70,9 @@ class _FakeEntry:
 class _FakeVault:
     """A fake runtime vault: one entry, saved path recorded."""
 
-    def __init__(
-        self, password: str | None = None, username: str = ""
-    ) -> None:
+    def __init__(self, password: str | None = None, username: str = "") -> None:
         self.root_group = object()
-        self._entry = (
-            _FakeEntry(password, username) if password is not None else None
-        )
+        self._entry = _FakeEntry(password, username) if password is not None else None
         self.saved_to: str | None = None
 
     def find_entries(self, **kwargs: object) -> _FakeEntry | None:
@@ -108,9 +105,7 @@ def _vault(
     """
 
     fake = _FakeVault(password, username)
-    monkeypatch.setattr(
-        rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: fake
-    )
+    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: fake)
     return fake
 
 
@@ -187,18 +182,12 @@ def _fake_run(
             stdout = f"{dpkg_arch}\n"
         elif cmd[0] == "systemctl" and cmd[1] == "is-enabled":
             state = (
-                enabled_states.pop(0)
-                if len(enabled_states) > 1
-                else enabled_states[0]
+                enabled_states.pop(0) if len(enabled_states) > 1 else enabled_states[0]
             )
             stdout = "enabled\n" if state else "disabled\n"
             rc = 0 if state else 1
         elif cmd[0] == "systemctl" and cmd[1] == "is-active":
-            state = (
-                active_states.pop(0)
-                if len(active_states) > 1
-                else active_states[0]
-            )
+            state = active_states.pop(0) if len(active_states) > 1 else active_states[0]
             stdout = "active\n" if state else "inactive\n"
             rc = 0 if state else 1
         elif cmd[0] == "systemctl":
@@ -289,11 +278,11 @@ def test_installed_latest_is_unchanged(
     # the release lookup runs with the configured curl timeout and
     # retries, but no download or install happens
     expected_flags = curl_flags(
-        ctx.config.engine.curl_timeout_seconds,
-        ctx.config.engine.curl_retries,
-        ctx.config.engine.curl_connect_timeout_seconds,
-        ctx.config.engine.curl_retry_max_time_seconds,
-        ctx.config.engine.curl_retry_delay_seconds,
+        engine_values.CURL_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRIES,
+        engine_values.CURL_CONNECT_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRY_MAX_TIME_SECONDS,
+        engine_values.CURL_RETRY_DELAY_SECONDS,
     )
     release_calls = [
         call
@@ -330,9 +319,7 @@ def test_client_commands_come_from_the_values(
         "OPTIONS",
         (values.RustdeskOption(key="enable-udp-punch", value="Y"),),
     )
-    monkeypatch.setattr(
-        values, "GET_OPTION_COMMAND", ("rustdesk", "--query", "{key}")
-    )
+    monkeypatch.setattr(values, "GET_OPTION_COMMAND", ("rustdesk", "--query", "{key}"))
     monkeypatch.setattr(
         values,
         "SET_OPTION_COMMAND",
@@ -343,9 +330,7 @@ def test_client_commands_come_from_the_values(
         "SERVICE_START_COMMAND",
         ("systemctl", "--user", "start", "{service_unit_name}"),
     )
-    calls = _fake_run(
-        monkeypatch, installed_version=RELEASE_TAG, service_active=False
-    )
+    calls = _fake_run(monkeypatch, installed_version=RELEASE_TAG, service_active=False)
     _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
@@ -374,12 +359,8 @@ def test_no_asset_for_unknown_architecture_is_a_warning(
     _vault(monkeypatch)
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
-    assert any(
-        "no rustdesk deb asset" in warning for warning in result.warnings
-    )
-    assert not any(
-        call[0] == "apt-get" and call[1] == "install" for call in calls
-    )
+    assert any("no rustdesk deb asset" in warning for warning in result.warnings)
+    assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
 def test_applies_options_idempotently(
@@ -390,9 +371,7 @@ def test_applies_options_idempotently(
         "OPTIONS",
         (values.RustdeskOption(key="enable-udp-punch", value="Y"),),
     )
-    calls = _fake_run(
-        monkeypatch, option_values={"enable-udp-punch": "Y"}
-    )
+    calls = _fake_run(monkeypatch, option_values={"enable-udp-punch": "Y"})
     _vault(monkeypatch)
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
@@ -403,9 +382,7 @@ def test_applies_options_idempotently(
     )
 
 
-def test_sets_missing_option(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_sets_missing_option(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         values,
         "OPTIONS",
@@ -432,9 +409,7 @@ def test_generates_and_stores_password(
     # the machine ID lands in the username field of the same entry
     assert fake._entry.username == MACHINE_ID
     # the password was applied through rustdesk --password
-    assert any(
-        call[0] == "rustdesk" and call[1] == "--password" for call in calls
-    )
+    assert any(call[0] == "rustdesk" and call[1] == "--password" for call in calls)
 
 
 def test_reuses_stored_password(
@@ -486,8 +461,7 @@ def test_force_regenerates_password_and_identity(
     assert fake._entry.password != "old password words"
     assert fake._entry.username == MACHINE_ID
     assert any(
-        call == ["systemctl", "stop", values.SERVICE_UNIT_NAME]
-        for call in calls
+        call == ["systemctl", "stop", values.SERVICE_UNIT_NAME] for call in calls
     )
 
 
@@ -502,9 +476,7 @@ def test_force_stores_regenerated_machine_id(
     assert fake._entry is not None
     assert fake._entry.username == "99999999"
     assert fake._entry.password != "old words"
-    assert (
-        values.ID_FILE_PATH.read_text(encoding="utf-8").strip() == "99999999"
-    )
+    assert values.ID_FILE_PATH.read_text(encoding="utf-8").strip() == "99999999"
 
 
 def test_writes_machine_id_file(
@@ -536,16 +508,12 @@ def test_vault_unavailable_warns_without_changing_password(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     calls = _fake_run(monkeypatch)
-    monkeypatch.setattr(
-        rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: None
-    )
+    monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda cfg: None)
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.warnings
     assert "runtime vault unavailable" in result.warnings[0]
-    assert not any(
-        call[0] == "rustdesk" and call[1] == "--password" for call in calls
-    )
+    assert not any(call[0] == "rustdesk" and call[1] == "--password" for call in calls)
 
 
 def test_real_config_clears_the_service_stopped_flag() -> None:
@@ -668,8 +636,7 @@ def test_reports_the_words_of_a_failed_service_command(
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert any(
-        "Unit rustdesk.service is masked." in warning
-        for warning in result.warnings
+        "Unit rustdesk.service is masked." in warning for warning in result.warnings
     )
     assert result.message is not None
     assert "rustdesk not reachable" in result.message
@@ -685,9 +652,7 @@ def test_reports_a_service_that_runs_without_being_enabled(
     _vault(monkeypatch)
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
-    assert any(
-        "is not enabled for boot" in warning for warning in result.warnings
-    )
+    assert any("is not enabled for boot" in warning for warning in result.warnings)
     assert result.message is not None
     assert result.message.startswith("rustdesk ready, ID")
 
@@ -701,9 +666,7 @@ def test_settle_delay_comes_from_the_values(
     clock = _RecordingClock()
     monkeypatch.setattr(rustdesk_setup, "time", clock)
     for configured in (2.5, 7.0):
-        monkeypatch.setattr(
-            values, "SERVICE_SETTLE_DELAY_SECONDS", configured
-        )
+        monkeypatch.setattr(values, "SERVICE_SETTLE_DELAY_SECONDS", configured)
         _fake_run(monkeypatch)
         _vault(monkeypatch)
         result = rustdesk_setup.task(_ctx())

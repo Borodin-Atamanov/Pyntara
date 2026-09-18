@@ -17,53 +17,33 @@ from config_helpers import (
     "content",
     [
         # system_metrics_setup backoff_base_seconds is a string
-        base_config().replace(
-            "backoff_base_seconds = 2", 'backoff_base_seconds = "2"'
-        ),
+        base_config().replace("backoff_base_seconds = 2", 'backoff_base_seconds = "2"'),
         # system_metrics_setup backoff_base_seconds is zero
-        base_config().replace(
-            "backoff_base_seconds = 2", "backoff_base_seconds = 0"
-        ),
+        base_config().replace("backoff_base_seconds = 2", "backoff_base_seconds = 0"),
         # system_metrics_setup backoff_base_seconds is negative
-        base_config().replace(
-            "backoff_base_seconds = 2", "backoff_base_seconds = -5"
-        ),
+        base_config().replace("backoff_base_seconds = 2", "backoff_base_seconds = -5"),
         # system_metrics_setup backoff_multiplier is a string
-        base_config().replace(
-            "backoff_multiplier = 2", 'backoff_multiplier = "2"'
-        ),
+        base_config().replace("backoff_multiplier = 2", 'backoff_multiplier = "2"'),
         # system_metrics_setup backoff_multiplier is one: no growth
-        base_config().replace(
-            "backoff_multiplier = 2", "backoff_multiplier = 1"
-        ),
+        base_config().replace("backoff_multiplier = 2", "backoff_multiplier = 1"),
         # system_metrics_setup backoff_multiplier is zero
-        base_config().replace(
-            "backoff_multiplier = 2", "backoff_multiplier = 0"
-        ),
+        base_config().replace("backoff_multiplier = 2", "backoff_multiplier = 0"),
         # system_metrics_setup backoff_max_seconds is a string
         base_config().replace(
             "backoff_max_seconds = 14400", 'backoff_max_seconds = "14400"'
         ),
         # system_metrics_setup backoff_max_seconds is below the base
-        base_config().replace(
-            "backoff_max_seconds = 14400", "backoff_max_seconds = 1"
-        ),
+        base_config().replace("backoff_max_seconds = 14400", "backoff_max_seconds = 1"),
         # system_metrics_setup backoff_max_seconds is negative
         base_config().replace(
             "backoff_max_seconds = 14400", "backoff_max_seconds = -5"
         ),
         # system_metrics_setup python_version is a number, not a string
-        base_config().replace(
-            'python_version = "3.14"', "python_version = 3"
-        ),
+        base_config().replace('python_version = "3.14"', "python_version = 3"),
         # system_metrics_setup python_version is an empty string
-        base_config().replace(
-            'python_version = "3.14"', 'python_version = ""'
-        ),
+        base_config().replace('python_version = "3.14"', 'python_version = ""'),
         # system_metrics_setup python_version is a bare major version
-        base_config().replace(
-            'python_version = "3.14"', 'python_version = "3"'
-        ),
+        base_config().replace('python_version = "3.14"', 'python_version = "3"'),
         # system_metrics_setup error_priority is a string, not an integer
         base_config().replace(
             'python_version = "3.14"\nerror_priority = 3\n',
@@ -137,9 +117,7 @@ from config_helpers import (
             'system_metrics_dir_mode = "0700"', 'system_metrics_dir_mode = "700"'
         ),
         # system_metrics_setup queue_file_mode is not a four-digit octal string
-        base_config().replace(
-            'queue_file_mode = "0600"', 'queue_file_mode = "060"'
-        ),
+        base_config().replace('queue_file_mode = "0600"', 'queue_file_mode = "060"'),
         # system_metrics_setup max_queue_file_size_bytes is a string, not an integer
         base_config().replace(
             "max_queue_file_size_bytes = 104857600",
@@ -178,7 +156,9 @@ from config_helpers import (
         # system_metrics_setup spool_dir_mode is not a four-digit octal string
         base_config().replace('spool_dir_mode = "1733"', 'spool_dir_mode = "173"'),
         # system_metrics_setup command_file_mode is not a four-digit octal string
-        base_config().replace('command_file_mode = "0755"', 'command_file_mode = "755"'),
+        base_config().replace(
+            'command_file_mode = "0755"', 'command_file_mode = "755"'
+        ),
         # system_metrics_setup.collector start_command is a string, not an array
         base_config().replace(
             'start_command = ["systemctl", "start", "--no-block", "{service_unit_name}"]',
@@ -209,9 +189,7 @@ from config_helpers import (
             'commit_journal_identifier = ""',
         ),
         # system_metrics_setup main_outbox_dir is a number, not a string
-        base_config().replace(
-            'main_outbox_dir = "main_outbox"', "main_outbox_dir = 1"
-        ),
+        base_config().replace('main_outbox_dir = "main_outbox"', "main_outbox_dir = 1"),
         # system_metrics_setup temp_dir is an empty string
         base_config().replace('temp_dir = "temp"', 'temp_dir = ""'),
         # system_metrics_setup spool_temp_prefix is a number, not a string
@@ -219,13 +197,9 @@ from config_helpers import (
             'spool_temp_prefix = ".commit-"', "spool_temp_prefix = 1"
         ),
         # system_metrics_setup queue_link_attempts is a string, not an integer
-        base_config().replace(
-            "queue_link_attempts = 5", 'queue_link_attempts = "5"'
-        ),
+        base_config().replace("queue_link_attempts = 5", 'queue_link_attempts = "5"'),
         # system_metrics_setup queue_link_attempts is zero
-        base_config().replace(
-            "queue_link_attempts = 5", "queue_link_attempts = 0"
-        ),
+        base_config().replace("queue_link_attempts = 5", "queue_link_attempts = 0"),
         # system_metrics_setup google_script_dir is a number, not a string
         base_config().replace(
             'google_script_dir = "google_script"', "google_script_dir = 1"
@@ -235,13 +209,9 @@ from config_helpers import (
             'google_script_dir = "google_script"', 'google_script_dir = ""'
         ),
         # system_metrics_setup main_sent_dir is a number, not a string
-        base_config().replace(
-            'main_sent_dir = "main_sent"', "main_sent_dir = 1"
-        ),
+        base_config().replace('main_sent_dir = "main_sent"', "main_sent_dir = 1"),
         # system_metrics_setup main_sent_dir is an empty string
-        base_config().replace(
-            'main_sent_dir = "main_sent"', 'main_sent_dir = ""'
-        ),
+        base_config().replace('main_sent_dir = "main_sent"', 'main_sent_dir = ""'),
         # system_metrics_setup google_script_timeout_seconds is a string
         base_config().replace(
             "google_script_timeout_seconds = 60",
@@ -288,17 +258,11 @@ from config_helpers import (
             "google_script_deployment_url_regex = '^https://script\\.google\\.com/macros/s/[A-Za-z0-9_-]+/exec$'",
         ),
         # collector section is missing entirely
-        base_config().replace(
-            "[system_metrics_setup.collector]\n", ""
-        ),
+        base_config().replace("[system_metrics_setup.collector]\n", ""),
         # collector boot_delay_seconds is a string, not an integer
-        base_config().replace(
-            "boot_delay_seconds = 30", 'boot_delay_seconds = "30"'
-        ),
+        base_config().replace("boot_delay_seconds = 30", 'boot_delay_seconds = "30"'),
         # collector boot_delay_seconds is negative
-        base_config().replace(
-            "boot_delay_seconds = 30", "boot_delay_seconds = -1"
-        ),
+        base_config().replace("boot_delay_seconds = 30", "boot_delay_seconds = -1"),
         # collector daily_send_times is a time, not a list
         base_config().replace(
             'daily_send_times = ["12:00:00", "00:00:00"]',
@@ -330,31 +294,19 @@ from config_helpers import (
             'daily_send_times = ["12:00:00:00"]',
         ),
         # collector threshold_percent is a string, not an integer
-        base_config().replace(
-            "threshold_percent = 50", 'threshold_percent = "50"'
-        ),
+        base_config().replace("threshold_percent = 50", 'threshold_percent = "50"'),
         # collector threshold_percent is negative
-        base_config().replace(
-            "threshold_percent = 50", "threshold_percent = -1"
-        ),
+        base_config().replace("threshold_percent = 50", "threshold_percent = -1"),
         # collector threshold_percent is above 100
-        base_config().replace(
-            "threshold_percent = 50", "threshold_percent = 101"
-        ),
+        base_config().replace("threshold_percent = 50", "threshold_percent = 101"),
         # collector retry_base_seconds is a string, not an integer
-        base_config().replace(
-            "retry_base_seconds = 2", 'retry_base_seconds = "2"'
-        ),
+        base_config().replace("retry_base_seconds = 2", 'retry_base_seconds = "2"'),
         # collector retry_base_seconds is zero
         base_config().replace("retry_base_seconds = 2", "retry_base_seconds = 0"),
         # collector retry_multiplier is one: no growth
-        base_config().replace(
-            "retry_multiplier = 2", "retry_multiplier = 1"
-        ),
+        base_config().replace("retry_multiplier = 2", "retry_multiplier = 1"),
         # collector retry_max_seconds is below the base
-        base_config().replace(
-            "retry_max_seconds = 600", "retry_max_seconds = 1"
-        ),
+        base_config().replace("retry_max_seconds = 600", "retry_max_seconds = 1"),
         # collector command_timeout_seconds is a string, not an integer
         base_config().replace(
             "command_timeout_seconds = 15", 'command_timeout_seconds = "15"'
@@ -398,13 +350,9 @@ from config_helpers import (
             "network_modules = [1]",
         ),
         # collector network_modules module name is an empty string
-        base_config().replace(
-            'name = "ipv4"', 'name = ""'
-        ),
+        base_config().replace('name = "ipv4"', 'name = ""'),
         # collector network_modules module names are duplicated
-        base_config().replace(
-            'name = "ipv6"', 'name = "ipv4"'
-        ),
+        base_config().replace('name = "ipv6"', 'name = "ipv4"'),
         # collector network_modules module command is an empty array
         base_config().replace(
             'command = ["ip", "-4", "addr", "show", "scope", "global"]',
@@ -416,9 +364,7 @@ from config_helpers import (
             'command = ["ip", ""]',
         ),
         # collector system_modules module command is missing
-        base_config().replace(
-            'command = ["hostname"]', ""
-        ),
+        base_config().replace('command = ["hostname"]', ""),
     ],
 )
 def test_load_config_wrong_types_raise(tmp_path: Path, content: str) -> None:
@@ -445,9 +391,7 @@ def test_load_config_google_script_upload_command(tmp_path: Path) -> None:
             "google_script_upload_command = []",
         ),
         # the upload command carries no {key} placeholder
-        base_config().replace(
-            '"pass={key}"', '"pass=secret"'
-        ),
+        base_config().replace('"pass={key}"', '"pass=secret"'),
     ],
 )
 def test_load_config_wrong_google_script_upload_command_raises(
@@ -461,22 +405,22 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
     # dedicated venv; all parse as modules with their argv commands.
     content = base_config().replace(
         "[[system_metrics_setup.collector.system_modules]]",
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "i2pd"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
         '"pyntara.i2pd_address", "/etc/pyntara/config.toml"]\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "yggdrasil"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
         '"pyntara.yggdrasil_address", "/etc/pyntara/config.toml"]\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "tor_onion"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
         '"pyntara.tor_address", "/etc/pyntara/config.toml"]\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "nextdns"\n'
         'command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "port_forwarding"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
         '"pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]\n'
@@ -533,9 +477,7 @@ def test_nextdns_module_path_matches_nextdns_config() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
-    nextdns_module = next(
-        module for module in modules if module.name == "nextdns"
-    )
+    nextdns_module = next(module for module in modules if module.name == "nextdns")
     assert nextdns_module.command == (
         "cat",
         str(config.nextdns_setup_system_wide.profile_id_file_path),
@@ -609,9 +551,7 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
     # differs. The family modules append their family flag after it.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
-    system_config_path = str(
-        config.system_metrics_setup.system_config_path
-    )
+    system_config_path = str(config.system_metrics_setup.system_config_path)
     command_modules = [
         module
         for module in config.system_metrics_setup.collector.network_modules

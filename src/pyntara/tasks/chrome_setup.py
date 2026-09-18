@@ -55,7 +55,7 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -73,6 +73,7 @@ from pyntara.utils import (
 )
 from pyntara.values import chrome_setup as values
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 
 # The placeholders of a configured launch flag, e.g. {proxy_server}: a
@@ -93,7 +94,6 @@ def _source_text(template_path: Path, keyring_path: Path) -> str:
 
 
 def _ensure_repository(
-    engine: EngineConfig,
     apt_source_template_path: Path,
     timeout: float,
     owner_uid: int,
@@ -101,18 +101,16 @@ def _ensure_repository(
 ) -> tuple[bool, str | None]:
     """Register the Google apt source and its keyring; (changed, error).
 
-    The keyring is downloaded from Google when missing, with the
-    engine-wide download command, and dearmored into the configured path;
-    the deb822 source file is rendered from its template and written when
-    its content differs. Both files are root-owned with the configured
-    mode.
+    The keyring is downloaded from Google when missing, with the declared
+    download command, and dearmored into the configured path; the deb822
+    source file is rendered from its template and written when its content
+    differs. Both files are root-owned with the configured mode.
     """
 
     changed = False
     try:
         if not (
-            values.KEYRING_PATH.is_file()
-            and values.KEYRING_PATH.stat().st_size > 0
+            values.KEYRING_PATH.is_file() and values.KEYRING_PATH.stat().st_size > 0
         ):
             values.KEYRING_PATH.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(
@@ -120,7 +118,7 @@ def _ensure_repository(
             ) as tmp:
                 armored = Path(tmp) / values.KEYRING_ARMORED_FILE_NAME
                 run_command(
-                    download_command(engine, armored, values.GOOGLE_KEY_URL),
+                    download_command(armored, values.GOOGLE_KEY_URL),
                     timeout=timeout,
                 )
                 run_command(
@@ -152,7 +150,6 @@ def _ensure_repository(
 
 
 def _ensure_chrome_installed(
-    engine: EngineConfig,
     *,
     force: bool,
     skip_apt_update: bool,
@@ -160,14 +157,14 @@ def _ensure_chrome_installed(
 ) -> tuple[bool, str | None]:
     """Install the browser package when missing or forced; (changed, error)."""
 
-    if not force and package_is_installed(engine, values.PACKAGE_NAME, timeout):
+    if not force and package_is_installed(values.PACKAGE_NAME, timeout):
         return False, None
     try:
         if not skip_apt_update:
-            refresh_apt_index(engine, timeout)
+            refresh_apt_index(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot refresh the apt index: {exc}"
-    ok, error = install_package_once(engine, values.PACKAGE_NAME, timeout)
+    ok, error = install_package_once(values.PACKAGE_NAME, timeout)
     if not ok:
         return False, f"cannot install {values.PACKAGE_NAME}: {error}"
     return True, None
@@ -190,9 +187,7 @@ def _sync_settings_repo(*, timeout: float) -> tuple[bool, str | None]:
         if not (values.SETTINGS_DIR / ".git").is_dir():
             values.SETTINGS_DIR.parent.mkdir(parents=True, exist_ok=True)
             run_command(
-                substituted_command(
-                    values.SETTINGS_CLONE_COMMAND, placeholders
-                ),
+                substituted_command(values.SETTINGS_CLONE_COMMAND, placeholders),
                 timeout=timeout,
             )
             return True, None
@@ -249,9 +244,7 @@ def _deploy_system_tree(
     force mode). A per-file failure is a warning, never a fatal error.
     """
 
-    source_root = (
-        values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
-    )
+    source_root = values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
     if not source_root.is_dir():
         return False, ["the settings repository carries no system/ tree"]
     changed = False
@@ -263,7 +256,11 @@ def _deploy_system_tree(
         target = values.SYSTEM_ROOT / rel
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
-            if not force and target.is_file() and target.read_bytes() == path.read_bytes():
+            if (
+                not force
+                and target.is_file()
+                and target.read_bytes() == path.read_bytes()
+            ):
                 continue
             shutil.copyfile(path, target)
             target.chmod(common_values.LAUNCHER_FILE_MODE)
@@ -277,10 +274,7 @@ def _deploy_system_tree(
 def _profile_dir() -> Path:
     """The live Chrome profile directory of the desktop user."""
 
-    return (
-        Path(common_values.DESKTOP_HOME_DIR)
-        / values.PROFILE_DIR_RELATIVE_PATH
-    )
+    return Path(common_values.DESKTOP_HOME_DIR) / values.PROFILE_DIR_RELATIVE_PATH
 
 
 def _profile_preferences_path() -> Path:
@@ -370,8 +364,11 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
                 if target.is_file()
                 else {}
             )
-        except (json.JSONDecodeError, OSError):
-            return False, f"the profile preferences are unreadable; left untouched: {target}"
+        except json.JSONDecodeError, OSError:
+            return (
+                False,
+                f"the profile preferences are unreadable; left untouched: {target}",
+            )
         overlay: object = json.loads(repo_prefs.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         return False, f"cannot read the repository preferences: {exc}"
@@ -391,9 +388,7 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     return True, None
 
 
-def _mirror_is_mounted(
-    profile_dir: Path, mirror_path: Path, timeout: float
-) -> bool:
+def _mirror_is_mounted(profile_dir: Path, mirror_path: Path, timeout: float) -> bool:
     """True when the mirror path is a bind mount of the live profile.
 
     findmnt answers the mount that contains the target path: TARGET is that
@@ -406,9 +401,7 @@ def _mirror_is_mounted(
     """
 
     result = run_command(
-        substituted_command(
-            values.MOUNT_CHECK_COMMAND, {"path": str(mirror_path)}
-        ),
+        substituted_command(values.MOUNT_CHECK_COMMAND, {"path": str(mirror_path)}),
         check=False,
         capture=True,
         timeout=timeout,
@@ -474,9 +467,7 @@ def _ensure_profile_mirror(
             f"cannot create the Chrome profile directory {profile_dir}: {exc}",
         )
     try:
-        content = _render_mount_unit(
-            template_path, profile_dir, mirror_path, username
-        )
+        content = _render_mount_unit(template_path, profile_dir, mirror_path, username)
     except OSError as exc:
         return False, f"cannot read the profile mirror unit template: {exc}"
     unit_file = unit_dir / unit_name
@@ -489,9 +480,7 @@ def _ensure_profile_mirror(
             apply_owner(unit_file, owner_uid, owner_gid)
             run_command(values.MOUNT_RELOAD_COMMAND, timeout=timeout)
         run_command(
-            substituted_command(
-                values.MOUNT_ENABLE_COMMAND, {"unit_name": unit_name}
-            ),
+            substituted_command(values.MOUNT_ENABLE_COMMAND, {"unit_name": unit_name}),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
@@ -505,7 +494,7 @@ def _ensure_profile_mirror(
 
 
 def _local_proxy_server(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, *, timeout: float
+    cfg: ThreeXuiXraySetupConfig, *, timeout: float
 ) -> tuple[str, str | None]:
     """The SOCKS5 address of the local proxy; (proxy text, note).
 
@@ -526,7 +515,7 @@ def _local_proxy_server(
             "the three_x_ui_xray_setup section carries no local proxy address; "
             "Chrome starts without the proxy"
         )
-    if port_listener_pid(engine, port, timeout) is None:
+    if port_listener_pid(port, timeout) is None:
         return "", (
             f"no local proxy listens on {address}:{port}; Chrome starts without it"
         )
@@ -593,7 +582,11 @@ def _ensure_desktop_override(
     )
     target = values.DESKTOP_OVERRIDE_PATH
     try:
-        if not force and target.is_file() and target.read_text(encoding="utf-8") == content:
+        if (
+            not force
+            and target.is_file()
+            and target.read_text(encoding="utf-8") == content
+        ):
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
@@ -734,9 +727,10 @@ def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
         line = line.strip()
         if line.startswith("[") and line.endswith("]"):
             current = tuple(part for part in line[1:-1].split("][") if part)
-        elif line.startswith(plugin_key) and line.removeprefix(
-            plugin_key
-        ) in values.TASKBAR_PLUGIN_NAMES:
+        elif (
+            line.startswith(plugin_key)
+            and line.removeprefix(plugin_key) in values.TASKBAR_PLUGIN_NAMES
+        ):
             groups.append(current + values.APPLETSRC_LAUNCHER_GROUP)
     return groups
 
@@ -757,13 +751,10 @@ def _pin_chrome_launcher(*, timeout: float) -> tuple[bool, str | None]:
         Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
     )
     try:
-        groups = _taskbar_launcher_groups(
-            appletsrc_path.read_text(encoding="utf-8")
-        )
+        groups = _taskbar_launcher_groups(appletsrc_path.read_text(encoding="utf-8"))
     except OSError:
         _log(
-            "no Plasma panel config yet; "
-            "the Chrome launcher pins after the first login"
+            "no Plasma panel config yet; the Chrome launcher pins after the first login"
         )
         return False, None
     if not groups:
@@ -806,9 +797,9 @@ def task(ctx: Context) -> TaskResult:
     files; the profile merge itself is identical in both modes.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -820,26 +811,20 @@ def task(ctx: Context) -> TaskResult:
                 "the chrome_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
-    owner_uid = engine.root_owner_uid
-    owner_gid = engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     messages: list[str] = []
     template_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    apt_source_template_path = (
-        template_dir / values.APT_SOURCE_TEMPLATE_FILE_NAME
-    )
-    mount_unit_template_path = (
-        template_dir / values.MOUNT_UNIT_TEMPLATE_FILE_NAME
-    )
+    apt_source_template_path = template_dir / values.APT_SOURCE_TEMPLATE_FILE_NAME
+    mount_unit_template_path = template_dir / values.MOUNT_UNIT_TEMPLATE_FILE_NAME
 
     if apt_source_template_path.is_file():
         _log("registering the Google Chrome apt repository")
         repo_changed, error = _ensure_repository(
-            engine,
             apt_source_template_path,
             timeout,
             owner_uid,
@@ -851,13 +836,10 @@ def task(ctx: Context) -> TaskResult:
             messages.append("registered the Google Chrome apt repository")
             changed = True
     else:
-        warnings.append(
-            f"missing apt source template: {apt_source_template_path}"
-        )
+        warnings.append(f"missing apt source template: {apt_source_template_path}")
 
     _log("checking the Google Chrome installation")
     install_changed, error = _ensure_chrome_installed(
-        engine,
         force=force,
         skip_apt_update=ctx.skip_apt_update,
         timeout=timeout,
@@ -881,9 +863,7 @@ def task(ctx: Context) -> TaskResult:
     )
     warnings.extend(tree_warnings)
     if tree_changed:
-        messages.append(
-            f"deployed system browser settings to {values.SYSTEM_ROOT}"
-        )
+        messages.append(f"deployed system browser settings to {values.SYSTEM_ROOT}")
         changed = True
 
     profile_changed, profile_note = _apply_profile_preferences(timeout=timeout)
@@ -897,7 +877,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log("checking the local proxy of the Xray client")
     proxy_server, proxy_note = _local_proxy_server(
-        engine, ctx.config.three_x_ui_xray_setup, timeout=timeout
+        ctx.config.three_x_ui_xray_setup, timeout=timeout
     )
     if proxy_note:
         warnings.append(proxy_note)
@@ -907,7 +887,7 @@ def task(ctx: Context) -> TaskResult:
     _log("mounting the Chrome profile mirror for the DevTools listener")
     if mount_unit_template_path.is_file():
         mirror_mounted, mirror_note = _ensure_profile_mirror(
-            engine.systemd_unit_dir,
+            engine_values.SYSTEMD_UNIT_DIR,
             mount_unit_template_path,
             force=force,
             timeout=timeout,
@@ -917,14 +897,10 @@ def task(ctx: Context) -> TaskResult:
         if mirror_note:
             warnings.append(mirror_note)
         else:
-            _log(
-                f"the profile mirror is mounted at {values.PROFILE_MIRROR_PATH}"
-            )
+            _log(f"the profile mirror is mounted at {values.PROFILE_MIRROR_PATH}")
     else:
         mirror_mounted = False
-        warnings.append(
-            f"missing mirror unit template: {mount_unit_template_path}"
-        )
+        warnings.append(f"missing mirror unit template: {mount_unit_template_path}")
 
     override_changed, override_note = _ensure_desktop_override(
         proxy_server=proxy_server,
@@ -967,7 +943,7 @@ def task(ctx: Context) -> TaskResult:
         ) as exc:
             warnings.append(f"cannot restart the Plasma panel: {exc}")
 
-    if port_listener_pid(engine, values.CDP_PORT, timeout) is None:
+    if port_listener_pid(values.CDP_PORT, timeout) is None:
         if _chrome_is_running(timeout):
             warnings.append(
                 "Chrome is running but the DevTools listener does not answer on "

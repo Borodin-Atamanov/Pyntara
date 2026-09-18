@@ -26,6 +26,7 @@ from pyntara.metrics_commit import (
     ingest_spool,
     restore_original_name,
 )
+from pyntara.values import engine as engine_values
 
 SUFFIX_LENGTH = 12
 SUFFIX_ALPHABET = set(string.ascii_letters + string.digits)
@@ -148,12 +149,13 @@ def test_entry_mtime_is_commit_time(tmp_path: Path) -> None:
 
 
 def test_commit_time_uses_the_configured_nanosecond_factor(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The proof of the value: the factor that turns the commit time into
-    # the unit the kernel takes is a config value, so another factor is
+    # the unit the kernel takes is a declared value, so another factor is
     # the modification time the entry receives.
-    cfg = _spool_config(tmp_path, nanoseconds_per_second=1_000_000)
+    monkeypatch.setattr(engine_values, "NANOSECONDS_PER_SECOND", 1_000_000)
+    cfg = _spool_config(tmp_path)
     entry = _spool_file(tmp_path, "factor.txt", "x")
     commit_time = 1_700_000_000.25
     os.utime(entry, (commit_time, commit_time))
@@ -211,7 +213,7 @@ def test_empty_file_is_rejected_and_removed(tmp_path: Path) -> None:
 def test_rejected_entry_is_journaled_at_the_configured_level(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The proof of the value: another error level in the [engine] table is
+    # The proof of the value: another error level in the declared values is
     # the level of the line that reports a rejected spool entry.
     levels: list[int | None] = []
     monkeypatch.setattr(
@@ -219,7 +221,8 @@ def test_rejected_entry_is_journaled_at_the_configured_level(
         "_log",
         lambda message, **kwargs: levels.append(kwargs.get("priority")),
     )
-    cfg = _spool_config(tmp_path, error_priority=5)
+    monkeypatch.setattr(engine_values, "ERROR_PRIORITY", 5)
+    cfg = _spool_config(tmp_path)
     _spool_file(tmp_path, "empty.txt", "")
     ingest_spool(cfg)
     assert levels == [5]

@@ -39,6 +39,7 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.ssh_access import host_from_address, ssh_command
+from pyntara.values import engine as engine_values
 
 
 def address_scope(address: str, global_name: str, nat_name: str) -> str:
@@ -64,15 +65,14 @@ def mapping_records(
 ) -> list[dict[str, object]]:
     """One record per rule of this machine in the router mapping list.
 
-    The field names come from the report vocabulary of the [engine] table,
-    the channel name from the section that owns the channel, and the ssh
-    command from the shared builder, so the record has the same shape as
-    every other address the report carries.
+    The field names come from the declared report vocabulary, the channel
+    name from the section that owns the channel, and the ssh command from
+    the shared builder, so the record has the same shape as every other
+    address the report carries.
     """
 
     section = cfg.upnp_forwarding_setup
-    engine = cfg.engine
-    keys = engine.report_record_keys
+    keys = engine_values.REPORT_RECORD_KEYS
     scope = address_scope(
         router_address, section.global_scope_name, section.nat_scope_name
     )
@@ -82,7 +82,9 @@ def mapping_records(
     host = host_from_address(router_address)
     records: list[dict[str, object]] = []
     for mapping in upnp.parse_port_mappings(
-        listing, engine.upnpc_protocol_names, engine.upnpc_mapping_arrow
+        listing,
+        engine_values.UPNPC_PROTOCOL_NAMES,
+        engine_values.UPNPC_MAPPING_ARROW,
     ):
         if mapping.description != ours:
             continue
@@ -93,7 +95,7 @@ def mapping_records(
                 keys["port"]: mapping.external_port,
                 keys["local_port"]: mapping.internal_port,
                 keys["scope"]: scope,
-                keys["ssh"]: ssh_command(engine, host, mapping.external_port),
+                keys["ssh"]: ssh_command(host, mapping.external_port),
             }
         )
     return records
@@ -122,25 +124,27 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    timeout = cfg.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     command = section.upnp_client_command
     # The document on stdout is what the collector keeps as records, so the
     # client runs without its command echo: a progress line would turn the
     # document into text and the report would lose the fields.
-    router_address = upnp.router_external_address(
-        cfg.engine, command, timeout, log_command=False
-    )
+    router_address = upnp.router_external_address(command, timeout, log_command=False)
     if router_address is None:
         return 0
     records = mapping_records(
         cfg,
         router_address,
-        upnp.list_mappings(cfg.engine, command, timeout, log_command=False),
+        upnp.list_mappings(command, timeout, log_command=False),
     )
     if not records:
         return 0
     print(
-        json.dumps(records, ensure_ascii=False, indent=cfg.engine.report_json_indent)
+        json.dumps(
+            records,
+            ensure_ascii=False,
+            indent=engine_values.REPORT_JSON_INDENT,
+        )
     )
     return 0
 

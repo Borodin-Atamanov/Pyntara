@@ -29,9 +29,7 @@ VERSION = "1.2.3"
 REAL_TASKS = tasks_values.CATALOG
 
 
-def _use_playwright_values(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def _use_playwright_values(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Point the task values at a home directory inside the tmp tree.
 
     The values are module constants, so the helper patches the module for
@@ -86,7 +84,11 @@ def _fake_run_factory(
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
         if command[0] == "dpkg-query":
-            status = "install ok installed" if dpkg_installed else "deinstall ok config-files"
+            status = (
+                "install ok installed"
+                if dpkg_installed
+                else "deinstall ok config-files"
+            )
             return _FakeProc(0, stdout=status)
         if "--version" in command:
             return _FakeProc(0, stdout=VERSION)
@@ -233,15 +235,15 @@ def test_missing_runtime_packages_stop_the_task_with_a_warning(
     # install nothing, so the task stops its own remaining steps, still
     # reports a completed task, and names the packages it could not install
     # in a warning instead of failing the run.
-    def failing_install(*args: object, **kwargs: object) -> tuple[
-        list[str], list[tuple[str, str]], list[str]
-    ]:
+    def failing_install(
+        *args: object, **kwargs: object
+    ) -> tuple[list[str], list[tuple[str, str]], list[str]]:
         del args, kwargs
         return [], [("nodejs", "no candidate")], []
 
     monkeypatch.setattr(
         "pyntara.tasks.playwright_setup.package_is_installed",
-        lambda engine, package, timeout: False,
+        lambda package, timeout: False,
     )
     monkeypatch.setattr(
         "pyntara.tasks.playwright_setup.install_packages", failing_install

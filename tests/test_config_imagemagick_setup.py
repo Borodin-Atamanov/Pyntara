@@ -17,9 +17,7 @@ from config_helpers import (
     "content",
     [
         # packages is a string, not an array
-        base_config().replace(
-            'packages = ["imagemagick"]', 'packages = "imagemagick"'
-        ),
+        base_config().replace('packages = ["imagemagick"]', 'packages = "imagemagick"'),
         # packages contains a number, not strings
         base_config().replace('packages = ["imagemagick"]', "packages = [1]"),
         # policy_path is a number, not a string

@@ -33,7 +33,7 @@ def _ctx(tmp_path: Path, *, force: bool = False):
         install_mode="server",
         force_tasks=frozenset({"hostname"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(task_data_root=tmp_path),
+        config=make_config(),
     )
 
 

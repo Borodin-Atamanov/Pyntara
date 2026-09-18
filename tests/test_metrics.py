@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 from support import make_config
 
-from pyntara.config.engine import EngineConfig
 from pyntara.metrics import main
 from pyntara.utils import backoff_delay
 
@@ -24,8 +23,8 @@ def test_main_journals_under_the_configured_service_identifier(
     # identifier of its own section, never under the engine name: the entry
     # point hands the logger the engine table carrying that identifier.
     config_path = tmp_path / "config.toml"
-    config = make_config(task_data_root=tmp_path)
-    configured: list[EngineConfig] = []
+    config = make_config()
+    configured: list[str] = []
 
     def fake_load(path: Path) -> object:
         return config
@@ -38,14 +37,14 @@ def test_main_journals_under_the_configured_service_identifier(
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda cfg: None)
     monkeypatch.setattr(
-        "pyntara.metrics_send.send_google_queue", lambda cfg, single_random=False: (0, 0)
+        "pyntara.metrics_send.send_google_queue",
+        lambda cfg, single_random=False: (0, 0),
     )
     monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     service_identifier = config.system_metrics_setup.service_journal_identifier
-    assert configured[-1].journal_identifier == service_identifier
-    assert configured[-1].journal_command == config.engine.journal_command
+    assert configured[-1] == service_identifier
 
 
 def test_main_loops_with_base_pause(
@@ -60,7 +59,6 @@ def test_main_loops_with_base_pause(
     # interrupted after the first sleep, like a service stop.
     config_path = tmp_path / "config.toml"
     config = make_config(
-        task_data_root=tmp_path,
         system_metrics_backoff_base_seconds=2,
         system_metrics_backoff_multiplier=2,
         system_metrics_backoff_max_seconds=14400,
@@ -89,9 +87,7 @@ def test_main_loops_with_base_pause(
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
     monkeypatch.setattr("pyntara.metrics_send.send_google_queue", fake_send)
-    monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics", str(config_path)]
-    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(config_path)])
     with pytest.raises(KeyboardInterrupt):
         main()
     assert seen_paths == [config_path]
@@ -120,7 +116,6 @@ def test_main_enters_retry_mode_and_grows_pauses(
     # the retry mode after the first cycle and the pauses grow 2, 4, 8, 16.
     config_path = tmp_path / "config.toml"
     config = make_config(
-        task_data_root=tmp_path,
         system_metrics_backoff_base_seconds=2,
         system_metrics_backoff_multiplier=2,
         system_metrics_backoff_max_seconds=14400,
@@ -164,7 +159,6 @@ def test_main_resets_retry_mode_after_success(
     # base, and the growth restarts from the base on the next failure.
     config_path = tmp_path / "config.toml"
     config = make_config(
-        task_data_root=tmp_path,
         system_metrics_backoff_base_seconds=2,
         system_metrics_backoff_multiplier=2,
         system_metrics_backoff_max_seconds=14400,
@@ -207,7 +201,6 @@ def test_main_cycle_without_attempts_stays_normal(
     # pause: the loop keeps the base.
     config_path = tmp_path / "config.toml"
     config = make_config(
-        task_data_root=tmp_path,
         system_metrics_backoff_base_seconds=2,
         system_metrics_backoff_multiplier=2,
         system_metrics_backoff_max_seconds=14400,
@@ -248,7 +241,6 @@ def test_main_caps_pause_at_maximum(
     # the pauses grow 2, 4, 8, then stay at 16.
     config_path = tmp_path / "config.toml"
     config = make_config(
-        task_data_root=tmp_path,
         system_metrics_backoff_base_seconds=2,
         system_metrics_backoff_multiplier=2,
         system_metrics_backoff_max_seconds=16,

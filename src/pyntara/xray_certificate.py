@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from pyntara import xui as xui_client
-from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -48,8 +48,7 @@ def _is_private_ipv4(address: str, networks: tuple[str, ...]) -> bool:
     except ValueError:
         return False
     return any(
-        parsed in ipaddress.ip_network(network, strict=True)
-        for network in networks
+        parsed in ipaddress.ip_network(network, strict=True) for network in networks
     )
 
 
@@ -68,10 +67,7 @@ def _probe_port_80_forward(
     public_ip = _detect_server_ip(facts)
     if public_ip is None:
         return False
-    _log(
-        f"probing whether external port {cfg.acme_port} reaches "
-        f"{public_ip} here"
-    )
+    _log(f"probing whether external port {cfg.acme_port} reaches {public_ip} here")
     try:
         listener = subprocess.Popen(
             substituted_command(
@@ -92,18 +88,14 @@ def _probe_port_80_forward(
             result = run_command(
                 substituted_command(
                     cfg.port_forward_probe_command,
-                    {
-                        "timeout_seconds": str(
-                            cfg.probe_port_80_timeout_seconds
-                        )
-                    },
+                    {"timeout_seconds": str(cfg.probe_port_80_timeout_seconds)},
                 )
                 + [probe_url],
                 check=False,
                 capture=True,
                 timeout=timeout,
             )
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             _log(f"port {cfg.acme_port} did not answer: no forward confirmed")
             return False
         if result.returncode != 0:
@@ -162,7 +154,7 @@ def _ensure_acme(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
             list(cfg.acme_install_command),
             timeout=timeout,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except subprocess.CalledProcessError, subprocess.TimeoutExpired:
         return False
     return acme.is_file()
 
@@ -184,9 +176,7 @@ def _issue_ip_certificate(
     # itself; the installer creates it with mkdir -p before the call.
     cfg.cert_dir.mkdir(parents=True, exist_ok=True)
     acme = str(_acme_path(cfg))
-    reload_cmd = cfg.acme_reload_command.format(
-        service_unit_name=cfg.service_unit_name
-    )
+    reload_cmd = cfg.acme_reload_command.format(service_unit_name=cfg.service_unit_name)
     steps = [
         substituted_command(cfg.acme_set_default_ca_command, {"acme": acme}),
         substituted_command(
@@ -207,9 +197,7 @@ def _issue_ip_certificate(
     ]
     for command in steps:
         try:
-            result = run_command(
-                command, check=False, capture=True, timeout=timeout
-            )
+            result = run_command(command, check=False, capture=True, timeout=timeout)
         except (subprocess.TimeoutExpired, OSError) as exc:
             return False, f"acme.sh step failed: {exc}"
         if result.returncode != 0:
@@ -252,7 +240,7 @@ def _issue_ip_certificate(
     return True, "certificate issued"
 
 
-def _ensure_openssl(engine: EngineConfig, timeout: float) -> bool:
+def _ensure_openssl(timeout: float) -> bool:
     """True when the openssl binary is present, installing it if needed.
 
     The self-signed certificate is generated with the external openssl
@@ -261,10 +249,10 @@ def _ensure_openssl(engine: EngineConfig, timeout: float) -> bool:
     helper, so the setup never depends on a preinstalled package.
     """
 
-    if package_is_installed(engine, "openssl", timeout):
+    if package_is_installed("openssl", timeout):
         return True
     _log("openssl is missing, installing the package")
-    ok, _ = install_package_once(engine, "openssl", timeout)
+    ok, _ = install_package_once("openssl", timeout)
     if ok:
         _log("openssl installed")
     return ok
@@ -286,9 +274,7 @@ def _certificate_subject_name(
     return ip or "3x-ui"
 
 
-def _self_signed_not_expired(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> bool:
+def _self_signed_not_expired(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     """True when the self-signed certificate is still valid.
 
     A missing or broken openssl is treated as valid so a rerun never
@@ -306,13 +292,12 @@ def _self_signed_not_expired(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return True
     return result.returncode == 0
 
 
 def _ensure_self_signed_cert(
-    engine: EngineConfig,
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     facts: _RunFacts,
@@ -344,7 +329,7 @@ def _ensure_self_signed_cert(
         return False, ""
     if needs_generation:
         _log("generating a self-signed certificate")
-        if not _ensure_openssl(engine, timeout):
+        if not _ensure_openssl(timeout):
             return (
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
@@ -356,9 +341,7 @@ def _ensure_self_signed_cert(
                 substituted_command(
                     cfg.openssl_generate_command,
                     {
-                        "subject": cfg.openssl_subject_template.format(
-                            subject=subject
-                        ),
+                        "subject": cfg.openssl_subject_template.format(subject=subject),
                         "key_file": str(cfg.self_signed_cert_privkey),
                         "fullchain_file": str(cfg.self_signed_cert_fullchain),
                     },
@@ -396,7 +379,7 @@ def _ensure_self_signed_cert(
 
 
 def _issue_trusted_cert(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
+    cfg: ThreeXuiXraySetupConfig, ip: str, timeout: float
 ) -> TaskResult | None:
     """Issue a trusted Let's Encrypt certificate and report the result.
 
@@ -409,7 +392,6 @@ def _issue_trusted_cert(
     _log(f"issuing Let's Encrypt IP certificate for {ip}")
     try:
         freed = ensure_port_free(
-            engine,
             cfg.acme_port,
             cfg.service_unit_name,
             timeout,
@@ -427,13 +409,10 @@ def _issue_trusted_cert(
             warnings=(f"SSL certificate setup failed: {message}",),
         )
     _log(f"SSL certificate configured ({message})")
-    return TaskResult(
-        success=True, changed=True, message="SSL certificate configured"
-    )
+    return TaskResult(success=True, changed=True, message="SSL certificate configured")
 
 
 def _stage_ssl(
-    engine: EngineConfig,
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
     facts: _RunFacts,
@@ -467,12 +446,12 @@ def _stage_ssl(
             return None
         ip = _detect_server_ip(facts)
         if ip is not None:
-            return _issue_trusted_cert(engine, cfg, ip, timeout)
+            return _issue_trusted_cert(cfg, ip, timeout)
         return None
     ip = _detect_server_ip(facts)
     if ip is not None and _ssl_reachable(cfg, timeout, facts):
-        return _issue_trusted_cert(engine, cfg, ip, timeout)
-    ok, message = _ensure_self_signed_cert(engine, cfg, timeout, facts)
+        return _issue_trusted_cert(cfg, ip, timeout)
+    ok, message = _ensure_self_signed_cert(cfg, timeout, facts)
     if ok:
         return TaskResult(
             success=True,

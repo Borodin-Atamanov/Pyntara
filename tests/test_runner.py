@@ -16,10 +16,12 @@ from pyntara.models import TaskResult
 def _ctx() -> Context:
     # task_start_delay_seconds is zeroed so an implemented task does not
     # sleep half a second before running.
-    return make_context(config=make_config(task_start_delay_seconds=0))
+    return make_context(config=make_config())
 
 
-def test_run_tasks_reports_missing_implementation(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_tasks_reports_missing_implementation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # A task without a module is a skipped result, not a crash or a failure.
     # The example name is an implemented task so the test stays meaningful
     # if future catalog entries change.
@@ -42,7 +44,9 @@ def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) 
     assert results == [("cli_tools", TaskResult(success=True, message="ok"))]
 
 
-def test_run_tasks_hands_each_task_its_own_name(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_tasks_hands_each_task_its_own_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The catalog is the single source of truth for task names: the runner
     # gives each task the name it looked up, so no module writes its own.
     seen: list[str] = []

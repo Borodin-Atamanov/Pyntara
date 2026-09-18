@@ -205,9 +205,7 @@ def test_install_failure_is_a_warning(
     _use_imagemagick_values(monkeypatch, policy_path)
     result = imagemagick_setup.task(_ctx())
     assert result.success is True
-    assert any(
-        "failed to install" in warning for warning in result.warnings
-    )
+    assert any("failed to install" in warning for warning in result.warnings)
     assert policy_path.read_text(encoding="utf-8") == POLICY_CONTENT
 
 

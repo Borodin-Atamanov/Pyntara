@@ -39,7 +39,6 @@ def _ctx(tmp_path: Path) -> Context:
         task_data_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
-            task_data_root=tmp_path,
             local_vault_path=vault,
             system_metrics_dir=metrics_dir,
         ),
@@ -136,9 +135,7 @@ def test_commits_vault_under_hostname_name(
     assert result.changed is True
     assert result.message is not None
     assert "lusab-babad.kdbx" in result.message
-    assert calls == [
-        ["/usr/local/bin/commit_system_metrics", str(temp_path)]
-    ]
+    assert calls == [["/usr/local/bin/commit_system_metrics", str(temp_path)]]
     assert captured["path"] == temp_path
     assert captured["content"] == b"vault-bytes"
     assert not temp_path.exists()

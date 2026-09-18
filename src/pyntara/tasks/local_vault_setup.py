@@ -33,6 +33,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import apply_owner
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import local_vault_setup as values
 from pyntara.values import missing_value_names
 
@@ -140,9 +141,7 @@ def _read_password_file(pass_file_path: Path) -> str | None:
         return None
 
 
-def _copy_missing_root_entries(
-    source_kp: PyKeePass, runtime_kp: PyKeePass
-) -> bool:
+def _copy_missing_root_entries(source_kp: PyKeePass, runtime_kp: PyKeePass) -> bool:
     """Copy the source vault root entries missing from the runtime vault.
 
     A runtime vault created by an older run may lack entries the
@@ -171,9 +170,7 @@ def _copy_missing_root_entries(
     return changed
 
 
-def _copy_missing_groups(
-    source_kp: PyKeePass, runtime_kp: PyKeePass
-) -> bool:
+def _copy_missing_groups(source_kp: PyKeePass, runtime_kp: PyKeePass) -> bool:
     """Copy the source subgroups and their entries missing from the runtime.
 
     A runtime vault created by an older run may lack a data subgroup the
@@ -186,9 +183,7 @@ def _copy_missing_groups(
     when at least one group was created or one entry was copied.
     """
 
-    existing_groups = {
-        group.name: group for group in runtime_kp.root_group.subgroups
-    }
+    existing_groups = {group.name: group for group in runtime_kp.root_group.subgroups}
     changed = False
     for source_group in source_kp.root_group.subgroups:
         runtime_group = existing_groups.get(source_group.name)
@@ -241,14 +236,10 @@ def _sync_existing_runtime_vault(
     source_kp, _ = opened
     local_password = _read_password_file(values.PASS_FILE_PATH)
     if local_password is None:
-        _log(
-            "leaving the runtime vault as is: password file missing or empty"
-        )
+        _log("leaving the runtime vault as is: password file missing or empty")
         return None
     try:
-        runtime_kp = PyKeePass(
-            str(values.LOCAL_VAULT_PATH), password=local_password
-        )
+        runtime_kp = PyKeePass(str(values.LOCAL_VAULT_PATH), password=local_password)
     except CredentialsError:
         _log("leaving the runtime vault as is: local password does not match")
         return None
@@ -341,9 +332,9 @@ def task(ctx: Context) -> TaskResult:
     password file and the verification that depend on it.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -352,16 +343,14 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message=(
-                "the local_vault_setup values are not declared, nothing was "
-                "changed"
+                "the local_vault_setup values are not declared, nothing was changed"
             ),
             warnings=(
-                "the local_vault_setup values are not declared: "
-                + ", ".join(absent),
+                "the local_vault_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     production_path, default_path = _resolve_source_vault(
         ctx.repo_root,
@@ -406,9 +395,7 @@ def task(ctx: Context) -> TaskResult:
         )
     kp, source_path = opened
 
-    _log(
-        f"reading entry {values.VAULT_PASSWORD_ENTRY_TITLE!r} from {source_path}"
-    )
+    _log(f"reading entry {values.VAULT_PASSWORD_ENTRY_TITLE!r} from {source_path}")
     local_password = _read_local_vault_password(kp)
     if local_password is None:
         warning = (
@@ -427,10 +414,7 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
     vault_written = True
     try:
-        _log(
-            f"writing runtime vault {values.LOCAL_VAULT_PATH} with local "
-            "password"
-        )
+        _log(f"writing runtime vault {values.LOCAL_VAULT_PATH} with local password")
         _write_local_vault(
             kp,
             local_password.strip(),

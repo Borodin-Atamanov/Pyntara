@@ -25,7 +25,6 @@ from .add_extra_repos import AddExtraReposConfig
 from .chrome_setup import ChromeSetupConfig
 from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
-from .engine import EngineConfig
 from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2PD_ADDRESS_CONFIG_KEYS, I2pdServiceSetupConfig
@@ -106,7 +105,6 @@ __all__ = [
     "CollectorModuleConfig",
     "Config",
     "DnsproxySetupConfig",
-    "EngineConfig",
     "FfmpegSetupConfig",
     "HostnameConfig",
     "I2pdServiceSetupConfig",

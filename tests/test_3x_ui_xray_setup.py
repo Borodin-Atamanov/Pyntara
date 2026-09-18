@@ -33,6 +33,7 @@ from pyntara.models import TaskResult
 from pyntara.public_address import PublicAddresses
 from pyntara.upnp import ForwardedAddress
 from pyntara.utils import curl_flags
+from pyntara.values import engine as engine_values
 from pyntara.xray_facts import _RunFacts as RunFacts
 
 xui = importlib.import_module("pyntara.tasks.three_x_ui_xray_setup")
@@ -103,7 +104,11 @@ def _stage2_fake(
     if inbound_exists:
         monkeypatch.setattr(
             "pyntara.xui.find_inbound_by_port",
-            lambda _cfg, _env, _port, _timeout: {"id": 1, "port": _port, "protocol": "vless"},
+            lambda _cfg, _env, _port, _timeout: {
+                "id": 1,
+                "port": _port,
+                "protocol": "vless",
+            },
         )
     else:
         monkeypatch.setattr(
@@ -155,7 +160,6 @@ def _ctx(
         task_data_root=tmp_path,
         skip_apt_update=True,
         config=make_config(
-            task_data_root=tmp_path,
             cli_tools_packages=("mc",),
             add_extra_repos_components=("universe",),
             swapfile_path=tmp_path / "swapfile",
@@ -163,7 +167,10 @@ def _ctx(
             three_x_ui_service_start_wait_seconds=service_wait_seconds,
             three_x_ui_panel_listener_wait_seconds=service_wait_seconds,
             three_x_ui_readiness_check_delay_seconds=readiness_delay,
-            three_x_ui_install_result_env_path=tmp_path / "etc" / "x-ui" / "install-result.env",
+            three_x_ui_install_result_env_path=tmp_path
+            / "etc"
+            / "x-ui"
+            / "install-result.env",
             three_x_ui_cert_dir=tmp_path / "cert",
             three_x_ui_self_signed_cert_dir=tmp_path / "selfsigned",
         ),
@@ -258,14 +265,10 @@ def _install_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    monkeypatch.setattr(
-        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
-    )
-    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(
-            xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _facts: None
-        )
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -335,14 +338,10 @@ def _panel_fake(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    monkeypatch.setattr(
-        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
-    )
-    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _e, _cfg, _f, _t: None)
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
+    monkeypatch.setattr(xui, "_forward_upnp_ports", lambda _cfg, _f, _t: None)
     if mock_stage_ssl:
-        monkeypatch.setattr(
-            xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _facts: None
-        )
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _facts: None)
     if mock_takeover:
         monkeypatch.setattr(
             xui, "_takeover_credentials", lambda _c, _t, _creds: (False, "")
@@ -382,11 +381,11 @@ def test_already_configured_does_not_run_installer(
     assert (result.message or "").startswith("target state already reached")
     assert "inbound created" in (result.message or "")
     expected_flags = curl_flags(
-        ctx.config.engine.curl_timeout_seconds,
-        ctx.config.engine.curl_retries,
-        ctx.config.engine.curl_connect_timeout_seconds,
-        ctx.config.engine.curl_retry_max_time_seconds,
-        ctx.config.engine.curl_retry_delay_seconds,
+        engine_values.CURL_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRIES,
+        engine_values.CURL_CONNECT_TIMEOUT_SECONDS,
+        engine_values.CURL_RETRY_MAX_TIME_SECONDS,
+        engine_values.CURL_RETRY_DELAY_SECONDS,
     )
     release_calls = [
         call
@@ -398,9 +397,7 @@ def test_already_configured_does_not_run_installer(
     assert not any(call[0] == "bash" for call in calls)
 
 
-def test_installs_when_absent(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_installs_when_absent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # 3x-ui is not installed and the service is not enabled or active:
     # the task downloads the official installer, runs it non-interactively
     # and waits for the service to become active. Stage 2 runs after.
@@ -421,9 +418,7 @@ def test_installs_when_absent(
     assert any(call[0] == "bash" for call in calls)
 
 
-def test_installs_new_release(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_installs_new_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # An older release is installed: the task runs the installer and
     # waits for the service to become active again. Stage 2 runs after.
     _stage2_fake(monkeypatch, tmp_path)
@@ -525,9 +520,7 @@ def test_service_never_active_is_a_warning(
     )
     result = xui.task(ctx)
     assert result.success is True
-    assert any(
-        "did not become active" in warning for warning in result.warnings
-    )
+    assert any("did not become active" in warning for warning in result.warnings)
     assert any(call[0] == "bash" for call in calls)
 
 
@@ -541,9 +534,7 @@ def test_release_json_failure_is_a_warning(
     # subprocess.Popen, which the curl fake below does not intercept.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    monkeypatch.setattr(
-        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
-    )
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -565,9 +556,7 @@ def test_an_install_warning_is_reported_once(
     # sentence twice cannot tell one problem from two.
     _stage2_fake(monkeypatch, tmp_path)
     ctx = _ctx(tmp_path)
-    monkeypatch.setattr(
-        xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts()
-    )
+    monkeypatch.setattr(xui, "_collect_run_facts", lambda _cfg, _t: _facts())
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         del kwargs
@@ -578,9 +567,7 @@ def test_an_install_warning_is_reported_once(
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = xui.task(ctx)
     fetch_warnings = [
-        warning
-        for warning in result.warnings or ()
-        if "cannot fetch" in warning
+        warning for warning in result.warnings or () if "cannot fetch" in warning
     ]
     assert len(fetch_warnings) == 1
 
@@ -717,7 +704,7 @@ class TestProquintCredentials:
         # The generated credentials have the fixed proquint shapes:
         # username 10 letters, password 20 letters, webBasePath 23 chars
         # with three dash separators, panel port from config.
-        config = make_config(task_data_root=tmp_path)
+        config = make_config()
         cfg = config.three_x_ui_xray_setup
         env = xray_panel._credential_env(cfg)
         proquint_letters = frozenset("bdfghjklmnprstvzaiou")
@@ -730,14 +717,11 @@ class TestProquintCredentials:
         assert env["XUI_WEB_BASE_PATH"].count("-") == 3
         assert set(env["XUI_WEB_BASE_PATH"].replace("-", "")) <= proquint_letters
 
-    def test_random_value_sizes_come_from_the_config(
-        self, tmp_path: Path
-    ) -> None:
+    def test_random_value_sizes_come_from_the_config(self, tmp_path: Path) -> None:
         # The length of the random part of every generated value is a config
         # value: two bytes instead of four halve the proquint strings, and
         # the subscription id follows its own key.
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_random_username_bytes=2,
             three_x_ui_random_secret_bytes=4,
             three_x_ui_random_sub_id_bytes=3,
@@ -752,12 +736,10 @@ class TestProquintCredentials:
         assert len(client_id) == 11
         assert len(sub_id) == 11
 
-    def test_client_identity_reuses_the_stored_values(
-        self, tmp_path: Path
-    ) -> None:
+    def test_client_identity_reuses_the_stored_values(self, tmp_path: Path) -> None:
         # A stored identity wins over a generated one, so a rerun reuses the
         # client the panel already knows.
-        cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
+        cfg = make_config().three_x_ui_xray_setup
         stored = {"CLIENT_EMAIL": "a", "CLIENT_ID": "b", "SUB_ID": "c"}
         assert xray_inbound._client_identity(cfg, stored, []) == ("a", "b", "c")
 
@@ -767,7 +749,7 @@ class TestProquintCredentials:
         # The vault carries no identity while the panel already serves one:
         # the identity of that client is used, so the task does not add a
         # second client to the same inbound.
-        cfg = make_config(task_data_root=tmp_path).three_x_ui_xray_setup
+        cfg = make_config().three_x_ui_xray_setup
         served = [{"email": "kazoj-nogur", "id": "uuid-1", "subId": "sub-1"}]
         assert xray_inbound._client_identity(cfg, {}, served) == (
             "kazoj-nogur",
@@ -851,7 +833,6 @@ class TestProquintCredentials:
             task_data_root=tmp_path,
             skip_apt_update=True,
             config=make_config(
-                task_data_root=tmp_path,
                 three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
@@ -882,14 +863,17 @@ class TestProquintCredentials:
         captured: list[tuple[int, str, str | None]] = []
 
         def fake_ensure_port_free(
-            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
             **kwargs: object,
         ) -> None:
             captured.append(
-                (port, service_name, cast(str | None, kwargs.get("service_process_name")))
+                (
+                    port,
+                    service_name,
+                    cast(str | None, kwargs.get("service_process_name")),
+                )
             )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
@@ -930,9 +914,7 @@ class TestProquintCredentials:
 
         monkeypatch.setattr(xray_panel, "run_command", fake_run)
         assert xray_panel._installed_version(configured, 30.0) == "3.7.0"
-        assert probed == [
-            [str(configured.install_dir / "my-x-ui"), "--version"]
-        ]
+        assert probed == [[str(configured.install_dir / "my-x-ui"), "--version"]]
 
     def test_a_panel_command_template_is_filled_from_the_config(
         self, tmp_path: Path
@@ -968,7 +950,6 @@ class TestProquintCredentials:
         captured: list[str | None] = []
 
         def fake_ensure_port_free(
-            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
@@ -1008,14 +989,17 @@ class TestProquintCredentials:
         captured: list[tuple[int, str, str | None]] = []
 
         def fake_ensure_port_free(
-            _engine: object,
             port: int,
             service_name: str,
             _timeout: float,
             **kwargs: object,
         ) -> None:
             captured.append(
-                (port, service_name, cast(str | None, kwargs.get("service_process_name")))
+                (
+                    port,
+                    service_name,
+                    cast(str | None, kwargs.get("service_process_name")),
+                )
             )
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
@@ -1027,7 +1011,6 @@ class TestProquintCredentials:
             task_data_root=tmp_path,
             skip_apt_update=True,
             config=make_config(
-                task_data_root=tmp_path,
                 three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
                 three_x_ui_install_result_env_path=(
                     tmp_path / "etc" / "x-ui" / "install-result.env"
@@ -1081,9 +1064,7 @@ class TestProquintCredentials:
         envs: list[dict[str, str]] = []
         captured: list[int] = []
 
-        def fake_ensure_port_free(
-            _engine: object, port: int, *_args: object, **_kwargs: object
-        ) -> None:
+        def fake_ensure_port_free(port: int, *_args: object, **_kwargs: object) -> None:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
@@ -1092,14 +1073,14 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _engine, _cfg, _timeout, _facts: TaskResult(
+            lambda _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=True,
                 message="panel serves HTTPS with a self-signed certificate",
             ),
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1133,9 +1114,7 @@ class TestProquintCredentials:
         envs: list[dict[str, str]] = []
         captured: list[int] = []
 
-        def fake_ensure_port_free(
-            _engine: object, port: int, *_args: object, **_kwargs: object
-        ) -> None:
+        def fake_ensure_port_free(port: int, *_args: object, **_kwargs: object) -> None:
             captured.append(port)
 
         monkeypatch.setattr(xui, "ensure_port_free", fake_ensure_port_free)
@@ -1146,7 +1125,7 @@ class TestProquintCredentials:
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1178,7 +1157,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(
             xui,
             "_stage_ssl",
-            lambda _engine, _cfg, _timeout, _facts: TaskResult(
+            lambda _cfg, _timeout, _facts: TaskResult(
                 success=True,
                 changed=False,
                 warnings=(
@@ -1190,7 +1169,7 @@ class TestProquintCredentials:
             ),
         )
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
         )
         monkeypatch.setattr(
             xui, "_sync_install_result_env", lambda _cfg, _timeout: False
@@ -1217,9 +1196,7 @@ class TestProquintCredentials:
         # scheme in the file reflects the certificate the stage set.
         order: list[str] = []
 
-        def fake_stage_ssl(
-            _engine: object, _cfg: object, _timeout: float, _facts: object
-        ) -> None:
+        def fake_stage_ssl(_cfg: object, _timeout: float, _facts: object) -> None:
             order.append("stage_ssl")
 
         def fake_sync(_cfg: object, _timeout: float) -> bool:
@@ -1229,7 +1206,7 @@ class TestProquintCredentials:
         monkeypatch.setattr(xui, "_stage_ssl", fake_stage_ssl)
         monkeypatch.setattr(xui, "_sync_install_result_env", fake_sync)
         monkeypatch.setattr(
-            xui, "_converge_panel_port", lambda _engine, _cfg, _timeout: (False, None)
+            xui, "_converge_panel_port", lambda _cfg, _timeout: (False, None)
         )
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
@@ -1291,7 +1268,6 @@ class TestPanelPortConvergence:
 
     def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_install_result_env_path=(
                 tmp_path / "etc" / "x-ui" / "install-result.env"
@@ -1312,14 +1288,10 @@ class TestPanelPortConvergence:
                 return _FakeProc(0, "port: 35905\nwebBasePath: /xui/\n")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         monkeypatch.setattr(xray_panel, "ensure_port_free", lambda *a, **k: None)
         cfg = self._cfg(tmp_path)
-        changed, message = xray_panel._converge_panel_port(
-            make_config().engine, cfg, 30
-        )
+        changed, message = xray_panel._converge_panel_port(cfg, 30)
         assert changed is True
         assert message == "panel port moved to 35353"
         assert any(c[1:4] == ["setting", "-port", "35353"] for c in calls)
@@ -1338,13 +1310,9 @@ class TestPanelPortConvergence:
                 return _FakeProc(0, "port: 35353\n")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         cfg = self._cfg(tmp_path)
-        changed, message = xray_panel._converge_panel_port(
-            make_config().engine, cfg, 30
-        )
+        changed, message = xray_panel._converge_panel_port(cfg, 30)
         assert changed is False
         assert message is None
         assert not any(c[1:3] == ["setting", "-port"] for c in calls)
@@ -1359,9 +1327,7 @@ class TestPanelPortConvergence:
                 return _FakeProc(0, "port: 35905\n")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         monkeypatch.setattr(
             xray_panel,
             "ensure_port_free",
@@ -1369,7 +1335,7 @@ class TestPanelPortConvergence:
         )
         cfg = self._cfg(tmp_path)
         with pytest.raises(RuntimeError):
-            xray_panel._converge_panel_port(make_config().engine, cfg, 30)
+            xray_panel._converge_panel_port(cfg, 30)
 
     def test_converges_panel_port_after_install(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1393,7 +1359,7 @@ class TestPanelPortConvergence:
     ) -> None:
         # A rerun finds the panel on an old port and migrates it to the
         # configured one, reporting a change.
-        monkeypatch.setattr(xui, "_stage_ssl", lambda _engine, _cfg, _timeout, _f: None)
+        monkeypatch.setattr(xui, "_stage_ssl", lambda _cfg, _timeout, _f: None)
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         calls = _panel_fake(monkeypatch, show_port="35905")
@@ -1419,7 +1385,6 @@ class TestPanelPortConvergence:
         )
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "https")
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_result_env_path=env_path,
         )
         cfg = config.three_x_ui_xray_setup
@@ -1442,7 +1407,6 @@ class TestPanelPortConvergence:
         )
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_result_env_path=env_path,
         )
         cfg = config.three_x_ui_xray_setup
@@ -1502,14 +1466,11 @@ class TestPanelPortConvergence:
             sleeps.append(seconds)
             clock["now"] += seconds
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         monkeypatch.setattr(xray_panel.time, "monotonic", lambda: clock["now"])
         monkeypatch.setattr(xray_panel.time, "sleep", fake_sleep)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_result_env_path=tmp_path / "missing.env",
             three_x_ui_probe_timeout_seconds=90,
             three_x_ui_panel_listener_wait_seconds=5,
@@ -1543,10 +1504,7 @@ class TestSslReachability:
         # changes its verdict, without a line of code changing.
         carrier_grade = ("100.64.0.0/10",)
         assert xray_certificate._is_private_ipv4("100.64.0.5", carrier_grade) is True
-        assert (
-            xray_certificate._is_private_ipv4("100.64.0.5", ("10.0.0.0/8",))
-            is False
-        )
+        assert xray_certificate._is_private_ipv4("100.64.0.5", ("10.0.0.0/8",)) is False
 
     def _cfg(self) -> ThreeXuiXraySetupConfig:
         # A default three_x_ui config; the reachability helpers only read
@@ -1635,7 +1593,9 @@ class TestSslReachability:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # No public address: the probe cannot confirm a forward.
-        assert xray_certificate._probe_port_80_forward(self._cfg(), 30, _facts()) is False
+        assert (
+            xray_certificate._probe_port_80_forward(self._cfg(), 30, _facts()) is False
+        )
 
     def test_probe_port_80_forward_uses_the_configured_timeouts(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1679,7 +1639,6 @@ class TestStageSsl:
         self, tmp_path: Path, *, ssl_enabled: bool = True
     ) -> ThreeXuiXraySetupConfig:
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_ssl_enabled=ssl_enabled,
             three_x_ui_self_signed_cert_dir=tmp_path / "selfsigned",
@@ -1688,10 +1647,9 @@ class TestStageSsl:
 
     def test_stage_ssl_skipped_when_disabled(self, tmp_path: Path) -> None:
         # ssl_enabled=False disables the whole stage.
-        engine = make_config().engine
         assert (
             xray_certificate._stage_ssl(
-                engine, self._cfg(tmp_path, ssl_enabled=False), 30, _facts()
+                self._cfg(tmp_path, ssl_enabled=False), 30, _facts()
             )
             is None
         )
@@ -1705,9 +1663,7 @@ class TestStageSsl:
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _timeout: "/root/cert/ip/fullchain.pem",
         )
-        assert xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, _facts()
-        ) is None
+        assert xray_certificate._stage_ssl(self._cfg(tmp_path), 30, _facts()) is None
 
     def test_stage_ssl_installs_self_signed_when_no_ip(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1718,14 +1674,12 @@ class TestStageSsl:
         monkeypatch.setattr(
             xray_certificate,
             "_ensure_self_signed_cert",
-            lambda _engine, _cfg, _timeout, _facts: (
+            lambda _cfg, _timeout, _facts: (
                 True,
                 "self-signed certificate configured",
             ),
         )
-        result = xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, _facts()
-        )
+        result = xray_certificate._stage_ssl(self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1742,15 +1696,13 @@ class TestStageSsl:
         monkeypatch.setattr(
             xray_certificate,
             "_ensure_self_signed_cert",
-            lambda _engine, _cfg, _timeout, _facts: (
+            lambda _cfg, _timeout, _facts: (
                 True,
                 "self-signed certificate configured",
             ),
         )
         facts = _facts(public=("203.0.113.5",))
-        result = xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, facts
-        )
+        result = xray_certificate._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert "self-signed" in (result.message or "")
@@ -1768,10 +1720,7 @@ class TestStageSsl:
         monkeypatch.setattr(
             xray_certificate, "_ssl_reachable", lambda _cfg, _timeout, _facts: False
         )
-        assert (
-            xray_certificate._stage_ssl(make_config().engine, cfg, 30, _facts())
-            is None
-        )
+        assert xray_certificate._stage_ssl(cfg, 30, _facts()) is None
 
     def test_stage_ssl_upgrades_self_signed_when_reachable(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1793,7 +1742,7 @@ class TestStageSsl:
         )
         monkeypatch.setattr(xray_certificate, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xray_certificate._stage_ssl(make_config().engine, cfg, 30, facts)
+        result = xray_certificate._stage_ssl(cfg, 30, facts)
         assert result is not None
         assert result.changed is True
         assert result.message == "SSL certificate configured"
@@ -1816,9 +1765,7 @@ class TestStageSsl:
         monkeypatch.setattr(xray_certificate, "_issue_ip_certificate", fake_issue)
         monkeypatch.setattr(xray_certificate, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, facts
-        )
+        result = xray_certificate._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is True
         assert seen["ip"] == "203.0.113.5"
@@ -1838,9 +1785,7 @@ class TestStageSsl:
         )
         monkeypatch.setattr(xray_certificate, "ensure_port_free", lambda *a, **k: None)
         facts = _facts(public=("203.0.113.5",))
-        result = xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, facts
-        )
+        result = xray_certificate._stage_ssl(self._cfg(tmp_path), 30, facts)
         assert result is not None
         assert result.changed is False
         assert any("SSL certificate setup failed" in w for w in result.warnings or ())
@@ -1855,14 +1800,12 @@ class TestStageSsl:
         monkeypatch.setattr(
             xray_certificate,
             "_ensure_self_signed_cert",
-            lambda _engine, _cfg, _timeout, _facts: (
+            lambda _cfg, _timeout, _facts: (
                 False,
                 "openssl unavailable: cannot generate a self-signed certificate",
             ),
         )
-        result = xray_certificate._stage_ssl(
-            make_config().engine, self._cfg(tmp_path), 30, _facts()
-        )
+        result = xray_certificate._stage_ssl(self._cfg(tmp_path), 30, _facts())
         assert result is not None
         assert result.changed is False
         assert any("panel serves HTTP" in w for w in result.warnings or ())
@@ -1874,13 +1817,14 @@ class TestStageSsl:
         # config values: another template for each of them is the argv the
         # sequence runs, and the path of the tool comes from the config.
         calls: list[list[str]] = []
-        monkeypatch.setattr(xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(
+            xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True
+        )
         monkeypatch.setattr(
             xray_certificate, "_acme_path", lambda _cfg: Path("/my/acme.bin")
         )
         config = replace(
             make_config(
-                task_data_root=tmp_path,
                 three_x_ui_cert_dir=tmp_path / "cert",
             ).three_x_ui_xray_setup,
             acme_set_default_ca_command=("{acme}", "--ca"),
@@ -1911,7 +1855,9 @@ class TestStageSsl:
             return _FakeProc(0, "")
 
         monkeypatch.setattr(xray_certificate, "run_command", fake_run)
-        ok, message = xray_certificate._issue_ip_certificate(config, "203.0.113.9", 30.0)
+        ok, message = xray_certificate._issue_ip_certificate(
+            config, "203.0.113.9", 30.0
+        )
         assert ok is True
         assert message == "certificate issued"
         assert calls[:4] == [
@@ -1958,7 +1904,7 @@ class TestStageSsl:
         monkeypatch.setattr(xray_panel, "_actual_panel_port", lambda _cfg, _t: "1111")
         monkeypatch.setattr(xray_panel, "ensure_port_free", lambda *_a, **_k: None)
         monkeypatch.setattr(xray_panel, "_wait_panel_http", lambda *_a, **_k: True)
-        xray_panel._converge_panel_port(make_config().engine, cfg, 30.0)
+        xray_panel._converge_panel_port(cfg, 30.0)
         assert [
             "systemctl",
             "restart",
@@ -1974,12 +1920,13 @@ class TestStageSsl:
         # at the files.
         calls: list[list[str]] = []
         cert_dir = tmp_path / "cert"
-        monkeypatch.setattr(xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(
+            xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True
+        )
         monkeypatch.setattr(
             xray_certificate, "_acme_path", lambda _cfg: Path("/tmp/acme.sh")
         )
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_cert_dir=cert_dir,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
         )
@@ -1993,13 +1940,13 @@ class TestStageSsl:
                 cfg.cert_privkey.write_text("privkey", encoding="utf-8")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         ok, message = xray_certificate._issue_ip_certificate(cfg, "203.0.113.5", 30)
         assert ok is True
         assert cert_dir.is_dir()
-        assert any(command[1] == "--issue" and "203.0.113.5" in command for command in calls)
+        assert any(
+            command[1] == "--issue" and "203.0.113.5" in command for command in calls
+        )
         assert any(command[1] == "--installcert" for command in calls)
         assert any(
             command[0] == str(cfg.install_dir / "x-ui") and command[1] == "cert"
@@ -2016,12 +1963,13 @@ class TestStageSsl:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # A failed acme.sh step reports a failure message.
-        monkeypatch.setattr(xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True)
+        monkeypatch.setattr(
+            xray_certificate, "_ensure_acme", lambda _cfg, _timeout: True
+        )
         monkeypatch.setattr(
             xray_certificate, "_acme_path", lambda _cfg: Path("/tmp/acme.sh")
         )
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_cert_dir=tmp_path / "cert",
         )
 
@@ -2031,9 +1979,7 @@ class TestStageSsl:
                 return _FakeProc(1, "error")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         ok, message = xray_certificate._issue_ip_certificate(
             config.three_x_ui_xray_setup, "203.0.113.5", 30
         )
@@ -2046,7 +1992,6 @@ class TestSelfSignedCert:
 
     def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_self_signed_cert_dir=tmp_path / "selfsigned",
         ).three_x_ui_xray_setup
@@ -2069,23 +2014,17 @@ class TestSelfSignedCert:
                 Path(out).write_text("cert", encoding="utf-8")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         monkeypatch.setattr(
             "pyntara.xray_certificate.package_is_installed",
-            lambda _e, _p, _t: True,
+            lambda _p, _t: True,
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xray_certificate._ensure_self_signed_cert(
-            make_config().engine, cfg, 30, _facts()
-        )
+        ok, message = xray_certificate._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is True
         assert message == "self-signed certificate configured"
-        assert any(
-            command[0] == "openssl" and command[1] == "req" for command in calls
-        )
+        assert any(command[0] == "openssl" and command[1] == "req" for command in calls)
         assert any(
             command[0] == str(cfg.install_dir / "x-ui")
             and command[1] == "cert"
@@ -2112,22 +2051,17 @@ class TestSelfSignedCert:
             calls.append(list(command))
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, message = xray_certificate._ensure_self_signed_cert(
-            make_config().engine, cfg, 30, _facts()
-        )
+        ok, message = xray_certificate._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert message == ""
         assert not any(command[:2] == ["openssl", "req"] for command in calls)
         assert not any(
-            command[:2] == [str(cfg.install_dir / "x-ui"), "cert"]
-            for command in calls
+            command[:2] == [str(cfg.install_dir / "x-ui"), "cert"] for command in calls
         )
         assert ["systemctl", "restart", cfg.service_unit_name] not in calls
 
@@ -2143,16 +2077,12 @@ class TestSelfSignedCert:
             calls.append(list(command))
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: "/root/cert/ip/fullchain.pem",
         )
-        ok, message = xray_certificate._ensure_self_signed_cert(
-            make_config().engine, cfg, 30, _facts()
-        )
+        ok, message = xray_certificate._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert message == ""
         assert calls == []
@@ -2164,17 +2094,15 @@ class TestSelfSignedCert:
         # the caller falls back to the HTTP warning.
         monkeypatch.setattr(
             "pyntara.xray_certificate.package_is_installed",
-            lambda _e, _p, _t: False,
+            lambda _p, _t: False,
         )
         monkeypatch.setattr(
             "pyntara.xray_certificate.install_package_once",
-            lambda _e, _p, _t: (False, "apt failed"),
+            lambda _p, _t: (False, "apt failed"),
         )
         monkeypatch.setattr("pyntara.xui.panel_cert_value", lambda _cfg, _t: None)
         cfg = self._cfg(tmp_path)
-        ok, message = xray_certificate._ensure_self_signed_cert(
-            make_config().engine, cfg, 30, _facts()
-        )
+        ok, message = xray_certificate._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is False
         assert "openssl unavailable" in message
 
@@ -2201,24 +2129,18 @@ class TestSelfSignedCert:
                 Path(out).write_text("new-cert", encoding="utf-8")
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_certificate.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_certificate.run_command", fake_run)
         monkeypatch.setattr(
             "pyntara.xray_certificate.package_is_installed",
-            lambda _e, _p, _t: True,
+            lambda _p, _t: True,
         )
         monkeypatch.setattr(
             "pyntara.xui.panel_cert_value",
             lambda _cfg, _t: str(cfg.self_signed_cert_fullchain),
         )
-        ok, _ = xray_certificate._ensure_self_signed_cert(
-            make_config().engine, cfg, 30, _facts()
-        )
+        ok, _ = xray_certificate._ensure_self_signed_cert(cfg, 30, _facts())
         assert ok is True
-        assert any(
-            command[0] == "openssl" and command[1] == "req" for command in calls
-        )
+        assert any(command[0] == "openssl" and command[1] == "req" for command in calls)
         assert cfg.self_signed_cert_fullchain.read_text(encoding="utf-8") == "new-cert"
 
     def test_rerun_invokes_stage_ssl(
@@ -2257,7 +2179,11 @@ class TestSelfSignedCert:
             lambda _cfg, ip, _timeout: (True, "certificate issued"),
         )
         monkeypatch.setattr(xray_certificate, "ensure_port_free", lambda *a, **k: None)
-        monkeypatch.setattr(xui, "_collect_run_facts", lambda _e, _cfg, _t: _facts(public=("203.0.113.5",)))
+        monkeypatch.setattr(
+            xui,
+            "_collect_run_facts",
+            lambda _cfg, _t: _facts(public=("203.0.113.5",)),
+        )
         _stage2_fake(monkeypatch, tmp_path)
         ctx = _ctx(tmp_path)
         _install_fake(
@@ -2285,7 +2211,6 @@ class TestSelfSignedCert:
         )
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _cfg, _timeout: "https")
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_result_env_path=env_path,
         )
         env = xui_client.panel_environment(config.three_x_ui_xray_setup, 30)
@@ -2313,7 +2238,6 @@ class TestSelfSignedCert:
         fake_kp.save = Mock()
         monkeypatch.setattr("pyntara.metrics.open_runtime_vault", lambda _c: fake_kp)
         config = make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_result_env_path=env_path,
         )
         result = xui._stage2(config.three_x_ui_xray_setup, config, 30)
@@ -2346,7 +2270,6 @@ class TestTakeoverCredentials:
 
     def _cfg(self, tmp_path: Path) -> ThreeXuiXraySetupConfig:
         return make_config(
-            task_data_root=tmp_path,
             three_x_ui_install_dir=tmp_path / "usr" / "local" / "x-ui",
             three_x_ui_install_result_env_path=(
                 tmp_path / "etc" / "x-ui" / "install-result.env"
@@ -2372,9 +2295,7 @@ class TestTakeoverCredentials:
             calls.append(list(command))
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         monkeypatch.setattr("pyntara.xui.panel_scheme", lambda _c, _t: "http")
         cfg = self._cfg(tmp_path)
         creds = {
@@ -2409,9 +2330,7 @@ class TestTakeoverCredentials:
                 raise subprocess.CalledProcessError(1, command)
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         cfg = self._cfg(tmp_path)
         ok, message = xray_panel._takeover_credentials(
             cfg,
@@ -2430,9 +2349,7 @@ class TestTakeoverCredentials:
                 raise subprocess.CalledProcessError(1, command)
             return _FakeProc(0)
 
-        monkeypatch.setattr(
-            "pyntara.xray_panel.run_command", fake_run
-        )
+        monkeypatch.setattr("pyntara.xray_panel.run_command", fake_run)
         cfg = self._cfg(tmp_path)
         ok, message = xray_panel._takeover_credentials(
             cfg,
@@ -2446,9 +2363,7 @@ class TestTakeoverCredentials:
 class TestForceTakeoverWiring:
     """Tests for the force takeover in the task flow."""
 
-    def _takeover_fake(
-        self, monkeypatch: pytest.MonkeyPatch, seen: list[bool]
-    ) -> None:
+    def _takeover_fake(self, monkeypatch: pytest.MonkeyPatch, seen: list[bool]) -> None:
         def fake_takeover(
             _cfg: object, _timeout: float, _creds: dict[str, str]
         ) -> tuple[bool, str]:
@@ -2785,7 +2700,9 @@ class TestConnectionStage:
             written.append(payload)
             return True, "updated"
 
-        monkeypatch.setattr("pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound)
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_port", lambda _c, _e, _p, _t: inbound
+        )
         monkeypatch.setattr("pyntara.xui.update_inbound", record_update)
         monkeypatch.setattr(
             "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": "a-b"}
@@ -2859,7 +2776,7 @@ class TestConnectionStage:
         )
         monkeypatch.setattr("pyntara.xui.create_client", record_create)
         monkeypatch.setattr(
-            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": _m}
+            "pyntara.xui.find_client", lambda _c, _m, _t, _ignored: {"email": _m}
         )
         monkeypatch.setattr(
             "pyntara.xui.client_links",
@@ -2915,7 +2832,7 @@ class TestConnectionStage:
             lambda _c, _e, _i, _j, _m, _s, _t: (True, "client created"),
         )
         monkeypatch.setattr(
-            "pyntara.xui.find_client", lambda _c, _e, _m, _t: {"email": _m}
+            "pyntara.xui.find_client", lambda _c, _m, _t, _ignored: {"email": _m}
         )
         monkeypatch.setattr(
             "pyntara.xui.client_links",
@@ -2946,9 +2863,7 @@ class TestConnectionStage:
         )
         result = xui.task(ctx)
         assert result.success is True
-        assert any(
-            "serves 2 clients" in warning for warning in result.warnings or ()
-        )
+        assert any("serves 2 clients" in warning for warning in result.warnings or ())
 
     def test_reports_warning_when_the_vault_is_unavailable(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -3097,13 +3012,14 @@ class TestServerShareAddress:
             == "192.168.1.5"
         )
 
-    def test_keeps_the_share_address_stored_in_the_panel(
-        self, tmp_path: Path
-    ) -> None:
+    def test_keeps_the_share_address_stored_in_the_panel(self, tmp_path: Path) -> None:
         cfg = make_config().three_x_ui_xray_setup
         assert (
             xray_facts._server_share_address(
-                cfg, self._full_config(tmp_path), self._inbound("198.51.100.9"), _facts()
+                cfg,
+                self._full_config(tmp_path),
+                self._inbound("198.51.100.9"),
+                _facts(),
             )
             == "198.51.100.9"
         )
@@ -3145,44 +3061,40 @@ class TestUpnpClientPackage:
     def test_skips_installation_when_the_package_is_present(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        def fail_install(
-            _engine: object, _package: str, _timeout: float
-        ) -> tuple[bool, str]:
+        def fail_install(_package: str, _timeout: float) -> tuple[bool, str]:
             raise AssertionError("apt must not run for an installed package")
 
-        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: True)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _p, _t: True)
         monkeypatch.setattr(xray_facts, "install_package_once", fail_install)
         cfg = make_config().three_x_ui_xray_setup
-        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
+        assert xray_facts._ensure_upnp_client(cfg, 30.0) is True
 
     def test_installs_the_configured_package_through_the_shared_helper(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         installed: list[str] = []
 
-        def fake_install(
-            _engine: object, package: str, _timeout: float
-        ) -> tuple[bool, str]:
+        def fake_install(package: str, _timeout: float) -> tuple[bool, str]:
             installed.append(package)
             return (True, "")
 
-        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: False)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _p, _t: False)
         monkeypatch.setattr(xray_facts, "install_package_once", fake_install)
         cfg = make_config(three_x_ui_upnp_package="miniupnpc").three_x_ui_xray_setup
-        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is True
+        assert xray_facts._ensure_upnp_client(cfg, 30.0) is True
         assert installed == ["miniupnpc"]
 
     def test_reports_failure_without_raising(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _e, _p, _t: False)
+        monkeypatch.setattr(xray_facts, "package_is_installed", lambda _p, _t: False)
         monkeypatch.setattr(
             xray_facts,
             "install_package_once",
-            lambda _e, _p, _t: (False, "no candidate"),
+            lambda _p, _t: (False, "no candidate"),
         )
         cfg = make_config().three_x_ui_xray_setup
-        assert xray_facts._ensure_upnp_client(make_config().engine, cfg, 30.0) is False
+        assert xray_facts._ensure_upnp_client(cfg, 30.0) is False
 
 
 class TestCollectRunFacts:
@@ -3197,19 +3109,18 @@ class TestCollectRunFacts:
         monkeypatch.setattr(
             xray_facts,
             "_public_addresses",
-            lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
+            lambda _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ("10.0.0.1",))
-        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _e, _c, _t: True)
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _t: ("10.0.0.1",))
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _c, _t: True)
 
-        def fake_router(engine: object, command: str, timeout: float) -> str:
-            del engine, command
+        def fake_router(command: str, timeout: float) -> str:
+            del command
             router_calls.append(timeout)
             return "190.55.165.52"
 
         monkeypatch.setattr("pyntara.upnp.router_external_address", fake_router)
         facts = xray_facts._collect_run_facts(
-            make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
         )
@@ -3224,32 +3135,31 @@ class TestCollectRunFacts:
     ) -> None:
         # The switch is in the config, so a machine that must not talk to
         # its router never installs the client or asks for a mapping.
-        def fail_install(
-            _engine: object, _cfg: object, _timeout: float
-        ) -> bool:
+        def fail_install(_cfg: object, _timeout: float) -> bool:
             raise AssertionError("the UPnP client must not be installed")
 
         def fail_router(*args: object, **kwargs: object) -> str:  # pragma: no cover
             raise AssertionError("the router must not be asked")
 
         monkeypatch.setattr(
-            xray_facts, "_public_addresses", lambda _e, _c, _t: _addresses()
+            xray_facts, "_public_addresses", lambda _c, _t: _addresses()
         )
-        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ())
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _t: ())
         monkeypatch.setattr(xray_facts, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         cfg = make_config(three_x_ui_upnp_enabled=False).three_x_ui_xray_setup
-        facts = xray_facts._collect_run_facts(make_config().engine, cfg, 30.0)
+        facts = xray_facts._collect_run_facts(cfg, 30.0)
         assert facts.router_address is None
 
     def test_reports_no_router_when_the_client_cannot_be_installed(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(xray_facts, "_public_addresses", lambda _e, _c, _t: _addresses())
-        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ())
-        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _e, _c, _t: False)
+        monkeypatch.setattr(
+            xray_facts, "_public_addresses", lambda _c, _t: _addresses()
+        )
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _t: ())
+        monkeypatch.setattr(xray_facts, "_ensure_upnp_client", lambda _c, _t: False)
         facts = xray_facts._collect_run_facts(
-            make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
         )
@@ -3261,9 +3171,7 @@ class TestCollectRunFacts:
         # The address an echo service reports also sits on an interface,
         # so the machine is reachable directly: the client package is not
         # installed and the router is never asked.
-        def fail_install(
-            _engine: object, _cfg: object, _timeout: float
-        ) -> bool:
+        def fail_install(_cfg: object, _timeout: float) -> bool:
             raise AssertionError("the UPnP client must not be installed")
 
         def fail_router(*args: object, **kwargs: object) -> str:
@@ -3272,13 +3180,12 @@ class TestCollectRunFacts:
         monkeypatch.setattr(
             xray_facts,
             "_public_addresses",
-            lambda _e, _c, _t: _addresses(ipv4=("203.0.113.5",)),
+            lambda _c, _t: _addresses(ipv4=("203.0.113.5",)),
         )
-        monkeypatch.setattr(xray_facts, "local_addresses", lambda _e, _t: ("203.0.113.5",))
+        monkeypatch.setattr(xray_facts, "local_addresses", lambda _t: ("203.0.113.5",))
         monkeypatch.setattr(xray_facts, "_ensure_upnp_client", fail_install)
         monkeypatch.setattr("pyntara.upnp.router_external_address", fail_router)
         facts = xray_facts._collect_run_facts(
-            make_config().engine,
             make_config().three_x_ui_xray_setup,
             30.0,
         )
@@ -3302,27 +3209,26 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         monkeypatch.setattr(xray_facts.socket, "gethostname", lambda: "testhost")
         cfg = make_config().three_x_ui_xray_setup
-        engine = make_config().engine
         facts = _facts(public=("190.55.165.52",), router="190.55.165.52")
-        assert xray_facts._forward_upnp_ports(engine, cfg, facts, 30.0) == "190.55.165.52"
+        assert xray_facts._forward_upnp_ports(cfg, facts, 30.0) == "190.55.165.52"
         # The description is the ownership mark of the rule and carries the
         # machine name, so a neighbour of this project on the same router
         # keeps its own rule.
-        assert calls[0][1:5] == (
+        assert calls[0][0:4] == (
             "upnpc",
             "pyntara xray testhost",
             cfg.inbound_port,
             cfg.upnp_protocol,
         )
-        assert calls[0][5] == ("190.55.165.52",)
-        assert calls[0][7] == "190.55.165.52"
-        assert calls[1][1:5] == (
+        assert calls[0][4] == ("190.55.165.52",)
+        assert calls[0][6] == "190.55.165.52"
+        assert calls[1][0:4] == (
             "upnpc",
             "pyntara xray testhost",
             cfg.acme_port,
             cfg.upnp_protocol,
         )
-        assert calls[1][7] == "190.55.165.52"
+        assert calls[1][6] == "190.55.165.52"
 
     def test_skips_the_acme_port_when_ssl_is_disabled(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3336,8 +3242,8 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config(three_x_ui_ssl_enabled=False).three_x_ui_xray_setup
         facts = _facts(router="190.55.165.52")
-        xray_facts._forward_upnp_ports(make_config().engine, cfg, facts, 30.0)
-        assert [call[3] for call in calls] == [cfg.inbound_port]
+        xray_facts._forward_upnp_ports(cfg, facts, 30.0)
+        assert [call[2] for call in calls] == [cfg.inbound_port]
 
     def test_returns_no_client_address_behind_a_provider_nat(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3351,7 +3257,7 @@ class TestForwardUpnpPorts:
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fake_forward)
         cfg = make_config().three_x_ui_xray_setup
         facts = _facts(public=("190.55.165.52",), router="100.64.0.7")
-        assert xray_facts._forward_upnp_ports(make_config().engine, cfg, facts, 30.0) is None
+        assert xray_facts._forward_upnp_ports(cfg, facts, 30.0) is None
 
     def test_does_nothing_without_a_router(
         self, monkeypatch: pytest.MonkeyPatch
@@ -3362,7 +3268,7 @@ class TestForwardUpnpPorts:
 
         monkeypatch.setattr("pyntara.upnp.forward_inbound_port", fail_forward)
         cfg = make_config().three_x_ui_xray_setup
-        assert xray_facts._forward_upnp_ports(make_config().engine, cfg, _facts(), 30.0) is None
+        assert xray_facts._forward_upnp_ports(cfg, _facts(), 30.0) is None
 
 
 # The vless link a test machine is a client of; the address is a
@@ -3420,9 +3326,7 @@ def _template_settings() -> dict[str, object]:
                 "tag": "direct",
                 "protocol": "freedom",
                 "settings": {
-                    "finalRules": [
-                        {"outboundTag": "blocked", "ip": ["geoip:private"]}
-                    ]
+                    "finalRules": [{"outboundTag": "blocked", "ip": ["geoip:private"]}]
                 },
             },
             {"tag": "blocked", "protocol": "blackhole", "settings": {}},
@@ -3487,7 +3391,9 @@ class TestLocalProxyStage:
         _profile_source(monkeypatch)
         _panel_env_fake(monkeypatch)
         created: list[dict[str, object]] = []
-        monkeypatch.setattr("pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None)
+        monkeypatch.setattr(
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _t, _s, _ignored: None
+        )
 
         def fake_upsert(
             _cfg: object, _env: object, payload: dict[str, object], _timeout: object
@@ -3641,7 +3547,7 @@ class TestLocalProxyStage:
         _panel_env_fake(monkeypatch)
         created: list[dict[str, object]] = []
         monkeypatch.setattr(
-            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _t, _s, _ignored: None
         )
 
         def fake_upsert(
@@ -3667,7 +3573,7 @@ class TestLocalProxyStage:
         _panel_env_fake(monkeypatch)
         created: list[dict[str, object]] = []
         monkeypatch.setattr(
-            "pyntara.xui.find_inbound_by_tag", lambda _c, _e, _t, _s: None
+            "pyntara.xui.find_inbound_by_tag", lambda _c, _t, _s, _ignored: None
         )
 
         def fake_upsert(
@@ -3706,7 +3612,7 @@ class TestRoutingPolicyStage:
         monkeypatch.setattr(
             xray_client,
             "directly_connected_networks",
-            lambda _e, _t: ("10.10.0.0/24",),
+            lambda _t: ("10.10.0.0/24",),
         )
         monkeypatch.setattr(
             xray_client,
@@ -3730,7 +3636,7 @@ class TestRoutingPolicyStage:
             outbound_test_url="https://www.google.com/generate_204",
         )
         monkeypatch.setattr(
-            "pyntara.xui.read_xray_template", lambda _c, _e, _t: template
+            "pyntara.xui.read_xray_template", lambda _c, _t, _ignored: template
         )
         writes: list[dict[str, object]] = []
 
@@ -3863,15 +3769,16 @@ class TestRoutingPolicyStage:
             answers["count"] += 1
             if answers["count"] <= len(expected):
                 return None, (
-                    "rpc error: dial tcp 127.0.0.1:62789: connect: "
-                    "connection refused"
+                    "rpc error: dial tcp 127.0.0.1:62789: connect: connection refused"
                 )
             destination = kwargs.get("domain") or kwargs.get("address")
             return True, expected[cast(str, destination)]
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -3975,7 +3882,9 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4008,7 +3917,9 @@ class TestRoutingPolicyStage:
             ),
         )
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4110,8 +4021,7 @@ class TestRoutingPolicyStage:
         blocked = [
             rule
             for rule in rules
-            if rule.get("balancerTag") == cfg.pool_balancer_tag
-            and rule.get("domain")
+            if rule.get("balancerTag") == cfg.pool_balancer_tag and rule.get("domain")
         ]
         assert len(blocked) == 2
         domains = [cast("list[str]", rule["domain"]) for rule in blocked]
@@ -4130,7 +4040,8 @@ class TestRoutingPolicyStage:
             if rule.get("outboundTag") == "direct" and rule.get("domain")
         ]
         assert any(
-            "ext-site:geosite_RU.dat:ru-available-only-inside" in cast("list[str]", rule["domain"])
+            "ext-site:geosite_RU.dat:ru-available-only-inside"
+            in cast("list[str]", rule["domain"])
             for rule in direct_rules
         )
         routing = writes[0]["routing"]
@@ -4155,7 +4066,9 @@ class TestRoutingPolicyStage:
             lambda _c, _e, **kwargs: (True, "pyntara-remote"),
         )
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4181,7 +4094,9 @@ class TestRoutingPolicyStage:
         }
         answers: list[tuple[bool, str]] = [(False, "")] * 6
 
-        def fake_route(_cfg: object, _env: object, **kwargs: object) -> tuple[bool, str]:
+        def fake_route(
+            _cfg: object, _env: object, **kwargs: object
+        ) -> tuple[bool, str]:
             destination = kwargs.get("domain") or kwargs.get("address")
             if answers:
                 return answers.pop(0)
@@ -4189,7 +4104,9 @@ class TestRoutingPolicyStage:
 
         monkeypatch.setattr("pyntara.xui.route_test", fake_route)
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4206,7 +4123,9 @@ class TestRoutingPolicyStage:
             lambda _c, _e, **kwargs: (True, "direct"),
         )
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4234,13 +4153,17 @@ class TestRoutingPolicyStage:
             ),
         )
         monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "190.55.165.52\n"),
         )
         cfg = self._cfg(tmp_path)
         facts = _facts(local=("190.55.165.52",))
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, facts)
         assert result is not None
-        assert any("did not leave by the remote path" in w for w in result.warnings or ())
+        assert any(
+            "did not leave by the remote path" in w for w in result.warnings or ()
+        )
 
     def _outside_russia_answers(self) -> dict[str, str]:
         """The core answers the policy expects outside Russia."""
@@ -4323,11 +4246,11 @@ class TestRoutingPolicyStage:
             "example.com": "sota-sota-us-nyc-01",
         }
         seen: list[str] = []
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(answer, seen))
         monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(answer, seen)
-        )
-        monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
         cfg = self._cfg(tmp_path)
         first = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
@@ -4337,15 +4260,13 @@ class TestRoutingPolicyStage:
         seeded = writes[0]
         writes.clear()
         self._prepare(monkeypatch, tmp_path, settings=seeded)
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(answer, []))
         monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(answer, [])
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "203.0.113.9\n"),
         )
-        monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "203.0.113.9\n")
-        )
-        assert (
-            xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
-        )
+        assert xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts()) is None
         assert writes == []
 
     def _pool_settings(self, tmp_path: Path) -> dict[str, object]:
@@ -4387,16 +4308,12 @@ class TestRoutingPolicyStage:
         expected = self._expected_outbounds()
         expected["example.com"] = "sota-sota-us-nyc-01"
         seen: list[str] = []
-        monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(expected, seen)
-        )
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(expected, seen))
         cfg = self._cfg(tmp_path)
         monkeypatch.setattr(
             xray_local_proxy,
             "run_command",
-            self._answers_by_url(
-                {cfg.proxy_check_url: [(0, "198.51.100.20\n200")]}
-            ),
+            self._answers_by_url({cfg.proxy_check_url: [(0, "198.51.100.20\n200")]}),
         )
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
         assert result is not None
@@ -4415,14 +4332,10 @@ class TestRoutingPolicyStage:
         ]
         rules = self._rules(writes[0])
         assert not [
-            rule
-            for rule in rules
-            if rule.get("outboundTag") == cfg.remote_outbound_tag
+            rule for rule in rules if rule.get("outboundTag") == cfg.remote_outbound_tag
         ]
         assert [
-            rule
-            for rule in rules
-            if rule.get("balancerTag") == cfg.pool_balancer_tag
+            rule for rule in rules if rule.get("balancerTag") == cfg.pool_balancer_tag
         ]
 
     def test_a_remote_answer_outside_the_pool_is_reported_with_the_pool(
@@ -4431,16 +4344,14 @@ class TestRoutingPolicyStage:
         # A pool accepts the members its selector covers and nothing else:
         # an answer from outside it is still a disagreement, and the
         # warning names the pool so the operator knows what was expected.
-        self._prepare(
-            monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
-        )
+        self._prepare(monkeypatch, tmp_path, settings=self._pool_settings(tmp_path))
         expected = self._expected_outbounds()
         expected["example.com"] = "direct"
         seen: list[str] = []
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(expected, seen))
         monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(expected, seen)
+            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(7, "")
         )
-        monkeypatch.setattr(xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(7, ""))
         cfg = self._cfg(tmp_path)
         result = xui._stage_routing_policy(cfg, _ctx(tmp_path), 30.0, _facts())
         assert result is not None
@@ -4456,17 +4367,15 @@ class TestRoutingPolicyStage:
         # member the balancer picks is not known in advance, but an answer
         # that is an address of this machine is the silent direct path the
         # check exists to catch.
-        self._prepare(
-            monkeypatch, tmp_path, settings=self._pool_settings(tmp_path)
-        )
+        self._prepare(monkeypatch, tmp_path, settings=self._pool_settings(tmp_path))
         expected = self._expected_outbounds()
         expected["example.com"] = "sota-sota-us-nyc-01"
         seen: list[str] = []
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(expected, seen))
         monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(expected, seen)
-        )
-        monkeypatch.setattr(
-            xray_local_proxy, "run_command", lambda *a, **k: _FakeProc(0, "190.55.165.52\n200")
+            xray_local_proxy,
+            "run_command",
+            lambda *a, **k: _FakeProc(0, "190.55.165.52\n200"),
         )
         cfg = self._cfg(tmp_path)
         facts = _facts(local=("190.55.165.52",))
@@ -4489,9 +4398,7 @@ class TestRoutingPolicyStage:
         assert profile is not None
         return profile
 
-    def _answers_by_url(
-        self, answers: dict[str, list[tuple[int, str]]]
-    ) -> object:
+    def _answers_by_url(self, answers: dict[str, list[tuple[int, str]]]) -> object:
         """Answer each check URL from its own queue of curl results."""
 
         queues = {url: list(items) for url, items in answers.items()}
@@ -4533,7 +4440,9 @@ class TestRoutingPolicyStage:
             cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
         )
         assert result is not None
-        assert not [w for w in result.warnings or () if "proxy" in w or "remote path" in w]
+        assert not [
+            w for w in result.warnings or () if "proxy" in w or "remote path" in w
+        ]
 
     def test_the_proxy_check_attempts_come_from_the_config(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -4612,7 +4521,9 @@ class TestRoutingPolicyStage:
             cfg, _ctx(tmp_path), 30.0, _facts(public=("77.245.209.27",))
         )
         assert result is not None
-        warnings = [w for w in result.warnings or () if cfg.proxy_check_blocked_url in w]
+        warnings = [
+            w for w in result.warnings or () if cfg.proxy_check_blocked_url in w
+        ]
         assert warnings
         assert "curl exit 28" in warnings[0]
 
@@ -4685,9 +4596,7 @@ class TestRoutingPolicyStage:
         assert len(attempts) == 2
         assert not [w for w in result.warnings or () if "two attempts" in w]
 
-    def _policy(
-        self, cfg: ThreeXuiXraySetupConfig
-    ) -> routing_policy.LocalProxyPolicy:
+    def _policy(self, cfg: ThreeXuiXraySetupConfig) -> routing_policy.LocalProxyPolicy:
         return routing_policy.LocalProxyPolicy(
             inbound_tag=cfg.local_proxy_tag,
             remote_outbound_tag=cfg.remote_outbound_tag,
@@ -4730,9 +4639,7 @@ class TestRoutingPolicyStage:
         expected = self._expected_outbounds()
         expected["example.com"] = "direct"
         seen: list[str] = []
-        monkeypatch.setattr(
-            "pyntara.xui.route_test", self._route_fake(expected, seen)
-        )
+        monkeypatch.setattr("pyntara.xui.route_test", self._route_fake(expected, seen))
         monkeypatch.setattr(
             xray_local_proxy,
             "run_command",

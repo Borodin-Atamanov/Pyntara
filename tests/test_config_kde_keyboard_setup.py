@@ -61,9 +61,7 @@ from config_helpers import (
             'switch_option = "grp:caps_select"', 'switch_option = ""'
         ),
         # reset_old_options is a string, not a boolean
-        base_config().replace(
-            "reset_old_options = true", 'reset_old_options = "true"'
-        ),
+        base_config().replace("reset_old_options = true", 'reset_old_options = "true"'),
         # switch_mode is an empty string
         base_config().replace('switch_mode = "WinClass"', 'switch_mode = ""'),
         # use_layout_switching is a string, not a boolean

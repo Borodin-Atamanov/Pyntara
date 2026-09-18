@@ -53,7 +53,7 @@ def _ctx() -> Context:
     # The start delay is zeroed so the runner does not pause between the two
     # tasks of the proof. No task of this file reaches the machine: the guard
     # returns before the first step of a task.
-    return make_context(config=make_config(task_start_delay_seconds=0))
+    return make_context(config=make_config())
 
 
 @pytest.mark.parametrize(("task_name", "values_module_name"), MIGRATED_SECTIONS)
@@ -106,7 +106,10 @@ def test_a_values_module_that_cannot_import_costs_only_its_task(
 
     results = task_runner.run_tasks(_ctx(), ["hostname", NOT_WRITTEN_TASK_NAME])
 
-    assert questions_asked == ["pyntara.tasks.hostname", "pyntara.tasks." + NOT_WRITTEN_TASK_NAME]
+    assert questions_asked == [
+        "pyntara.tasks.hostname",
+        "pyntara.tasks." + NOT_WRITTEN_TASK_NAME,
+    ]
     assert [name for name, _ in results] == ["hostname", NOT_WRITTEN_TASK_NAME]
     broken = results[0][1]
     assert broken.success is True

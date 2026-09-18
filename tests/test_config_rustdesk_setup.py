@@ -88,18 +88,14 @@ from pyntara.config import RustdeskOptionConfig
             "id_file_path = 42\n",
         ),
         # id_file_mode is not an octal string
-        base_config().replace(
-            'id_file_mode = "0644"\n', 'id_file_mode = "644"\n'
-        ),
+        base_config().replace('id_file_mode = "0644"\n', 'id_file_mode = "644"\n'),
         # vault_entry_title is empty
         base_config().replace(
             'vault_entry_title = "rustdesk_password"\n',
             'vault_entry_title = ""\n',
         ),
         # password_words is a string, not an integer
-        base_config().replace(
-            "password_words = 6\n", 'password_words = "6"\n'
-        ),
+        base_config().replace("password_words = 6\n", 'password_words = "6"\n'),
         # password_separator is empty
         base_config().replace(
             'password_separator = " "\n', 'password_separator = ""\n'
@@ -126,7 +122,7 @@ from pyntara.config import RustdeskOptionConfig
         ),
         # options is not an array
         base_config().replace(
-            '[[rustdesk_setup.options]]\n', "[rustdesk_setup.options]\n"
+            "[[rustdesk_setup.options]]\n", "[rustdesk_setup.options]\n"
         ),
         # an option entry has an empty key
         base_config().replace(
@@ -140,11 +136,10 @@ from pyntara.config import RustdeskOptionConfig
         ),
         # duplicate option keys across entries
         base_config().replace(
-            '[[rustdesk_setup.options]]\n'
-            'key = "enable-udp-punch"\nvalue = "Y"\n',
-            '[[rustdesk_setup.options]]\n'
+            '[[rustdesk_setup.options]]\nkey = "enable-udp-punch"\nvalue = "Y"\n',
+            "[[rustdesk_setup.options]]\n"
             'key = "enable-udp-punch"\nvalue = "Y"\n'
-            '[[rustdesk_setup.options]]\n'
+            "[[rustdesk_setup.options]]\n"
             'key = "enable-udp-punch"\nvalue = "N"\n',
         ),
         # the vault entry named by vault_entry_title is absent

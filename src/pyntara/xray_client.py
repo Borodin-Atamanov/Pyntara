@@ -49,9 +49,8 @@ def machine_policy(
 
     lists, category_warnings = checked_category_lists(cfg, env, timeout)
     warnings.extend(category_warnings)
-    own_networks = directly_connected_networks(ctx.config.engine, timeout)
+    own_networks = directly_connected_networks(timeout)
     report = detect_country(
-        ctx.config.engine,
         cfg.country_services,
         cfg.country_word,
         cfg.country_query_timeout_seconds,

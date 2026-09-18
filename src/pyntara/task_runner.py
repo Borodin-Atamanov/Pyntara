@@ -20,6 +20,7 @@ from dataclasses import replace
 from pyntara.context import Context
 from pyntara.logger import log_result_line, log_task_start
 from pyntara.models import TaskResult
+from pyntara.values import engine as engine_values
 
 
 def load_task(name: str) -> Callable[[Context], TaskResult] | None:
@@ -102,7 +103,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             log_result_line(name, result)
             results.append((name, result))
             continue
-        time.sleep(ctx.config.engine.task_start_delay_seconds or 0)
+        time.sleep(engine_values.TASK_START_DELAY_SECONDS)
         start = time.monotonic()
         try:
             result = task(replace(ctx, task_name=name))

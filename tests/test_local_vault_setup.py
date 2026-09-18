@@ -22,6 +22,7 @@ from support import make_config, make_context
 from pyntara.context import Context
 from pyntara.tasks import local_vault_setup
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import local_vault_setup as values
 
 LOCAL_PASSWORD = "local-secret-password"
@@ -65,8 +66,6 @@ def _ctx(
     *,
     vault_password: str | None = "prod-pass",
     force: bool = False,
-    owner_uid: int = 0,
-    owner_gid: int = 0,
 ) -> Context:
     """Context whose source vaults live in the temporary directory."""
 
@@ -75,7 +74,7 @@ def _ctx(
         vault_password=vault_password,
         force_tasks=frozenset({"local_vault_setup"}) if force else frozenset(),
         repo_root=tmp_path,
-        config=make_config(root_owner_uid=owner_uid, root_owner_gid=owner_gid),
+        config=make_config(),
     )
 
 
@@ -197,9 +196,7 @@ def test_syncs_missing_source_group_into_existing_runtime_vault(
     group = source_kp.add_group(
         source_kp.root_group, "port_forwarding_servers", notes="servers"
     )
-    source_kp.add_entry(
-        group, "Server 001", "", "", url="169.58.51.98", notes=""
-    )
+    source_kp.add_entry(group, "Server 001", "", "", url="169.58.51.98", notes="")
     source_kp.save()
     local_vault = tmp_path / "secrets" / "pyntara.vault"
     pass_file = tmp_path / "etc" / "pass"
@@ -236,9 +233,7 @@ def test_syncs_missing_group_entry_into_existing_runtime_group(
     group = source_kp.add_group(
         source_kp.root_group, "port_forwarding_servers", notes="servers"
     )
-    source_kp.add_entry(
-        group, "Server 001", "", "", url="169.58.51.98", notes=""
-    )
+    source_kp.add_entry(group, "Server 001", "", "", url="169.58.51.98", notes="")
     source_kp.save()
     local_vault = tmp_path / "secrets" / "pyntara.vault"
     pass_file = tmp_path / "etc" / "pass"
@@ -416,9 +411,9 @@ def test_owner_comes_from_the_engine_config(
         "chown",
         lambda path, uid, gid: chowned.append((path, uid, gid)),
     )
-    ctx = _ctx(
-        monkeypatch, tmp_path, vault_password="prod-pass", owner_uid=7, owner_gid=11
-    )
+    monkeypatch.setattr(engine_values, "ROOT_OWNER_UID", 7)
+    monkeypatch.setattr(engine_values, "ROOT_OWNER_GID", 11)
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
     assert result.success is True
     assert (tmp_path / "secrets" / "pyntara.vault", 7, 11) in chowned

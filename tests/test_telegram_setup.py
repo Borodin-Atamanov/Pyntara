@@ -14,12 +14,13 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import telegram_setup
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 from pyntara.values import telegram_setup as values
 
@@ -56,9 +57,7 @@ def _point_the_values_at_the_temporary_tree(
     """
 
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
-    monkeypatch.setattr(
-        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
-    )
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
@@ -83,10 +82,7 @@ def _template_path() -> Path:
     """
 
     return (
-        REPO_ROOT
-        / "task_data"
-        / "telegram_setup"
-        / values.LAUNCHER_TEMPLATE_FILE_NAME
+        REPO_ROOT / "task_data" / "telegram_setup" / values.LAUNCHER_TEMPLATE_FILE_NAME
     )
 
 
@@ -134,9 +130,7 @@ def _fake_run_factory(
             if "--retry" not in command:
                 return _FakeProc(probe_rc, "")
             if any("%{url_effective}" in part for part in command):
-                return _FakeProc(
-                    head_rc, stdout=resolved_url if head_rc == 0 else ""
-                )
+                return _FakeProc(head_rc, stdout=resolved_url if head_rc == 0 else "")
             if download_rc != 0 and kwargs.get("check", False):
                 raise subprocess.CalledProcessError(download_rc, command)
             out_index = command.index("--output") + 1
@@ -219,9 +213,7 @@ def test_install_downloads_and_installs_latest(
     archive = tmp_path / "cache" / ARCHIVE_NAME
     assert archive.is_file()
     assert not (
-        tmp_path
-        / "cache"
-        / (ARCHIVE_NAME + make_config().engine.partial_download_file_suffix)
+        tmp_path / "cache" / (ARCHIVE_NAME + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     ).exists()
     assert any(call[0] == "tar" for call in calls)
 
@@ -316,9 +308,7 @@ def test_a_silent_host_is_reported_without_spending_the_retry_budget(
     result = telegram_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert any("did not answer within" in warning for warning in result.warnings)
-    assert not any(
-        any("%{url_effective}" in part for part in call) for call in calls
-    )
+    assert not any(any("%{url_effective}" in part for part in call) for call in calls)
     assert not any(call[0] == "tar" for call in calls)
     assert _deployed_paths()[2].is_file()
 
@@ -379,9 +369,7 @@ def test_configured_names_decide_what_is_installed(
         "LAUNCHER_RELATIVE_PATH",
         ".local/share/applications/custom.desktop",
     )
-    monkeypatch.setattr(
-        values, "ICON_RELATIVE_PATH", ".local/share/icons/custom.png"
-    )
+    monkeypatch.setattr(values, "ICON_RELATIVE_PATH", ".local/share/icons/custom.png")
     monkeypatch.setattr(values, "BINARY_FILE_NAME", "telegram-desktop")
     monkeypatch.setattr(values, "UPDATER_FILE_NAME", "upgrade-helper")
     monkeypatch.setattr(values, "ARCHIVE_DIRECTORY_NAME", "telegram-archive")
@@ -394,7 +382,7 @@ def test_configured_names_decide_what_is_installed(
     assert f"Exec={binary}" in launcher.read_text(encoding="utf-8")
     assert icon.read_bytes() == ICON_BYTES
     assert (tmp_path / "cache" / ARCHIVE_NAME).is_file()
-    suffix = make_config().engine.partial_download_file_suffix
+    suffix = engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX
     assert not (tmp_path / "cache" / (ARCHIVE_NAME + suffix)).exists()
 
 

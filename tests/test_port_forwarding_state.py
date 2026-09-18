@@ -36,7 +36,10 @@ def _config(tmp_path: Path, state: Path) -> Path:
 def _write_state(path: Path) -> None:
     path.write_text(
         json.dumps(
-            {"169.58.51.98": {str(LOCAL_PORT): 46132}, "2001:db8::1": {str(LOCAL_PORT): 48012}},
+            {
+                "169.58.51.98": {str(LOCAL_PORT): 46132},
+                "2001:db8::1": {str(LOCAL_PORT): 48012},
+            },
             indent=2,
         ),
         encoding="utf-8",
@@ -134,9 +137,7 @@ def test_missing_state_path_key_is_reported(
         "",
     )
     config_path = write_config(tmp_path, content)
-    assert port_forwarding_state.main(
-        ["port_forwarding_state", str(config_path)]
-    ) == 1
+    assert port_forwarding_state.main(["port_forwarding_state", str(config_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "state_file_path" in captured.err

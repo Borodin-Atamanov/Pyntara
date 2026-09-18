@@ -15,6 +15,7 @@ from support import FakeProc, make_config
 from pyntara import upnp_forwarding_state
 from pyntara.config import Config
 from pyntara.ssh_access import ssh_command
+from pyntara.values import engine as engine_values
 
 ROUTER_ADDRESS = "191.83.167.128"
 CONFIG_PATH = "/etc/pyntara/config.toml"
@@ -57,9 +58,7 @@ def _router(
 
 def _config(monkeypatch: pytest.MonkeyPatch) -> Config:
     config = make_config()
-    monkeypatch.setattr(
-        upnp_forwarding_state, "load_config", lambda _path: config
-    )
+    monkeypatch.setattr(upnp_forwarding_state, "load_config", lambda _path: config)
     return config
 
 
@@ -81,8 +80,7 @@ class TestAddressScope:
         # of another router both stop well before the internet.
         for address in ("100.64.0.7", "192.168.1.1", "10.0.0.1"):
             assert (
-                upnp_forwarding_state.address_scope(address, "global", "nat")
-                == "nat"
+                upnp_forwarding_state.address_scope(address, "global", "nat") == "nat"
             )
 
     def test_a_value_that_is_not_an_address_takes_the_narrow_scope(self) -> None:
@@ -97,7 +95,7 @@ class TestMappingRecords:
 
     def test_reports_the_rule_of_this_project_with_its_command(self) -> None:
         config = make_config()
-        keys = config.engine.report_record_keys
+        keys = engine_values.REPORT_RECORD_KEYS
         assert upnp_forwarding_state.mapping_records(
             config, ROUTER_ADDRESS, LISTING
         ) == [
@@ -107,29 +105,34 @@ class TestMappingRecords:
                 keys["port"]: 39222,
                 keys["local_port"]: 30222,
                 keys["scope"]: "global",
-                keys["ssh"]: ssh_command(config.engine, ROUTER_ADDRESS, 39222),
+                keys["ssh"]: ssh_command(ROUTER_ADDRESS, 39222),
             }
         ]
 
     def test_a_rule_of_another_machine_stays_out_of_the_report(self) -> None:
         config = make_config()
-        assert upnp_forwarding_state.mapping_records(
-            config,
-            ROUTER_ADDRESS,
-            " 1 TCP    443->192.168.1.48:443"
-            "    'pyntara xray otherhost'  ''\n",
-        ) == []
+        assert (
+            upnp_forwarding_state.mapping_records(
+                config,
+                ROUTER_ADDRESS,
+                " 1 TCP    443->192.168.1.48:443    'pyntara xray otherhost'  ''\n",
+            )
+            == []
+        )
 
     def test_a_rule_that_lost_the_machine_name_is_not_ours(self) -> None:
         # A rule written before the mark carried the machine name belongs to
         # no machine in particular: the report leaves it out, and the
         # forwarding service writes its own rule again under the new mark.
         config = make_config()
-        assert upnp_forwarding_state.mapping_records(
-            config,
-            ROUTER_ADDRESS,
-            " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh'  ''\n",
-        ) == []
+        assert (
+            upnp_forwarding_state.mapping_records(
+                config,
+                ROUTER_ADDRESS,
+                " 0 TCP   39222->192.168.1.52:30222  'pyntara ssh'  ''\n",
+            )
+            == []
+        )
 
 
 class TestMain:
@@ -140,13 +143,10 @@ class TestMain:
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
-        config = _config(monkeypatch)
+        _config(monkeypatch)
         _router(monkeypatch, LISTING)
-        assert (
-            upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH])
-            == 0
-        )
-        keys = config.engine.report_record_keys
+        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
+        keys = engine_values.REPORT_RECORD_KEYS
         printed = capsys.readouterr().out
         assert f'"{keys["port"]}": 39222' in printed
         assert f'"{keys["channel"]}": "upnp"' in printed
@@ -162,10 +162,7 @@ class TestMain:
     ) -> None:
         _config(monkeypatch)
         _router(monkeypatch, LISTING, address=None)
-        assert (
-            upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH])
-            == 0
-        )
+        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
         assert capsys.readouterr().out == ""
 
     def test_prints_nothing_when_the_router_carries_no_rule_of_this_project(
@@ -175,10 +172,7 @@ class TestMain:
     ) -> None:
         _config(monkeypatch)
         _router(monkeypatch, "")
-        assert (
-            upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH])
-            == 0
-        )
+        assert upnp_forwarding_state.main(["upnp_forwarding_state", CONFIG_PATH]) == 0
         assert capsys.readouterr().out == ""
 
     def test_a_wrong_argument_count_is_refused(self) -> None:

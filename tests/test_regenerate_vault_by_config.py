@@ -23,11 +23,16 @@ from pykeepass.exceptions import CredentialsError
 
 from pyntara.values import vault_structure as gen_values
 
-SCRIPT_PATH = Path(__file__).resolve().parents[1] / "secrets" / "regenerate_vault_by_config.py"
+SCRIPT_PATH = (
+    Path(__file__).resolve().parents[1] / "secrets" / "regenerate_vault_by_config.py"
+)
 
 DEFAULT_ENTRIES: list[dict[str, Any]] = [
     {"title": "password_salt", "notes": "Primary salt for password derivation."},
-    {"title": "pyntara_local_vault_password", "notes": "Password for the runtime secret vault."},
+    {
+        "title": "pyntara_local_vault_password",
+        "notes": "Password for the runtime secret vault.",
+    },
     {
         "title": "google_script_key",
         "notes": "Auth key of the System Metrics Google Drive web app.",
@@ -101,9 +106,7 @@ class _FakeGetpass:
 
 
 @pytest.fixture(autouse=True)
-def _isolate_environment(
-    gen: ModuleType, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _isolate_environment(gen: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
     # The real environment, terminal and prompt must never leak into tests.
     monkeypatch.delenv("PYNTARA_VAULT_PASSWORD", raising=False)
     monkeypatch.setattr(
@@ -433,9 +436,7 @@ def test_password_file_used_and_stripped(
     # Without an environment password the .password file is read and its
     # surrounding whitespace and trailing newline are trimmed.
     _prepare(gen, tmp_path, monkeypatch, env_password=None)
-    (tmp_path / "default.password").write_text(
-        "  from-file  \n", encoding="utf-8"
-    )
+    (tmp_path / "default.password").write_text("  from-file  \n", encoding="utf-8")
     vault_path = tmp_path / "default.vault"
     assert gen.main([str(vault_path)]) == gen.EXIT_OK
     assert _opens_with(vault_path, "from-file")
@@ -614,9 +615,7 @@ def test_creates_group_with_seed_entries(
     # A configured group with seed_entries is created with those entries
     # inside, so a fresh vault mirrors the structure before the real data
     # is maintained directly in the database.
-    _prepare(
-        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
-    )
+    _prepare(gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS)
     vault_path = tmp_path / "default.vault"
     assert gen.main([str(vault_path)]) == gen.EXIT_OK
     kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
@@ -635,9 +634,7 @@ def test_update_keeps_existing_group_with_seed_entries(
     # An existing group keeps its entries: the seed entries fill only a
     # freshly created group, never an existing one, so the production
     # server address survives an update.
-    _prepare(
-        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
-    )
+    _prepare(gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS)
     vault_path = tmp_path / "vault.kdbx"
     create_database(str(vault_path), password=VAULT_PASSWORD)
     kp = PyKeePass(str(vault_path), password=VAULT_PASSWORD)
@@ -657,9 +654,7 @@ def test_overwrite_recreates_group_with_seed_entries(
 ) -> None:
     # --overwrite discards the database and rebuilds the configured group
     # with its seed entries, so a fresh vault mirrors the structure.
-    _prepare(
-        gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS
-    )
+    _prepare(gen, tmp_path, monkeypatch, entries=DEFAULT_ENTRIES, groups=SEEDED_GROUPS)
     vault_path = tmp_path / "vault.kdbx"
     create_database(str(vault_path), password="old-password")
     kp = PyKeePass(str(vault_path), password="old-password")

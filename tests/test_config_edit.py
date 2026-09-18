@@ -215,14 +215,10 @@ def test_sync_directives_returns_false_when_unchanged(tmp_path: Path) -> None:
     from pyntara.config_edit import sync_directives_by_key
 
     path = tmp_path / "dropin.conf"
-    path.write_text(
-        "# managed\n[Resolve]\nDNS=1.1.1.1\n", encoding="utf-8"
-    )
+    path.write_text("# managed\n[Resolve]\nDNS=1.1.1.1\n", encoding="utf-8")
     before = path.read_bytes()
     assert (
-        sync_directives_by_key(
-            path, ("DNS=1.1.1.1",), "# managed", "[Resolve]"
-        )
+        sync_directives_by_key(path, ("DNS=1.1.1.1",), "# managed", "[Resolve]")
         is False
     )
     assert path.read_bytes() == before
@@ -236,17 +232,10 @@ def test_sync_directives_protects_a_commented_directive(tmp_path: Path) -> None:
     from pyntara.config_edit import sync_directives_by_key
 
     path = tmp_path / "dropin.conf"
-    path.write_text(
-        "# managed\n[Resolve]\n# DNS=old\n", encoding="utf-8"
-    )
+    path.write_text("# managed\n[Resolve]\n# DNS=old\n", encoding="utf-8")
     assert (
-        sync_directives_by_key(
-            path, ("DNS=1.1.1.1",), "# managed", "[Resolve]"
-        )
-        is True
+        sync_directives_by_key(path, ("DNS=1.1.1.1",), "# managed", "[Resolve]") is True
     )
     content = path.read_text(encoding="utf-8")
     assert "# DNS=old\n" in content
     assert "DNS=1.1.1.1\n" in content
-
-

@@ -15,7 +15,6 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -23,28 +22,26 @@ from support import make_config
 
 from pyntara import logger
 from pyntara.models import TaskResult
+from pyntara.values import engine as engine_values
+
+# Declared values a test replaces for its own run. The autouse fixture below
+# undoes them, so the level or the format of one test never reaches the next.
+_patches = pytest.MonkeyPatch()
 
 
-def _use_identifier(
-    identifier: str, *, progress_priority: int | None = None
-) -> None:
+def _use_identifier(identifier: str, *, progress_priority: int | None = None) -> None:
     """Write the journal with one identifier for the current test.
 
-    The logger receives the whole engine table, exactly as the composition
-    root and the deployed services hand it over: the journal command of the
-    table stays the configured one and only the identifier is replaced, so
-    the test exercises the real rendering path. progress_priority replaces
-    the configured progress level, so a test can prove that the value of
-    the config is the level of a line that names none.
+    The logger receives the identifier the composition root and every
+    deployed service hand over, exactly as they do it, and the declared
+    journal command carries it, so the test exercises the real rendering
+    path. progress_priority replaces the declared progress level, so a test
+    proves that the level of a line that names none is the declared one.
     """
 
-    if progress_priority is None:
-        engine = make_config(journal_identifier=identifier).engine
-    else:
-        engine = make_config(
-            journal_identifier=identifier, progress_priority=progress_priority
-        ).engine
-    logger.configure_journal(engine)
+    if progress_priority is not None:
+        _patches.setattr(engine_values, "PROGRESS_PRIORITY", progress_priority)
+    logger.configure_journal(identifier)
 
 
 def _close_journal_proc() -> None:
@@ -81,14 +78,16 @@ def _close_journal_proc() -> None:
 def _reset_journal_proc() -> Iterator[None]:
     """Start every test with no journal process and leave none behind.
 
-    The configured engine is dropped as well, so the identifier of one test
-    never routes the messages of the next one.
+    The configured journal and the declared values a test replaced are
+    dropped as well, so the identifier or the level of one test never
+    routes or colours the messages of the next one.
     """
 
     _close_journal_proc()
     yield
     _close_journal_proc()
     logger.configure_journal(None)
+    _patches.undo()
 
 
 def _read_journal(identifier: str) -> str:
@@ -116,7 +115,7 @@ def _read_journal(identifier: str) -> str:
                 timeout=3,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             continue
         if result.returncode == 0:
             chunks.append(result.stdout)
@@ -168,7 +167,7 @@ def journal_available() -> bool:
             timeout=5,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     if result.returncode != 0:
         return False
@@ -203,7 +202,7 @@ def _read_journal_priority(identifier: str, needle: str) -> str | None:
                 timeout=3,
                 check=False,
             )
-        except (OSError, subprocess.TimeoutExpired):
+        except OSError, subprocess.TimeoutExpired:
             continue
         if result.returncode == 0:
             for line in result.stdout.splitlines():
@@ -261,20 +260,18 @@ def test_log_event_mirrors_status_line(journal_available: bool) -> None:
 def test_log_event_default_priority_comes_from_the_config(
     journal_available: bool,
 ) -> None:
-    # A call that names no priority is journaled at the progress level of
-    # the [engine] table, so an operator can silence or detail the masses
-    # of progress lines without touching the code.
+    # A call that names no priority is journaled at the declared progress
+    # level, so an operator can silence or detail the masses of progress
+    # lines by changing one value.
     if not journal_available:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("info-priority")
     marker = f"info-{uuid.uuid4().hex[:8]}"
-    engine = make_config().engine
-    _use_identifier(identifier, progress_priority=engine.progress_priority)
+    _use_identifier(identifier)
     logger.log_event(marker)
     assert _wait_for(identifier, marker)
-    assert (
-        _read_journal_priority(identifier, marker)
-        == str(engine.progress_priority)
+    assert _read_journal_priority(identifier, marker) == str(
+        engine_values.PROGRESS_PRIORITY
     )
 
 
@@ -321,26 +318,25 @@ def test_log_result_line_to_journal_false_skips_journal(
     _use_identifier(identifier)
     logger.log_result_line("cli_tools", TaskResult(success=True, message="visible"))
     assert _wait_for(identifier, "[done] cli_tools: visible")
-    logger.log_result_line("cli_tools", TaskResult(success=True, message="hidden"), to_journal=False)
+    logger.log_result_line(
+        "cli_tools", TaskResult(success=True, message="hidden"), to_journal=False
+    )
     journal = _journal_with_marker(identifier, "result path finished")
     assert "hidden" not in journal
 
 
-def test_the_progress_timestamp_format_comes_from_the_config(
-    capsys: pytest.CaptureFixture[str],
+def test_the_progress_timestamp_format_is_the_declared_one(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The format of the moment a progress line carries is a config value:
-    # another format in the [engine] table is another prefix, and a logger
-    # nobody configured writes no timestamp at all. Both tables name no
-    # journal command, so the test touches the system journal not at all.
-    engine = replace(
-        make_config(engine_datetime_format="%H:%M").engine,
-        journal_command=(),
-        journal_priority_command=(),
-    )
-    logger.configure_journal(engine)
+    # The format of the moment a progress line carries is a declared value:
+    # another format is another prefix, and a logger nobody configured writes
+    # no timestamp at all. The journal tool is hidden, so the test proves the
+    # console shape without touching the system journal.
+    monkeypatch.setattr(engine_values, "DATETIME_FORMAT", "%H:%M")
+    monkeypatch.setattr(logger.shutil, "which", lambda name: None)
+    logger.configure_journal("format-probe")
     logger._last_log_time = 0.0
-    logger.log_progress("with the configured format")
+    logger.log_progress("with the declared format")
     prefix = capsys.readouterr().out.split(" ", 1)[0]
     assert len(prefix) == 5
     assert prefix[2] == ":"
@@ -431,18 +427,18 @@ def test_log_event_to_journal_false_skips_journal(
 def test_a_service_entry_point_keeps_the_journal_off(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A service entry point configures the journal from the config it loads,
+    # A service entry point configures the journal from the section it loads,
     # and the shared test document names the real journal command, so without
     # the fixture of conftest.py a test that calls main() would write into the
     # system journal under a production identifier. The fixture turns that
     # configuration into a no-op, and the untouched module state is the proof:
-    # the logger never received an engine table. The state is cleared first,
+    # the logger was never given an identifier. The state is cleared first,
     # because the journal tests of this file configure the logger themselves
     # and the order of the suite must not decide what this test proves.
     from pyntara import metrics
 
     logger.configure_journal(None)
-    config = make_config(task_data_root=tmp_path)
+    config = make_config()
 
     def fake_sleep(seconds: float) -> None:
         raise KeyboardInterrupt
@@ -457,49 +453,18 @@ def test_a_service_entry_point_keeps_the_journal_off(
     monkeypatch.setattr("sys.argv", ["pyntara.metrics", str(tmp_path / "config.toml")])
     with pytest.raises(KeyboardInterrupt):
         metrics.main()
-    assert logger._journal_engine is None
+    assert logger._journal_identifier is None
 
 
 def test_unconfigured_journal_forwards_nothing() -> None:
-    # Without a configured engine nothing is sent: the composition root and
-    # the deployed services hand the table over before the first message,
-    # so an unconfigured logger means the caller is not the engine and no
-    # name may be invented for it. The missing systemd-cat process is the
+    # A logger nobody configured sends nothing: the composition root and the
+    # deployed services hand the identifier over before the first message, so
+    # an unconfigured logger means the caller is not the engine and no name
+    # may be invented for it. The missing systemd-cat process is the
     # deterministic proof that nothing was sent.
     logger.configure_journal(None)
     logger.log_event("must not reach the journal")
     assert logger._journal_proc is None
-
-
-def test_empty_journal_command_forwards_nothing() -> None:
-    # An engine table that names no journal command cannot start a process;
-    # the console and the install log keep working as before. The missing
-    # process is the deterministic proof that nothing was sent.
-    engine = make_config().engine
-    logger.configure_journal(
-        replace(engine, journal_command=(), journal_priority_command=())
-    )
-    logger.log_event("must not reach the journal")
-    assert logger._journal_proc is None
-
-
-def test_priority_command_covers_the_progress_lines_alone(
-    journal_available: bool,
-) -> None:
-    # A table whose plain journal command is empty still reaches the
-    # journal, because the progress level is written by the command that
-    # carries the priority, and that command is the one the level needs.
-    if not journal_available:
-        pytest.skip("systemd journal is not available")
-    identifier = _new_identifier("only-priority")
-    marker = f"only-priority-{uuid.uuid4().hex[:8]}"
-    engine = replace(make_config(journal_identifier=identifier).engine, journal_command=())
-    logger.configure_journal(engine)
-    logger.log_event(marker)
-    assert _wait_for(identifier, marker)
-    assert _read_journal_priority(identifier, marker) == str(
-        engine.progress_priority
-    )
 
 
 def test_missing_systemd_cat_is_silent(

@@ -142,9 +142,7 @@ def check_vault_entry_title(value: object, name: str) -> str:
     title = check_nonempty_text(value, name)
     titles = {entry.title for entry in vault_structure.ENTRIES}
     if title not in titles:
-        raise ValueRuleError(
-            f"{name} names no entry of the vault structure: {title}"
-        )
+        raise ValueRuleError(f"{name} names no entry of the vault structure: {title}")
     return title
 
 

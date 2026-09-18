@@ -72,13 +72,9 @@ from config_helpers import assert_config_error, base_config
             "pool_enable_concurrency = true", 'pool_enable_concurrency = "true"'
         ),
         # subscription_path has no leading slash
-        base_config().replace(
-            'subscription_path = "/s/"', 'subscription_path = "s/"'
-        ),
+        base_config().replace('subscription_path = "/s/"', 'subscription_path = "s/"'),
         # subscription_path has no trailing slash
-        base_config().replace(
-            'subscription_path = "/s/"', 'subscription_path = "/s"'
-        ),
+        base_config().replace('subscription_path = "/s/"', 'subscription_path = "/s"'),
         # subscription_path is empty
         base_config().replace('subscription_path = "/s/"', 'subscription_path = ""'),
         # subscription_path is a bare slash
@@ -129,9 +125,7 @@ from config_helpers import assert_config_error, base_config
             "core_ready_wait_seconds = 120", "core_ready_wait_seconds = -1"
         ),
         # route_test_network is an empty string
-        base_config().replace(
-            'route_test_network = "tcp"', 'route_test_network = ""'
-        ),
+        base_config().replace('route_test_network = "tcp"', 'route_test_network = ""'),
         # route_test_protocol is an empty string
         base_config().replace(
             'route_test_protocol = "tls"', 'route_test_protocol = ""'
@@ -155,13 +149,9 @@ from config_helpers import assert_config_error, base_config
         # proxy_check_attempts is zero
         base_config().replace("proxy_check_attempts = 3", "proxy_check_attempts = 0"),
         # proxy_check_attempts is a string, not an integer
-        base_config().replace(
-            "proxy_check_attempts = 3", 'proxy_check_attempts = "3"'
-        ),
+        base_config().replace("proxy_check_attempts = 3", 'proxy_check_attempts = "3"'),
     ],
 )
-def test_three_x_ui_invalid_values_raise(
-    tmp_path: Path, content: str
-) -> None:
+def test_three_x_ui_invalid_values_raise(tmp_path: Path, content: str) -> None:
     # A wrong type or an out-of-range port is a config error.
     assert_config_error(tmp_path, content, "three_x_ui_xray_setup")

@@ -81,9 +81,7 @@ def test_load_config_upnp_forwarding_section_parses(tmp_path: Path) -> None:
             'journal_identifier = "upnp_forwarding"\nerror_priority = 9',
         ),
         # the two scope names are the same, so the report would hide the scope
-        lambda c: c.replace(
-            'nat_scope_name = "nat"', 'nat_scope_name = "global"'
-        ),
+        lambda c: c.replace('nat_scope_name = "nat"', 'nat_scope_name = "global"'),
     ],
 )
 def test_load_config_upnp_forwarding_rejects(

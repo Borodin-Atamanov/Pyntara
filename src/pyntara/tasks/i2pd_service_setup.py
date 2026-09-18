@@ -54,7 +54,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig, I2pdServiceSetupConfig
+from pyntara.config import I2pdServiceSetupConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.i2pd import b32_address
@@ -76,6 +76,7 @@ from pyntara.utils import (
     task_data_dir,
     version_from_output,
 )
+from pyntara.values import engine as engine_values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide);
@@ -103,9 +104,7 @@ def _render_config(cfg: I2pdServiceSetupConfig, template_path: Path) -> str:
             cfg.config_true_value if cfg.http_enabled else cfg.config_false_value
         ),
         socks_proxy_enabled=(
-            cfg.config_true_value
-            if cfg.socks_proxy_enabled
-            else cfg.config_false_value
+            cfg.config_true_value if cfg.socks_proxy_enabled else cfg.config_false_value
         ),
         socks_proxy_port=str(cfg.socks_proxy_port),
     )
@@ -167,9 +166,7 @@ def _select_asset(
     return None
 
 
-def _installed_version(
-    cfg: I2pdServiceSetupConfig, timeout: float
-) -> str | None:
+def _installed_version(cfg: I2pdServiceSetupConfig, timeout: float) -> str | None:
     """The installed i2pd version from the configured version command.
 
     A missing binary, a nonzero exit or a hang means i2pd is not
@@ -186,7 +183,7 @@ def _installed_version(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -194,7 +191,6 @@ def _installed_version(
 
 
 def _download_asset(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     url: str,
@@ -202,7 +198,7 @@ def _download_asset(
 ) -> None:
     """Download the package into the download directory.
 
-    The command is the engine-wide download call, so the flags and the
+    The command is the declared download call, so the flags and the
     progress text are the same as in every other download of the run.
     Raises RuntimeError when curl fails, so the caller reports the
     reason.
@@ -211,7 +207,7 @@ def _download_asset(
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_command(
-            download_command(engine, download_dir / name, url),
+            download_command(download_dir / name, url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -219,7 +215,6 @@ def _download_asset(
 
 
 def _install_deb(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     *,
@@ -238,15 +233,13 @@ def _install_deb(
 
     if not skip_update:
         try:
-            refresh_apt_index(engine, update_timeout)
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
     for _ in range(retries + 1):
-        ok, error = install_package_once(
-            engine, str(download_dir / name), install_timeout
-        )
+        ok, error = install_package_once(str(download_dir / name), install_timeout)
         if ok:
             break
     return ok, error
@@ -284,9 +277,7 @@ def _write_config(
     """Write the rendered configuration into the configured path."""
 
     cfg.config_path.parent.mkdir(parents=True, exist_ok=True)
-    cfg.config_path.write_text(
-        _render_config(cfg, template_path), encoding="utf-8"
-    )
+    cfg.config_path.write_text(_render_config(cfg, template_path), encoding="utf-8")
     apply_owner(cfg.config_path, owner_uid, owner_gid)
 
 
@@ -316,7 +307,6 @@ def _write_tunnels_config(
 
 
 def _wait_active(
-    engine: EngineConfig,
     service_name: str,
     attempts: int,
     retry_delay_seconds: float,
@@ -330,7 +320,7 @@ def _wait_active(
 
     for _ in range(attempts):
         time.sleep(retry_delay_seconds)
-        if service_is_active(engine, service_name, timeout):
+        if service_is_active(service_name, timeout):
             return True
     return False
 
@@ -406,9 +396,9 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.i2pd_service_setup
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     warnings: list[str] = []
     missing_commands = [
         name
@@ -438,13 +428,13 @@ def task(ctx: Context) -> TaskResult:
         os_release = read_os_release(cfg.os_release_file_path)
     except OSError as exc:
         warnings.append(f"cannot read {cfg.os_release_file_path}: {exc}")
-    debian_family = os_family_is_debian(ctx.config.engine, os_release)
+    debian_family = os_family_is_debian(os_release)
     if os_release and not debian_family:
         warnings.append(
             "i2pd deb packages require a Debian-based distribution; "
             + " ".join(
                 f"os-release {key}={os_release.get(key, '')}"
-                for key in ctx.config.engine.os_release_family_keys
+                for key in engine_values.OS_RELEASE_FAMILY_KEYS
             )
         )
     _log(
@@ -454,7 +444,7 @@ def task(ctx: Context) -> TaskResult:
     )
     arch = ""
     try:
-        arch = dpkg_architecture(ctx.config.engine, timeout)
+        arch = dpkg_architecture(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         warnings.append(f"cannot determine dpkg architecture: {exc}")
     _log(f"reading dpkg architecture: {arch or 'unknown'}")
@@ -463,7 +453,7 @@ def task(ctx: Context) -> TaskResult:
     release: dict[str, object] = {}
     if debian_family and arch:
         try:
-            release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+            release = fetch_latest_release(cfg.github_repo)
             tag = release_tag(release)
         except RuntimeError as exc:
             warnings.append(str(exc))
@@ -506,10 +496,7 @@ def task(ctx: Context) -> TaskResult:
     except RuntimeError as exc:
         warnings.append(str(exc))
     if ssh_port is not None:
-        _log(
-            "reading SSH listen port from ssh_daemon_setup directives: "
-            f"{ssh_port}"
-        )
+        _log(f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}")
 
     target_tunnels = (
         _render_tunnels_config(cfg, ssh_port, tunnels_template_path)
@@ -531,8 +518,8 @@ def task(ctx: Context) -> TaskResult:
         f"{'matches' if _saved_address_matches(cfg.address_file_path, address) else 'missing or stale'}"
     )
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(cfg.service_unit_name, timeout)
+    active = service_is_active(cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -559,7 +546,6 @@ def task(ctx: Context) -> TaskResult:
         downloaded = True
         try:
             _download_asset(
-                ctx.config.engine,
                 cfg.download_dir,
                 asset_name,
                 asset_url,
@@ -572,7 +558,6 @@ def task(ctx: Context) -> TaskResult:
             _log("package downloaded")
             _log(f"installing package: apt-get install -y {asset_name}")
             ok, error = _install_deb(
-                ctx.config.engine,
                 cfg.download_dir,
                 asset_name,
                 install_timeout=timeout,
@@ -593,9 +578,7 @@ def task(ctx: Context) -> TaskResult:
     if config_changed:
         _log(f"writing configuration {cfg.config_path}")
         try:
-            _write_config(
-                cfg, config_template_path, owner_uid, owner_gid
-            )
+            _write_config(cfg, config_template_path, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write configuration: {exc}")
         else:
@@ -647,9 +630,7 @@ def task(ctx: Context) -> TaskResult:
     ):
         action = "restart" if active else "start"
         service_command = (
-            cfg.service_restart_command
-            if active
-            else cfg.service_start_command
+            cfg.service_restart_command if active else cfg.service_start_command
         )
         if service_command:
             service_argv = substituted_command(
@@ -672,7 +653,6 @@ def task(ctx: Context) -> TaskResult:
                     f"{cfg.start_check_attempts} checks)"
                 )
                 if _wait_active(
-                    ctx.config.engine,
                     cfg.service_unit_name,
                     cfg.start_check_attempts,
                     cfg.start_check_retry_delay_seconds,

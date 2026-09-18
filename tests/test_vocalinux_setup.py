@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import errno
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.tasks import vocalinux_setup as task_module
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import vocalinux_setup as values
 
 
@@ -38,6 +38,7 @@ def _point_the_values_at_the_temporary_tree(
 
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
+
 
 ASSET = "Vocalinux-0.16.2-x86_64.AppImage"
 CONFIG_CONTENT = '{"speech_recognition": {"engine": "whisper_cpp"}}\n'
@@ -181,11 +182,10 @@ def _install_fakes(
             return _FakeProc(0, "Downloaded 13 bytes")
         raise AssertionError(f"unexpected command: {command}")
 
-    def fake_installed(_engine: object, package: str, timeout: float) -> bool:
+    def fake_installed(package: str, timeout: float) -> bool:
         return installed
 
     def fake_install(
-        _engine: object,
         packages: list[str],
         *,
         install_timeout: float,
@@ -200,9 +200,7 @@ def _install_fakes(
     monkeypatch.setattr(task_module, "run_command", fake_run)
     monkeypatch.setattr(task_module, "package_is_installed", fake_installed)
     monkeypatch.setattr(task_module, "install_packages", fake_install)
-    monkeypatch.setattr(
-        task_module, "dpkg_architecture", lambda _engine, _timeout: "amd64"
-    )
+    monkeypatch.setattr(task_module, "dpkg_architecture", lambda _timeout: "amd64")
     return fakes
 
 
@@ -235,9 +233,7 @@ def _seed_user_files(tmp_path: Path) -> None:
     autostart_path = _user_file(tmp_path, values.AUTOSTART_RELATIVE_PATH)
     autostart_path.parent.mkdir(parents=True, exist_ok=True)
     autostart_path.write_text(
-        task_module._autostart_content(
-            AUTOSTART_CONTENT, _appimage_target(tmp_path)
-        ),
+        task_module._autostart_content(AUTOSTART_CONTENT, _appimage_target(tmp_path)),
         encoding="utf-8",
     )
     echo_path = _user_file(tmp_path, values.ECHO_DESKTOP_RELATIVE_PATH)
@@ -528,31 +524,27 @@ def test_missing_config_template_is_a_warning(
     result = task_module.task(ctx)
 
     assert result.success is True
-    assert any(
-        "config template" in warning for warning in result.warnings
-    )
+    assert any("config template" in warning for warning in result.warnings)
     home = Path(common_values.DESKTOP_HOME_DIR)
     assert not (home / values.APP_CONFIG_RELATIVE_PATH).exists()
     assert (home / values.AUTOSTART_RELATIVE_PATH).is_file()
 
 
-def test_release_download_url_comes_from_the_engine_template() -> None:
-    # The repository pair and the host template are values: another pair and
-    # another host are the URL the task downloads from, so a mirror needs no
-    # code change. The template belongs to the engine and still lives in the
-    # config document until the engine migrates.
-    engine = replace(
-        make_config().engine,
-        github_release_download_url=(
-            "https://mirror.example/{repo}/v{version}/{asset_name}"
-        ),
+def test_release_download_url_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The repository pair and the host template are declared values: another
+    # pair and another host are the URL the task downloads from, so a mirror
+    # needs no code change.
+    monkeypatch.setattr(
+        engine_values,
+        "GITHUB_RELEASE_DOWNLOAD_URL",
+        "https://mirror.example/{repo}/v{version}/{asset_name}",
     )
     url = task_module._release_download_url(
-        engine, "Owner/App", "1.2.3", "App-1.2.3-x86_64.AppImage"
+        "Owner/App", "1.2.3", "App-1.2.3-x86_64.AppImage"
     )
-    assert url == (
-        "https://mirror.example/Owner/App/v1.2.3/App-1.2.3-x86_64.AppImage"
-    )
+    assert url == ("https://mirror.example/Owner/App/v1.2.3/App-1.2.3-x86_64.AppImage")
 
 
 def test_user_command_prefix_comes_from_the_values(
@@ -560,9 +552,7 @@ def test_user_command_prefix_comes_from_the_values(
 ) -> None:
     # The wrapper that runs a command as the target user is a value of the
     # section: another wrapper is the argv the task builds.
-    monkeypatch.setattr(
-        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--")
-    )
+    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--"))
     assert task_module._as_user_command(
         ["kwriteconfig6", "--file", "kglobalshortcutsrc"]
     ) == [
@@ -605,9 +595,7 @@ def test_file_operations_come_from_the_values(
     # The maker of the parent directory, the owner writer and the mode writer
     # are values: another program in the section is the argv the task runs
     # around a user file.
-    monkeypatch.setattr(
-        values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}")
-    )
+    monkeypatch.setattr(values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
     monkeypatch.setattr(
         values, "CHOWN_COMMAND", ("mychown", "--owner", "{owner}", "{path}")
     )
@@ -633,10 +621,7 @@ def test_file_operations_come_from_the_values(
     assert seen[1] == [
         "mychown",
         "--owner",
-        (
-            f"{common_values.DESKTOP_USERNAME}:"
-            f"{common_values.DESKTOP_USERNAME}"
-        ),
+        (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ]
     assert seen[2] == ["mychmod", "--mode", f"{0o644:o}", str(target)]

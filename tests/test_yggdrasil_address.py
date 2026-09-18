@@ -84,9 +84,7 @@ def test_fallback_to_saved_file(
     # The live query fails but the saved address file exists: the record
     # carries the saved address and the live reason as a note, so a
     # collector that keeps the document keeps the error.
-    monkeypatch.setattr(
-        yggdrasil_address.subprocess, "run", _fake_run(1, "", "boom")
-    )
+    monkeypatch.setattr(yggdrasil_address.subprocess, "run", _fake_run(1, "", "boom"))
     saved = tmp_path / "saved"
     saved.write_text(f"{SELF_ADDRESS}\n", encoding="utf-8")
     config_path = _config(tmp_path, saved)
@@ -102,9 +100,7 @@ def test_unparsable_output_falls_back(
 ) -> None:
     # The live query exits 0 but the output is not JSON: the saved file
     # is used and the reason travels as a note.
-    monkeypatch.setattr(
-        yggdrasil_address.subprocess, "run", _fake_run(0, "not json")
-    )
+    monkeypatch.setattr(yggdrasil_address.subprocess, "run", _fake_run(0, "not json"))
     saved = tmp_path / "saved"
     saved.write_text(f"{SELF_ADDRESS}\n", encoding="utf-8")
     config_path = _config(tmp_path, saved)
@@ -142,9 +138,7 @@ def test_a_missing_key_of_the_channel_is_named(
         _fake_run(0, json.dumps({"address": SELF_ADDRESS})),
     )
     content = _config(tmp_path, tmp_path / "saved").read_text(encoding="utf-8")
-    quiet = content.replace(
-        'report_channel_name = "yggdrasil"', "", 1
-    )
+    quiet = content.replace('report_channel_name = "yggdrasil"', "", 1)
     assert quiet != content, "the fixture no longer carries the key"
     config_path = tmp_path / "without-channel.toml"
     config_path.write_text(quiet, encoding="utf-8")

@@ -23,7 +23,8 @@ from config_helpers import (
         ),
         # local_vault_setup source_vault_default is an empty string
         base_config().replace(
-            'source_vault_default = "secrets/default.vault"', 'source_vault_default = ""'
+            'source_vault_default = "secrets/default.vault"',
+            'source_vault_default = ""',
         ),
         # local_vault_setup local_vault_path is a number, not a string
         base_config().replace(
@@ -31,7 +32,9 @@ from config_helpers import (
             "local_vault_path = 1",
         ),
         # local_vault_setup pass_file_path is an empty string
-        base_config().replace('pass_file_path = "/etc/pyntara/pass"', 'pass_file_path = ""'),
+        base_config().replace(
+            'pass_file_path = "/etc/pyntara/pass"', 'pass_file_path = ""'
+        ),
         # local_vault_setup vault_password_entry_title is a number, not a string
         base_config().replace(
             'vault_password_entry_title = "pyntara_local_vault_password"',
@@ -138,9 +141,7 @@ def test_load_config_generated_password_parses(tmp_path: Path) -> None:
     )
     assert entry.generated_password == "proquint-7"
     telemetry = next(
-        e
-        for e in config.vault_structure.entries
-        if e.title == "telemetry_password"
+        e for e in config.vault_structure.entries if e.title == "telemetry_password"
     )
     assert telemetry.generated_password == "proquint-4"
 
@@ -174,26 +175,28 @@ def test_load_config_generated_password_wrong_types_raise(
         # vault_structure groups is a string, not an array
         base_config().replace(
             "[vault_structure]\n[[vault_structure.entries]]",
-            "[vault_structure]\ngroups = \"NextDNS\"\n[[vault_structure.entries]]",
+            '[vault_structure]\ngroups = "NextDNS"\n[[vault_structure.entries]]',
         ),
         # vault_structure group title is a number, not a string
         base_config().replace(
             "[vault_structure]\n[[vault_structure.entries]]",
-            "[vault_structure]\n[[vault_structure.groups]]\ntitle = 1\nnotes = \"x\"\n[[vault_structure.entries]]",
+            '[vault_structure]\n[[vault_structure.groups]]\ntitle = 1\nnotes = "x"\n[[vault_structure.entries]]',
         ),
         # vault_structure group notes is missing
         base_config().replace(
             "[vault_structure]\n[[vault_structure.entries]]",
-            "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"NextDNS\"\n[[vault_structure.entries]]",
+            '[vault_structure]\n[[vault_structure.groups]]\ntitle = "NextDNS"\n[[vault_structure.entries]]',
         ),
         # vault_structure group title collides with an entry title
         base_config().replace(
             "[vault_structure]\n[[vault_structure.entries]]",
-            "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"password_salt\"\nnotes = \"x\"\n[[vault_structure.entries]]",
+            '[vault_structure]\n[[vault_structure.groups]]\ntitle = "password_salt"\nnotes = "x"\n[[vault_structure.entries]]',
         ),
     ],
 )
-def test_load_config_vault_groups_wrong_types_raise(tmp_path: Path, content: str) -> None:
+def test_load_config_vault_groups_wrong_types_raise(
+    tmp_path: Path, content: str
+) -> None:
     assert_config_error(tmp_path, content)
 
 
@@ -201,7 +204,7 @@ def test_load_config_vault_groups_parse(tmp_path: Path) -> None:
     # A configured group is parsed into the typed groups tuple.
     content = base_config().replace(
         "[vault_structure]\n[[vault_structure.entries]]",
-        "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"NextDNS\"\nnotes = \"Profile accounts.\"\n[[vault_structure.entries]]",
+        '[vault_structure]\n[[vault_structure.groups]]\ntitle = "NextDNS"\nnotes = "Profile accounts."\n[[vault_structure.entries]]',
     )
     config = load_checked_config(write_config(tmp_path, content))
     assert len(config.vault_structure.groups) == 1
@@ -214,9 +217,9 @@ def test_load_config_vault_group_seed_entries_parse(tmp_path: Path) -> None:
     # group, so the regeneration tooling can mirror the structure.
     content = base_config().replace(
         "[vault_structure]\n[[vault_structure.entries]]",
-        "[vault_structure]\n[[vault_structure.groups]]\ntitle = \"port_forwarding_servers\"\n"
+        '[vault_structure]\n[[vault_structure.groups]]\ntitle = "port_forwarding_servers"\n'
         'notes = "Server addresses."\n'
-        '[[vault_structure.groups.seed_entries]]\n'
+        "[[vault_structure.groups.seed_entries]]\n"
         'title = "Server 001"\nurl = "200:a804:881c:d5d8:6d4e:afab:e158:371"\n'
         'notes = "Test address."\n'
         "[[vault_structure.entries]]",

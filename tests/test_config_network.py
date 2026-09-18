@@ -18,13 +18,9 @@ from config_helpers import (
     "content",
     [
         # i2pd github_repo is a number, not a string
-        base_config().replace(
-            'github_repo = "PurpleI2P/i2pd"', "github_repo = 1"
-        ),
+        base_config().replace('github_repo = "PurpleI2P/i2pd"', "github_repo = 1"),
         # i2pd github_repo is an empty string
-        base_config().replace(
-            'github_repo = "PurpleI2P/i2pd"', 'github_repo = ""'
-        ),
+        base_config().replace('github_repo = "PurpleI2P/i2pd"', 'github_repo = ""'),
         # i2pd download_dir is a number, not a string
         base_config().replace(
             'download_dir = "/var/lib/pyntara/i2pd-download"', "download_dir = 1"
@@ -56,9 +52,7 @@ from config_helpers import (
         # i2pd install_retries is zero
         base_config().replace("install_retries = 3", "install_retries = 0"),
         # i2pd start_check_attempts is a string, not an integer
-        base_config().replace(
-            "start_check_attempts = 5", 'start_check_attempts = "5"'
-        ),
+        base_config().replace("start_check_attempts = 5", 'start_check_attempts = "5"'),
         # i2pd start_check_attempts is zero
         base_config().replace("start_check_attempts = 5", "start_check_attempts = 0"),
         # i2pd start_check_retry_delay_seconds is a string, not a number
@@ -163,9 +157,7 @@ from config_helpers import (
         # yggdrasil peer_batch_size is zero
         base_config().replace("peer_batch_size = 100", "peer_batch_size = 0"),
         # yggdrasil peer_target_count is a string, not an integer
-        base_config().replace(
-            "peer_target_count = 6", 'peer_target_count = "6"'
-        ),
+        base_config().replace("peer_target_count = 6", 'peer_target_count = "6"'),
         # yggdrasil peer_probe_timeout_seconds is zero
         base_config().replace(
             "peer_probe_timeout_seconds = 30", "peer_probe_timeout_seconds = 0"
@@ -173,7 +165,9 @@ from config_helpers import (
         # yggdrasil peer_max_batches is negative
         base_config().replace("peer_max_batches = 0", "peer_max_batches = -1"),
         # yggdrasil static_peers is a string, not an array
-        base_config().replace("static_peers = []", 'static_peers = "tcp://1.2.3.4:1000"'),
+        base_config().replace(
+            "static_peers = []", 'static_peers = "tcp://1.2.3.4:1000"'
+        ),
         # yggdrasil static_peers contains an unknown scheme
         base_config().replace(
             "static_peers = []", 'static_peers = ["carrierpigeon://1.2.3.4:1000"]'
@@ -204,13 +198,9 @@ from config_helpers import (
             "address_save_retry_max_seconds = 0",
         ),
         # ssh_daemon_setup package_name is a number, not a string
-        base_config().replace(
-            'package_name = "openssh-server"', "package_name = 1"
-        ),
+        base_config().replace('package_name = "openssh-server"', "package_name = 1"),
         # ssh_daemon_setup package_name is an empty string
-        base_config().replace(
-            'package_name = "openssh-server"', 'package_name = ""'
-        ),
+        base_config().replace('package_name = "openssh-server"', 'package_name = ""'),
         # ssh_daemon_setup package_status_timeout_seconds is zero
         base_config().replace(
             "package_status_timeout_seconds = 30",
@@ -256,9 +246,13 @@ from config_helpers import (
             'public_key_file_name = "id_ed25519.pub"', "public_key_file_name = 1"
         ),
         # ssh_daemon_setup private_key_file_mode is not four digits
-        base_config().replace('private_key_file_mode = "0600"', 'private_key_file_mode = "600"'),
+        base_config().replace(
+            'private_key_file_mode = "0600"', 'private_key_file_mode = "600"'
+        ),
         # ssh_daemon_setup public_key_file_mode is a number, not a string
-        base_config().replace('public_key_file_mode = "0644"', "public_key_file_mode = 644"),
+        base_config().replace(
+            'public_key_file_mode = "0644"', "public_key_file_mode = 644"
+        ),
         # ssh_daemon_setup authorized_keys_file_mode is not octal
         base_config().replace(
             'authorized_keys_file_mode = "0600"', 'authorized_keys_file_mode = "nope"'
@@ -307,9 +301,7 @@ from config_helpers import (
         # tor_setup torrc_path is a number, not a string
         base_config().replace('torrc_path = "/etc/tor/torrc"', "torrc_path = 1"),
         # tor_setup torrc_path is an empty string
-        base_config().replace(
-            'torrc_path = "/etc/tor/torrc"', 'torrc_path = ""'
-        ),
+        base_config().replace('torrc_path = "/etc/tor/torrc"', 'torrc_path = ""'),
         # tor_setup torrc_dropin_path is a number, not a string
         base_config().replace(
             'torrc_dropin_path = "/etc/tor/pyntara.conf"',
@@ -410,9 +402,7 @@ from config_helpers import (
             'include_directive = "%include"', 'include_directive = ""'
         ),
         # tor_setup torrc_comment_sign is an empty string
-        base_config().replace(
-            'torrc_comment_sign = "#"', 'torrc_comment_sign = ""'
-        ),
+        base_config().replace('torrc_comment_sign = "#"', 'torrc_comment_sign = ""'),
         # tor_setup hostname_file_name is an empty string
         base_config().replace(
             'hostname_file_name = "hostname"', 'hostname_file_name = ""'

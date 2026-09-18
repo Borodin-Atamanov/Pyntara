@@ -1259,3 +1259,233 @@ machine in this turn, and the probe is named with the figure.
     (found by ruff, fixed at once), and an edit meant to rewrite a loop deleted two
     of its lines (found by the section tests, restored). Both came from writing an
     oldString from memory instead of from a fresh read.
+
+136. Stage E2 of the values migration (the engine) started on 2026-09-18 on the
+    branch engine-values, after the kde_settings section. Measured before any
+    edit: config/engine.toml holds 98 values and every one of them is read;
+    `.engine` is read 427 times; 94 function signatures in 31 files take
+    `engine: EngineConfig`; 31 task modules and 20 engine modules outside the
+    config package read the table; 37 test files touch it.
+    Two decisions taken with the measurement and stated to the user before the
+    edit: (1) `engine.desktop_username` duplicates common.DESKTOP_USERNAME, so
+    the key is dropped and the readers take the shared value, which makes the
+    "empty value disables the session export" branch of pyntara.py unreachable
+    (the values guard refuses an empty text) and its test goes away - a change
+    of behaviour, not only a move; (2) EngineConfig.with_journal_identifier is
+    not a value but a way to hand the logger another identifier, so after the
+    move the logger takes the identifier as a plain parameter and the variant
+    table with the method disappears; the five call sites pass the identifier of
+    their own section. No new mechanism is added for either.
+    Stage plan: 1) the values module, 2) the 20 engine modules outside the
+    tasks, 3) the 31 task modules, 4) the tests, 5) the removal of the TOML
+    file, the config dataclass, the loader field, the config stand and the
+    documents that describe the table.
+    Stage 1 done: src/pyntara/values/engine.py holds 97 typed values (98 TOML
+    keys less the dropped duplicate) plus READ_VALUE_NAMES, verified value by
+    value against the TOML by a script (zero differences, no extra name, the
+    read list exactly the declared names), every value passes the rule of its
+    annotation, and the module is not yet registered in VALUES_MODULE_NAMES
+    because nothing reads it until stage 2.
+
+137. Stage 2 of E2 started on 2026-09-18 with the two central modules of the
+    engine. src/pyntara/utils.py lost the engine parameter of fourteen helpers
+    (package_is_installed, install_package_once, refresh_apt_index,
+    install_packages, os_family_is_debian, dpkg_architecture, curl_command,
+    download_command, release_query_command, _parallel_curl_command,
+    split_url_answers, fetch_urls_in_parallel, fetch_urls_by_source,
+    service_is_enabled, service_is_active, port_listener_pid, service_main_pid,
+    ensure_port_free, kglobalaccel_names) and reads engine_values; the module
+    keeps no import of the config package. src/pyntara/logger.py no longer
+    takes the whole table: configure_journal(identifier) receives the
+    identifier as a plain parameter, _write_to_priority_journal and
+    _shared_journal_command take it from the caller, and the datetime format,
+    the two journal commands and the two priorities are read from
+    engine_values.
+    Third decision of the stage, stated with the other two: the two fallbacks
+    "a table whose priority command is empty falls back to the plain journal
+    command" and "an incomplete config still reaches the journal" disappear,
+    because a declared command is a non-empty tuple by the rule of the values
+    guard and the branch can never run; the empty-command tests of the logger
+    go away with them.
+    A helper that reads a value the caller can state itself lost the argument
+    too: nothing in utils.py takes an engine table any more.
+
+138. Stage 2 continued on 2026-09-18 with four branch commits: utils and logger
+    (0a3fbdc), the shared helper modules github_release, ssh_access, augeas,
+    upnp, public_address (449edb3), the address modules i2pd_address,
+    tor_address, yggdrasil_address, network_addresses, and the report commands
+    country_report, public_address_report plus location. Every one of them
+    reads engine_values and none of them imports the config package for the
+    engine table any more.
+    Two more rules left the runtime code for the values suite, the same way the
+    check of the two byte factors already lives there: the check that every
+    address family has a word in REPORT_FAMILY_WORDS (public_address_report
+    had a command that refused to print a document with an unreadable family)
+    and, still to add, the rule that CURL_PARALLEL_WRITE_OUT carries
+    CURL_PARALLEL_SOURCE_MARKER. Both compare two declared values, so a
+    machine can no longer break them and the suite is the right place.
+    Measured remainder of the stage at this point: 14 engine modules outside
+    the tasks still read the table (pyntara.py 14 mentions, xray_facts 5,
+    xray_certificate 5, upnp_forwarding_state 5, upnp_forwarding 5,
+    metrics_send 5, metrics_collect 5, telemetry_pdf 4, metrics_commit 4,
+    xray_panel 4, xray_client 2, port_forwarding_state 2, task_runner 1,
+    port_forwarding 1, metrics_ingest 1, metrics 1) and 33 task modules do.
+
+139. Stage 2, third stride of the same day (commit c58dcdb): the metrics entry
+    points and the two forwarding state commands. metrics.py and
+    metrics_ingest.py no longer build a variant of the engine table; they hand
+    the journal identifier of their own section to configure_journal, because
+    the variant existed only to carry that one name. metrics_commit reads the
+    declared error priority and NanosecondsPerSecond, port_forwarding_state and
+    upnp_forwarding_state read the declared report vocabulary, and
+    telemetry_pdf reads the declared record keys and scope names.
+    Measured remainder of stage 2: ten engine modules outside the tasks read
+    the table (port_forwarding, xray_certificate, xray_client, xray_facts,
+    upnp_forwarding, pyntara, metrics_collect, task_runner, metrics_send,
+    xray_panel) and thirty one task modules do.
+
+140. Stage 2 of E2 is closed on 2026-09-18: no module of the package outside
+    the tasks, the config package and the values package reads the engine table
+    any more (measured with a grep for a read of the table and for the type).
+    The last stride covered xray_certificate, xray_facts, xray_panel,
+    upnp_forwarding, port_forwarding, task_runner, xray_client, metrics_send,
+    metrics_collect and the composition root pyntara.py, plus the call sites in
+    tasks/three_x_ui_xray_setup.py that the changed helpers answer to.
+    pyntara.py lost three parameters (the environment flag reader, the process
+    check and the mode resolution read declared values now) and the desktop
+    session export takes the shared DESKTOP_USERNAME: the branch that reported
+    "desktop_username is not set" is deleted, because the guard of the values
+    refuses an empty text, so that state cannot exist. The count of the run is
+    unchanged otherwise.
+    The type checker over the whole source tree still reports the thirty one
+    task modules as stage 3 work; the branch stays red until then.
+
+141. Stage 3 of E2 (the task modules) started on 2026-09-18 with the six
+    smallest tasks: add_extra_repos, hostname, commit_final_system_metrics,
+    local_vault_setup, nextdns_setup_system_wide and zswap_service read
+    engine_values.COMMAND_TIMEOUT_SECONDS and the declared owner pair
+    ROOT_OWNER_UID and ROOT_OWNER_GID. tasks/three_x_ui_xray_setup.py was
+    updated in stage 2 together with the helpers it calls, so its own reads of
+    the table (the engine local and the command timeout) are what is left in
+    it. Measured remainder: twenty six task modules read the table.
+
+142. Plan of the remainder of E2, written 2026-09-18 before the work. Facts of
+    stage 0: twenty six task modules read the engine table (yggdrasil 22
+    mentions, rustdesk 18, i2pd 16, ssh_daemon 15, dnsproxy 14,
+    system_metrics 11, tor 10, then port_forwarding, kde_settings, zram,
+    vocalinux, telegram, scrcpy, three_x_ui, swapfile, ssh_client, sotavpn,
+    chrome, kde_keyboard, cli_tools, zswap, upnp_forwarding,
+    system_metrics_initial_collect, playwright, imagemagick, ffmpeg); thirty
+    seven test files touch it; the stand has nine engine_* parameters in
+    tests/support.py plus a replace block, 458 lines of tests/test_config_engine.py
+    and the _engine_table validator block of tests/config_checks.py; about
+    twenty documents in docs/ name the [engine] table.
+    Stages: 3) the task modules; 4) the tests (the stand, then the call sites,
+    then the expectations); 5) the removal of the TOML file, the config class,
+    the loader field, the package export, the stand pieces and the config
+    engine test, together with the registration of the module in
+    VALUES_MODULE_NAMES and three EXTRA_VALUE_RULES (the byte factors agree,
+    CURL_PARALLEL_SOURCE_MARKER appears in CURL_PARALLEL_WRITE_OUT, every
+    family of ADDRESS_FAMILY_BY_FLAG has a word in REPORT_FAMILY_WORDS);
+    6) the documents that describe the table.
+    Decision taken here and stated: JOURNAL_COMMAND (the plain journal command
+    without a priority flag) lost its only reader when the unreachable fallback
+    of the logger was deleted, so the value goes away with the TOML file; a
+    declared value nobody reads is dead weight and the guard refuses it. The
+    engine therefore always writes through the priority command.
+    Risk: the module may only be registered in the values guard once every
+    value has a reader, so the registration belongs to the last stage.
+
+143. Stage 3 progress of the same day, after the plan point: nineteen of the
+    twenty six task modules read the declared values now, in four strides
+    (imagemagick, playwright, ffmpeg, system_metrics_initial_collect,
+    upnp_forwarding_setup, zswap; cli_tools, kde_keyboard_setup,
+    ssh_client_setup, swapfile_service_install; zram_service, vocalinux_setup,
+    telegram_setup, scrcpy_setup; port_forwarding_setup, kde_settings,
+    chrome_setup, sotavpn_setup, three_x_ui_xray_setup). Every one of them lost
+    the engine parameter of its helpers too, and the two modules that passed the
+    table through several levels (chrome_setup, three_x_ui_xray_setup) no longer
+    carry it at all.
+    Two mistakes of my own in this stride, both fixed at once and both from
+    writing an edit from memory instead of from a fresh read: an import line was
+    duplicated in scrcpy_setup, and the opening line of a multi-line import was
+    deleted in port_forwarding_setup (the deletion happened in the same call
+    whose other half the tool refused, so only the second half ran). Both were
+    caught by ruff in the same stride.
+    Measured remainder of stage 3: seven modules, all in the group that passes
+    the table to the curl and package helpers:
+    yggdrasil_service_setup, rustdesk_setup, i2pd_service_setup,
+    ssh_daemon_setup, dnsproxy_setup, system_metrics_setup, tor_setup.
+
+144. Stage 3 of E2 is closed on 2026-09-18: not one module of the package
+    outside the config package and the values package reads the engine table any
+    more, and the type checker is clean over all 138 source files. The last
+    stride covered tor_setup, system_metrics_setup, dnsproxy_setup,
+    ssh_daemon_setup, rustdesk_setup, yggdrasil_service_setup and
+    i2pd_service_setup; with them the whole group that passes the table to the
+    curl, apt and service helpers is converted, and those helpers lost the
+    parameter everywhere (download_command, release_query_command, curl_command,
+    refresh_apt_index, install_package_once, install_packages,
+    package_is_installed, dpkg_architecture, os_family_is_debian,
+    service_is_active, service_is_enabled, ensure_port_free, ensure_augtool,
+    sync_dropin, kglobalaccel_names, session helpers, fetch_latest_release,
+    directly_connected_networks, detect_country, port_listener_pid, _wait_active
+    in four tasks).
+    My own mistake of this stride, reported because it broke the file and was
+    caught by ruff at once: a replacement left a doubled colon after an if line
+    in dnsproxy_setup (the oldString stopped before the colon while the new one
+    carried it). Fixed immediately.
+    Next: stage 4, the tests, where the stand (tests/support.py) and the call
+    sites are the bulk, and then stage 5, the removal.
+
+145. Stage 4 of E2 is closed on 2026-09-18: the whole suite is green, 2339
+    passed, with the engine section read from the values module everywhere. The
+    work went file by file in eight strides and the classes of failure were
+    these: an engine path that still pointed at the real machine (the systemd
+    unit directory, the task data root), a helper that lost the engine table
+    (country_document, absent_config_keys, address_records, the journal
+    configuration call of every deployed service), a test that built a variant
+    engine table with replace(...) and now points the declared value with
+    monkeypatch instead, an assertion on the argument position of a shorter
+    call, and a test of a message or a branch that the migration removed.
+    Two tests changed their subject rather than their values, and both are
+    reported: the check of the report of the public addresses no longer proves
+    that a family without a word is named, because the report reads the words
+    directly and the planned values rule keeps them complete, so the check now
+    proves that both families of the model carry a word; and the run over an
+    unreadable config no longer fails early, because the catalog and the journal
+    identifier are declared values, so the run proceeds and every task reports
+    the absent section values as a clean skip, which is the behaviour the target
+    machine sees.
+    Measured before the last stride: 12 failures left, then 6, then 0.
+
+146. Stage 5 of E2 is closed on 2026-09-18, and stage 6 with it: the engine
+    section exists only in src/pyntara/values/engine.py. Removed from the tree
+    (all three through gio trash): config/engine.toml, src/pyntara/config/engine.py
+    and tests/test_config_engine.py. The Config dataclass lost its engine field,
+    the loader and the config package lost the import and the export, the
+    config_checks.py validator of the section went away with the half a thousand
+    lines that checked every one of the 97 names, the [engine] fragment left
+    tests/config_helpers.py, and the repository config directory no longer holds
+    the file. The engine module is registered in VALUES_MODULE_NAMES, which put
+    the two generic guards on it at once and they found the one dead value:
+    engine.JOURNAL_COMMAND had no reader since the logger fallback was deleted,
+    so the value is gone and the comment above JOURNAL_PRIORITY_COMMAND now
+    describes the single command that remains.
+    Three relations that the annotation rules cannot express are now plain tests
+    in tests/test_values.py rather than a new machinery: the two byte factors
+    agree, the parallel source marker is part of the parallel write-out text, and
+    every family of ADDRESS_FAMILY_BY_FLAG has a word in REPORT_FAMILY_WORDS. The
+    first two were the checks the deleted config validator carried; the third
+    replaces the runtime guard that the report lost, because the report now reads
+    the words directly and a missing one would raise on the target machine.
+    Stage 6 rewrote 32 mentions of the table in 15 documents and in inst.sh: the
+    phrase now names the engine values module and, where the location matters,
+    the file src/pyntara/values/engine.py. Two sentences changed meaning rather
+    than wording: the bootstrap contract no longer promises that a table naming
+    no journal command forwards nothing (the identifier is declared, never
+    absent), and the structure guide describes config/ as the home of the
+    sections that are not migrated yet, with the engine example replaced.
+    The suite counts 2267 tests now (the 72 of the removed config file are gone);
+    every gate passes: ruff, ruff format, mypy strict over 137 source files, mypy
+    over the tests, and the four bash suites.

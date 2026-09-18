@@ -29,7 +29,6 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -45,6 +44,7 @@ from pyntara.utils import (
     trim_whitespace,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import vocalinux_setup as values
 
@@ -88,17 +88,15 @@ def _home_env() -> dict[str, str]:
     return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
-def _release_download_url(
-    engine: EngineConfig, repo: str, version: str, asset_name: str
-) -> str:
+def _release_download_url(repo: str, version: str, asset_name: str) -> str:
     """The download url of a pinned release asset.
 
     The repository pair, the pinned version and the asset name are
-    substituted into the engine-wide template, so the host is a config
-    value and a mirror works without touching the code.
+    substituted into the declared template, so the host is a declared value
+    and a mirror works without touching the code.
     """
 
-    return engine.github_release_download_url.format(
+    return engine_values.GITHUB_RELEASE_DOWNLOAD_URL.format(
         repo=repo, version=version, asset_name=asset_name
     )
 
@@ -150,9 +148,7 @@ def _write_user_file(
     try:
         run_command(
             _as_user_command(
-                substituted_command(
-                    values.MKDIR_COMMAND, {"path": str(target.parent)}
-                ),
+                substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
             ),
             extra_env=_home_env(),
             timeout=timeout,
@@ -216,9 +212,7 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = _kconfig_command(
-        values.KREADCONFIG_COMMAND, group_segments, key
-    )
+    command = _kconfig_command(values.KREADCONFIG_COMMAND, group_segments, key)
     result = run_command(
         _as_user_command(command),
         extra_env=_home_env(),
@@ -238,9 +232,7 @@ def _kwriteconfig(
 ) -> None:
     """Write one KConfig key with the writer of the section as the user."""
 
-    command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, group_segments, key
-    )
+    command = _kconfig_command(values.KWRITECONFIG_COMMAND, group_segments, key)
     command.append(value)
     run_command(
         _as_user_command(command),
@@ -287,6 +279,7 @@ def _sync_echo_shortcut(
     )
     return True, None
 
+
 def _autostart_content(template: str, appimage_path: Path) -> str:
     """The autostart desktop entry that launches the AppImage minimized.
 
@@ -301,7 +294,6 @@ def _autostart_content(template: str, appimage_path: Path) -> str:
 
 
 def _install_appimage(
-    engine: EngineConfig,
     *,
     timeout: float,
     force: bool,
@@ -321,14 +313,12 @@ def _install_appimage(
     moved into the user trash, never deleted.
     """
 
-    arch = dpkg_architecture(engine, timeout)
+    arch = dpkg_architecture(timeout)
     asset_arch = release_asset_architecture(
-        engine.release_asset_architectures, arch
+        engine_values.RELEASE_ASSET_ARCHITECTURES, arch
     )
     asset_name = _asset_name(asset_arch)
-    url = _release_download_url(
-        engine, values.GITHUB_REPO, values.VERSION, asset_name
-    )
+    url = _release_download_url(values.GITHUB_REPO, values.VERSION, asset_name)
     install_dir = (
         Path(common_values.DESKTOP_HOME_DIR) / values.APPIMAGE_DIR_RELATIVE_PATH
     )
@@ -338,9 +328,7 @@ def _install_appimage(
         return False, None
     run_command(
         _as_user_command(
-            substituted_command(
-                values.MKDIR_COMMAND, {"path": str(install_dir)}
-            ),
+            substituted_command(values.MKDIR_COMMAND, {"path": str(install_dir)}),
         ),
         extra_env=_home_env(),
         timeout=timeout,
@@ -349,20 +337,18 @@ def _install_appimage(
     if not cache.is_file():
         cache.parent.mkdir(parents=True, exist_ok=True)
         partial = values.DOWNLOAD_DIR / (
-            asset_name + engine.partial_download_file_suffix
+            asset_name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX
         )
         try:
             run_command(
-                download_command(engine, partial, url),
+                download_command(partial, url),
                 timeout=timeout,
             )
             partial.replace(cache)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             partial.unlink(missing_ok=True)
             return False, f"cannot download {url}: {exc}"
-    rewritten = not (
-        target.is_file() and filecmp.cmp(cache, target, shallow=False)
-    )
+    rewritten = not (target.is_file() and filecmp.cmp(cache, target, shallow=False))
     if not rewritten:
         _log(f"the installed image already matches {cache.name}")
     try:
@@ -380,8 +366,7 @@ def _install_appimage(
             values.CHOWN_COMMAND,
             {
                 "owner": (
-                    f"{common_values.DESKTOP_USERNAME}:"
-                    f"{common_values.DESKTOP_USERNAME}"
+                    f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"
                 ),
                 "path": str(target),
             },
@@ -398,7 +383,9 @@ def _install_appimage(
         ),
         timeout=timeout,
     )
-    trash_dir = Path(common_values.DESKTOP_HOME_DIR) / ".local" / "share" / "Trash" / "files"
+    trash_dir = (
+        Path(common_values.DESKTOP_HOME_DIR) / ".local" / "share" / "Trash" / "files"
+    )
     for stale in install_dir.glob("Vocalinux-*.AppImage"):
         if stale.name == asset_name:
             continue
@@ -423,9 +410,7 @@ def _ensure_input_group(*, timeout: float) -> tuple[bool, str | None]:
 
     username = common_values.DESKTOP_USERNAME
     result = run_command(
-        substituted_command(
-            values.GROUP_MEMBERS_COMMAND, {"username": username}
-        ),
+        substituted_command(values.GROUP_MEMBERS_COMMAND, {"username": username}),
         check=False,
         capture=True,
         timeout=timeout,
@@ -498,20 +483,18 @@ def _install_packages(ctx: Context) -> tuple[bool, bool]:
     app cannot type on Wayland.
     """
 
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     missing = [
         package
         for package in values.PACKAGES
         if not package_is_installed(
-            engine, package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+            package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
         )
     ]
     if not missing:
         return True, False
     _log(f"installing: {', '.join(missing)}")
     installed, failures, _ = install_packages(
-        engine,
         missing,
         install_timeout=timeout,
         update_timeout=timeout,
@@ -539,9 +522,9 @@ def task(ctx: Context) -> TaskResult:
     shortcut to take effect, which the message states.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -553,8 +536,7 @@ def task(ctx: Context) -> TaskResult:
                 "the vocalinux_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
-    engine = ctx.config.engine
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
@@ -566,21 +548,18 @@ def task(ctx: Context) -> TaskResult:
     if not packages_ok:
         # The AppImage is self-contained, so the deployment of the user
         # files still runs and the missing packages are reported.
-        warnings.append(
-            f"failed to install required packages for {values.PACKAGES}"
-        )
+        warnings.append(f"failed to install required packages for {values.PACKAGES}")
     if installed_any:
         messages.append("installed the required packages")
 
-    arch = dpkg_architecture(engine, timeout)
+    arch = dpkg_architecture(timeout)
     asset_arch = release_asset_architecture(
-        engine.release_asset_architectures, arch
+        engine_values.RELEASE_ASSET_ARCHITECTURES, arch
     )
     asset_name = _asset_name(asset_arch)
     appimage_path = _appimage_install_path(asset_name)
 
     appimage_changed, appimage_error = _install_appimage(
-        engine,
         timeout=timeout,
         force=force,
     )
@@ -600,8 +579,7 @@ def task(ctx: Context) -> TaskResult:
     if group_changed:
         changed = True
         messages.append(
-            f"added {common_values.DESKTOP_USERNAME} to the "
-            f"{values.INPUT_GROUP} group"
+            f"added {common_values.DESKTOP_USERNAME} to the {values.INPUT_GROUP} group"
         )
 
     service_changed, service_error = _enable_user_service(timeout=timeout)
@@ -675,9 +653,7 @@ def task(ctx: Context) -> TaskResult:
             changed = True
             messages.append("wrote the empty Meta+S action desktop file")
 
-    shortcut_changed, shortcut_error = _sync_echo_shortcut(
-        timeout=timeout, force=force
-    )
+    shortcut_changed, shortcut_error = _sync_echo_shortcut(timeout=timeout, force=force)
     if shortcut_error:
         warnings.append(shortcut_error)
     if shortcut_changed:

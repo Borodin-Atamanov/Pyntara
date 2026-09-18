@@ -102,12 +102,10 @@ def _service(
 
     monkeypatch.setattr(forwarding.upnp, "run_command", router.run)
     monkeypatch.setattr(
-        forwarding, "default_route_address", lambda _e, _t: INTERNAL_ADDRESS
+        forwarding, "default_route_address", lambda _t: INTERNAL_ADDRESS
     )
     monkeypatch.setattr(forwarding.socket, "gethostname", lambda: "testhost")
-    monkeypatch.setattr(
-        forwarding, "package_is_installed", lambda *_a, **_k: True
-    )
+    monkeypatch.setattr(forwarding, "package_is_installed", lambda *_a, **_k: True)
     monkeypatch.setattr(forwarding, "load_config", lambda _path: config)
     monkeypatch.setattr(forwarding, "trigger_collection", triggers.append)
 
@@ -157,9 +155,7 @@ class TestMain:
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
-        assert router.rules == [
-            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
-        ]
+        assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
         assert triggers == [config]
 
     def test_the_rule_of_another_machine_moves_to_the_next_candidate(
@@ -216,9 +212,7 @@ class TestMain:
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
-        assert router.rules == [
-            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
-        ]
+        assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
         assert triggers == [config]
 
     def test_a_rule_that_carries_an_older_mark_is_written_again(
@@ -235,9 +229,7 @@ class TestMain:
         _service(monkeypatch, router, config, triggers)
 
         assert _run_main() == 0
-        assert router.rules == [
-            (ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)
-        ]
+        assert router.rules == [(ports[0], INTERNAL_ADDRESS, 30222, OUR_DESCRIPTION)]
         assert triggers == [config]
 
     def test_no_router_is_a_normal_network(
@@ -259,9 +251,7 @@ class TestMain:
     ) -> None:
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
-        rules = tuple(
-            (port, "192.168.1.48", 443, "pyntara xray") for port in ports
-        )
+        rules = tuple((port, "192.168.1.48", 443, "pyntara xray") for port in ports)
         router = _FakeRouter(rules=rules)
         triggers: list[Config] = []
         _service(monkeypatch, router, config, triggers)
@@ -288,9 +278,7 @@ class TestMain:
             return config
 
         monkeypatch.setattr(forwarding, "load_config", fake_load)
-        monkeypatch.setattr(
-            forwarding, "package_is_installed", lambda *_a, **_k: True
-        )
+        monkeypatch.setattr(forwarding, "package_is_installed", lambda *_a, **_k: True)
         monkeypatch.setattr(forwarding, "ensure_forwarding", lambda *_a: None)
         path = tmp_path / "config.toml"
         assert forwarding.main(["upnp_forwarding", str(path)]) == 0

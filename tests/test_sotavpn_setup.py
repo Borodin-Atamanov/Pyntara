@@ -50,9 +50,7 @@ def _point_the_values_at_the_temporary_tree(
     helper below still edits it there.
     """
 
-    monkeypatch.setattr(
-        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
-    )
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
 def _ctx(
@@ -63,13 +61,11 @@ def _ctx(
 ) -> Context:
     """Context of the task with the bridge installed into the test tree."""
 
-    config: Config = make_config(task_data_root=tmp_path)
+    config: Config = make_config()
     if three_x_ui:
         config = replace(
             config,
-            three_x_ui_xray_setup=replace(
-                config.three_x_ui_xray_setup, **three_x_ui
-            ),
+            three_x_ui_xray_setup=replace(config.three_x_ui_xray_setup, **three_x_ui),
         )
     return make_context(
         task_name="sotavpn_setup",
@@ -146,11 +142,7 @@ class _Commands:
         argv = [str(part) for part in command]
         self.commands.append(argv)
         if "is-active" in argv:
-            return (
-                FakeProc(0, "active\n")
-                if self.active
-                else FakeProc(3, "inactive\n")
-            )
+            return FakeProc(0, "active\n") if self.active else FakeProc(3, "inactive\n")
         if argv and argv[0] == "runuser":
             if not self.installer_ok:
                 raise subprocess.CalledProcessError(1, argv)
@@ -230,21 +222,15 @@ class _Panel:
         monkeypatch.setattr(
             "pyntara.xui.panel_environment", lambda _cfg, _timeout: {"port": "3579"}
         )
-        monkeypatch.setattr(
-            "pyntara.xui.read_xray_template", self._refuse_the_template
-        )
+        monkeypatch.setattr("pyntara.xui.read_xray_template", self._refuse_the_template)
         monkeypatch.setattr(
             "pyntara.xui.write_xray_template", self._refuse_the_template
         )
         monkeypatch.setattr(
             "pyntara.xui.find_outbound_subscription_by_remark", self._find
         )
-        monkeypatch.setattr(
-            "pyntara.xui.upsert_outbound_subscription", self._upsert
-        )
-        monkeypatch.setattr(
-            "pyntara.xui.refresh_outbound_subscription", self._refresh
-        )
+        monkeypatch.setattr("pyntara.xui.upsert_outbound_subscription", self._upsert)
+        monkeypatch.setattr("pyntara.xui.refresh_outbound_subscription", self._refresh)
         monkeypatch.setattr("pyntara.xui.list_balancer_status", self._status)
         return self
 
@@ -376,9 +362,7 @@ class TestInstallAndSubscription:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
-        ctx, commands, panel, root = self._prepare(
-            monkeypatch, tmp_path, panel=panel
-        )
+        ctx, commands, panel, root = self._prepare(monkeypatch, tmp_path, panel=panel)
         result = sotavpn.task(ctx)
         assert result.success is True
         assert result.changed is True
@@ -416,9 +400,7 @@ class TestInstallAndSubscription:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
         panel = _Panel()
-        ctx, commands, panel, _root = self._prepare(
-            monkeypatch, tmp_path, panel=panel
-        )
+        ctx, commands, panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
         first = sotavpn.task(ctx)
         assert first.changed is True
         assert len(panel.upserts) == 1
@@ -443,9 +425,7 @@ class TestInstallAndSubscription:
         # The task compares nothing and reads no version: the installer of
         # the archive runs as it is, whatever the settings carry.
         panel = _Panel()
-        ctx, commands, _panel, _root = self._prepare(
-            monkeypatch, tmp_path, panel=panel
-        )
+        ctx, commands, _panel, _root = self._prepare(monkeypatch, tmp_path, panel=panel)
         result = sotavpn.task(ctx)
         assert result.success is True
         assert result.changed is True
@@ -533,9 +513,7 @@ class TestSubscriptionState:
         # subscription is already written and the panel fetches it again on
         # its own schedule, so the fact is reported without an alarm.
         panel = _Panel(outbound_count=0)
-        monkeypatch.setattr(
-            values, "SUBSCRIPTION_FETCH_WAIT_SECONDS", 0
-        )
+        monkeypatch.setattr(values, "SUBSCRIPTION_FETCH_WAIT_SECONDS", 0)
         ctx, _panel = self._prepare(monkeypatch, tmp_path, panel)
         result = sotavpn.task(ctx)
         assert not [w for w in result.warnings if "node list" in w]
@@ -558,9 +536,7 @@ class TestSubscriptionState:
         plain = sotavpn.task(ctx)
         assert plain.success is True
         assert len(panel.upserts) == 1
-        forced_ctx, _panel = self._prepare(
-            monkeypatch, tmp_path, panel, force=True
-        )
+        forced_ctx, _panel = self._prepare(monkeypatch, tmp_path, panel, force=True)
         forced = sotavpn.task(forced_ctx)
         assert forced.success is True
         assert len(panel.upserts) == 2
@@ -576,7 +552,10 @@ class TestSubscriptionState:
             monkeypatch,
             tmp_path,
             panel,
-            three_x_ui={"core_ready_wait_seconds": 5, "readiness_check_delay_seconds": 2},
+            three_x_ui={
+                "core_ready_wait_seconds": 5,
+                "readiness_check_delay_seconds": 2,
+            },
         )
         calls = {"count": 0}
 
@@ -724,9 +703,7 @@ class TestReadinessAndSettings:
         ctx = self._prepare(monkeypatch, tmp_path, _Panel())
         monkeypatch.setattr(
             "pyntara.xui.panel_environment",
-            lambda *_a, **_k: (_ for _ in ()).throw(
-                RuntimeError("panel unreachable")
-            ),
+            lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("panel unreachable")),
         )
         result = sotavpn.task(ctx)
         assert result.success is True
@@ -766,9 +743,8 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
+        fetched = sotavpn._fetch_the_bridge(30.0, warnings)
         assert fetched is not None
         work_dir, root = fetched
         assert not warnings
@@ -794,9 +770,8 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
+        fetched = sotavpn._fetch_the_bridge(30.0, warnings)
         assert fetched is not None
         work_dir, root = fetched
         assert stat.S_IMODE(work_dir.stat().st_mode) == 0o700
@@ -815,12 +790,9 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        monkeypatch.setattr(
-            common_values, "DESKTOP_USERNAME", "no-such-account"
-        )
-        fetched = sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
+        monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "no-such-account")
+        fetched = sotavpn._fetch_the_bridge(30.0, warnings)
         assert fetched is not None
         work_dir, _root = fetched
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -835,12 +807,8 @@ class TestFetchTheBridge:
             return FakeProc(0, "")
 
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
-        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        assert (
-            sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
-            is None
-        )
+        assert sotavpn._fetch_the_bridge(30.0, warnings) is None
         assert any("not extracted" in warning for warning in warnings)
 
     def test_a_dead_address_is_a_warning(
@@ -851,10 +819,6 @@ class TestFetchTheBridge:
             "run_command",
             lambda *_a, **_k: (_ for _ in ()).throw(OSError("no route")),
         )
-        config = _ctx(tmp_path).config
         warnings: list[str] = []
-        assert (
-            sotavpn._fetch_the_bridge(config.engine, 30.0, warnings)
-            is None
-        )
+        assert sotavpn._fetch_the_bridge(30.0, warnings) is None
         assert any("not downloaded" in warning for warning in warnings)

@@ -7,36 +7,37 @@ and the error messages cannot drift apart between the tasks.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
-from support import FakeProc, make_config
+from support import FakeProc
 
 from pyntara import github_release
 from pyntara.utils import curl_flags
+from pyntara.values import engine as engine_values
 
 REPOSITORY = "owner/name"
 
 
-def _engine(tmp_path: Path) -> Any:
-    """The engine config of the tests, with a query URL of its own."""
+@pytest.fixture
+def query_url(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Point the declared release query URL at an example host.
 
-    return make_config(
-        task_data_root=tmp_path,
-        github_latest_release_url=(
-            "https://api.example.invalid/repos/{repo}/releases/latest"
-        ),
-    ).engine
+    The URL is a declared value, so a test that must not reach the real
+    GitHub API replaces it for the length of its own run.
+    """
+
+    url = "https://api.example.invalid/repos/{repo}/releases/latest"
+    monkeypatch.setattr(engine_values, "GITHUB_LATEST_RELEASE_URL", url)
+    return url
 
 
 def test_fetch_latest_release_queries_the_configured_url_with_the_curl_settings(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    query_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The URL comes from the config with the repository substituted, and the
-    # retry and timeout flags are the engine-wide curl settings, so every
+    # The URL comes from the declared value with the repository substituted,
+    # and the retry and timeout flags are the declared curl settings, so every
     # task queries a release the same way.
-    engine = _engine(tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
@@ -45,7 +46,7 @@ def test_fetch_latest_release_queries_the_configured_url_with_the_curl_settings(
         return FakeProc(0, '{"tag_name": "v1.2.3"}')
 
     monkeypatch.setattr(github_release, "run_command", fake_run)
-    payload = github_release.fetch_latest_release(REPOSITORY, engine)
+    payload = github_release.fetch_latest_release(REPOSITORY)
     assert payload == {"tag_name": "v1.2.3"}
     assert calls == [
         [
@@ -55,53 +56,50 @@ def test_fetch_latest_release_queries_the_configured_url_with_the_curl_settings(
             "--show-error",
             "--location",
             *curl_flags(
-                engine.curl_timeout_seconds,
-                engine.curl_retries,
-                engine.curl_connect_timeout_seconds,
-                engine.curl_retry_max_time_seconds,
-                engine.curl_retry_delay_seconds,
+                engine_values.CURL_TIMEOUT_SECONDS,
+                engine_values.CURL_RETRIES,
+                engine_values.CURL_CONNECT_TIMEOUT_SECONDS,
+                engine_values.CURL_RETRY_MAX_TIME_SECONDS,
+                engine_values.CURL_RETRY_DELAY_SECONDS,
             ),
-            "https://api.example.invalid/repos/owner/name/releases/latest",
+            query_url.format(repo=REPOSITORY),
         ]
     ]
 
 
 def test_fetch_latest_release_reports_a_failed_request(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    query_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A failed request is a RuntimeError naming the URL, so the caller
     # reports the reason instead of a raw subprocess error.
-    engine = _engine(tmp_path)
     monkeypatch.setattr(
         github_release, "run_command", lambda *a, **k: FakeProc(22, "", "404")
     )
     with pytest.raises(RuntimeError, match="cannot fetch .*releases/latest: exit 22"):
-        github_release.fetch_latest_release(REPOSITORY, engine)
+        github_release.fetch_latest_release(REPOSITORY)
 
 
 def test_fetch_latest_release_reports_broken_json(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    query_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    engine = _engine(tmp_path)
     monkeypatch.setattr(
         github_release, "run_command", lambda *a, **k: FakeProc(0, "not json")
     )
     with pytest.raises(RuntimeError, match="cannot parse the release JSON from"):
-        github_release.fetch_latest_release(REPOSITORY, engine)
+        github_release.fetch_latest_release(REPOSITORY)
 
 
 def test_fetch_latest_release_reports_a_payload_that_is_not_an_object(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    query_url: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A payload that is not an object is a RuntimeError like every other
     # unusable answer: a TypeError would leave the error report of the task
     # behind, because the tasks catch RuntimeError.
-    engine = _engine(tmp_path)
     monkeypatch.setattr(
         github_release, "run_command", lambda *a, **k: FakeProc(0, "[1, 2]")
     )
     with pytest.raises(RuntimeError, match="is not an object"):
-        github_release.fetch_latest_release(REPOSITORY, engine)
+        github_release.fetch_latest_release(REPOSITORY)
 
 
 def test_release_tag_reads_the_tag() -> None:

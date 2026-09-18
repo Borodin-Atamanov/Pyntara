@@ -20,6 +20,7 @@ from support import make_config, make_context
 from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_initial_collect
+from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 
 REAL_TASKS = tasks_values.CATALOG
@@ -34,7 +35,7 @@ def _ctx(tmp_path: Path) -> Context:
         force_tasks=frozenset(),
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"),
+        config=make_config(),
     )
 
 
@@ -53,6 +54,7 @@ def _install_fixtures(
 
     systemd_dir = tmp_path / "systemd"
     systemd_dir.mkdir(parents=True)
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     if unit_deployed:
         (systemd_dir / "system_metrics_collector.service").write_text(
             "[Unit]\nDescription=fixture\n", encoding="utf-8"
@@ -172,12 +174,13 @@ def test_reports_start_failure_as_warning(
     assert result.success is True
     assert result.changed is False
     assert any(
-        "cannot start collector service" in warning
-        for warning in result.warnings
+        "cannot start collector service" in warning for warning in result.warnings
     )
 
 
-def test_catalog_orders_initial_collect_after_address_tasks_and_before_final_commit_in_every_mode() -> None:
+def test_catalog_orders_initial_collect_after_address_tasks_and_before_final_commit_in_every_mode() -> (
+    None
+):
     # The collector must run after the i2pd and yggdrasil provisioning so
     # the first report carries the live anonymous addresses, and before
     # the final commit_final_system_metrics task, which is the true last

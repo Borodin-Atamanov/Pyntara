@@ -24,7 +24,6 @@ from pyntara.config import (
     CollectorModuleConfig,
     Config,
     DnsproxySetupConfig,
-    EngineConfig,
     FfmpegSetupConfig,
     HostnameConfig,
     I2pdServiceSetupConfig,
@@ -395,9 +394,6 @@ def _int_map(raw: object, name: str) -> dict[str, int]:
     return result
 
 
-
-
-
 # from add_extra_repos.py
 
 
@@ -439,12 +435,9 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
             "add_extra_repos.ubuntu_hosts must be a non-empty array of strings"
         )
     if not all(
-        isinstance(host, str) and host and host == host.strip()
-        for host in ubuntu_hosts
+        isinstance(host, str) and host and host == host.strip() for host in ubuntu_hosts
     ):
-        raise ConfigError(
-            "add_extra_repos.ubuntu_hosts must be non-empty strings"
-        )
+        raise ConfigError("add_extra_repos.ubuntu_hosts must be non-empty strings")
     keep_downloaded_debs = _bool_field(
         raw.get("keep_downloaded_debs"), "add_extra_repos.keep_downloaded_debs"
     )
@@ -506,9 +499,6 @@ def _add_extra_repos_table(raw: object) -> AddExtraReposConfig:
     )
 
 
-
-
-
 # from chrome_setup.py
 
 
@@ -521,16 +511,12 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
     if cdp_port <= 0:
         raise ConfigError("chrome_setup.cdp_port must be positive")
     return ChromeSetupConfig(
-        username=_nonempty_string_field(
-            raw.get("username"), "chrome_setup.username"
-        ),
+        username=_nonempty_string_field(raw.get("username"), "chrome_setup.username"),
         desktop_entry_exec_key=_nonempty_string_field(
             raw.get("desktop_entry_exec_key"),
             "chrome_setup.desktop_entry_exec_key",
         ),
-        home_dir=_nonempty_string_field(
-            raw.get("home_dir"), "chrome_setup.home_dir"
-        ),
+        home_dir=_nonempty_string_field(raw.get("home_dir"), "chrome_setup.home_dir"),
         package_name=_nonempty_string_field(
             raw.get("package_name"), "chrome_setup.package_name"
         ),
@@ -590,9 +576,7 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             raw.get("settings_repo_ref"), "chrome_setup.settings_repo_ref"
         ),
         settings_dir=Path(
-            _nonempty_string_field(
-                raw.get("settings_dir"), "chrome_setup.settings_dir"
-            )
+            _nonempty_string_field(raw.get("settings_dir"), "chrome_setup.settings_dir")
         ),
         settings_system_tree_relative_path=_nonempty_string_field(
             raw.get("settings_system_tree_relative_path"),
@@ -618,9 +602,7 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             raw.get("apt_source_template_file_name"),
             "chrome_setup.apt_source_template_file_name",
         ),
-        launch_flags=_string_list(
-            raw.get("launch_flags"), "chrome_setup.launch_flags"
-        ),
+        launch_flags=_string_list(raw.get("launch_flags"), "chrome_setup.launch_flags"),
         keyring_dearmor_command=_string_list(
             raw.get("keyring_dearmor_command"),
             "chrome_setup.keyring_dearmor_command",
@@ -662,9 +644,7 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             "chrome_setup.mount_unit_template_file_name",
         ),
         system_root=Path(
-            _nonempty_string_field(
-                raw.get("system_root"), "chrome_setup.system_root"
-            )
+            _nonempty_string_field(raw.get("system_root"), "chrome_setup.system_root")
         ),
         apt_source_path=Path(
             _nonempty_string_field(
@@ -672,9 +652,7 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             )
         ),
         keyring_path=Path(
-            _nonempty_string_field(
-                raw.get("keyring_path"), "chrome_setup.keyring_path"
-            )
+            _nonempty_string_field(raw.get("keyring_path"), "chrome_setup.keyring_path")
         ),
         google_key_url=_nonempty_string_field(
             raw.get("google_key_url"), "chrome_setup.google_key_url"
@@ -710,13 +688,8 @@ def _chrome_setup_table(raw: object) -> ChromeSetupConfig:
             "chrome_setup.runuser_command",
             ("{username}",),
         ),
-        file_mode=_octal_mode_field(
-            raw.get("file_mode"), "chrome_setup.file_mode"
-        ),
+        file_mode=_octal_mode_field(raw.get("file_mode"), "chrome_setup.file_mode"),
     )
-
-
-
 
 
 # from cli_tools.py
@@ -751,9 +724,6 @@ def _cli_tools_table(raw: object) -> CliToolsConfig:
         ),
         package_success_threshold_percent=package_success_threshold_percent,
     )
-
-
-
 
 
 # from dnsproxy_setup.py
@@ -806,7 +776,9 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
         raw.get("service_unit_name"), "dnsproxy_setup.service_unit_name"
     )
     service_unit_path = Path(
-        _nonempty_string_field(raw.get("service_unit_path"), "dnsproxy_setup.service_unit_path")
+        _nonempty_string_field(
+            raw.get("service_unit_path"), "dnsproxy_setup.service_unit_path"
+        )
     )
     service_template_path = Path(
         _nonempty_string_field(
@@ -832,8 +804,7 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     for template in bootstrap_form_templates:
         if "{host}" not in template:
             raise ConfigError(
-                "dnsproxy_setup.bootstrap_form_templates entries must contain "
-                "{host}"
+                "dnsproxy_setup.bootstrap_form_templates entries must contain {host}"
             )
     upstream_mode = _nonempty_string_field(
         raw.get("upstream_mode"), "dnsproxy_setup.upstream_mode"
@@ -1106,547 +1077,6 @@ def _dnsproxy_setup_table(raw: object) -> DnsproxySetupConfig:
     )
 
 
-
-
-
-# from engine.py
-
-
-def _checked_parallel_source_marker(
-    write_out_text: str, source_marker: str
-) -> str:
-    """The source marker of the parallel query, checked against its text.
-
-    The marker is what split_url_answers looks for in the merged output,
-    so a marker that does not appear in curl_parallel_write_out would
-    leave every answer unattributed; the two values live in one table and
-    this check keeps them in step.
-    """
-
-    if source_marker not in write_out_text:
-        raise ConfigError(
-            "engine.curl_parallel_source_marker must appear in "
-            "engine.curl_parallel_write_out"
-        )
-    return source_marker
-
-
-def _engine_table(raw: object) -> EngineConfig:
-    """Validate the [engine] table and build EngineConfig."""
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[engine] section is missing or not a table")
-    task_data_root = raw.get("task_data_root")
-    if not isinstance(task_data_root, str):
-        raise ConfigError("engine.task_data_root must be a string")
-    systemd_unit_dir = raw.get("systemd_unit_dir")
-    if not isinstance(systemd_unit_dir, str):
-        raise ConfigError("engine.systemd_unit_dir must be a string")
-    desktop_detect_processes = raw.get("desktop_detect_processes")
-    if not isinstance(desktop_detect_processes, list) or not desktop_detect_processes:
-        raise ConfigError(
-            "engine.desktop_detect_processes must be a non-empty array of strings"
-        )
-    if not all(
-        isinstance(process, str) and process and process == process.strip()
-        for process in desktop_detect_processes
-    ):
-        raise ConfigError(
-            "engine.desktop_detect_processes must be non-empty strings"
-        )
-    desktop_username = raw.get("desktop_username", "")
-    if not isinstance(desktop_username, str):
-        raise ConfigError("engine.desktop_username must be a string")
-    session_environment_command = raw.get("session_environment_command", [])
-    if not isinstance(session_environment_command, list):
-        raise ConfigError(
-            "engine.session_environment_command must be an array of strings"
-        )
-    if not all(
-        isinstance(part, str) and part.strip() for part in session_environment_command
-    ):
-        raise ConfigError(
-            "engine.session_environment_command must be non-empty strings"
-        )
-    session_environment_keys = raw.get("session_environment_keys", [])
-    if not isinstance(session_environment_keys, list):
-        raise ConfigError(
-            "engine.session_environment_keys must be an array of strings"
-        )
-    if not all(
-        isinstance(key, str) and key.strip() for key in session_environment_keys
-    ):
-        raise ConfigError("engine.session_environment_keys must be non-empty strings")
-    session_bus_key = raw.get("session_bus_key")
-    if session_bus_key is None:
-        session_bus_key = ""
-    elif not isinstance(session_bus_key, str) or not session_bus_key:
-        raise ConfigError("engine.session_bus_key must be a non-empty string")
-    session_display_keys = raw.get("session_display_keys", [])
-    if not isinstance(session_display_keys, list):
-        raise ConfigError("engine.session_display_keys must be an array of strings")
-    if not all(
-        isinstance(key, str) and key.strip() for key in session_display_keys
-    ):
-        raise ConfigError("engine.session_display_keys must be non-empty strings")
-    error_priority = _int_field(raw.get("error_priority"), "engine.error_priority")
-    if not 0 <= error_priority <= 7:
-        raise ConfigError("engine.error_priority must be between 0 and 7")
-    progress_priority = _int_field(
-        raw.get("progress_priority"), "engine.progress_priority"
-    )
-    if not 0 <= progress_priority <= 7:
-        raise ConfigError("engine.progress_priority must be between 0 and 7")
-    curl_timeout_seconds = _int_field(
-        raw.get("curl_timeout_seconds"), "engine.curl_timeout_seconds"
-    )
-    if curl_timeout_seconds <= 0:
-        raise ConfigError("engine.curl_timeout_seconds must be positive")
-    curl_download_timeout_seconds = _int_field(
-        raw.get("curl_download_timeout_seconds"),
-        "engine.curl_download_timeout_seconds",
-    )
-    if curl_download_timeout_seconds <= 0:
-        raise ConfigError("engine.curl_download_timeout_seconds must be positive")
-    curl_retries = _int_field(raw.get("curl_retries"), "engine.curl_retries")
-    if curl_retries < 0:
-        raise ConfigError("engine.curl_retries must not be negative")
-    curl_retry_delay_seconds = _int_field(
-        raw.get("curl_retry_delay_seconds"), "engine.curl_retry_delay_seconds"
-    )
-    if curl_retry_delay_seconds < 1:
-        raise ConfigError("engine.curl_retry_delay_seconds must be positive")
-    curl_connect_timeout_seconds = _int_field(
-        raw.get("curl_connect_timeout_seconds"),
-        "engine.curl_connect_timeout_seconds",
-    )
-    if curl_connect_timeout_seconds <= 0:
-        raise ConfigError("engine.curl_connect_timeout_seconds must be positive")
-    curl_retry_max_time_seconds = _int_field(
-        raw.get("curl_retry_max_time_seconds"),
-        "engine.curl_retry_max_time_seconds",
-    )
-    if curl_retry_max_time_seconds <= 0:
-        raise ConfigError("engine.curl_retry_max_time_seconds must be positive")
-    curl_download_command = _string_list(
-        raw.get("curl_download_command"), "engine.curl_download_command"
-    )
-    if not curl_download_command:
-        raise ConfigError("engine.curl_download_command must not be empty")
-    if "{output_path}" not in " ".join(curl_download_command):
-        raise ConfigError(
-            "engine.curl_download_command must carry the {output_path} placeholder"
-        )
-    if "{write_out}" not in " ".join(curl_download_command):
-        raise ConfigError(
-            "engine.curl_download_command must carry the {write_out} placeholder"
-        )
-    curl_query_command = _string_list(
-        raw.get("curl_query_command"), "engine.curl_query_command"
-    )
-    if not curl_query_command:
-        raise ConfigError("engine.curl_query_command must not be empty")
-    curl_parallel_command = _string_list(
-        raw.get("curl_parallel_command"), "engine.curl_parallel_command"
-    )
-    if not curl_parallel_command:
-        raise ConfigError("engine.curl_parallel_command must not be empty")
-    for placeholder in ("{parallel_max}", "{timeout_seconds}", "{write_out}"):
-        if placeholder not in " ".join(curl_parallel_command):
-            raise ConfigError(
-                "engine.curl_parallel_command must carry the "
-                f"{placeholder} placeholder"
-            )
-    curl_parallel_write_out = _nonempty_string_field(
-        raw.get("curl_parallel_write_out"),
-        "engine.curl_parallel_write_out",
-    )
-    curl_parallel_source_marker = _nonempty_string_field(
-        raw.get("curl_parallel_source_marker"),
-        "engine.curl_parallel_source_marker",
-    )
-    environment_flag_true_values = _string_list(
-        raw.get("environment_flag_true_values"),
-        "engine.environment_flag_true_values",
-    )
-    datetime_format = _nonempty_string_field(
-        raw.get("datetime_format"), "engine.datetime_format"
-    )
-    os_release_family_keys = _string_list(
-        raw.get("os_release_family_keys"), "engine.os_release_family_keys"
-    )
-    if not os_release_family_keys:
-        raise ConfigError("engine.os_release_family_keys must not be empty")
-    os_release_debian_family_names = _string_list(
-        raw.get("os_release_debian_family_names"),
-        "engine.os_release_debian_family_names",
-    )
-    if not os_release_debian_family_names:
-        raise ConfigError("engine.os_release_debian_family_names must not be empty")
-    curl_download_write_out = _nonempty_string_field(
-        raw.get("curl_download_write_out"), "engine.curl_download_write_out"
-    )
-    report_json_indent = _int_field(
-        raw.get("report_json_indent"), "engine.report_json_indent"
-    )
-    if report_json_indent < 0:
-        raise ConfigError("engine.report_json_indent must not be negative")
-    ssh_report_command_format = _nonempty_string_field(
-        raw.get("ssh_report_command_format"),
-        "engine.ssh_report_command_format",
-    )
-    for placeholder in ("{port}", "{address}", "{proxy_option}"):
-        if placeholder not in ssh_report_command_format:
-            raise ConfigError(
-                "engine.ssh_report_command_format must carry the "
-                f"{placeholder} placeholder"
-            )
-    ssh_report_proxy_option_format = _nonempty_string_field(
-        raw.get("ssh_report_proxy_option_format"),
-        "engine.ssh_report_proxy_option_format",
-    )
-    if "{proxy_command}" not in ssh_report_proxy_option_format:
-        raise ConfigError(
-            "engine.ssh_report_proxy_option_format must carry the "
-            "{proxy_command} placeholder"
-        )
-    ssh_report_socks_command_format = _nonempty_string_field(
-        raw.get("ssh_report_socks_command_format"),
-        "engine.ssh_report_socks_command_format",
-    )
-    if "{proxy}" not in ssh_report_socks_command_format:
-        raise ConfigError(
-            "engine.ssh_report_socks_command_format must carry the "
-            "{proxy} placeholder"
-        )
-    ssh_report_proxy_host = _nonempty_string_field(
-        raw.get("ssh_report_proxy_host"), "engine.ssh_report_proxy_host"
-    )
-    report_record_keys = _complete_string_map(
-        raw.get("report_record_keys"),
-        "engine.report_record_keys",
-        REPORT_RECORD_KEY_MEANINGS,
-    )
-    report_family_words = _complete_string_map(
-        raw.get("report_family_words"),
-        "engine.report_family_words",
-        REPORT_FAMILY_WORD_MEANINGS,
-    )
-    bytes_per_kib = _positive_int_field(
-        raw.get("bytes_per_kib"), "engine.bytes_per_kib"
-    )
-    bytes_per_mib = _positive_int_field(
-        raw.get("bytes_per_mib"), "engine.bytes_per_mib"
-    )
-    if bytes_per_mib != bytes_per_kib * bytes_per_kib:
-        raise ConfigError(
-            "engine.bytes_per_mib must be engine.bytes_per_kib squared"
-        )
-    return EngineConfig(
-        task_data_root=Path(task_data_root),
-        systemd_unit_dir=Path(systemd_unit_dir),
-        notice_timeout=_int_field(raw.get("notice_timeout"), "engine.notice_timeout"),
-        force_all_keyword=_nonempty_string_field(
-            raw.get("force_all_keyword"), "engine.force_all_keyword"
-        ),
-        command_timeout_seconds=_int_field(
-            raw.get("command_timeout_seconds"), "engine.command_timeout_seconds"
-        ),
-        curl_timeout_seconds=curl_timeout_seconds,
-        curl_download_timeout_seconds=curl_download_timeout_seconds,
-        curl_retries=curl_retries,
-        curl_retry_delay_seconds=curl_retry_delay_seconds,
-        curl_connect_timeout_seconds=curl_connect_timeout_seconds,
-        curl_retry_max_time_seconds=curl_retry_max_time_seconds,
-        curl_download_command=curl_download_command,
-        curl_query_command=curl_query_command,
-        curl_parallel_command=curl_parallel_command,
-        curl_parallel_write_out=curl_parallel_write_out,
-        curl_parallel_source_marker=_checked_parallel_source_marker(
-            curl_parallel_write_out, curl_parallel_source_marker
-        ),
-        environment_flag_true_values=environment_flag_true_values,
-        report_json_indent=report_json_indent,
-        datetime_format=datetime_format,
-        ssh_report_command_format=ssh_report_command_format,
-        ssh_report_proxy_option_format=ssh_report_proxy_option_format,
-        ssh_report_socks_command_format=ssh_report_socks_command_format,
-        ssh_report_proxy_host=ssh_report_proxy_host,
-        report_record_keys=report_record_keys,
-        report_family_words=report_family_words,
-        curl_download_write_out=curl_download_write_out,
-        os_release_family_keys=os_release_family_keys,
-        os_release_debian_family_names=os_release_debian_family_names,
-        github_latest_release_url=_nonempty_string_field(
-            raw.get("github_latest_release_url"),
-            "engine.github_latest_release_url",
-        ),
-        github_release_download_url=_nonempty_string_field(
-            raw.get("github_release_download_url"),
-            "engine.github_release_download_url",
-        ),
-        release_asset_architectures=_string_map(
-            raw.get("release_asset_architectures"),
-            "engine.release_asset_architectures",
-        ),
-        partial_download_file_suffix=_nonempty_string_field(
-            raw.get("partial_download_file_suffix"),
-            "engine.partial_download_file_suffix",
-        ),
-        system_python=_nonempty_string_field(
-            raw.get("system_python"), "engine.system_python"
-        ),
-        journal_identifier=_nonempty_string_field(
-            raw.get("journal_identifier"), "engine.journal_identifier"
-        ),
-        journal_command=_placeholder_command_field(
-            raw.get("journal_command"),
-            "engine.journal_command",
-            ("{identifier}",),
-        ),
-        journal_priority_command=_placeholder_command_field(
-            raw.get("journal_priority_command"),
-            "engine.journal_priority_command",
-            ("{identifier}", "{priority}"),
-        ),
-        root_owner_uid=_int_field(raw.get("root_owner_uid"), "engine.root_owner_uid"),
-        root_owner_gid=_int_field(raw.get("root_owner_gid"), "engine.root_owner_gid"),
-        percent_scale=_positive_int_field(
-            raw.get("percent_scale"), "engine.percent_scale"
-        ),
-        bytes_per_kib=bytes_per_kib,
-        bytes_per_mib=bytes_per_mib,
-        nanoseconds_per_second=_positive_int_field(
-            raw.get("nanoseconds_per_second"),
-            "engine.nanoseconds_per_second",
-        ),
-        error_priority=error_priority,
-        progress_priority=progress_priority,
-        process_check_timeout_seconds=_int_field(
-            raw.get("process_check_timeout_seconds"),
-            "engine.process_check_timeout_seconds",
-        ),
-        process_check_command=_placeholder_command_field(
-            raw.get("process_check_command"),
-            "engine.process_check_command",
-            ("{process_name}",),
-        ),
-        task_start_delay_seconds=_float_field(
-            raw.get("task_start_delay_seconds"), "engine.task_start_delay_seconds"
-        ),
-        desktop_detect_processes=tuple(desktop_detect_processes),
-        kglobalaccel_bus_name=_nonempty_string_field(
-            raw.get("kglobalaccel_bus_name"), "engine.kglobalaccel_bus_name"
-        ),
-        kglobalaccel_object_path=_nonempty_string_field(
-            raw.get("kglobalaccel_object_path"), "engine.kglobalaccel_object_path"
-        ),
-        kglobalaccel_interface_name=_nonempty_string_field(
-            raw.get("kglobalaccel_interface_name"),
-            "engine.kglobalaccel_interface_name",
-        ),
-        desktop_username=desktop_username,
-        session_environment_command=tuple(session_environment_command),
-        session_environment_keys=tuple(session_environment_keys),
-        session_bus_key=session_bus_key,
-        session_display_keys=tuple(session_display_keys),
-        upnpc_status_command=_placeholder_command_field(
-            raw.get("upnpc_status_command"),
-            "engine.upnpc_status_command",
-            ("{command}",),
-        ),
-        upnpc_mapping_list_command=_placeholder_command_field(
-            raw.get("upnpc_mapping_list_command"),
-            "engine.upnpc_mapping_list_command",
-            ("{command}",),
-        ),
-        upnpc_mapping_add_command=_placeholder_command_field(
-            raw.get("upnpc_mapping_add_command"),
-            "engine.upnpc_mapping_add_command",
-            (
-                "{command}",
-                "{description}",
-                "{internal_address}",
-                "{internal_port}",
-                "{external_port}",
-                "{protocol}",
-            ),
-        ),
-        upnpc_external_address_key=_nonempty_string_field(
-            raw.get("upnpc_external_address_key"),
-            "engine.upnpc_external_address_key",
-        ),
-        upnpc_protocol_names=_string_list(
-            raw.get("upnpc_protocol_names"), "engine.upnpc_protocol_names"
-        ),
-        upnpc_mapping_arrow=_nonempty_string_field(
-            raw.get("upnpc_mapping_arrow"), "engine.upnpc_mapping_arrow"
-        ),
-        local_addresses_command=_placeholder_command_field(
-            raw.get("local_addresses_command"),
-            "engine.local_addresses_command",
-            (),
-        ),
-        directly_connected_networks_command=_placeholder_command_field(
-            raw.get("directly_connected_networks_command"),
-            "engine.directly_connected_networks_command",
-            ("{family}",),
-        ),
-        default_route_command=_placeholder_command_field(
-            raw.get("default_route_command"),
-            "engine.default_route_command",
-            (),
-        ),
-        default_route_source_key=_nonempty_string_field(
-            raw.get("default_route_source_key"),
-            "engine.default_route_source_key",
-        ),
-        augtool_command=_placeholder_command_field(
-            raw.get("augtool_command"),
-            "engine.augtool_command",
-            (),
-        ),
-        augeas_files_node_prefix=_nonempty_string_field(
-            raw.get("augeas_files_node_prefix"),
-            "engine.augeas_files_node_prefix",
-        ),
-        augeas_lens_line=_placeholder_text_field(
-            raw.get("augeas_lens_line"), "engine.augeas_lens_line", ("{lens}",)
-        ),
-        augeas_incl_line=_placeholder_text_field(
-            raw.get("augeas_incl_line"), "engine.augeas_incl_line", ("{path}",)
-        ),
-        augeas_load_line=_nonempty_string_field(
-            raw.get("augeas_load_line"), "engine.augeas_load_line"
-        ),
-        augeas_print_line=_placeholder_text_field(
-            raw.get("augeas_print_line"), "engine.augeas_print_line", ("{node}",)
-        ),
-        augeas_save_line=_nonempty_string_field(
-            raw.get("augeas_save_line"), "engine.augeas_save_line"
-        ),
-        augeas_comment_line=_placeholder_text_field(
-            raw.get("augeas_comment_line"),
-            "engine.augeas_comment_line",
-            ("{node}", "{header}"),
-        ),
-        augeas_container_line=_placeholder_text_field(
-            raw.get("augeas_container_line"),
-            "engine.augeas_container_line",
-            ("{node}", "{container}", "{value}"),
-        ),
-        augeas_directive_line=_placeholder_text_field(
-            raw.get("augeas_directive_line"),
-            "engine.augeas_directive_line",
-            ("{node}", "{name}", "{value}"),
-        ),
-        augeas_container_directive_line=_placeholder_text_field(
-            raw.get("augeas_container_directive_line"),
-            "engine.augeas_container_directive_line",
-            ("{node}", "{container}", "{name}", "{value}"),
-        ),
-        augeas_remove_line=_placeholder_text_field(
-            raw.get("augeas_remove_line"),
-            "engine.augeas_remove_line",
-            ("{node}", "{name}"),
-        ),
-        augeas_container_remove_line=_placeholder_text_field(
-            raw.get("augeas_container_remove_line"),
-            "engine.augeas_container_remove_line",
-            ("{node}", "{container}", "{name}"),
-        ),
-        interface_addresses_command=_placeholder_command_field(
-            raw.get("interface_addresses_command"),
-            "engine.interface_addresses_command",
-            (),
-        ),
-        address_family_by_flag=_string_map(
-            raw.get("address_family_by_flag"),
-            "engine.address_family_by_flag",
-        ),
-        iproute2_address_family_names=_string_map(
-            raw.get("iproute2_address_family_names"),
-            "engine.iproute2_address_family_names",
-        ),
-        link_scope_name=_nonempty_string_field(
-            raw.get("link_scope_name"), "engine.link_scope_name"
-        ),
-        host_scope_name=_nonempty_string_field(
-            raw.get("host_scope_name"), "engine.host_scope_name"
-        ),
-        dpkg_architecture_command=_placeholder_command_field(
-            raw.get("dpkg_architecture_command"),
-            "engine.dpkg_architecture_command",
-            (),
-        ),
-        package_status_query_command=_placeholder_command_field(
-            raw.get("package_status_query_command"),
-            "engine.package_status_query_command",
-            ("{package}",),
-        ),
-        apt_update_command=_placeholder_command_field(
-            raw.get("apt_update_command"),
-            "engine.apt_update_command",
-            (),
-        ),
-        apt_install_command=_placeholder_command_field(
-            raw.get("apt_install_command"),
-            "engine.apt_install_command",
-            ("{package}",),
-        ),
-        apt_noninteractive_environment=_string_map(
-            raw.get("apt_noninteractive_environment"),
-            "engine.apt_noninteractive_environment",
-        ),
-        systemctl_is_enabled_command=_placeholder_command_field(
-            raw.get("systemctl_is_enabled_command"),
-            "engine.systemctl_is_enabled_command",
-            ("{unit}",),
-        ),
-        systemctl_is_active_command=_placeholder_command_field(
-            raw.get("systemctl_is_active_command"),
-            "engine.systemctl_is_active_command",
-            ("{unit}",),
-        ),
-        systemd_enabled_states=_string_list(
-            raw.get("systemd_enabled_states"),
-            "engine.systemd_enabled_states",
-        ),
-        systemd_active_state=_nonempty_string_field(
-            raw.get("systemd_active_state"), "engine.systemd_active_state"
-        ),
-        socket_listener_command=_placeholder_command_field(
-            raw.get("socket_listener_command"),
-            "engine.socket_listener_command",
-            ("{port}",),
-        ),
-        systemctl_main_pid_command=_placeholder_command_field(
-            raw.get("systemctl_main_pid_command"),
-            "engine.systemctl_main_pid_command",
-            ("{unit}",),
-        ),
-        systemctl_stop_command=_placeholder_command_field(
-            raw.get("systemctl_stop_command"),
-            "engine.systemctl_stop_command",
-            ("{unit}",),
-        ),
-        port_kill_grace_seconds=_positive_int_field(
-            raw.get("port_kill_grace_seconds"),
-            "engine.port_kill_grace_seconds",
-        ),
-        port_kill_poll_seconds=_float_field(
-            raw.get("port_kill_poll_seconds"),
-            "engine.port_kill_poll_seconds",
-        ),
-    )
-
-
-
-
-
-# from ffmpeg_setup.py
-
-
 def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
     """Validate the [ffmpeg_setup] table and build FfmpegSetupConfig."""
 
@@ -1710,9 +1140,6 @@ def _ffmpeg_setup_table(raw: object) -> FfmpegSetupConfig:
     )
 
 
-
-
-
 # from hostname.py
 
 
@@ -1738,17 +1165,12 @@ def _hostname_table(raw: object) -> HostnameConfig:
             "hostname.set_hostname_command must be a non-empty array of strings"
         )
     if not all(isinstance(part, str) and part.strip() for part in command):
-        raise ConfigError(
-            "hostname.set_hostname_command must be non-empty strings"
-        )
+        raise ConfigError("hostname.set_hostname_command must be non-empty strings")
     return HostnameConfig(
         hostname_file=hostname_file,
         hostname_random_bytes=hostname_random_bytes,
         set_hostname_command=tuple(part.strip() for part in command),
     )
-
-
-
 
 
 # from i2pd_service_setup.py
@@ -1795,41 +1217,30 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         raw.get("service_unit_name"), "i2pd_service_setup.service_unit_name"
     )
     config_path = Path(
-        _nonempty_string_field(
-            raw.get("config_path"), "i2pd_service_setup.config_path"
-        )
+        _nonempty_string_field(raw.get("config_path"), "i2pd_service_setup.config_path")
     )
     log_level = raw.get("log_level")
     if log_level not in I2PD_LOG_LEVELS:
         raise ConfigError(
-            "i2pd_service_setup.log_level must be one of "
-            + ", ".join(I2PD_LOG_LEVELS)
+            "i2pd_service_setup.log_level must be one of " + ", ".join(I2PD_LOG_LEVELS)
         )
-    bandwidth = _int_field(
-        raw.get("bandwidth"), "i2pd_service_setup.bandwidth"
-    )
+    bandwidth = _int_field(raw.get("bandwidth"), "i2pd_service_setup.bandwidth")
     if bandwidth < 1:
         raise ConfigError("i2pd_service_setup.bandwidth must be positive")
     share = _int_field(raw.get("share"), "i2pd_service_setup.share")
     if share < 0 or share > 100:
-        raise ConfigError(
-            "i2pd_service_setup.share must be between 0 and 100"
-        )
+        raise ConfigError("i2pd_service_setup.share must be between 0 and 100")
     http_enabled = raw.get("http_enabled")
     if not isinstance(http_enabled, bool):
         raise ConfigError("i2pd_service_setup.http_enabled must be a boolean")
     socks_proxy_enabled = raw.get("socks_proxy_enabled")
     if not isinstance(socks_proxy_enabled, bool):
-        raise ConfigError(
-            "i2pd_service_setup.socks_proxy_enabled must be a boolean"
-        )
+        raise ConfigError("i2pd_service_setup.socks_proxy_enabled must be a boolean")
     socks_proxy_port = _int_field(
         raw.get("socks_proxy_port"), "i2pd_service_setup.socks_proxy_port"
     )
     if not 1 <= socks_proxy_port <= 65535:
-        raise ConfigError(
-            "i2pd_service_setup.socks_proxy_port must be a TCP port"
-        )
+        raise ConfigError("i2pd_service_setup.socks_proxy_port must be a TCP port")
     install_retries = _int_field(
         raw.get("install_retries"), "i2pd_service_setup.install_retries"
     )
@@ -1839,9 +1250,7 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         raw.get("start_check_attempts"), "i2pd_service_setup.start_check_attempts"
     )
     if start_check_attempts < 1:
-        raise ConfigError(
-            "i2pd_service_setup.start_check_attempts must be positive"
-        )
+        raise ConfigError("i2pd_service_setup.start_check_attempts must be positive")
     start_check_retry_delay_seconds = _float_field(
         raw.get("start_check_retry_delay_seconds"),
         "i2pd_service_setup.start_check_retry_delay_seconds",
@@ -1913,9 +1322,7 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
         "i2pd_service_setup.address_check_attempts",
     )
     if address_check_attempts < 1:
-        raise ConfigError(
-            "i2pd_service_setup.address_check_attempts must be positive"
-        )
+        raise ConfigError("i2pd_service_setup.address_check_attempts must be positive")
     address_check_retry_delay_seconds = _float_field(
         raw.get("address_check_retry_delay_seconds"),
         "i2pd_service_setup.address_check_retry_delay_seconds",
@@ -1980,9 +1387,6 @@ def _i2pd_service_setup_table(raw: object) -> I2pdServiceSetupConfig:
     )
 
 
-
-
-
 # from imagemagick_setup.py
 
 
@@ -2021,9 +1425,6 @@ def _imagemagick_setup_table(raw: object) -> ImagemagickSetupConfig:
             "imagemagick_setup.package_install_retries",
         ),
     )
-
-
-
 
 
 # from kde_keyboard_setup.py
@@ -2192,15 +1593,6 @@ def _kde_keyboard_setup_table(raw: object) -> KdeKeyboardSetupConfig:
     )
 
 
-
-
-
-
-
-
-
-
-
 # from nextdns_setup_system_wide.py
 
 
@@ -2242,9 +1634,6 @@ def _nextdns_setup_system_wide_table(
         profile_id_file_mode=profile_id_file_mode,
         error_priority=error_priority,
     )
-
-
-
 
 
 # from playwright_setup.py
@@ -2305,9 +1694,6 @@ def _playwright_setup_table(raw: object) -> PlaywrightSetupConfig:
     )
 
 
-
-
-
 # from port_forwarding_setup.py
 
 
@@ -2339,9 +1725,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[port_forwarding_setup] section is missing or not a table"
-        )
+        raise ConfigError("[port_forwarding_setup] section is missing or not a table")
     section = "port_forwarding_setup."
     vault_group_title = _nonempty_string_field(
         raw.get("vault_group_title"), section + "vault_group_title"
@@ -2360,8 +1744,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     )
     if desired_port_min > desired_port_max:
         raise ConfigError(
-            "port_forwarding_setup.desired_port_min must not exceed "
-            "desired_port_max"
+            "port_forwarding_setup.desired_port_min must not exceed desired_port_max"
         )
     server_alive_interval_seconds = _positive_int_field(
         raw.get("server_alive_interval_seconds"),
@@ -2457,8 +1840,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     )
     if start_check_retry_delay_seconds <= 0:
         raise ConfigError(
-            "port_forwarding_setup.start_check_retry_delay_seconds "
-            "must be positive"
+            "port_forwarding_setup.start_check_retry_delay_seconds must be positive"
         )
     service_commands: dict[str, tuple[str, ...]] = {}
     for key, required_placeholders in (
@@ -2512,8 +1894,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         raise ConfigError("port_forwarding_setup.askpass_env must not be empty")
     if "{helper_path}" not in " ".join(askpass_env.values()):
         raise ConfigError(
-            "port_forwarding_setup.askpass_env must carry the "
-            "{helper_path} placeholder"
+            "port_forwarding_setup.askpass_env must carry the {helper_path} placeholder"
         )
     askpass_helper_dir_prefix = _nonempty_string_field(
         raw.get("askpass_helper_dir_prefix"),
@@ -2583,9 +1964,7 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
         systemctl_enable_command=command_checks["systemctl_enable_command"],
         systemctl_restart_command=command_checks["systemctl_restart_command"],
         module_run_command=module_run_command,
-        systemctl_is_failed_command=command_checks[
-            "systemctl_is_failed_command"
-        ],
+        systemctl_is_failed_command=command_checks["systemctl_is_failed_command"],
         start_check_attempts=start_check_attempts,
         start_check_retry_delay_seconds=start_check_retry_delay_seconds,
         own_addresses_command=service_commands["own_addresses_command"],
@@ -2612,9 +1991,6 @@ def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
     )
 
 
-
-
-
 # from upnp_forwarding_setup.py
 
 
@@ -2630,9 +2006,7 @@ def _upnp_forwarding_setup_table(raw: object) -> UpnpForwardingSetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[upnp_forwarding_setup] section is missing or not a table"
-        )
+        raise ConfigError("[upnp_forwarding_setup] section is missing or not a table")
     section = "upnp_forwarding_setup."
     upnp_package = _nonempty_string_field(
         raw.get("upnp_package"), section + "upnp_package"
@@ -2702,9 +2076,7 @@ def _upnp_forwarding_setup_table(raw: object) -> UpnpForwardingSetupConfig:
     journal_identifier = _nonempty_string_field(
         raw.get("journal_identifier"), section + "journal_identifier"
     )
-    error_priority = _int_field(
-        raw.get("error_priority"), section + "error_priority"
-    )
+    error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
     if not 0 <= error_priority <= 7:
         raise ConfigError(
             "upnp_forwarding_setup.error_priority must be between 0 and 7"
@@ -2720,8 +2092,7 @@ def _upnp_forwarding_setup_table(raw: object) -> UpnpForwardingSetupConfig:
     )
     if global_scope_name == nat_scope_name:
         raise ConfigError(
-            "upnp_forwarding_setup.global_scope_name and nat_scope_name "
-            "must differ"
+            "upnp_forwarding_setup.global_scope_name and nat_scope_name must differ"
         )
     return UpnpForwardingSetupConfig(
         upnp_package=upnp_package,
@@ -2845,14 +2216,10 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
         raise ConfigError("rustdesk_setup.id_file_path must be a string")
     vault_entry_title = raw.get("vault_entry_title")
     if not isinstance(vault_entry_title, str) or not vault_entry_title:
-        raise ConfigError(
-            "rustdesk_setup.vault_entry_title must be a non-empty string"
-        )
+        raise ConfigError("rustdesk_setup.vault_entry_title must be a non-empty string")
     service_unit_name = raw.get("service_unit_name")
     if not isinstance(service_unit_name, str) or not service_unit_name:
-        raise ConfigError(
-            "rustdesk_setup.service_unit_name must be a non-empty string"
-        )
+        raise ConfigError("rustdesk_setup.service_unit_name must be a non-empty string")
     config_dir = raw.get("config_dir")
     if not isinstance(config_dir, str):
         raise ConfigError("rustdesk_setup.config_dir must be a string")
@@ -2918,9 +2285,6 @@ def _rustdesk_setup_table(raw: object) -> RustdeskSetupConfig:
     )
 
 
-
-
-
 # from sotavpn_setup.py
 
 
@@ -2959,12 +2323,8 @@ def _sotavpn_setup_table(raw: object) -> SotavpnSetupConfig:
             "sotavpn_setup.readiness_check_delay_seconds must not be negative"
         )
     return SotavpnSetupConfig(
-        username=_nonempty_string_field(
-            raw.get("username"), "sotavpn_setup.username"
-        ),
-        home_dir=_nonempty_string_field(
-            raw.get("home_dir"), "sotavpn_setup.home_dir"
-        ),
+        username=_nonempty_string_field(raw.get("username"), "sotavpn_setup.username"),
+        home_dir=_nonempty_string_field(raw.get("home_dir"), "sotavpn_setup.home_dir"),
         runuser_command=_string_list(
             raw.get("runuser_command"), "sotavpn_setup.runuser_command"
         ),
@@ -3054,9 +2414,7 @@ def _ssh_directives_field(raw: object, name: str) -> tuple[SshDirective, ...]:
             raise ConfigError(f"{name} must be an array of tables")
         directive_name = directive_raw.get("name")
         if not isinstance(directive_name, str) or not directive_name:
-            raise ConfigError(
-                f"{name}[{index}] name must be a non-empty string"
-            )
+            raise ConfigError(f"{name}[{index}] name must be a non-empty string")
         if directive_name in seen_names:
             raise ConfigError(
                 f"{name} directive names must be unique: {directive_name}"
@@ -3064,9 +2422,7 @@ def _ssh_directives_field(raw: object, name: str) -> tuple[SshDirective, ...]:
         seen_names.add(directive_name)
         value = directive_raw.get("value")
         if not isinstance(value, str) or not value:
-            raise ConfigError(
-                f"{name}[{index}] value must be a non-empty string"
-            )
+            raise ConfigError(f"{name}[{index}] value must be a non-empty string")
         directives.append(SshDirective(name=directive_name, value=value))
     return tuple(directives)
 
@@ -3158,9 +2514,7 @@ def _ssh_daemon_setup_table(raw: object) -> SshDaemonSetupConfig:
 
     users_raw = raw.get("users")
     if not isinstance(users_raw, list) or not users_raw:
-        raise ConfigError(
-            "ssh_daemon_setup.users must be a non-empty array of strings"
-        )
+        raise ConfigError("ssh_daemon_setup.users must be a non-empty array of strings")
     if not all(isinstance(user, str) and user for user in users_raw):
         raise ConfigError("ssh_daemon_setup.users must be non-empty strings")
     if len(set(users_raw)) != len(users_raw):
@@ -3262,9 +2616,7 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[ssh_client_setup] section is missing or not a table"
-        )
+        raise ConfigError("[ssh_client_setup] section is missing or not a table")
     ssh_config_path = Path(
         _nonempty_string_field(
             raw.get("ssh_config_path"), "ssh_client_setup.ssh_config_path"
@@ -3339,9 +2691,6 @@ def _ssh_client_setup_table(raw: object) -> SshClientSetupConfig:
     )
 
 
-
-
-
 # from swapfile_service_install.py
 
 
@@ -3406,9 +2755,7 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
         raw.get("ram_extra_mb"), "swapfile_service_install.ram_extra_mb"
     )
     if ram_extra_mb < 0:
-        raise ConfigError(
-            "swapfile_service_install.ram_extra_mb must not be negative"
-        )
+        raise ConfigError("swapfile_service_install.ram_extra_mb must not be negative")
     disk_fraction = _float_field(
         raw.get("disk_fraction"), "swapfile_service_install.disk_fraction"
     )
@@ -3485,9 +2832,6 @@ def _swapfile_service_install_table(raw: object) -> SwapfileServiceInstallConfig
     )
 
 
-
-
-
 # from system_metrics_setup.py
 
 
@@ -3507,7 +2851,9 @@ def _daily_time_field(raw: object, name: str) -> str:
     try:
         values = [int(part) for part in parts]
     except ValueError:
-        raise ConfigError(f"{name} must be a time of day like '12:00' or '12:00:00'") from None
+        raise ConfigError(
+            f"{name} must be a time of day like '12:00' or '12:00:00'"
+        ) from None
     hour, minute, second = (
         values[0],
         values[1],
@@ -3566,9 +2912,7 @@ def _collector_modules_field(
                 f"{name}[{index}] command must be a non-empty array of strings"
             )
         if not all(isinstance(part, str) and part for part in command):
-            raise ConfigError(
-                f"{name}[{index}] command must be non-empty strings"
-            )
+            raise ConfigError(f"{name}[{index}] command must be non-empty strings")
         modules.append(CollectorModuleConfig(name=module_name, command=tuple(command)))
     return tuple(modules)
 
@@ -3715,8 +3059,7 @@ def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
 
     if not isinstance(raw, dict):
         raise ConfigError(
-            "[system_metrics_setup.telemetry_pdf] section is missing or "
-            "not a table"
+            "[system_metrics_setup.telemetry_pdf] section is missing or not a table"
         )
     font = _nonempty_string_field(
         raw.get("font"), "system_metrics_setup.telemetry_pdf.font"
@@ -3728,9 +3071,7 @@ def _telemetry_pdf_table(raw: object) -> TelemetryPdfConfig:
         raw.get("line_width_chars"),
         "system_metrics_setup.telemetry_pdf.line_width_chars",
     )
-    margin = _int_field(
-        raw.get("margin"), "system_metrics_setup.telemetry_pdf.margin"
-    )
+    margin = _int_field(raw.get("margin"), "system_metrics_setup.telemetry_pdf.margin")
     if margin < 0:
         raise ConfigError(
             "system_metrics_setup.telemetry_pdf.margin must not be negative"
@@ -3794,25 +3135,19 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[system_metrics_setup] section is missing or not a table"
-        )
+        raise ConfigError("[system_metrics_setup] section is missing or not a table")
     backoff_base_seconds = _int_field(
         raw.get("backoff_base_seconds"),
         "system_metrics_setup.backoff_base_seconds",
     )
     if backoff_base_seconds < 1:
-        raise ConfigError(
-            "system_metrics_setup.backoff_base_seconds must be positive"
-        )
+        raise ConfigError("system_metrics_setup.backoff_base_seconds must be positive")
     backoff_multiplier = _int_field(
         raw.get("backoff_multiplier"),
         "system_metrics_setup.backoff_multiplier",
     )
     if backoff_multiplier < 2:
-        raise ConfigError(
-            "system_metrics_setup.backoff_multiplier must be at least 2"
-        )
+        raise ConfigError("system_metrics_setup.backoff_multiplier must be at least 2")
     backoff_max_seconds = _int_field(
         raw.get("backoff_max_seconds"),
         "system_metrics_setup.backoff_max_seconds",
@@ -3834,14 +3169,10 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         raw.get("error_priority"), "system_metrics_setup.error_priority"
     )
     if not 0 <= error_priority <= 7:
-        raise ConfigError(
-            "system_metrics_setup.error_priority must be between 0 and 7"
-        )
+        raise ConfigError("system_metrics_setup.error_priority must be between 0 and 7")
     venv_dir = raw.get("venv_dir")
     if not isinstance(venv_dir, str) or not venv_dir:
-        raise ConfigError(
-            "system_metrics_setup.venv_dir must be a non-empty string"
-        )
+        raise ConfigError("system_metrics_setup.venv_dir must be a non-empty string")
     venv_python_relative_path = _nonempty_string_field(
         raw.get("venv_python_relative_path"),
         "system_metrics_setup.venv_python_relative_path",
@@ -3884,8 +3215,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     send_order = raw.get("send_order")
     if send_order not in SEND_ORDERS:
         raise ConfigError(
-            "system_metrics_setup.send_order must be one of "
-            + ", ".join(SEND_ORDERS)
+            "system_metrics_setup.send_order must be one of " + ", ".join(SEND_ORDERS)
         )
     queue_file_suffix_length = _int_field(
         raw.get("queue_file_suffix_length"),
@@ -3904,9 +3234,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
         "system_metrics_setup.queue_link_attempts",
     )
     if queue_link_attempts < 1:
-        raise ConfigError(
-            "system_metrics_setup.queue_link_attempts must be positive"
-        )
+        raise ConfigError("system_metrics_setup.queue_link_attempts must be positive")
     google_script_dir = _nonempty_string_field(
         raw.get("google_script_dir"),
         "system_metrics_setup.google_script_dir",
@@ -3951,8 +3279,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     )
     if google_script_answer_excerpt_chars < 1:
         raise ConfigError(
-            "system_metrics_setup.google_script_answer_excerpt_chars must be "
-            "positive"
+            "system_metrics_setup.google_script_answer_excerpt_chars must be positive"
         )
     telemetry_pdf_report_file_name = _nonempty_string_field(
         raw.get("telemetry_pdf_report_file_name"),
@@ -3971,9 +3298,7 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
             "system_metrics_setup.telemetry_pdf_vault_entry_titles must "
             "hold non-empty titles"
         )
-    google_script_deployment_url_regex = raw.get(
-        "google_script_deployment_url_regex"
-    )
+    google_script_deployment_url_regex = raw.get("google_script_deployment_url_regex")
     if (
         not isinstance(google_script_deployment_url_regex, str)
         or not google_script_deployment_url_regex
@@ -4169,9 +3494,6 @@ def _system_metrics_setup_table(raw: object) -> SystemMetricsSetupConfig:
     )
 
 
-
-
-
 # from scrcpy_setup.py
 
 
@@ -4181,12 +3503,8 @@ def _scrcpy_setup_table(raw: object) -> ScrcpySetupConfig:
     if not isinstance(raw, dict):
         raise ConfigError("[scrcpy_setup] section is missing or not a table")
     return ScrcpySetupConfig(
-        username=_nonempty_string_field(
-            raw.get("username"), "scrcpy_setup.username"
-        ),
-        home_dir=_nonempty_string_field(
-            raw.get("home_dir"), "scrcpy_setup.home_dir"
-        ),
+        username=_nonempty_string_field(raw.get("username"), "scrcpy_setup.username"),
+        home_dir=_nonempty_string_field(raw.get("home_dir"), "scrcpy_setup.home_dir"),
         github_repo=_nonempty_string_field(
             raw.get("github_repo"), "scrcpy_setup.github_repo"
         ),
@@ -4214,9 +3532,7 @@ def _scrcpy_setup_table(raw: object) -> ScrcpySetupConfig:
             raw.get("theme_icon_name"), "scrcpy_setup.theme_icon_name"
         ),
         download_dir=Path(
-            _nonempty_string_field(
-                raw.get("download_dir"), "scrcpy_setup.download_dir"
-            )
+            _nonempty_string_field(raw.get("download_dir"), "scrcpy_setup.download_dir")
         ),
         install_dir_relative_path=_nonempty_string_field(
             raw.get("install_dir_relative_path"),
@@ -4294,8 +3610,6 @@ def _scrcpy_setup_table(raw: object) -> ScrcpySetupConfig:
     )
 
 
-
-
 # from telegram_setup.py
 
 
@@ -4305,12 +3619,8 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
     if not isinstance(raw, dict):
         raise ConfigError("[telegram_setup] section is missing or not a table")
     return TelegramSetupConfig(
-        username=_nonempty_string_field(
-            raw.get("username"), "telegram_setup.username"
-        ),
-        home_dir=_nonempty_string_field(
-            raw.get("home_dir"), "telegram_setup.home_dir"
-        ),
+        username=_nonempty_string_field(raw.get("username"), "telegram_setup.username"),
+        home_dir=_nonempty_string_field(raw.get("home_dir"), "telegram_setup.home_dir"),
         download_dir=Path(
             _nonempty_string_field(
                 raw.get("download_dir"), "telegram_setup.download_dir"
@@ -4332,9 +3642,7 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
             raw.get("reachability_probe_timeout_seconds"),
             "telegram_setup.reachability_probe_timeout_seconds",
         ),
-        icon_url=_nonempty_string_field(
-            raw.get("icon_url"), "telegram_setup.icon_url"
-        ),
+        icon_url=_nonempty_string_field(raw.get("icon_url"), "telegram_setup.icon_url"),
         install_dir_relative_path=_nonempty_string_field(
             raw.get("install_dir_relative_path"),
             "telegram_setup.install_dir_relative_path",
@@ -4383,9 +3691,6 @@ def _telegram_setup_table(raw: object) -> TelegramSetupConfig:
     )
 
 
-
-
-
 # from three_x_ui_xray_setup.py
 
 
@@ -4399,9 +3704,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[three_x_ui_xray_setup] section is missing or not a table"
-        )
+        raise ConfigError("[three_x_ui_xray_setup] section is missing or not a table")
     github_repo = _nonempty_string_field(
         raw.get("github_repo"), "three_x_ui_xray_setup.github_repo"
     )
@@ -4424,8 +3727,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     )
     if service_start_wait_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.service_start_wait_seconds "
-            "must not be negative"
+            "three_x_ui_xray_setup.service_start_wait_seconds must not be negative"
         )
     panel_listener_wait_seconds = _int_field(
         raw.get("panel_listener_wait_seconds"),
@@ -4433,8 +3735,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     )
     if panel_listener_wait_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.panel_listener_wait_seconds "
-            "must not be negative"
+            "three_x_ui_xray_setup.panel_listener_wait_seconds must not be negative"
         )
     readiness_check_delay_seconds = _int_field(
         raw.get("readiness_check_delay_seconds"),
@@ -4442,8 +3743,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     )
     if readiness_check_delay_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.readiness_check_delay_seconds "
-            "must not be negative"
+            "three_x_ui_xray_setup.readiness_check_delay_seconds must not be negative"
         )
     core_ready_wait_seconds = _int_field(
         raw.get("core_ready_wait_seconds"),
@@ -4451,8 +3751,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     )
     if core_ready_wait_seconds < 0:
         raise ConfigError(
-            "three_x_ui_xray_setup.core_ready_wait_seconds "
-            "must not be negative"
+            "three_x_ui_xray_setup.core_ready_wait_seconds must not be negative"
         )
     install_result_env_path = Path(
         _nonempty_string_field(
@@ -4562,13 +3861,9 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         "three_x_ui_xray_setup.acme_port",
     )
     if acme_port < 1 or acme_port > 65535:
-        raise ConfigError(
-            "three_x_ui_xray_setup.acme_port must be between 1 and 65535"
-        )
+        raise ConfigError("three_x_ui_xray_setup.acme_port must be between 1 and 65535")
     cert_dir = Path(
-        _nonempty_string_field(
-            raw.get("cert_dir"), "three_x_ui_xray_setup.cert_dir"
-        )
+        _nonempty_string_field(raw.get("cert_dir"), "three_x_ui_xray_setup.cert_dir")
     )
     self_signed_cert_dir = Path(
         _nonempty_string_field(
@@ -4614,8 +3909,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
     )
     if probe_listener_start_seconds < 1:
         raise ConfigError(
-            "three_x_ui_xray_setup.probe_listener_start_seconds "
-            "must be positive"
+            "three_x_ui_xray_setup.probe_listener_start_seconds must be positive"
         )
     port_forward_probe_command = _string_list(
         raw.get("port_forward_probe_command"),
@@ -4639,9 +3933,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         "three_x_ui_xray_setup.panel_probe_command",
     )
     if not panel_probe_command:
-        raise ConfigError(
-            "three_x_ui_xray_setup.panel_probe_command must not be empty"
-        )
+        raise ConfigError("three_x_ui_xray_setup.panel_probe_command must not be empty")
     tunnel_probe_command = _string_list(
         raw.get("tunnel_probe_command"),
         "three_x_ui_xray_setup.tunnel_probe_command",
@@ -4773,8 +4065,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         )
     if local_proxy_tag in set(outbound_tags.values()):
         raise ConfigError(
-            "three_x_ui_xray_setup.local_proxy_tag must differ from the "
-            "outbound tags"
+            "three_x_ui_xray_setup.local_proxy_tag must differ from the outbound tags"
         )
     pool_balancer_tag = _tag_field(
         raw.get("pool_balancer_tag"), "three_x_ui_xray_setup.pool_balancer_tag"
@@ -5112,7 +4403,13 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         acme_installcert_command=_placeholder_command_field(
             raw.get("acme_installcert_command"),
             "three_x_ui_xray_setup.acme_installcert_command",
-            ("{acme}", "{domain}", "{key_file}", "{fullchain_file}", "{reload_command}"),
+            (
+                "{acme}",
+                "{domain}",
+                "{key_file}",
+                "{fullchain_file}",
+                "{reload_command}",
+            ),
         ),
         acme_upgrade_command=_placeholder_command_field(
             raw.get("acme_upgrade_command"),
@@ -5221,9 +4518,7 @@ def _three_x_ui_xray_setup_table(raw: object) -> ThreeXuiXraySetupConfig:
         ),
         xray_field_keys=_xray_field_keys(raw.get("xray_field_keys")),
         xray_values=_xray_values(raw.get("xray_values")),
-        vless_link_query_keys=_vless_link_query_keys(
-            raw.get("vless_link_query_keys")
-        ),
+        vless_link_query_keys=_vless_link_query_keys(raw.get("vless_link_query_keys")),
         vault_entry_title=vault_entry_title,
         connection_vault_entry_title=connection_vault_entry_title,
         share_addr_strategy=share_addr_strategy,
@@ -5384,9 +4679,6 @@ def _subscription_path_field(value: object, name: str) -> str:
     return text
 
 
-
-
-
 # from tor_setup.py
 
 
@@ -5436,30 +4728,20 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         raw.get("hidden_service_dir_mode"),
         "tor_setup.hidden_service_dir_mode",
     )
-    tor_user = _nonempty_string_field(
-        raw.get("tor_user"), "tor_setup.tor_user"
-    )
+    tor_user = _nonempty_string_field(raw.get("tor_user"), "tor_setup.tor_user")
     socks_port = _int_field(raw.get("socks_port"), "tor_setup.socks_port")
     if not 1 <= socks_port <= 65535:
         raise ConfigError("tor_setup.socks_port must be between 1 and 65535")
-    onion_ssh_port = _int_field(
-        raw.get("onion_ssh_port"), "tor_setup.onion_ssh_port"
-    )
+    onion_ssh_port = _int_field(raw.get("onion_ssh_port"), "tor_setup.onion_ssh_port")
     if not 1 <= onion_ssh_port <= 65535:
-        raise ConfigError(
-            "tor_setup.onion_ssh_port must be between 1 and 65535"
-        )
+        raise ConfigError("tor_setup.onion_ssh_port must be between 1 and 65535")
     num_introduction_points = _int_field(
         raw.get("num_introduction_points"),
         "tor_setup.num_introduction_points",
     )
     if num_introduction_points < 1:
-        raise ConfigError(
-            "tor_setup.num_introduction_points must be positive"
-        )
-    log_level = _nonempty_string_field(
-        raw.get("log_level"), "tor_setup.log_level"
-    )
+        raise ConfigError("tor_setup.num_introduction_points must be positive")
+    log_level = _nonempty_string_field(raw.get("log_level"), "tor_setup.log_level")
     if log_level not in TOR_LOG_LEVELS:
         raise ConfigError(
             f"tor_setup.log_level must be one of {', '.join(TOR_LOG_LEVELS)}"
@@ -5502,17 +4784,13 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
         raw.get("start_check_attempts"), "tor_setup.start_check_attempts"
     )
     if start_check_attempts < 1:
-        raise ConfigError(
-            "tor_setup.start_check_attempts must be positive"
-        )
+        raise ConfigError("tor_setup.start_check_attempts must be positive")
     start_check_retry_delay_seconds = _float_field(
         raw.get("start_check_retry_delay_seconds"),
         "tor_setup.start_check_retry_delay_seconds",
     )
     if start_check_retry_delay_seconds <= 0:
-        raise ConfigError(
-            "tor_setup.start_check_retry_delay_seconds must be positive"
-        )
+        raise ConfigError("tor_setup.start_check_retry_delay_seconds must be positive")
     address_file_path = Path(
         _nonempty_string_field(
             raw.get("address_file_path"), "tor_setup.address_file_path"
@@ -5554,9 +4832,6 @@ def _tor_setup_table(raw: object) -> TorSetupConfig:
     )
 
 
-
-
-
 # from vault.py
 
 
@@ -5586,7 +4861,9 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
         if not isinstance(entry_raw, dict):
             raise ConfigError("[vault_structure] entries must be tables")
         unknown = sorted(
-            name for name in entry_raw if name not in ("title", "notes", "generated_password")
+            name
+            for name in entry_raw
+            if name not in ("title", "notes", "generated_password")
         )
         if unknown:
             raise ConfigError(
@@ -5607,9 +4884,7 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
                 f"[vault_structure] entry {title}: notes must be a non-empty string"
             )
         generated_password = entry_raw.get("generated_password")
-        if generated_password is not None and not isinstance(
-            generated_password, str
-        ):
+        if generated_password is not None and not isinstance(generated_password, str):
             raise ConfigError(
                 f"[vault_structure] entry {title}: generated_password must be "
                 "a string like 'proquint-7'"
@@ -5654,15 +4929,12 @@ def _vault_structure_table(raw: object) -> VaultStructureConfig:
                     "[vault_structure] group title must be a non-empty string"
                 )
             if title in seen_titles:
-                raise ConfigError(
-                    f"[vault_structure] duplicate group title: {title}"
-                )
+                raise ConfigError(f"[vault_structure] duplicate group title: {title}")
             seen_titles.add(title)
             notes = group_raw.get("notes")
             if not isinstance(notes, str) or not notes:
                 raise ConfigError(
-                    f"[vault_structure] group {title}: notes must be a "
-                    "non-empty string"
+                    f"[vault_structure] group {title}: notes must be a non-empty string"
                 )
             seed_entries = _vault_group_seed_entries(group_raw, title)
             groups_list.append(
@@ -5733,9 +5005,7 @@ def _vault_group_seed_entries(
                 f"[vault_structure] group {group_title}: seed entry "
                 f"{seed_title}: notes must be a string"
             )
-        seed_entries.append(
-            VaultGroupSeed(title=seed_title, url=url, notes=seed_notes)
-        )
+        seed_entries.append(VaultGroupSeed(title=seed_title, url=url, notes=seed_notes))
     return tuple(seed_entries)
 
 
@@ -5766,11 +5036,12 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         )
     pass_file_path = raw.get("pass_file_path")
     if not isinstance(pass_file_path, str) or not pass_file_path:
-        raise ConfigError(
-            "local_vault_setup.pass_file_path must be a non-empty string"
-        )
+        raise ConfigError("local_vault_setup.pass_file_path must be a non-empty string")
     vault_password_entry_title = raw.get("vault_password_entry_title")
-    if not isinstance(vault_password_entry_title, str) or not vault_password_entry_title:
+    if (
+        not isinstance(vault_password_entry_title, str)
+        or not vault_password_entry_title
+    ):
         raise ConfigError(
             "local_vault_setup.vault_password_entry_title must be a non-empty string"
         )
@@ -5784,9 +5055,7 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         raw.get("error_priority"), "local_vault_setup.error_priority"
     )
     if not 0 <= error_priority <= 7:
-        raise ConfigError(
-            "local_vault_setup.error_priority must be between 0 and 7"
-        )
+        raise ConfigError("local_vault_setup.error_priority must be between 0 and 7")
     return LocalVaultSetupConfig(
         source_vault_production=Path(source_vault_production),
         source_vault_default=Path(source_vault_default),
@@ -5800,9 +5069,6 @@ def _local_vault_setup_table(raw: object) -> LocalVaultSetupConfig:
         pass_file_writable_mode=_file_mode_field("pass_file_writable_mode"),
         error_priority=error_priority,
     )
-
-
-
 
 
 # from vocalinux_setup.py
@@ -5825,9 +5091,7 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
                 raw.get("download_dir"), "vocalinux_setup.download_dir"
             )
         ),
-        version=_nonempty_string_field(
-            raw.get("version"), "vocalinux_setup.version"
-        ),
+        version=_nonempty_string_field(raw.get("version"), "vocalinux_setup.version"),
         github_repo=_nonempty_string_field(
             raw.get("github_repo"), "vocalinux_setup.github_repo"
         ),
@@ -5972,9 +5236,6 @@ def _vocalinux_setup_table(raw: object) -> VocalinuxSetupConfig:
     )
 
 
-
-
-
 # from yggdrasil_service_setup.py
 
 
@@ -6034,9 +5295,7 @@ def _yggdrasil_multicast_field(
         if not isinstance(listen, bool):
             raise ConfigError(f"{name}[{index}] listen must be a boolean")
         result.append(
-            YggdrasilMulticastInterfaceConfig(
-                regex=regex, beacon=beacon, listen=listen
-            )
+            YggdrasilMulticastInterfaceConfig(regex=regex, beacon=beacon, listen=listen)
         )
     return tuple(result)
 
@@ -6105,9 +5364,7 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
     """
 
     if not isinstance(raw, dict):
-        raise ConfigError(
-            "[yggdrasil_service_setup] section is missing or not a table"
-        )
+        raise ConfigError("[yggdrasil_service_setup] section is missing or not a table")
     github_repo = _nonempty_string_field(
         raw.get("github_repo"), "yggdrasil_service_setup.github_repo"
     )
@@ -6123,9 +5380,7 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         raw.get("install_retries"), "yggdrasil_service_setup.install_retries"
     )
     if install_retries < 1:
-        raise ConfigError(
-            "yggdrasil_service_setup.install_retries must be positive"
-        )
+        raise ConfigError("yggdrasil_service_setup.install_retries must be positive")
     config_path = Path(
         _nonempty_string_field(
             raw.get("config_path"), "yggdrasil_service_setup.config_path"
@@ -6173,16 +5428,12 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         raw.get("peer_batch_size"), "yggdrasil_service_setup.peer_batch_size"
     )
     if peer_batch_size < 1:
-        raise ConfigError(
-            "yggdrasil_service_setup.peer_batch_size must be positive"
-        )
+        raise ConfigError("yggdrasil_service_setup.peer_batch_size must be positive")
     peer_target_count = _int_field(
         raw.get("peer_target_count"), "yggdrasil_service_setup.peer_target_count"
     )
     if peer_target_count < 1:
-        raise ConfigError(
-            "yggdrasil_service_setup.peer_target_count must be positive"
-        )
+        raise ConfigError("yggdrasil_service_setup.peer_target_count must be positive")
     peer_probe_timeout_seconds = _float_field(
         raw.get("peer_probe_timeout_seconds"),
         "yggdrasil_service_setup.peer_probe_timeout_seconds",
@@ -6416,17 +5667,13 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         export_key_from_stdin_command=commands["export_key_from_stdin_command"],
         peers_latency_command=commands["peers_latency_command"],
         self_address_command=commands["self_address_command"],
-        journal_connected_query_command=commands[
-            "journal_connected_query_command"
-        ],
+        journal_connected_query_command=commands["journal_connected_query_command"],
         service_start_command=commands["service_start_command"],
         service_restart_command=commands["service_restart_command"],
         service_enable_command=commands["service_enable_command"],
         nmcli_reload_command=commands["nmcli_reload_command"],
         nmcli_connection_show_command=commands["nmcli_connection_show_command"],
-        nmcli_connection_delete_command=commands[
-            "nmcli_connection_delete_command"
-        ],
+        nmcli_connection_delete_command=commands["nmcli_connection_delete_command"],
         ip_link_show_command=commands["ip_link_show_command"],
         ip_link_delete_command=commands["ip_link_delete_command"],
         nm_unmanaged_conf_body=nm_unmanaged_conf_body,
@@ -6441,9 +5688,6 @@ def _yggdrasil_service_setup_table(raw: object) -> YggdrasilServiceSetupConfig:
         config_document_keys=config_document_keys,
         admin_output_keys=admin_output_keys,
     )
-
-
-
 
 
 # from zram_service.py
@@ -6465,9 +5709,7 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
     compressor = raw.get("compressor")
     if not isinstance(compressor, str) or not compressor:
         raise ConfigError("zram_service.compressor must be a non-empty string")
-    swap_priority = _int_field(
-        raw.get("swap_priority"), "zram_service.swap_priority"
-    )
+    swap_priority = _int_field(raw.get("swap_priority"), "zram_service.swap_priority")
     if swap_priority < 1:
         raise ConfigError("zram_service.swap_priority must be positive")
     memory_fraction_percent = _int_field(
@@ -6492,9 +5734,7 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
         raw.get("reset_busy_attempts"), "zram_service.reset_busy_attempts"
     )
     if reset_busy_attempts < 1:
-        raise ConfigError(
-            "zram_service.reset_busy_attempts must be at least 1"
-        )
+        raise ConfigError("zram_service.reset_busy_attempts must be at least 1")
     reset_busy_retry_delay_seconds = _float_field(
         raw.get("reset_busy_retry_delay_seconds"),
         "zram_service.reset_busy_retry_delay_seconds",
@@ -6602,9 +5842,6 @@ def _zram_service_table(raw: object) -> ZramServiceConfig:
     )
 
 
-
-
-
 # from zswap_service.py
 
 
@@ -6634,9 +5871,7 @@ def _zswap_service_table(raw: object) -> ZswapServiceConfig:
         raw.get("max_pool_percent"), "zswap_service.max_pool_percent"
     )
     if not 1 <= max_pool_percent <= 100:
-        raise ConfigError(
-            "zswap_service.max_pool_percent must be between 1 and 100"
-        )
+        raise ConfigError("zswap_service.max_pool_percent must be between 1 and 100")
     accept_threshold_percent = _int_field(
         raw.get("accept_threshold_percent"),
         "zswap_service.accept_threshold_percent",
@@ -6733,8 +5968,7 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
     if isinstance(three_x_ui, dict):
         vault_entry_title = three_x_ui.get("vault_entry_title")
         if vault_entry_title is not None and not any(
-            entry.title == vault_entry_title
-            for entry in vault_structure.entries
+            entry.title == vault_entry_title for entry in vault_structure.entries
         ):
             raise ConfigError(
                 "three_x_ui_xray_setup.vault_entry_title must name an entry "
@@ -6742,8 +5976,7 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             )
         connection_title = three_x_ui.get("connection_vault_entry_title")
         if connection_title is not None and not any(
-            entry.title == connection_title
-            for entry in vault_structure.entries
+            entry.title == connection_title for entry in vault_structure.entries
         ):
             raise ConfigError(
                 "three_x_ui_xray_setup.connection_vault_entry_title must name "
@@ -6768,17 +6001,16 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             "[vault_structure] table"
         )
     config = Config(
-        engine=_engine_table(document.get("engine")),
         cli_tools=_cli_tools_table(document.get("cli_tools")),
         chrome_setup=_chrome_setup_table(document.get("chrome_setup")),
         dnsproxy_setup=_dnsproxy_setup_table(document.get("dnsproxy_setup")),
         add_extra_repos=_add_extra_repos_table(document.get("add_extra_repos")),
         hostname=_hostname_table(document.get("hostname")),
         ffmpeg_setup=_ffmpeg_setup_table(document.get("ffmpeg_setup")),
-        imagemagick_setup=_imagemagick_setup_table(
-            document.get("imagemagick_setup")
+        imagemagick_setup=_imagemagick_setup_table(document.get("imagemagick_setup")),
+        kde_keyboard_setup=_kde_keyboard_setup_table(
+            document.get("kde_keyboard_setup")
         ),
-        kde_keyboard_setup=_kde_keyboard_setup_table(document.get("kde_keyboard_setup")),
         swapfile_service_install=_swapfile_service_install_table(
             document.get("swapfile_service_install")
         ),
@@ -6801,9 +6033,7 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
         nextdns_setup_system_wide=_nextdns_setup_system_wide_table(
             document.get("nextdns_setup_system_wide")
         ),
-        playwright_setup=_playwright_setup_table(
-            document.get("playwright_setup")
-        ),
+        playwright_setup=_playwright_setup_table(document.get("playwright_setup")),
         port_forwarding_setup=port_forwarding_setup,
         upnp_forwarding_setup=upnp_forwarding_setup,
         rustdesk_setup=rustdesk_setup,

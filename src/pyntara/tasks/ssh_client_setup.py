@@ -30,6 +30,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import ssh_client_setup as values
 from pyntara.values.common import SshDirective
@@ -90,9 +91,9 @@ def task(ctx: Context) -> TaskResult:
     written without it.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -101,18 +102,16 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message=(
-                "the ssh_client_setup values are not declared, nothing was "
-                "changed"
+                "the ssh_client_setup values are not declared, nothing was changed"
             ),
             warnings=(
-                "the ssh_client_setup values are not declared: "
-                + ", ".join(absent),
+                "the ssh_client_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     warnings: list[str] = []
     changed = False
 
@@ -134,7 +133,6 @@ def task(ctx: Context) -> TaskResult:
         )
 
     augtool_error = ensure_augtool(
-        ctx.config.engine,
         values.AUGEAS_TOOLS_PACKAGE_NAME,
         status_timeout=common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
         install_timeout=timeout,
@@ -157,7 +155,6 @@ def task(ctx: Context) -> TaskResult:
     )
     try:
         changed, _ = sync_dropin(
-            ctx.config.engine,
             values.SSH_CONFIG_DROPIN_PATH,
             directive_pairs,
             values.DROPIN_FILE_MODE,

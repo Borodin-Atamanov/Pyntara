@@ -28,6 +28,7 @@ from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import apply_owner
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import nextdns_setup_system_wide as values
 
@@ -101,9 +102,9 @@ def task(ctx: Context) -> TaskResult:
     profile it reports done with no changes; force mode rewrites the file.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -119,8 +120,8 @@ def task(ctx: Context) -> TaskResult:
                 + ", ".join(absent),
             ),
         )
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     kp = _open_profile_vault(ctx)
     if kp is None:
         warning = "cannot open a vault with the NextDNS profiles"
@@ -144,7 +145,9 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        existing = common_values.PROFILE_ID_FILE_PATH.read_text(encoding="utf-8").strip()
+        existing = common_values.PROFILE_ID_FILE_PATH.read_text(
+            encoding="utf-8"
+        ).strip()
     except OSError:
         existing = ""
     if existing == profile_id and ctx.task_name not in ctx.force_tasks:

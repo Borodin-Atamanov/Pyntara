@@ -39,7 +39,6 @@ import time
 from pathlib import Path
 
 from pyntara import metrics
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -58,6 +57,7 @@ from pyntara.utils import (
     substituted_command,
     version_without_tag_prefix,
 )
+from pyntara.values import engine as engine_values
 from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import missing_value_names
 from pyntara.values import rustdesk_setup as values
@@ -75,14 +75,12 @@ def _select_asset(
     """The (name, url) of the rustdesk deb for this machine, or None.
 
     The asset name comes from the configured template; the architecture
-    part uses the release asset spelling the engine mapping names for the
+    part uses the release asset spelling the declared mapping names for the
     dpkg architecture.
     """
 
     asset_arch = release_asset_architecture(architectures, arch)
-    name = values.ASSET_NAME_TEMPLATE.format(
-        version=version, asset_arch=asset_arch
-    )
+    name = values.ASSET_NAME_TEMPLATE.format(version=version, asset_arch=asset_arch)
     url = dict(asset_name_urls(release)).get(name)
     return (name, url) if url else None
 
@@ -103,7 +101,7 @@ def _installed_version(timeout: float) -> str | None:
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -112,7 +110,6 @@ def _installed_version(timeout: float) -> str | None:
 
 
 def _download_deb(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     url: str,
@@ -120,7 +117,7 @@ def _download_deb(
 ) -> None:
     """Download the package into the download directory.
 
-    The command is the engine-wide download call, so the flags and the
+    The command is the declared download call, so the flags and the
     progress text are the same as in every other download of the run.
     Raises RuntimeError when curl fails, so the caller reports the
     reason.
@@ -129,7 +126,7 @@ def _download_deb(
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_command(
-            download_command(engine, download_dir / name, url),
+            download_command(download_dir / name, url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -137,7 +134,6 @@ def _download_deb(
 
 
 def _install_deb(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     *,
@@ -156,15 +152,13 @@ def _install_deb(
 
     if not skip_update:
         try:
-            refresh_apt_index(engine, update_timeout)
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
     for _ in range(retries + 1):
-        ok, error = install_package_once(
-            engine, str(download_dir / name), install_timeout
-        )
+        ok, error = install_package_once(str(download_dir / name), install_timeout)
         if ok:
             break
     return ok, error
@@ -193,7 +187,7 @@ def _machine_id(timeout: float) -> str | None:
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -214,7 +208,7 @@ def _get_option(key: str, timeout: float) -> str | None:
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -267,9 +261,7 @@ def _set_password(password: str, timeout: float) -> tuple[bool, str]:
 
     try:
         run_command(
-            substituted_command(
-                values.SET_PASSWORD_COMMAND, {"password": password}
-            ),
+            substituted_command(values.SET_PASSWORD_COMMAND, {"password": password}),
             check=True,
             capture=True,
             timeout=timeout,
@@ -467,7 +459,7 @@ def _start_service(timeout: float) -> tuple[bool, str]:
     )
 
 
-def _service_stays_active(engine: EngineConfig, timeout: float) -> bool:
+def _service_stays_active(timeout: float) -> bool:
     """True when the unit is still active after the configured settle.
 
     A start is not a working service: while the stop-service option
@@ -479,7 +471,7 @@ def _service_stays_active(engine: EngineConfig, timeout: float) -> bool:
     """
 
     time.sleep(values.SERVICE_SETTLE_DELAY_SECONDS)
-    return service_is_active(engine, values.SERVICE_UNIT_NAME, timeout)
+    return service_is_active(values.SERVICE_UNIT_NAME, timeout)
 
 
 def task(ctx: Context) -> TaskResult:
@@ -518,9 +510,9 @@ def task(ctx: Context) -> TaskResult:
                 "the rustdesk_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
@@ -528,7 +520,7 @@ def task(ctx: Context) -> TaskResult:
     release: dict[str, object] = {}
     tag = ""
     try:
-        release = fetch_latest_release(values.GITHUB_REPO, ctx.config.engine)
+        release = fetch_latest_release(values.GITHUB_REPO)
         tag = version_without_tag_prefix(release_tag(release))
     except (RuntimeError, TypeError) as exc:
         # Without the release tag the installed version cannot be
@@ -544,12 +536,15 @@ def task(ctx: Context) -> TaskResult:
     if tag and installed != tag:
         arch = ""
         try:
-            arch = dpkg_architecture(ctx.config.engine, timeout)
+            arch = dpkg_architecture(timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"cannot read dpkg architecture: {exc}")
         selected = (
             _select_asset(
-                release, tag, arch, ctx.config.engine.release_asset_architectures
+                release,
+                tag,
+                arch,
+                engine_values.RELEASE_ASSET_ARCHITECTURES,
             )
             if arch
             else None
@@ -557,8 +552,7 @@ def task(ctx: Context) -> TaskResult:
         if selected is None:
             if arch:
                 warnings.append(
-                    f"no rustdesk deb asset for architecture {arch} in "
-                    f"release {tag}"
+                    f"no rustdesk deb asset for architecture {arch} in release {tag}"
                 )
         else:
             name, url = selected
@@ -566,7 +560,6 @@ def task(ctx: Context) -> TaskResult:
             downloaded = True
             try:
                 _download_deb(
-                    ctx.config.engine,
                     values.DOWNLOAD_DIR,
                     name,
                     url,
@@ -578,7 +571,6 @@ def task(ctx: Context) -> TaskResult:
             if downloaded:
                 _log("installing rustdesk deb")
                 ok, error = _install_deb(
-                    ctx.config.engine,
                     values.DOWNLOAD_DIR,
                     name,
                     install_timeout=values.INSTALL_TIMEOUT_SECONDS,
@@ -609,28 +601,22 @@ def task(ctx: Context) -> TaskResult:
         _reset_identity()
         changed = True
 
-    enabled = service_is_enabled(
-        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-    )
-    active = service_is_active(ctx.config.engine, values.SERVICE_UNIT_NAME, timeout)
+    enabled = service_is_enabled(values.SERVICE_UNIT_NAME, timeout)
+    active = service_is_active(values.SERVICE_UNIT_NAME, timeout)
     if not enabled:
         _log(f"enabling service {values.SERVICE_UNIT_NAME}")
         enabled_ok, enable_error = _enable_service(timeout)
         if enabled_ok:
             changed = True
         else:
-            warnings.append(
-                f"cannot enable {values.SERVICE_UNIT_NAME}: {enable_error}"
-            )
+            warnings.append(f"cannot enable {values.SERVICE_UNIT_NAME}: {enable_error}")
     if not active:
         _log(f"starting service {values.SERVICE_UNIT_NAME}")
         started, start_error = _start_service(timeout)
         if started:
             changed = True
         else:
-            warnings.append(
-                f"cannot start {values.SERVICE_UNIT_NAME}: {start_error}"
-            )
+            warnings.append(f"cannot start {values.SERVICE_UNIT_NAME}: {start_error}")
 
     if not _wait_ready(timeout):
         warnings.append("rustdesk daemon did not answer after the service start")
@@ -666,24 +652,19 @@ def task(ctx: Context) -> TaskResult:
     # The state is checked again here: the options are applied after the
     # start, so a unit that RustDesk stopped and disabled at its start is
     # started once more through the same configured command.
-    if not service_is_active(
-        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-    ):
+    if not service_is_active(values.SERVICE_UNIT_NAME, timeout):
         _log(
             f"service {values.SERVICE_UNIT_NAME} is not active after the "
             "configuration steps; enabling and starting it again"
         )
-        if not service_is_enabled(
-            ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-        ):
+        if not service_is_enabled(values.SERVICE_UNIT_NAME, timeout):
             _log(f"enabling service {values.SERVICE_UNIT_NAME} again")
             enabled_ok, enable_error = _enable_service(timeout)
             if enabled_ok:
                 changed = True
             else:
                 warnings.append(
-                    f"cannot enable {values.SERVICE_UNIT_NAME} again: "
-                    f"{enable_error}"
+                    f"cannot enable {values.SERVICE_UNIT_NAME} again: {enable_error}"
                 )
         restarted, restart_error = _start_service(timeout)
         if not restarted:
@@ -709,15 +690,13 @@ def task(ctx: Context) -> TaskResult:
     # The settled check is the one the run reports: a service that stopped
     # itself is not a machine an operator can reach, whatever the state
     # right after the start was.
-    service_running = _service_stays_active(ctx.config.engine, timeout)
+    service_running = _service_stays_active(timeout)
     if not service_running:
         warnings.append(
             f"service {values.SERVICE_UNIT_NAME} is not running after the "
             "configuration steps: the machine is not reachable by RustDesk ID"
         )
-    elif not service_is_enabled(
-        ctx.config.engine, values.SERVICE_UNIT_NAME, timeout
-    ):
+    elif not service_is_enabled(values.SERVICE_UNIT_NAME, timeout):
         warnings.append(
             f"service {values.SERVICE_UNIT_NAME} is not enabled for boot: the "
             "machine is reachable now and not after a reboot"

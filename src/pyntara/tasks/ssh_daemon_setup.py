@@ -57,7 +57,7 @@ from pyntara.augeas import (
     include_covers_dropin,
     sync_dropin,
 )
-from pyntara.config import EngineConfig, SshDaemonSetupConfig, SshDirective
+from pyntara.config import SshDaemonSetupConfig, SshDirective
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -72,6 +72,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 
 
 def _verify_effective_config(
@@ -263,7 +264,6 @@ def _deploy_keys(
 
 
 def _ensure_package(
-    engine: EngineConfig,
     cfg: SshDaemonSetupConfig,
     timeout: float,
     skip_update: bool,
@@ -279,20 +279,19 @@ def _ensure_package(
 
     if not skip_update:
         try:
-            refresh_apt_index(engine, timeout)
+            refresh_apt_index(timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
     for _ in range(cfg.install_retries + 1):
-        ok, error = install_package_once(engine, cfg.package_name, timeout)
+        ok, error = install_package_once(cfg.package_name, timeout)
         if ok:
             break
     return ok, error
 
 
 def _wait_active(
-    engine: EngineConfig,
     service_name: str,
     attempts: int,
     retry_delay_seconds: float,
@@ -306,7 +305,7 @@ def _wait_active(
 
     for _ in range(attempts):
         time.sleep(retry_delay_seconds)
-        if service_is_active(engine, service_name, timeout):
+        if service_is_active(service_name, timeout):
             return True
     return False
 
@@ -339,9 +338,9 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.ssh_daemon_setup
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     ssh_data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
@@ -377,7 +376,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     installed = package_is_installed(
-        ctx.config.engine, cfg.package_name, cfg.package_status_timeout_seconds
+        cfg.package_name, cfg.package_status_timeout_seconds
     )
     _log(
         f"checking package {cfg.package_name}: "
@@ -385,9 +384,7 @@ def task(ctx: Context) -> TaskResult:
     )
     if not installed:
         _log(f"installing package {cfg.package_name}")
-        ok, error = _ensure_package(
-            ctx.config.engine, cfg, timeout, ctx.skip_apt_update
-        )
+        ok, error = _ensure_package(cfg, timeout, ctx.skip_apt_update)
         if ok:
             _log("package installed")
             changed = True
@@ -414,7 +411,6 @@ def task(ctx: Context) -> TaskResult:
         )
 
     augtool_error = ensure_augtool(
-        ctx.config.engine,
         cfg.augeas_tools_package_name,
         status_timeout=cfg.package_status_timeout_seconds,
         install_timeout=timeout,
@@ -434,7 +430,6 @@ def task(ctx: Context) -> TaskResult:
     if augtool_error is None:
         try:
             dropin_changed, port_changed = sync_dropin(
-                ctx.config.engine,
                 cfg.sshd_config_dropin_path,
                 directives,
                 cfg.dropin_file_mode,
@@ -461,12 +456,8 @@ def task(ctx: Context) -> TaskResult:
         else:
             warnings.append(verify)
 
-    socket_enabled = service_is_enabled(
-        ctx.config.engine, cfg.socket_unit_name, timeout
-    )
-    socket_active = service_is_active(
-        ctx.config.engine, cfg.socket_unit_name, timeout
-    )
+    socket_enabled = service_is_enabled(cfg.socket_unit_name, timeout)
+    socket_active = service_is_active(cfg.socket_unit_name, timeout)
     socket_needs_disable = socket_enabled or socket_active
     if socket_enabled:
         _log(f"checking socket {cfg.socket_unit_name}: enabled")
@@ -475,8 +466,8 @@ def task(ctx: Context) -> TaskResult:
     else:
         _log(f"checking socket {cfg.socket_unit_name}: disabled")
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(cfg.service_unit_name, timeout)
+    active = service_is_active(cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -525,13 +516,7 @@ def task(ctx: Context) -> TaskResult:
     else:
         _log("skipping key deployment: a configured key file is missing")
 
-    if (
-        not force
-        and not changed
-        and not socket_needs_disable
-        and enabled
-        and active
-    ):
+    if not force and not changed and not socket_needs_disable and enabled and active:
         _log("target state already reached, skipping")
         return _result(changed=False, message="already configured", warnings=warnings)
 
@@ -593,7 +578,6 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log("service started")
             if not _wait_active(
-                ctx.config.engine,
                 cfg.service_unit_name,
                 cfg.start_check_attempts,
                 cfg.start_check_retry_delay_seconds,

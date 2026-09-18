@@ -24,6 +24,7 @@ from pathlib import Path
 
 from pyntara.config import Config
 from pyntara.logger import log_progress as _log
+from pyntara.values import engine as engine_values
 
 
 def build_queue_name(original_name: str, suffix: str) -> str:
@@ -89,14 +90,14 @@ def ingest_spool(cfg: Config) -> None:
         if reason is not None:
             _log(
                 f"ingesting spool entry {entry}: {reason}, removing",
-                priority=cfg.engine.error_priority,
+                priority=engine_values.ERROR_PRIORITY,
             )
             try:
                 entry.unlink(missing_ok=True)
             except OSError as exc:
                 _log(
                     f"ingesting spool entry {entry}: cannot remove it: {exc}",
-                    priority=cfg.engine.error_priority,
+                    priority=engine_values.ERROR_PRIORITY,
                 )
             continue
         _publish_entry(
@@ -108,8 +109,8 @@ def ingest_spool(cfg: Config) -> None:
             metrics.queue_file_suffix_alphabet,
             metrics.temp_name_random_bytes,
             metrics.queue_link_attempts,
-            cfg.engine.nanoseconds_per_second,
-            cfg.engine.error_priority,
+            engine_values.NANOSECONDS_PER_SECOND,
+            engine_values.ERROR_PRIORITY,
         )
 
 
@@ -130,9 +131,7 @@ def _reject_reason(entry: Path, limit: int) -> str | None:
     if entry_stat.st_size == 0:
         return "empty"
     if entry_stat.st_size > limit:
-        return (
-            f"{entry_stat.st_size} bytes, larger than the limit of {limit} bytes"
-        )
+        return f"{entry_stat.st_size} bytes, larger than the limit of {limit} bytes"
     return None
 
 

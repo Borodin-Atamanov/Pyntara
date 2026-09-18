@@ -21,8 +21,8 @@ from datetime import datetime
 
 import typer
 
-from pyntara.config import EngineConfig
 from pyntara.models import TaskResult
+from pyntara.values import engine as engine_values
 
 # ANSI color codes from typer.secho must never reach the journal.
 _ANSI_RE: re.Pattern[str] = re.compile(r"\x1b\[[0-9;]*m")
@@ -30,37 +30,39 @@ _ANSI_RE: re.Pattern[str] = re.compile(r"\x1b\[[0-9;]*m")
 # Persistent journal process; None until the first journal message.
 _journal_proc: subprocess.Popen[str] | None = None
 
-# The engine table the logger writes with; None until configure_journal.
-_journal_engine: EngineConfig | None = None
+# The journal identifier the logger writes under; None until
+# configure_journal.
+_journal_identifier: str | None = None
 
 
-def configure_journal(engine: EngineConfig | None) -> None:
-    """Hand the journal vocabulary of the [engine] table to the logger.
+def configure_journal(identifier: str | None) -> None:
+    """Tell the logger which journal identifier its messages carry.
 
-    The logger writes before and around the config load, so it cannot read
-    the config itself: the composition root calls this once after the load,
-    and so does the entry point of every deployed service. Passing None
-    keeps the console path and forwards nothing to the journal, which is
-    what a test run asks for. A table that replaces another also closes the
-    process the previous one started, because the journal tool fixes the
-    identifier and the priority at process start, so a reused process would
-    route the next messages under the old vocabulary.
+    The logger writes before and around the load of the run values, so it
+    cannot read them itself: the composition root calls this once, and so
+    does the entry point of every deployed service, which passes the
+    identifier of its own section. Passing None keeps the console path and
+    forwards nothing to the journal, which is what a test run asks for. A
+    call that replaces another also closes the process the previous one
+    started, because the journal tool fixes the identifier at process
+    start, so a reused process would route the next messages under the old
+    name.
     """
 
-    global _journal_engine
+    global _journal_identifier
     _close_shared_journal()
-    _journal_engine = engine
+    _journal_identifier = identifier
 
 
 def _timestamp_format() -> str:
-    """The datetime format of the [engine] table, or an empty string.
+    """The datetime format of a progress line, or an empty string.
 
-    The logger writes before the config is loaded too, so a logger nobody
-    configured has no format to write a moment with; the progress line then
-    carries no timestamp, which is the shape a test run wants.
+    The logger writes before the run values are known and inside components
+    that are no part of the engine, so a logger nobody configured writes a
+    progress line without a moment, which is the shape a test run wants.
     """
 
-    return "" if _journal_engine is None else _journal_engine.datetime_format
+    return "" if _journal_identifier is None else engine_values.DATETIME_FORMAT
 
 
 def _close_shared_journal() -> None:
@@ -79,9 +81,7 @@ def _close_shared_journal() -> None:
             pass
 
 
-def _rendered_command(
-    command: tuple[str, ...], values: dict[str, str]
-) -> list[str]:
+def _rendered_command(command: tuple[str, ...], values: dict[str, str]) -> list[str]:
     """The configured journal command with its placeholders filled in.
 
     The helper is imported inside the function because pyntara.utils
@@ -104,19 +104,16 @@ _last_log_time = 0.0
 def _write_to_shared_journal(text: str, command: list[str]) -> None:
     """Write one line through the reused journal process, best effort.
 
-    The shared process writes the progress entries, the level the calls
-    of the run carry by default, and it is started with the priority the
-    [engine] table names for them, because a journal tool fixes the
-    priority at process start. A machine whose command carries no
-    priority placeholder writes with the tool default; a missing
-    executable or a failed write never stops the run: without a journal
-    the console and the install log keep working as before.
+    The shared process writes the progress entries, the level the calls of
+    the run carry by default, and it is started with the priority the
+    declared journal command names for them, because a journal tool fixes
+    the priority at process start. A missing executable or a failed write
+    never stops the run: without a journal the console and the install log
+    keep working as before.
     """
 
     global _journal_proc
     if _journal_proc is None or _journal_proc.poll() is not None:
-        if not command:
-            return
         executable = shutil.which(command[0])
         if executable is None:
             return
@@ -142,9 +139,7 @@ def _write_to_shared_journal(text: str, command: list[str]) -> None:
         _journal_proc = None
 
 
-def _write_to_priority_journal(
-    text: str, priority: int, engine: EngineConfig
-) -> None:
+def _write_to_priority_journal(text: str, priority: int, identifier: str) -> None:
     """Write one line through a short-lived journal process, best effort.
 
     A journal tool fixes the priority at process start, so a message with a
@@ -156,9 +151,9 @@ def _write_to_priority_journal(
     """
 
     command = _rendered_command(
-        engine.journal_priority_command,
+        engine_values.JOURNAL_PRIORITY_COMMAND,
         {
-            "identifier": engine.journal_identifier,
+            "identifier": identifier,
             "priority": str(priority),
         },
     )
@@ -186,59 +181,46 @@ def _write_to_priority_journal(
         return
 
 
-def _shared_journal_command(engine: EngineConfig) -> list[str]:
+def _shared_journal_command(identifier: str) -> list[str]:
     """The command that writes the progress entries of the run.
 
-    The progress level is a config value, so the shared process is
-    started with the priority command of the table and the configured
-    level; a table whose priority command is empty falls back to the
-    plain journal command, which writes with the default level of the
-    tool, so an incomplete config still reaches the journal.
+    The progress level is a declared value, so the shared process is started
+    with the declared priority command and that level.
     """
 
-    values = {
-        "identifier": engine.journal_identifier,
-        "priority": str(engine.progress_priority),
-    }
-    if engine.journal_priority_command:
-        return _rendered_command(engine.journal_priority_command, values)
-    if engine.journal_command:
-        return _rendered_command(engine.journal_command, values)
-    return []
+    return _rendered_command(
+        engine_values.JOURNAL_PRIORITY_COMMAND,
+        {
+            "identifier": identifier,
+            "priority": str(engine_values.PROGRESS_PRIORITY),
+        },
+    )
 
 
 def _send_to_journal(message: str, priority: int | None = None) -> None:
     """Duplicate one message into the system journal, best effort.
 
-    The journal vocabulary (the identifier and the commands) comes from
-    the [engine] table, which the composition root and the entry point of
-    every deployed service hand over once through configure_journal after
-    the config is loaded. A logger nobody configured, and one whose engine
-    names no journal command, forwards nothing: the console and the
-    install log keep working, and a component started outside the engine
-    never guesses a name for itself. The priority is the syslog level as a
-    number and is passed to the journal tool as a number, never embedded
-    in the message text; a call that names none carries the progress level
-    of the config, which is what the majority of the messages of a run
-    are. Messages of the progress level flow through a reused process, a
-    message of another level spawns a short-lived one, because the
-    priority is fixed at process start.
+    A logger nobody configured forwards nothing: the console and the install
+    log keep working, and a component started outside the engine never
+    guesses a name for itself. The priority is the syslog level as a number
+    and is passed to the journal tool as a number, never embedded in the
+    message text; a call that names none carries PROGRESS_PRIORITY, which is
+    the level most messages of a run carry. Messages of that level flow
+    through a reused process, a message of another level spawns a
+    short-lived one, because the priority is fixed at process start.
     """
 
-    engine = _journal_engine
-    if engine is None:
+    identifier = _journal_identifier
+    if identifier is None:
         return
-    level = engine.progress_priority if priority is None else priority
-    if level == engine.progress_priority:
+    level = engine_values.PROGRESS_PRIORITY if priority is None else priority
+    if level == engine_values.PROGRESS_PRIORITY:
         _write_to_shared_journal(
-            _ANSI_RE.sub("", message) + "\n", _shared_journal_command(engine)
+            _ANSI_RE.sub("", message) + "\n",
+            _shared_journal_command(identifier),
         )
         return
-    if not engine.journal_priority_command:
-        return
-    _write_to_priority_journal(
-        _ANSI_RE.sub("", message) + "\n", level, engine
-    )
+    _write_to_priority_journal(_ANSI_RE.sub("", message) + "\n", level, identifier)
 
 
 def log_progress(message: str, *, priority: int | None = None) -> None:
@@ -246,13 +228,12 @@ def log_progress(message: str, *, priority: int | None = None) -> None:
 
     The task name in the prefix comes from the calling module: one task
     module per catalog task (task-model contract), so the name can never
-    diverge from the catalog. A timestamp in the configured datetime
-    format of the [engine] table is prepended only when more than one
-    second has passed since the previous progress line, so bursts of lines
-    stay compact; a logger nobody configured writes no timestamp. The
-    journal receives the message without the timestamp at the given syslog
-    priority, informational by default; tasks pass the configured engine
-    progress and error priorities instead.
+    diverge from the catalog. A timestamp in the declared datetime format is
+    prepended only when more than one second has passed since the previous
+    progress line, so bursts of lines stay compact; a logger nobody
+    configured writes no timestamp. The journal receives the message without
+    the timestamp at the given syslog priority, informational by default;
+    tasks pass the declared progress and error priorities instead.
     """
 
     frame = inspect.currentframe()

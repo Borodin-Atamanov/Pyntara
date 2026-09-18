@@ -21,9 +21,7 @@ from config_helpers import (
         # username is empty
         base_config().replace('username = "i"\n', 'username = ""\n'),
         # github_repo is empty
-        base_config().replace(
-            'github_repo = "Genymobile/scrcpy"', 'github_repo = ""'
-        ),
+        base_config().replace('github_repo = "Genymobile/scrcpy"', 'github_repo = ""'),
         # archive_name_template lost the asset architecture placeholder
         base_config().replace(
             'archive_name_template = "scrcpy-linux-{asset_arch}-{release_tag}.tar.gz"',
@@ -52,9 +50,7 @@ from config_helpers import (
             'apt_binary_path = "/usr/bin/scrcpy"', 'apt_binary_path = ""'
         ),
         # theme_icon_name is empty
-        base_config().replace(
-            'theme_icon_name = "scrcpy"', 'theme_icon_name = ""'
-        ),
+        base_config().replace('theme_icon_name = "scrcpy"', 'theme_icon_name = ""'),
         # download_dir is empty
         base_config().replace(
             'download_dir = "/var/cache/pyntara/scrcpy"', 'download_dir = ""'

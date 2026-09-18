@@ -171,7 +171,7 @@ def test_repository_config_directory_loads() -> None:
     # runtime itself only reads and never checks.
     config = load_checked_config(REPOSITORY_CONFIG_DIR)
     assert isinstance(config, Config)
-    assert config.engine.notice_timeout > 0
+    assert config.hostname.hostname_random_bytes > 0
 
 
 def test_every_repository_section_has_a_config_field() -> None:
@@ -196,9 +196,7 @@ def test_every_repository_section_key_is_read_by_its_parser() -> None:
     # failure the strictness in the loader and this test exist to prevent.
     config = load_checked_config(REPOSITORY_CONFIG_DIR)
     unread: list[str] = []
-    for section_name, table in _top_level_tables(
-        _repository_config_document()
-    ).items():
+    for section_name, table in _top_level_tables(_repository_config_document()).items():
         section = getattr(config, section_name)
         for key in sorted(set(table) - _section_field_names(section)):
             unread.append(f"[{section_name}] {key}")
@@ -209,9 +207,7 @@ def test_section_fields_are_keys_or_recorded_derived_fields() -> None:
     # A field with no key and no derivation is a value nobody can configure.
     config = load_checked_config(REPOSITORY_CONFIG_DIR)
     underivable: list[str] = []
-    for section_name, table in _top_level_tables(
-        _repository_config_document()
-    ).items():
+    for section_name, table in _top_level_tables(_repository_config_document()).items():
         section = getattr(config, section_name)
         derived = DERIVED_SECTION_FIELDS.get(section_name, frozenset())
         missing = sorted(_section_field_names(section) - set(table) - derived)
@@ -282,9 +278,7 @@ def test_component_key_lists_name_keys_of_their_table() -> None:
         )
         names = set(getattr(source, list_name))
         for name in sorted(names - _section_field_names(table_type)):
-            unknown.append(
-                f"{source_name}.{list_name}: {table_type.__name__}.{name}"
-            )
+            unknown.append(f"{source_name}.{list_name}: {table_type.__name__}.{name}")
     assert not unknown, f"component key lists naming no config key: {unknown}"
 
 
@@ -304,22 +298,16 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
         "port_forwarding_setup.passphrase_entry_title": (
             factory.port_forwarding_setup.passphrase_entry_title
         ),
-        "rustdesk_setup.vault_entry_title": (
-            factory.rustdesk_setup.vault_entry_title
-        ),
+        "rustdesk_setup.vault_entry_title": (factory.rustdesk_setup.vault_entry_title),
         "three_x_ui_xray_setup.vault_entry_title": (
             factory.three_x_ui_xray_setup.vault_entry_title
         ),
         "three_x_ui_xray_setup.connection_vault_entry_title": (
             factory.three_x_ui_xray_setup.connection_vault_entry_title
         ),
-        "sotavpn_setup.key_entry_title": (
-            factory.sotavpn_setup.key_entry_title
-        ),
+        "sotavpn_setup.key_entry_title": (factory.sotavpn_setup.key_entry_title),
     }
-    missing = sorted(
-        name for name, title in referenced.items() if title not in titles
-    )
+    missing = sorted(name for name, title in referenced.items() if title not in titles)
     assert not missing, f"vault entry titles missing from the factory: {missing}"
 
 

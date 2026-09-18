@@ -28,6 +28,7 @@ from pathlib import Path
 
 from pyntara.config import Config, absent_config_keys, load_config
 from pyntara.ssh_access import host_from_address, ssh_command
+from pyntara.values import engine as engine_values
 
 
 def local_port_number(value: object) -> int | str:
@@ -49,12 +50,11 @@ def state_records(cfg: Config, raw: object) -> list[dict[str, object]]:
 
     A malformed entry is skipped instead of raising: the file is written
     by the service, and one unreadable entry must not hide the rest of
-    the forwarding state. The channel name, the field names and the ssh
-    command come from the config.
+    the forwarding state. The channel name and the field names come from
+    the config and the declared values.
     """
 
-    engine = cfg.engine
-    keys = engine.report_record_keys
+    keys = engine_values.REPORT_RECORD_KEYS
     channel = cfg.port_forwarding_setup.report_channel_name
     records: list[dict[str, object]] = []
     if not isinstance(raw, dict):
@@ -72,7 +72,7 @@ def state_records(cfg: Config, raw: object) -> list[dict[str, object]]:
                     keys["server"]: host,
                     keys["local_port"]: local_port_number(written_local_port),
                     keys["remote_port"]: remote_port,
-                    keys["ssh"]: ssh_command(engine, host, remote_port),
+                    keys["ssh"]: ssh_command(host, remote_port),
                 }
             )
     return records
@@ -89,9 +89,7 @@ def main(argv: list[str]) -> int:
         print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
         return 2
     cfg = load_config(Path(argv[1]))
-    missing = absent_config_keys(
-        cfg.port_forwarding_setup, ("state_file_path",)
-    )
+    missing = absent_config_keys(cfg.port_forwarding_setup, ("state_file_path",))
     if missing:
         print(
             "error: the port_forwarding_setup section of the config has no "
@@ -114,7 +112,11 @@ def main(argv: list[str]) -> int:
     if not records:
         return 0
     print(
-        json.dumps(records, ensure_ascii=False, indent=cfg.engine.report_json_indent)
+        json.dumps(
+            records,
+            ensure_ascii=False,
+            indent=engine_values.REPORT_JSON_INDENT,
+        )
     )
     return 0
 

@@ -59,6 +59,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -145,9 +146,8 @@ def _system_config_matches(system_config_path: Path, config_source_dir: Path) ->
     try:
         if not system_config_path.is_file():
             return False
-        return (
-            system_config_path.read_text(encoding="utf-8")
-            == render_config_source(source)
+        return system_config_path.read_text(encoding="utf-8") == render_config_source(
+            source
         )
     except OSError:
         return False
@@ -164,9 +164,7 @@ def _write_system_config(system_config_path: Path, config_source_dir: Path) -> N
 
     source = config_source_dir
     system_config_path.parent.mkdir(parents=True, exist_ok=True)
-    system_config_path.write_text(
-        render_config_source(source), encoding="utf-8"
-    )
+    system_config_path.write_text(render_config_source(source), encoding="utf-8")
 
 
 def _render_service_unit(
@@ -193,9 +191,7 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", version=version
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
 
 
 def _render_ingest_service_unit(
@@ -219,14 +215,10 @@ def _render_ingest_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", version=version
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
 
 
-def _render_ingest_path_unit(
-    template_path: Path, spool_dir: Path, version: str
-) -> str:
+def _render_ingest_path_unit(template_path: Path, spool_dir: Path, version: str) -> str:
     """Render the path unit that watches the spool directory.
 
     The unit itself starts the ingest service rather than running code, so
@@ -260,9 +252,7 @@ def _render_collector_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", version=version
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
 
 
 def _render_collector_timer_unit(
@@ -393,7 +383,9 @@ def _spool_dir_ok(spool_dir: Path, mode: int, permission_mask: int) -> bool:
         return False
 
 
-def _ensure_spool_dir(spool_dir: Path, mode: int, owner_uid: int, owner_gid: int) -> None:
+def _ensure_spool_dir(
+    spool_dir: Path, mode: int, owner_uid: int, owner_gid: int
+) -> None:
     """Create the spool directory with the configured mode and root owner."""
 
     spool_dir.mkdir(parents=True, exist_ok=True)
@@ -431,10 +423,10 @@ def task(ctx: Context) -> TaskResult:
     never stops here.
     """
 
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     warnings: list[str] = []
     metrics = ctx.config.system_metrics_setup
     venv_dir = metrics.venv_dir
@@ -501,10 +493,8 @@ def task(ctx: Context) -> TaskResult:
         metrics.spool_temp_prefix,
     )
 
-    config_ok = _system_config_matches(
-        system_config_path, ctx.repo_root / "config"
-    )
-    unit_dir = ctx.config.engine.systemd_unit_dir
+    config_ok = _system_config_matches(system_config_path, ctx.repo_root / "config")
+    unit_dir = engine_values.SYSTEMD_UNIT_DIR
     service_unit_ok = _unit_matches(unit_dir, service_name, service_unit)
     ingest_service_unit_ok = _unit_matches(
         unit_dir, ingest_service_name, ingest_service_unit
@@ -516,17 +506,17 @@ def task(ctx: Context) -> TaskResult:
     collector_timer_unit_ok = _unit_matches(
         unit_dir, collector_timer_name, collector_timer_unit
     )
-    service_enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
+    service_enabled = service_is_enabled(service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if service_enabled else 'disabled'}"
     )
-    path_enabled = service_is_enabled(ctx.config.engine, ingest_path_name, timeout)
+    path_enabled = service_is_enabled(ingest_path_name, timeout)
     _log(
         f"checking spool watcher {ingest_path_name}: "
         f"{'enabled' if path_enabled else 'disabled'}"
     )
-    timer_enabled = service_is_enabled(ctx.config.engine, collector_timer_name, timeout)
+    timer_enabled = service_is_enabled(collector_timer_name, timeout)
     _log(
         f"checking collector timer {collector_timer_name}: "
         f"{'enabled' if timer_enabled else 'disabled'}"
@@ -538,16 +528,12 @@ def task(ctx: Context) -> TaskResult:
         metrics.command_permission_mask,
     )
     _log(
-        f"checking command {command_path}: "
-        f"{'ok' if command_ok else 'missing or stale'}"
+        f"checking command {command_path}: {'ok' if command_ok else 'missing or stale'}"
     )
     spool_ok = _spool_dir_ok(
         spool_dir, metrics.spool_dir_mode, metrics.spool_dir_permission_mask
     )
-    _log(
-        f"checking spool {spool_dir}: "
-        f"{'ok' if spool_ok else 'missing or wrong mode'}"
-    )
+    _log(f"checking spool {spool_dir}: {'ok' if spool_ok else 'missing or wrong mode'}")
 
     if (
         not force
@@ -628,12 +614,16 @@ def task(ctx: Context) -> TaskResult:
             _log(f"unit {name} written")
             changed = True
 
-    if force or venv_changed or not (
-        config_ok
-        and all(unit_states)
-        and service_enabled
-        and path_enabled
-        and timer_enabled
+    if (
+        force
+        or venv_changed
+        or not (
+            config_ok
+            and all(unit_states)
+            and service_enabled
+            and path_enabled
+            and timer_enabled
+        )
     ):
         try:
             _log("reloading systemd: systemctl daemon-reload")
@@ -643,7 +633,7 @@ def task(ctx: Context) -> TaskResult:
             )
             _log("systemd reloaded")
             for name in (service_name, ingest_path_name, collector_timer_name):
-                if force or not service_is_enabled(ctx.config.engine, name, timeout):
+                if force or not service_is_enabled(name, timeout):
                     _log(f"enabling unit: systemctl enable {name}")
                     run_command(
                         substituted_command(
@@ -653,7 +643,7 @@ def task(ctx: Context) -> TaskResult:
                         timeout=timeout,
                     )
                     _log(f"unit {name} enabled")
-            active = service_is_active(ctx.config.engine, service_name, timeout)
+            active = service_is_active(service_name, timeout)
             if force or (changed and active):
                 _log(f"restarting service: systemctl restart {service_name}")
                 run_command(
@@ -674,7 +664,7 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                 )
                 _log("service started")
-            path_active = service_is_active(ctx.config.engine, ingest_path_name, timeout)
+            path_active = service_is_active(ingest_path_name, timeout)
             if force or not ingest_path_unit_ok or not path_active:
                 if path_active:
                     _log(f"restarting path unit: systemctl restart {ingest_path_name}")
@@ -696,7 +686,7 @@ def task(ctx: Context) -> TaskResult:
                         timeout=timeout,
                     )
                     _log("path unit started")
-            timer_active = service_is_active(ctx.config.engine, collector_timer_name, timeout)
+            timer_active = service_is_active(collector_timer_name, timeout)
             if force or not collector_timer_unit_ok or not timer_active:
                 if timer_active:
                     _log(
@@ -734,7 +724,9 @@ def task(ctx: Context) -> TaskResult:
     if not command_ok or force:
         _log(f"writing command {command_path}")
         try:
-            _write_command_file(command_path, command_content, metrics.command_file_mode)
+            _write_command_file(
+                command_path, command_content, metrics.command_file_mode
+            )
             apply_owner(command_path, owner_uid, owner_gid)
         except OSError as exc:
             warnings.append(f"cannot write command {command_path}: {exc}")
@@ -747,14 +739,10 @@ def task(ctx: Context) -> TaskResult:
         try:
             _ensure_spool_dir(spool_dir, metrics.spool_dir_mode, owner_uid, owner_gid)
         except OSError as exc:
-            warnings.append(
-                f"cannot create spool directory {spool_dir}: {exc}"
-            )
+            warnings.append(f"cannot create spool directory {spool_dir}: {exc}")
         else:
             _log("spool ready")
             changed = True
 
-    message = (
-        f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
-    )
+    message = f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
     return _result(changed=changed, message=message, warnings=warnings)

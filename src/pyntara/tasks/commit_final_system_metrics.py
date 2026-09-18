@@ -29,6 +29,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.metrics_commit import restore_original_name
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, substituted_command
+from pyntara.values import engine as engine_values
 
 
 def _commit_runtime_vault(
@@ -132,7 +133,7 @@ def _latest_report(
     try:
         data: dict[str, object] = json.loads(candidates[0].read_text(encoding="utf-8"))
         return data
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
 
 
@@ -193,9 +194,7 @@ def _commit_telemetry_pdf_from_queue(
     pdf_path.unlink(missing_ok=True)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout).strip()
-        warnings.append(
-            f"telemetry PDF commit failed: {detail or 'nonzero exit'}"
-        )
+        warnings.append(f"telemetry PDF commit failed: {detail or 'nonzero exit'}")
         return False, warnings
     _log(f"telemetry PDF committed as {pdf_name}")
     return True, []
@@ -217,7 +216,7 @@ def task(ctx: Context) -> TaskResult:
     metrics = ctx.config.system_metrics_setup
     vault_path = ctx.config.local_vault_setup.local_vault_path
     hostname = socket.gethostname()
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
 
     if not metrics.commit_command:
         _log("system_metrics_setup names no commit_command, cannot commit")

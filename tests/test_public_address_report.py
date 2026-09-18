@@ -10,7 +10,6 @@ codes without a network.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,7 @@ from support import make_config
 
 from pyntara import public_address_report
 from pyntara.public_address import PublicAddresses
+from pyntara.values import engine as engine_values
 
 
 def _config(tmp_path: Path) -> Path:
@@ -26,7 +26,7 @@ def _config(tmp_path: Path) -> Path:
 
     content = base_config().replace(
         "[ssh_client_setup]",
-        '[[ssh_daemon_setup.directives]]\n'
+        "[[ssh_daemon_setup.directives]]\n"
         'name = "Port"\n'
         'value = "30222"\n'
         "[ssh_client_setup]",
@@ -138,9 +138,7 @@ def test_empty_service_list_is_reported(
         "server_ip_services = []",
     )
     config_path = write_config(tmp_path, content)
-    assert public_address_report.main(
-        ["public_address_report", str(config_path)]
-    ) == 1
+    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "no echo service is configured" in captured.err
@@ -153,27 +151,29 @@ def test_a_key_missing_from_the_config_is_named(
     # of the message knows what to add to the file.
     content = base_config().replace("server_ip_timeout_seconds = 60\n", "")
     config_path = write_config(tmp_path, content)
-    assert public_address_report.main(
-        ["public_address_report", str(config_path)]
-    ) == 1
+    assert public_address_report.main(["public_address_report", str(config_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "has no server_ip_timeout_seconds" in captured.err
 
 
-def test_the_family_words_and_the_reason_field_come_from_the_config() -> None:
+def test_the_family_words_and_the_reason_field_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     # The word the report writes into its family field and the name of the
-    # field that carries the reason are config values of the report shape:
-    # another word and another name produce another document, and the
-    # reader of the telemetry follows them.
-    base = make_config()
-    engine = replace(
-        base.engine,
-        report_family_words={"ipv4": "v4", "ipv6": "v6"},
-        report_record_keys={**base.engine.report_record_keys, "reason": "why"},
+    # field that carries the reason are declared values of the report shape:
+    # another word and another name produce another document, and the reader
+    # of the telemetry follows them.
+    monkeypatch.setattr(
+        engine_values, "REPORT_FAMILY_WORDS", {"ipv4": "v4", "ipv6": "v6"}
+    )
+    monkeypatch.setattr(
+        engine_values,
+        "REPORT_RECORD_KEYS",
+        {**engine_values.REPORT_RECORD_KEYS, "reason": "why"},
     )
     records = public_address_report.address_records(
-        replace(base, engine=engine),
+        make_config(),
         PublicAddresses(ipv4=("190.55.165.52",)),
         30222,
     )
@@ -184,23 +184,15 @@ def test_the_family_words_and_the_reason_field_come_from_the_config() -> None:
     }
 
 
-def test_a_family_without_a_word_is_named(
-    capsys: pytest.CaptureFixture[str], tmp_path: Path
-) -> None:
-    # A config whose engine table cannot name a family is reported by naming
-    # the missing entry, instead of printing records whose family nobody can
-    # read.
-    content = base_config().replace(
-        'report_family_words = { ipv4 = "ipv4", ipv6 = "ipv6" }',
-        'report_family_words = { ipv4 = "ipv4" }',
+def test_both_families_of_the_model_carry_a_word() -> None:
+    # The declared words name every family of the model, so a report never
+    # carries a family field nobody can read; the adapter turns the words
+    # back into the grade names of the telemetry.
+    records = public_address_report.address_records(
+        make_config(), PublicAddresses(ipv4=(), ipv6=()), 30222
     )
-    config_path = write_config(tmp_path, content)
-    assert public_address_report.main(
-        ["public_address_report", str(config_path)]
-    ) == 1
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "has no report_family_words entry for ipv6" in captured.err
+    assert [record["family"] for record in records] == ["ipv4", "ipv6"]
+    assert all(record["reason"] for record in records)
 
 
 def test_usage_requires_the_config_path(capsys: pytest.CaptureFixture[str]) -> None:

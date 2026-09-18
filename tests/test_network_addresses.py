@@ -20,6 +20,7 @@ from config_helpers import base_config, write_config
 from support import FakeProc, make_config
 
 from pyntara import network_addresses
+from pyntara.values import engine as engine_values
 
 IP_DOCUMENT = [
     {
@@ -56,7 +57,7 @@ def _config(tmp_path: Path) -> Path:
 
     content = base_config().replace(
         "[ssh_client_setup]",
-        '[[ssh_daemon_setup.directives]]\n'
+        "[[ssh_daemon_setup.directives]]\n"
         'name = "Port"\n'
         'value = "30222"\n'
         "[ssh_client_setup]",
@@ -97,9 +98,7 @@ def test_link_scope_address_carries_its_zone_in_the_command() -> None:
         "::1",
         "fe80::b1e1:869:8e81:2526",
     ]
-    assert records[1]["ssh"] == (
-        "ssh -v -p 30222 fe80::b1e1:869:8e81:2526%enp87s0"
-    )
+    assert records[1]["ssh"] == ("ssh -v -p 30222 fe80::b1e1:869:8e81:2526%enp87s0")
 
 
 def test_the_zone_follows_the_address_and_not_its_family_name() -> None:
@@ -124,18 +123,8 @@ def test_the_zone_follows_the_address_and_not_its_family_name() -> None:
 def test_unexpected_document_contributes_nothing() -> None:
     # A document of an unexpected shape is not a crash: it carries no
     # address, and the caller reports the family as empty.
-    assert (
-        network_addresses.parse_interface_addresses(
-            make_config().engine, "not a list", "ipv4"
-        )
-        == ()
-    )
-    assert (
-        network_addresses.parse_interface_addresses(
-            make_config().engine, [{"ifname": "lo"}], "ipv4"
-        )
-        == ()
-    )
+    assert network_addresses.parse_interface_addresses("not a list", "ipv4") == ()
+    assert network_addresses.parse_interface_addresses([{"ifname": "lo"}], "ipv4") == ()
 
 
 def test_main_prints_every_address_of_the_family(
@@ -165,10 +154,7 @@ def test_main_stdout_is_a_clean_json_document(
     bindir.mkdir()
     fake_ip = bindir / "ip"
     fake_ip.write_text(
-        "#!/bin/sh\n"
-        "cat <<'PYNTARA_IP_JSON'\n"
-        f"{IP_JSON}\n"
-        "PYNTARA_IP_JSON\n",
+        f"#!/bin/sh\ncat <<'PYNTARA_IP_JSON'\n{IP_JSON}\nPYNTARA_IP_JSON\n",
         encoding="utf-8",
     )
     fake_ip.chmod(0o755)
@@ -252,38 +238,26 @@ def test_usage_requires_a_known_family(
     assert "usage" in capsys.readouterr().err
 
 
-def test_the_address_vocabulary_comes_from_the_engine(
+def test_the_address_vocabulary_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
 ) -> None:
     # The query, the flag mapping, the iproute2 family names and the scope
-    # value that counts as a link scope are engine values: a config with
-    # other values is the argv the command runs and the family and zone
-    # the records carry.
-    content = (
-        base_config()
-        .replace(
-            'interface_addresses_command = ["ip", "-j", "addr", "show"]\n',
-            'interface_addresses_command = ["my-ip", "addr"]\n',
-        )
-        .replace(
-            'address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }\n',
-            'address_family_by_flag = { "4" = "ipv6" }\n',
-        )
-        .replace(
-            'iproute2_address_family_names = { "ipv4" = "inet", '
-            '"ipv6" = "inet6" }\n',
-            'iproute2_address_family_names = { "ipv6" = "my-inet" }\n',
-        )
-        .replace('link_scope_name = "link"\n', 'link_scope_name = "my-link"\n')
-        .replace(
-            "[ssh_client_setup]",
-            "[[ssh_daemon_setup.directives]]\n"
-            'name = "Port"\n'
-            'value = "30222"\n'
-            "[ssh_client_setup]",
-        )
+    # value that counts as a link scope are declared values: other ones are
+    # the argv the command runs and the family and zone the records carry.
+    monkeypatch.setattr(engine_values, "INTERFACE_ADDRESSES_COMMAND", ("my-ip", "addr"))
+    monkeypatch.setattr(engine_values, "ADDRESS_FAMILY_BY_FLAG", {"4": "ipv6"})
+    monkeypatch.setattr(
+        engine_values, "IPROUTE2_ADDRESS_FAMILY_NAMES", {"ipv6": "my-inet"}
+    )
+    monkeypatch.setattr(engine_values, "LINK_SCOPE_NAME", "my-link")
+    content = base_config().replace(
+        "[ssh_client_setup]",
+        "[[ssh_daemon_setup.directives]]\n"
+        'name = "Port"\n'
+        'value = "30222"\n'
+        "[ssh_client_setup]",
     )
     config_path = write_config(tmp_path, content)
     document = [

@@ -15,13 +15,13 @@ import os
 import re
 from pathlib import Path
 
-from pyntara.config import EngineConfig
 from pyntara.utils import (
     apply_owner,
     install_packages,
     package_is_installed,
     run_command,
 )
+from pyntara.values import engine as engine_values
 
 # One node line of an augtool print listing.
 AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = "(?P<value>.*)"$')
@@ -66,7 +66,6 @@ def parse_augtool_print(
 
 
 def read_dropin_state(
-    engine: EngineConfig,
     dropin_path: Path,
     lens: str,
     timeout: float,
@@ -78,23 +77,26 @@ def read_dropin_state(
 
     The tree comes from a single augtool print over a manual load entry,
     so only the drop-in file is parsed; a missing file yields an empty
-    map and a None comment. The driver and its node prefix are engine
+    map and a None comment. The driver and its node prefix are declared
     values, so the helper holds no vocabulary of the tool; the sign that
     marks a comment is an argument, because it belongs to the syntax of
     the edited file.
     """
 
-    node = f"{engine.augeas_files_node_prefix}{dropin_path}"
-    script = "\n".join(
-        (
-            engine.augeas_lens_line.format(lens=lens),
-            engine.augeas_incl_line.format(path=dropin_path),
-            engine.augeas_load_line,
-            engine.augeas_print_line.format(node=node),
+    node = f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{dropin_path}"
+    script = (
+        "\n".join(
+            (
+                engine_values.AUGEAS_LENS_LINE.format(lens=lens),
+                engine_values.AUGEAS_INCL_LINE.format(path=dropin_path),
+                engine_values.AUGEAS_LOAD_LINE,
+                engine_values.AUGEAS_PRINT_LINE.format(node=node),
+            )
         )
-    ) + "\n"
+        + "\n"
+    )
     result = run_command(
-        list(engine.augtool_command),
+        list(engine_values.AUGTOOL_COMMAND),
         input=script,
         capture=True,
         timeout=timeout,
@@ -102,8 +104,7 @@ def read_dropin_state(
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"augtool read failed: exit {result.returncode}: "
-            f"{result.stderr.strip()}"
+            f"augtool read failed: exit {result.returncode}: {result.stderr.strip()}"
         )
     return parse_augtool_print(
         result.stdout, node, comments_sign, skip_labels=skip_labels
@@ -111,7 +112,6 @@ def read_dropin_state(
 
 
 def write_dropin(
-    engine: EngineConfig,
     dropin_path: Path,
     directives: tuple[tuple[str, str], ...],
     stale_names: list[str],
@@ -132,48 +132,46 @@ def write_dropin(
     """
 
     dropin_path.parent.mkdir(parents=True, exist_ok=True)
-    node = f"{engine.augeas_files_node_prefix}{dropin_path}"
+    node = f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{dropin_path}"
     container_name = container[0] if container else None
     container_value = container[1] if container else ""
     lines = [
-        engine.augeas_lens_line.format(lens=lens),
-        engine.augeas_incl_line.format(path=dropin_path),
-        engine.augeas_load_line,
-        engine.augeas_comment_line.format(node=node, header=header),
+        engine_values.AUGEAS_LENS_LINE.format(lens=lens),
+        engine_values.AUGEAS_INCL_LINE.format(path=dropin_path),
+        engine_values.AUGEAS_LOAD_LINE,
+        engine_values.AUGEAS_COMMENT_LINE.format(node=node, header=header),
     ]
     if container_name is not None:
         lines.append(
-            engine.augeas_container_line.format(
+            engine_values.AUGEAS_CONTAINER_LINE.format(
                 node=node, container=container_name, value=container_value
             )
         )
     for name, value in directives:
         if container_name is not None:
             lines.append(
-                engine.augeas_container_directive_line.format(
+                engine_values.AUGEAS_CONTAINER_DIRECTIVE_LINE.format(
                     node=node, container=container_name, name=name, value=value
                 )
             )
         else:
             lines.append(
-                engine.augeas_directive_line.format(
+                engine_values.AUGEAS_DIRECTIVE_LINE.format(
                     node=node, name=name, value=value
                 )
             )
     for name in stale_names:
         if container_name is not None:
             lines.append(
-                engine.augeas_container_remove_line.format(
+                engine_values.AUGEAS_CONTAINER_REMOVE_LINE.format(
                     node=node, container=container_name, name=name
                 )
             )
         else:
-            lines.append(
-                engine.augeas_remove_line.format(node=node, name=name)
-            )
-    lines.append(engine.augeas_save_line)
+            lines.append(engine_values.AUGEAS_REMOVE_LINE.format(node=node, name=name))
+    lines.append(engine_values.AUGEAS_SAVE_LINE)
     result = run_command(
-        list(engine.augtool_command),
+        list(engine_values.AUGTOOL_COMMAND),
         input="\n".join(lines) + "\n",
         capture=True,
         timeout=timeout,
@@ -181,13 +179,11 @@ def write_dropin(
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"augtool write failed: exit {result.returncode}: "
-            f"{result.stderr.strip()}"
+            f"augtool write failed: exit {result.returncode}: {result.stderr.strip()}"
         )
 
 
 def sync_dropin(
-    engine: EngineConfig,
     dropin_path: Path,
     directives: tuple[tuple[str, str], ...],
     mode: int,
@@ -222,7 +218,6 @@ def sync_dropin(
         return existed, False
     skip_labels = frozenset({container[0]}) if container else frozenset()
     current, comment = read_dropin_state(
-        engine,
         dropin_path,
         lens,
         timeout,
@@ -231,15 +226,13 @@ def sync_dropin(
     )
     desired = dict(directives)
     changed = force or current != desired or comment != header
-    port_changed = (
-        port_directive is not None
-        and current.get(port_directive) != desired.get(port_directive)
-    )
+    port_changed = port_directive is not None and current.get(
+        port_directive
+    ) != desired.get(port_directive)
     if not changed:
         return False, False
     stale_names = [name for name in current if name not in desired]
     write_dropin(
-        engine,
         dropin_path,
         directives,
         stale_names,
@@ -303,7 +296,6 @@ def include_covers_dropin(
 
 
 def ensure_augtool(
-    engine: EngineConfig,
     package_name: str,
     *,
     status_timeout: float,
@@ -322,10 +314,9 @@ def ensure_augtool(
     back to the caller.
     """
 
-    if package_is_installed(engine, package_name, status_timeout):
+    if package_is_installed(package_name, status_timeout):
         return None
     _, failures, _ = install_packages(
-        engine,
         [package_name],
         install_timeout=install_timeout,
         update_timeout=install_timeout,

@@ -21,6 +21,7 @@ from support import make_context
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import kglobalaccel_names
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import kde_settings as values
 from pyntara.values.kde_settings import KconfigRecord
 
@@ -323,10 +324,10 @@ def _install_fakes(
             return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
-    def fake_installed(_engine: object, package: str, timeout: float) -> bool:
+    def fake_installed(package: str, timeout: float) -> bool:
         return installed
 
-    def fake_install(_engine: object, package: str, timeout: float) -> tuple[bool, str]:
+    def fake_install(package: str, timeout: float) -> tuple[bool, str]:
         if fail_install:
             return False, "cannot install"
         installs.append(package)
@@ -531,7 +532,7 @@ def test_apply_env_carries_live_session_display(
     # A live desktop session contributes the bus address and the display
     # variables, so a GUI plasma-apply tool started over SSH still
     # connects to the running compositor.
-    ctx = _ctx(tmp_path)
+    _ctx(tmp_path)
     monkeypatch.setattr(
         task_module,
         "session_environment",
@@ -542,7 +543,7 @@ def test_apply_env_carries_live_session_display(
             "DISPLAY": ":0",
         },
     )
-    env = task_module._apply_env(ctx.config.engine)
+    env = task_module._apply_env()
     assert env is not None
     assert env["HOME"] == str(tmp_path)
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
@@ -555,11 +556,11 @@ def test_apply_env_without_session_has_no_bus(
 ) -> None:
     # No live session: the environment is absent, so the appearance values
     # are written for the next login and no GUI tool runs without a display.
-    ctx = _ctx(tmp_path)
+    _ctx(tmp_path)
     monkeypatch.setattr(
         task_module, "session_environment", lambda username, **kwargs: {}
     )
-    assert task_module._apply_env(ctx.config.engine) is None
+    assert task_module._apply_env() is None
 
 
 def test_written_user_file_mode_comes_from_the_values(
@@ -1243,14 +1244,14 @@ def test_apply_shortcuts_live_runs_the_shared_client(
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
     )
     assert changed is True
     assert len(calls) == 1
-    assert calls[0][0] == ctx.config.engine.system_python
+    assert calls[0][0] == engine_values.SYSTEM_PYTHON
     client_text = next(part for part in calls[0] if "import dbus" in part)
-    assert ctx.config.engine.kglobalaccel_bus_name in client_text
+    assert engine_values.KGLOBALACCEL_BUS_NAME in client_text
     assert "$kglobalaccel_bus_name" not in client_text
     request = json.loads(calls[0][-1])
     assert request["changes"] == [
@@ -1309,8 +1310,8 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
     )
     assert changed is True
     assert len(calls) == 2
@@ -1340,8 +1341,8 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
         warnings=[],
     )
     assert len(calls) == 1
@@ -1377,8 +1378,8 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
         warnings=warnings,
     )
     assert changed is True
@@ -1406,15 +1407,15 @@ def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
         "Walk Through Windows=Alt+Tab,Meta+Tab<TAB>Alt+Tab,Walk Through Windows\n",
         encoding="utf-8",
     )
-    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
     calls: list[list[str]] = []
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=None,
-        system_python=ctx.config.engine.system_python,
-        kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
         warnings=[],
     )
     assert changed is False
@@ -1850,7 +1851,7 @@ def test_desktop_count_live_removes_extra_desktops(
     # the desktop ids through the python3-dbus client shipped as task data
     # and removes the trailing extras.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),)
-    ctx = _kconfig_ctx(tmp_path, records)
+    _kconfig_ctx(tmp_path, records)
     ids_client_path = _write_desktop_ids_client(tmp_path)
     ids_client = ids_client_path.read_text(encoding="utf-8")
     calls: list[list[str]] = []
@@ -1875,7 +1876,7 @@ def test_desktop_count_live_removes_extra_desktops(
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
-        system_python=ctx.config.engine.system_python,
+        system_python=engine_values.SYSTEM_PYTHON,
     )
     assert error is None
     removals = [command for command in calls if "removeDesktop" in " ".join(command)]
@@ -1898,7 +1899,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
     # is what the commands carry and what the desktop list client receives,
     # and the shipped names stop appearing.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),)
-    ctx = _kconfig_ctx(tmp_path, records)
+    _kconfig_ctx(tmp_path, records)
     values.KWIN_BUS_NAME = "org.example.KWin"
     values.VIRTUAL_DESKTOP_MANAGER_OBJECT_PATH = "/ExampleDesktopManager"
     values.VIRTUAL_DESKTOP_MANAGER_INTERFACE_NAME = "org.example.DesktopManager"
@@ -1936,7 +1937,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
         script_path=client_path,
         timeout=30.0,
         env=env,
-        system_python=ctx.config.engine.system_python,
+        system_python=engine_values.SYSTEM_PYTHON,
     )
     assert error is None
     assert any("org.example.KWin" in part for part in calls[0])
@@ -1959,7 +1960,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
     # The live count is lower than the configured Number: the task creates
     # the missing desktops at the end, so existing ones keep their place.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),)
-    ctx = _kconfig_ctx(tmp_path, records)
+    _kconfig_ctx(tmp_path, records)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -1980,7 +1981,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
-        system_python=ctx.config.engine.system_python,
+        system_python=engine_values.SYSTEM_PYTHON,
     )
     assert error is None
     creates = [command for command in calls if "createDesktop" in " ".join(command)]
@@ -2001,7 +2002,7 @@ def test_desktop_count_live_reports_a_missing_client(
     # A missing task data file is reported with its path before anything is
     # removed, so the run never deletes desktops without its id list.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),)
-    ctx = _kconfig_ctx(tmp_path, records)
+    _kconfig_ctx(tmp_path, records)
     missing_client = tmp_path / "missing_desktop_ids.py"
     calls: list[list[str]] = []
 
@@ -2020,7 +2021,7 @@ def test_desktop_count_live_reports_a_missing_client(
         script_path=missing_client,
         timeout=30.0,
         env=env,
-        system_python=ctx.config.engine.system_python,
+        system_python=engine_values.SYSTEM_PYTHON,
     )
     assert error is not None
     assert str(missing_client) in error

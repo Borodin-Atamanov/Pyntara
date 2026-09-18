@@ -20,6 +20,7 @@ from pyntara import __version__
 from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
+from pyntara.values import engine as engine_values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -57,10 +58,9 @@ def _install_fixtures(
     venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
     config = make_config(
-        task_data_root=tmp_path,
-        systemd_unit_dir=systemd_dir,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
         port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
@@ -135,7 +135,9 @@ def _expected_unit(
 def test_deploys_unit_and_starts_service(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
     calls = _install_fake(monkeypatch, active=True)
     result = port_forwarding_setup.task(ctx)
     assert result.success
@@ -176,8 +178,7 @@ def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
         "0.3.516",
     )
     assert (
-        f"ExecStart=myrun -m {cfg.service_module_name} /etc/pyntara/config.toml"
-        in unit
+        f"ExecStart=myrun -m {cfg.service_module_name} /etc/pyntara/config.toml" in unit
     )
     assert f"RestartSec={cfg.service_restart_seconds}" in unit
 
@@ -253,7 +254,9 @@ def test_renders_the_configured_module_and_commands(
     # The unit runs the module the config names and the task drives the
     # unit with the configured commands, so a renamed module or a command
     # that grew an argument is a config change and never a code change.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
     ctx = replace(
         ctx,
         config=replace(
@@ -289,7 +292,9 @@ def test_renders_the_configured_module_and_commands(
 def test_skips_when_already_configured(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
     service = ctx.config.port_forwarding_setup.service_unit_name
     expected = _expected_unit(
         venv_python,
@@ -312,7 +317,9 @@ def test_restarts_when_deployed_but_inactive(
     # restarted: the service exits cleanly when the vault carries no
     # port-forwarding data, and local_vault_setup may have synced the data
     # since, so a restart lets it re-read the vault and establish tunnels.
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
     service = ctx.config.port_forwarding_setup.service_unit_name
     expected = _expected_unit(
         venv_python,
@@ -331,7 +338,9 @@ def test_restarts_when_deployed_but_inactive(
 def test_force_rewrites_and_restarts(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    systemd_dir, venv_python, system_config, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir, venv_python, system_config, ctx = _install_fixtures(
+        monkeypatch, tmp_path
+    )
     service = ctx.config.port_forwarding_setup.service_unit_name
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text("stale\n", encoding="utf-8")
@@ -418,9 +427,7 @@ def test_missing_template_is_a_warning(
     ctx = make_context(
         task_data_root=tmp_path,
         repo_root=repo,
-        config=make_config(
-            task_data_root=tmp_path, systemd_unit_dir=tmp_path / "systemd"
-        ),
+        config=make_config(),
     )
     calls = _install_fake(monkeypatch, enabled=True, active=True)
     result = port_forwarding_setup.task(ctx)

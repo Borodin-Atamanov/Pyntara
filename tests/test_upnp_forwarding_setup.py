@@ -19,6 +19,7 @@ from pyntara import __version__
 from pyntara.config import UpnpForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import upnp_forwarding_setup
+from pyntara.values import engine as engine_values
 
 SERVICE_TEMPLATE = """\
 [Unit]
@@ -59,18 +60,15 @@ def _install_fixtures(
     (task_data / "upnp_forwarding.service").write_text(
         SERVICE_TEMPLATE, encoding="utf-8"
     )
-    (task_data / "upnp_forwarding.timer").write_text(
-        TIMER_TEMPLATE, encoding="utf-8"
-    )
+    (task_data / "upnp_forwarding.timer").write_text(TIMER_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
     venv_python = venv_dir / "bin" / "python"
     venv_python.parent.mkdir(parents=True)
     venv_python.write_text("#!/bin/sh\n", encoding="utf-8")
     system_config = tmp_path / "etc" / "pyntara" / "config.toml"
     systemd_dir = tmp_path / "systemd"
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     config = make_config(
-        task_data_root=tmp_path,
-        systemd_unit_dir=systemd_dir,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
     )
@@ -200,7 +198,12 @@ def test_skips_when_the_units_and_the_timer_are_in_place(
     assert not result.changed
     assert not result.warnings
     assert ["systemctl", "daemon-reload"] not in calls
-    assert ["systemctl", "start", "--no-block", ctx.config.upnp_forwarding_setup.service_unit_name] not in calls
+    assert [
+        "systemctl",
+        "start",
+        "--no-block",
+        ctx.config.upnp_forwarding_setup.service_unit_name,
+    ] not in calls
 
 
 def test_the_units_carry_the_version_of_the_deployed_code(
@@ -314,7 +317,10 @@ def test_a_missing_template_is_a_warning(
     # the timer that is installed still gets enabled and started.
     _systemd_dir, _venv, _config, ctx = _install_fixtures(monkeypatch, tmp_path)
     (
-        tmp_path / "repo" / "task_data" / "upnp_forwarding_setup"
+        tmp_path
+        / "repo"
+        / "task_data"
+        / "upnp_forwarding_setup"
         / "upnp_forwarding.timer"
     ).unlink()
     calls = _install_fake(monkeypatch)

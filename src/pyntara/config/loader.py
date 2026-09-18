@@ -24,7 +24,6 @@ from .add_extra_repos import AddExtraReposConfig
 from .chrome_setup import ChromeSetupConfig
 from .cli_tools import CliToolsConfig
 from .dnsproxy_setup import DnsproxySetupConfig
-from .engine import EngineConfig
 from .ffmpeg_setup import FfmpegSetupConfig
 from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
@@ -59,7 +58,6 @@ class Config:
     the code reads from the config.
     """
 
-    engine: EngineConfig
     cli_tools: CliToolsConfig
     chrome_setup: ChromeSetupConfig
     dnsproxy_setup: DnsproxySetupConfig

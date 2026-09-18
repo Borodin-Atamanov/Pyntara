@@ -39,13 +39,13 @@ PYNTARA_TASKS — space-separated task names. When omitted, the default task set
 
 PYNTARA_FORCE_TASKS — space-separated task names that must rerun even when the target state
 is already reached. When omitted, no task is forced. The keyword that forces every task of
-the resolved run set is `force_all_keyword` of the `[engine]` table of the config (`all` by
+the resolved run set is `force_all_keyword` of the engine values module (`all` by
 default). Task names and that keyword are compared without case. Invalid names are
 reported with a countdown notice and ignored.
 
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that inst.sh,
 add_extra_repos and cli_tools run before package operations. The answers that mean true are
-`environment_flag_true_values` of the `[engine]` table (1, true and yes by default), compared
+`environment_flag_true_values` of the engine values module (1, true and yes by default), compared
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 

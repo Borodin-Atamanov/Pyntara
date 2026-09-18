@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pyntara import metrics
 from pyntara import xui as xui_client
-from pyntara.config import Config, EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
@@ -60,14 +60,10 @@ def _panel_command(
     itself.
     """
 
-    return substituted_command(
-        template, {**values, "binary": str(_panel_binary(cfg))}
-    )
+    return substituted_command(template, {**values, "binary": str(_panel_binary(cfg))})
 
 
-def _installed_version(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> str | None:
+def _installed_version(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | None:
     """The installed x-ui version from the binary -v output, or None.
 
     A missing binary, a nonzero exit or a hang means 3x-ui is not
@@ -85,7 +81,7 @@ def _installed_version(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -93,22 +89,21 @@ def _installed_version(
 
 
 def _download_installer(
-    engine: EngineConfig,
     cfg: ThreeXuiXraySetupConfig,
     timeout: float,
 ) -> Path:
     """Download the official installer into a temporary file.
 
-    Returns the path of the downloaded script. The command is the
-    engine-wide download call. Raises RuntimeError when curl fails, so the
-    caller reports the reason.
+    Returns the path of the downloaded script. The command is the declared
+    download call. Raises RuntimeError when curl fails, so the caller
+    reports the reason.
     """
 
     _fd, name = tempfile.mkstemp(prefix="x-ui-install-", suffix=".sh")
     script_path = Path(name)
     try:
         run_command(
-            download_command(engine, script_path, cfg.install_script_url),
+            download_command(script_path, cfg.install_script_url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -137,12 +132,8 @@ def _credential_env(cfg: ThreeXuiXraySetupConfig) -> dict[str, str]:
 
     keys = cfg.panel_environment_keys
     return {
-        keys["username"]: proquint_encode(
-            os.urandom(cfg.random_username_bytes), ""
-        ),
-        keys["password"]: proquint_encode(
-            os.urandom(cfg.random_secret_bytes), ""
-        ),
+        keys["username"]: proquint_encode(os.urandom(cfg.random_username_bytes), ""),
+        keys["password"]: proquint_encode(os.urandom(cfg.random_secret_bytes), ""),
         keys["web_base_path"]: proquint_encode(
             os.urandom(cfg.random_secret_bytes), "-"
         ),
@@ -210,7 +201,6 @@ def _run_installer(
 
 
 def _wait_active(
-    engine: EngineConfig,
     service_name: str,
     wait_seconds: int,
     check_delay_seconds: int,
@@ -227,7 +217,7 @@ def _wait_active(
 
     started = time.monotonic()
     while True:
-        if service_is_active(engine, service_name, timeout):
+        if service_is_active(service_name, timeout):
             return True
         if time.monotonic() - started >= wait_seconds:
             return False
@@ -277,9 +267,7 @@ def _panel_environment_or_warning(
         return None, TaskResult(
             success=True,
             changed=False,
-            warnings=(
-                "install-result.env not found: panel may not have started yet",
-            ),
+            warnings=("install-result.env not found: panel may not have started yet",),
         )
     except RuntimeError as exc:
         return None, TaskResult(
@@ -314,7 +302,9 @@ def _stage2(
         return TaskResult(
             success=True,
             changed=False,
-            warnings=("panel login failed: panel may be unreachable or credentials invalid",),
+            warnings=(
+                "panel login failed: panel may be unreachable or credentials invalid",
+            ),
         )
     _log("stage 2: panel login successful")
 
@@ -378,9 +368,7 @@ def _stage2(
     return None
 
 
-def _actual_panel_port(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> str | None:
+def _actual_panel_port(cfg: ThreeXuiXraySetupConfig, timeout: float) -> str | None:
     """The panel port from `x-ui setting -show true`, or None.
 
     The setting output prints "port: N" among other values; the first
@@ -395,7 +383,7 @@ def _actual_panel_port(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     for line in (result.stdout + "\n" + result.stderr).splitlines():
         match = re.search(r"^\s*port:\s*(\d+)\s*$", line)
@@ -405,7 +393,7 @@ def _actual_panel_port(
 
 
 def _converge_panel_port(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
+    cfg: ThreeXuiXraySetupConfig, timeout: float
 ) -> tuple[bool, str | None]:
     """Bring the panel to the configured port; returns (changed, message).
 
@@ -426,7 +414,6 @@ def _converge_panel_port(
     _log(f"moving the panel from port {actual} to {cfg.panel_port}")
     try:
         ensure_port_free(
-            engine,
             cfg.panel_port,
             cfg.service_unit_name,
             timeout,
@@ -489,11 +476,11 @@ def _wait_panel_http(
             xui_client.panel_required_environment_keys(cfg),
         )
         web_path = env.get(cfg.panel_environment_keys["web_base_path"], "")
-    except (FileNotFoundError, RuntimeError, OSError):
+    except FileNotFoundError, RuntimeError, OSError:
         pass
     try:
         scheme = xui_client.panel_scheme(cfg, timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         scheme = "http"
     base_url = xui_client.build_panel_url(
         cfg.panel_http_address, str(cfg.panel_port), web_path, scheme=scheme
@@ -511,7 +498,7 @@ def _wait_panel_http(
                 capture=True,
                 timeout=timeout,
             )
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             return False
         if result.returncode == 0:
             return True
@@ -577,9 +564,7 @@ def _rewrite_env(path: Path, updates: dict[str, str]) -> bool:
     return True
 
 
-def _sync_install_result_env(
-    cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> bool:
+def _sync_install_result_env(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     """Sync install-result.env so its port, scheme and url match reality.
 
     The panel port after the convergence and the scheme after the HTTPS
@@ -599,7 +584,7 @@ def _sync_install_result_env(
     if url is not None:
         try:
             scheme = xui_client.panel_scheme(cfg, timeout)
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             scheme = None
         old_scheme = url.split("://", 1)[0] if "://" in url else "http"
         host = ""

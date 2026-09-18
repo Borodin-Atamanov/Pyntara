@@ -75,7 +75,7 @@ def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every test out of the real system journal."""
 
     for module in _SERVICE_MODULES:
-        monkeypatch.setattr(module, "configure_journal", lambda engine: None)
+        monkeypatch.setattr(module, "configure_journal", lambda _identifier: None)
 
 
 # A test replaces the subprocess of the module under test with a recorded fake
@@ -161,9 +161,7 @@ def _cheapen_kdf(kp: _pykeepass.PyKeePass) -> None:
     """
 
     try:
-        kdf_parameters = (
-            kp.kdbx.header.value.dynamic_header.kdf_parameters.data.dict
-        )
+        kdf_parameters = kp.kdbx.header.value.dynamic_header.kdf_parameters.data.dict
         kdf_parameters["I"].value = 1
         kdf_parameters["M"].value = 8 * 1024 * 1024
         kdf_parameters["P"].value = 1
@@ -171,7 +169,7 @@ def _cheapen_kdf(kp: _pykeepass.PyKeePass) -> None:
         for name in ("transformed_key", "master_key", "sha256", "cred_check"):
             kp.kdbx.body.pop(name, None)
         kp.save()
-    except (KeyError, AttributeError, TypeError):
+    except KeyError, AttributeError, TypeError:
         # pykeepass changed its header layout; leave the vault untouched.
         return
 
@@ -189,7 +187,7 @@ def _fixture_usable() -> bool:
         return False
     try:
         _pykeepass.PyKeePass(str(_TEMPLATE_FIXTURE), password=_TEMPLATE_PASSWORD)
-    except (CredentialsError, OSError):
+    except CredentialsError, OSError:
         return False
     return True
 
@@ -204,9 +202,7 @@ def _ensure_template() -> Path:
         _template_dir = tempfile.mkdtemp(prefix="pyntara-tests-")
         _template_path = Path(_template_dir) / "template.kdbx"
         atexit.register(shutil.rmtree, _template_dir, ignore_errors=True)
-        kp = _original_create_database(
-            str(_template_path), password=_TEMPLATE_PASSWORD
-        )
+        kp = _original_create_database(str(_template_path), password=_TEMPLATE_PASSWORD)
         _cheapen_kdf(kp)
     return _template_path
 

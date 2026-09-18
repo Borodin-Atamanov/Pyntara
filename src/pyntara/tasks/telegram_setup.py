@@ -25,7 +25,7 @@ short budget of reachability_probe_timeout_seconds: a host that does not
 answer within it is a blocked destination, which is reported as a warning
 at once instead of spending the retry budget of the resolve on silence,
 while a host that answers however slowly is resolved and downloaded with
-the retry settings of the engine table.
+the retry settings of the engine values.
 
 Force mode bypasses the already-installed shortcut and reinstalls the
 release the redirect points to; it never touches the user chat data, which
@@ -43,7 +43,6 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -55,6 +54,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import telegram_setup as values
 
@@ -101,26 +101,25 @@ def _cache_name(url: str) -> str:
     return url.rstrip("/").rsplit("/", 1)[-1]
 
 
-def _resolve_latest_url(engine: EngineConfig) -> str:
+def _resolve_latest_url() -> str:
     """The download url the latest url redirect resolves to.
 
     A HEAD request follows the redirect chain and reports the final url
     through --write-out, so the newest release is discovered without
     downloading the archive. The command is the value of this section and the
-    retry bounds come from the engine table, so the request settings live in
-    the values. Raises RuntimeError when the request fails.
+    retry bounds are declared values, so the request settings live in the
+    values. Raises RuntimeError when the request fails.
     """
 
     result = run_command(
         curl_command(
-            engine,
             values.LATEST_URL_COMMAND,
             values.LATEST_URL,
-            timeout_seconds=engine.curl_timeout_seconds,
+            timeout_seconds=engine_values.CURL_TIMEOUT_SECONDS,
         ),
         check=False,
         capture=True,
-        timeout=engine.command_timeout_seconds,
+        timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
     )
     if result.returncode != 0:
         raise RuntimeError(
@@ -128,13 +127,11 @@ def _resolve_latest_url(engine: EngineConfig) -> str:
         )
     url = result.stdout.strip()
     if not url:
-        raise RuntimeError(
-            f"cannot resolve {values.LATEST_URL}: empty download url"
-        )
+        raise RuntimeError(f"cannot resolve {values.LATEST_URL}: empty download url")
     return url
 
 
-def _probe_download_host(engine: EngineConfig) -> tuple[bool, str]:
+def _probe_download_host() -> tuple[bool, str]:
     """Ask the download host to answer within one short attempt.
 
     A host that is blocked never answers, and the retry settings of the
@@ -150,18 +147,14 @@ def _probe_download_host(engine: EngineConfig) -> tuple[bool, str]:
 
     command = substituted_command(
         values.REACHABILITY_PROBE_COMMAND,
-        {
-            "timeout_seconds": str(
-                values.REACHABILITY_PROBE_TIMEOUT_SECONDS
-            )
-        },
+        {"timeout_seconds": str(values.REACHABILITY_PROBE_TIMEOUT_SECONDS)},
     )
     try:
         result = run_command(
             [*command, values.LATEST_URL],
             check=False,
             capture=True,
-            timeout=engine.command_timeout_seconds,
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
         return False, (
@@ -173,29 +166,28 @@ def _probe_download_host(engine: EngineConfig) -> tuple[bool, str]:
             f"cannot resolve {values.LATEST_URL}: the host did not answer "
             f"within {values.REACHABILITY_PROBE_TIMEOUT_SECONDS} s (curl exit "
             f"{result.returncode}), so the download is skipped instead of "
-            f"retrying for up to {engine.curl_retry_max_time_seconds} s"
+            f"retrying for up to {engine_values.CURL_RETRY_MAX_TIME_SECONDS} s"
         )
     return True, ""
 
 
 def _download_archive(
-    engine: EngineConfig,
     url: str,
     name: str,
 ) -> None:
     """Download the archive into the cache directory under its final name.
 
-    The download goes to a sibling file with the engine suffix first and
+    The download goes to a sibling file with the declared suffix first and
     is renamed only after a successful transfer, so a cached archive name
     always means a complete archive. Raises RuntimeError on failure.
     """
 
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    partial = values.DOWNLOAD_DIR / (name + engine.partial_download_file_suffix)
+    partial = values.DOWNLOAD_DIR / (name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     try:
         run_command(
-            download_command(engine, partial, url),
-            timeout=engine.command_timeout_seconds,
+            download_command(partial, url),
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
@@ -252,13 +244,8 @@ def _install_archive(archive: Path, timeout: float) -> None:
         for target in (paths.binary, paths.updater):
             source = extract_dir / values.ARCHIVE_DIRECTORY_NAME / target.name
             if not source.is_file():
-                raise RuntimeError(
-                    f"archive {archive.name} contains no {target.name}"
-                )
-            if not (
-                target.is_file()
-                and filecmp.cmp(source, target, shallow=False)
-            ):
+                raise RuntimeError(f"archive {archive.name} contains no {target.name}")
+            if not (target.is_file() and filecmp.cmp(source, target, shallow=False)):
                 shutil.copyfile(source, target)
             target.chmod(common_values.EXECUTABLE_FILE_MODE)
             _own_to_user(common_values.DESKTOP_USERNAME, target)
@@ -315,9 +302,7 @@ def _ensure_launcher(template_path: Path) -> tuple[bool, str | None]:
     return True, None
 
 
-def _ensure_icon(
-    engine: EngineConfig,
-) -> tuple[bool, str | None]:
+def _ensure_icon() -> tuple[bool, str | None]:
     """Download the icon of this section when missing; return (changed, error).
 
     A failed icon download is a warning, never a fatal error: the launcher
@@ -331,8 +316,8 @@ def _ensure_icon(
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         run_command(
-            download_command(engine, path, values.ICON_URL),
-            timeout=engine.command_timeout_seconds,
+            download_command(path, values.ICON_URL),
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         )
         path.chmod(values.ICON_FILE_MODE)
         _own_to_user(common_values.DESKTOP_USERNAME, path)
@@ -362,9 +347,9 @@ def task(ctx: Context) -> TaskResult:
     tasks and never stops here.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -376,25 +361,23 @@ def task(ctx: Context) -> TaskResult:
                 "the telegram_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    engine = ctx.config.engine
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     messages: list[str] = []
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name)
-        / values.LAUNCHER_TEMPLATE_FILE_NAME
+        task_data_dir(ctx.repo_root, ctx.task_name) / values.LAUNCHER_TEMPLATE_FILE_NAME
     )
     paths = _install_paths()
 
     url: str | None = None
-    reachable, probe_warning = _probe_download_host(engine)
+    reachable, probe_warning = _probe_download_host()
     if not reachable:
         _log(probe_warning)
         warnings.append(probe_warning)
     else:
         try:
-            url = _resolve_latest_url(engine)
+            url = _resolve_latest_url()
         except RuntimeError as exc:
             warnings.append(str(exc))
     name = _cache_name(url) if url is not None else ""
@@ -419,7 +402,7 @@ def task(ctx: Context) -> TaskResult:
         if not installed:
             _log(f"downloading Telegram Desktop release {name}")
             try:
-                _download_archive(engine, url, name)
+                _download_archive(url, name)
             except RuntimeError as exc:
                 warnings.append(str(exc))
             else:
@@ -427,7 +410,7 @@ def task(ctx: Context) -> TaskResult:
         if installed and archive is not None:
             _log(f"installing Telegram Desktop release {name}")
             try:
-                _install_archive(archive, engine.command_timeout_seconds)
+                _install_archive(archive, engine_values.COMMAND_TIMEOUT_SECONDS)
             except RuntimeError as exc:
                 warnings.append(str(exc))
             else:
@@ -439,12 +422,10 @@ def task(ctx: Context) -> TaskResult:
     if launcher_error:
         warnings.append(launcher_error)
     if launcher_changed:
-        messages.append(
-            f"wrote the Telegram launcher entry to {paths.launcher}"
-        )
+        messages.append(f"wrote the Telegram launcher entry to {paths.launcher}")
         changed = True
 
-    icon_changed, icon_error = _ensure_icon(engine)
+    icon_changed, icon_error = _ensure_icon()
     if icon_error:
         warnings.append(icon_error)
     if icon_changed:

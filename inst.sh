@@ -50,7 +50,7 @@ LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
 # forwarding, matching the engine semantics in logger.py; only an unset
 # variable falls back to the contract identifier. The variable is not
 # exported, so the Python engine keeps its own identifier, the
-# journal_identifier value of its [engine] table, when launched by
+# journal_identifier value of the engine values module, when launched by
 # run_pyntara.
 JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-pyntara-install}"
 
@@ -185,11 +185,11 @@ UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 
 # curl timeout, retries and retry bounds of the uv installer download,
-# mirroring the [engine] curl_download_timeout_seconds, curl_retries,
+# mirroring the declared values curl_download_timeout_seconds, curl_retries,
 # curl_retry_delay_seconds, curl_connect_timeout_seconds and
-# curl_retry_max_time_seconds config values. The installer runs before the
-# config exists, so the values live here as overridable environment
-# defaults (bootstrap contract, Runtime configuration).
+# curl_retry_max_time_seconds of src/pyntara/values/engine.py. The installer
+# runs before the config exists, so the values live here as overridable
+# environment defaults (bootstrap contract, Runtime configuration).
 CURL_TIMEOUT_SECONDS="${PYNTARA_CURL_TIMEOUT_SECONDS:-7777}"
 CURL_RETRIES="${PYNTARA_CURL_RETRIES:-17}"
 CURL_RETRY_DELAY_SECONDS="${PYNTARA_CURL_RETRY_DELAY_SECONDS:-3}"

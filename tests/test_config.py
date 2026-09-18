@@ -25,18 +25,14 @@ def test_load_config_returns_typed_values(tmp_path: Path) -> None:
     # full document survives the read with the shape its field declares.
     config = load_checked_config(write_config(tmp_path, base_config()))
 
-    assert isinstance(config.engine.task_data_root, Path)
-    assert isinstance(config.engine.notice_timeout, int)
-    assert isinstance(config.engine.task_start_delay_seconds, float)
-    assert isinstance(config.engine.desktop_detect_processes, tuple)
+    assert isinstance(config.hostname.hostname_file, str)
+    assert isinstance(config.hostname.hostname_random_bytes, int)
     assert isinstance(config.cli_tools.packages, tuple)
     assert isinstance(config.hostname.set_hostname_command, tuple)
     assert isinstance(config.ssh_daemon_setup.directives, tuple)
     assert isinstance(config.vault_structure.entries, tuple)
     assert isinstance(config.vault_structure.entries[0].title, str)
-    assert isinstance(
-        config.system_metrics_setup.collector.network_modules, tuple
-    )
+    assert isinstance(config.system_metrics_setup.collector.network_modules, tuple)
     assert isinstance(config.rustdesk_setup.options, tuple)
 
 
@@ -47,14 +43,14 @@ def test_load_config_missing_file_raises(tmp_path: Path) -> None:
 
 def test_load_config_invalid_toml_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("[engine\n", encoding="utf-8")
+    config_path.write_text("[hostname\n", encoding="utf-8")
     with pytest.raises(ConfigError, match="cannot read"):
         load_checked_config(config_path)
 
 
 def test_load_config_missing_section_raises(tmp_path: Path) -> None:
     config_path = tmp_path / "config.toml"
-    config_path.write_text("[engine]\nnotice_timeout = 7\n", encoding="utf-8")
+    config_path.write_text("[hostname]\nhostname_random_bytes = 4\n", encoding="utf-8")
     with pytest.raises(ConfigError):
         load_checked_config(config_path)
 
@@ -64,18 +60,14 @@ def test_load_config_directory_joins_files(tmp_path: Path) -> None:
     # files in sorted order into one document and parses it. The base
     # document is split across two files to prove the join.
     text = base_config()
-    split_at = text.index("[cli_tools]")
+    split_at = text.index("[hostname]")
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "engine.toml").write_text(
-        text[:split_at], encoding="utf-8"
-    )
-    (config_dir / "rest.toml").write_text(
-        text[split_at:], encoding="utf-8"
-    )
+    (config_dir / "a_first.toml").write_text(text[:split_at], encoding="utf-8")
+    (config_dir / "b_rest.toml").write_text(text[split_at:], encoding="utf-8")
     config = load_checked_config(config_dir)
-    assert config.engine.notice_timeout == 7
     assert config.cli_tools.package_install_retries == 3
+    assert config.hostname.hostname_random_bytes == 4
 
 
 def test_load_config_directory_duplicate_table_raises(tmp_path: Path) -> None:
@@ -84,11 +76,11 @@ def test_load_config_directory_duplicate_table_raises(tmp_path: Path) -> None:
     # in a single file.
     config_dir = tmp_path / "config"
     config_dir.mkdir()
-    (config_dir / "engine.toml").write_text(
-        '[engine]\ntask_data_root = "/tmp"\n', encoding="utf-8"
+    (config_dir / "a_first.toml").write_text(
+        '[hostname]\nhostname_file = "/etc/hostname"\n', encoding="utf-8"
     )
-    (config_dir / "duplicate.toml").write_text(
-        '[engine]\nnotice_timeout = 7\n', encoding="utf-8"
+    (config_dir / "b_duplicate.toml").write_text(
+        "[hostname]\nhostname_random_bytes = 4\n", encoding="utf-8"
     )
     with pytest.raises(ConfigError, match="cannot read"):
         load_checked_config(config_dir)
@@ -101,4 +93,3 @@ def test_load_config_empty_directory_raises(tmp_path: Path) -> None:
     config_dir.mkdir()
     with pytest.raises(ConfigError):
         load_checked_config(config_dir)
-

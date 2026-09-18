@@ -25,6 +25,7 @@ from pyntara.config import Config
 from pyntara.context import Context
 from pyntara.tasks import system_metrics_setup
 from pyntara.utils import substituted_command
+from pyntara.values import engine as engine_values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -133,7 +134,7 @@ def _ctx(
         repo_root=tmp_path / "repo",
         task_data_root=tmp_path,
         skip_apt_update=True,
-        config=config if config is not None else make_config(task_data_root=tmp_path),
+        config=config if config is not None else make_config(),
     )
 
 
@@ -156,9 +157,7 @@ def _install_fixtures(
     config_dir = repo / "config"
     config_dir.mkdir(parents=True)
     source_config = config_dir / "system_metrics_setup.toml"
-    source_config.write_text(
-        "[system_metrics_setup]\n", encoding="utf-8"
-    )
+    source_config.write_text("[system_metrics_setup]\n", encoding="utf-8")
     task_data = repo / "task_data" / "system_metrics_setup"
     task_data.mkdir(parents=True)
     service_template = task_data / "system_metrics.service"
@@ -168,13 +167,9 @@ def _install_fixtures(
     ingest_path_template = task_data / "system_metrics-ingest.path"
     ingest_path_template.write_text(INGEST_PATH_TEMPLATE, encoding="utf-8")
     collector_service_template = task_data / "system_metrics_collector.service"
-    collector_service_template.write_text(
-        COLLECTOR_SERVICE_TEMPLATE, encoding="utf-8"
-    )
+    collector_service_template.write_text(COLLECTOR_SERVICE_TEMPLATE, encoding="utf-8")
     collector_timer_template = task_data / "system_metrics_collector.timer"
-    collector_timer_template.write_text(
-        COLLECTOR_TIMER_TEMPLATE, encoding="utf-8"
-    )
+    collector_timer_template.write_text(COLLECTOR_TIMER_TEMPLATE, encoding="utf-8")
     command_template = task_data / "commit_system_metrics.sh"
     command_template.write_text(COMMAND_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
@@ -187,9 +182,8 @@ def _install_fixtures(
     system_config_dir = tmp_path / "etc" / "pyntara"
     system_config = system_config_dir / "config.toml"
     systemd_dir = tmp_path / "systemd"
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     config = make_config(
-        task_data_root=tmp_path,
-        systemd_unit_dir=systemd_dir,
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
         system_metrics_command_path=command_path,
@@ -282,8 +276,7 @@ def _expected_collector_timer_unit(
 
     collector = fixtures["config"].system_metrics_setup.collector
     calendar = "\n".join(
-        f"OnCalendar=*-*-* {time_of_day}"
-        for time_of_day in collector.daily_send_times
+        f"OnCalendar=*-*-* {time_of_day}" for time_of_day in collector.daily_send_times
     )
     return Template(COLLECTOR_TIMER_TEMPLATE).substitute(
         boot_delay_seconds=collector.boot_delay_seconds,
@@ -497,7 +490,8 @@ def test_deploys_service_ingest_and_command(
     )
     assert venv_create in calls
     assert any(
-        call[0] == "uv" and call[1] == "sync"
+        call[0] == "uv"
+        and call[1] == "sync"
         and "--project" in call
         and "--active" in call
         and "--locked" in call
@@ -509,21 +503,21 @@ def test_deploys_service_ingest_and_command(
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
         fixtures["source_config"].read_text(encoding="utf-8")
     )
-    assert (
-        fixtures["systemd_dir"] / "system_metrics.service"
-    ).read_text(encoding="utf-8") == _expected_service_unit(fixtures)
-    assert (
-        fixtures["systemd_dir"] / "system_metrics-ingest.service"
-    ).read_text(encoding="utf-8") == _expected_ingest_service_unit(fixtures)
-    assert (
-        fixtures["systemd_dir"] / "system_metrics-ingest.path"
-    ).read_text(encoding="utf-8") == _expected_ingest_path_unit(fixtures)
-    assert (
-        fixtures["systemd_dir"] / "system_metrics_collector.service"
-    ).read_text(encoding="utf-8") == _expected_collector_service_unit(fixtures)
-    assert (
-        fixtures["systemd_dir"] / "system_metrics_collector.timer"
-    ).read_text(encoding="utf-8") == _expected_collector_timer_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics.service").read_text(
+        encoding="utf-8"
+    ) == _expected_service_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics-ingest.service").read_text(
+        encoding="utf-8"
+    ) == _expected_ingest_service_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics-ingest.path").read_text(
+        encoding="utf-8"
+    ) == _expected_ingest_path_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics_collector.service").read_text(
+        encoding="utf-8"
+    ) == _expected_collector_service_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics_collector.timer").read_text(
+        encoding="utf-8"
+    ) == _expected_collector_timer_unit(fixtures)
     assert ["systemctl", "daemon-reload"] in calls
     assert ["systemctl", "enable", "system_metrics.service"] in calls
     assert ["systemctl", "enable", "system_metrics-ingest.path"] in calls
@@ -576,9 +570,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
         encoding="utf-8"
     )
     assert f"# Deployed by Pyntara {__version__}" in unit
-    assert any(
-        "cannot read the version" in warning for warning in result.warnings
-    )
+    assert any("cannot read the version" in warning for warning in result.warnings)
 
 
 def test_skips_when_already_configured(
@@ -604,7 +596,10 @@ def test_skips_when_already_configured(
     assert result.changed is False
     assert result.message == "already configured"
     assert not any(call[0] == "uv" for call in calls)
-    assert not any(call[0] == "systemctl" and call[1] in ("start", "restart", "enable") for call in calls)
+    assert not any(
+        call[0] == "systemctl" and call[1] in ("start", "restart", "enable")
+        for call in calls
+    )
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
         fixtures["source_config"].read_text(encoding="utf-8")
     )
@@ -628,11 +623,14 @@ def test_force_reinstalls_and_restarts(
         import_ok=True,
         deployed=True,
     )
-    result = system_metrics_setup.task(_ctx(tmp_path, force=True, config=fixtures["config"]))
+    result = system_metrics_setup.task(
+        _ctx(tmp_path, force=True, config=fixtures["config"])
+    )
     assert result.success is True
     assert result.changed is True
     assert any(
-        call[0] == "uv" and call[1] == "sync"
+        call[0] == "uv"
+        and call[1] == "sync"
         and "--reinstall-package" in call
         and "pyntara" in call
         for call in calls
@@ -641,7 +639,9 @@ def test_force_reinstalls_and_restarts(
     assert ["systemctl", "enable", "system_metrics-ingest.path"] in calls
     assert ["systemctl", "restart", "system_metrics.service"] in calls
     assert ["systemctl", "restart", "system_metrics-ingest.path"] in calls
-    assert not any(call == ["systemctl", "start", "system_metrics.service"] for call in calls)
+    assert not any(
+        call == ["systemctl", "start", "system_metrics.service"] for call in calls
+    )
 
 
 def test_stale_venv_is_updated_and_service_restarted(
@@ -668,7 +668,8 @@ def test_stale_venv_is_updated_and_service_restarted(
     assert result.success is True
     assert result.changed is True
     assert any(
-        call[0] == "uv" and call[1] == "sync"
+        call[0] == "uv"
+        and call[1] == "sync"
         and "--reinstall-package" in call
         and "pyntara" in call
         for call in calls
@@ -728,7 +729,9 @@ def test_only_service_disabled_starts_it(
     assert not any(call[0] == "uv" for call in calls)
     assert ["systemctl", "enable", "system_metrics.service"] in calls
     assert ["systemctl", "start", "system_metrics.service"] in calls
-    assert not any(call == ["systemctl", "start", "system_metrics-ingest.path"] for call in calls)
+    assert not any(
+        call == ["systemctl", "start", "system_metrics-ingest.path"] for call in calls
+    )
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
         fixtures["source_config"].read_text(encoding="utf-8")
     )
@@ -757,8 +760,12 @@ def test_config_change_restarts_running_service(
     assert result.success is True
     assert result.changed is True
     assert ["systemctl", "restart", "system_metrics.service"] in calls
-    assert not any(call == ["systemctl", "start", "system_metrics.service"] for call in calls)
-    assert not any(call == ["systemctl", "restart", "system_metrics-ingest.path"] for call in calls)
+    assert not any(
+        call == ["systemctl", "start", "system_metrics.service"] for call in calls
+    )
+    assert not any(
+        call == ["systemctl", "restart", "system_metrics-ingest.path"] for call in calls
+    )
     assert fixtures["system_config"].read_text(encoding="utf-8") == (
         fixtures["source_config"].read_text(encoding="utf-8")
     )
@@ -1021,9 +1028,9 @@ def test_path_unit_stale_restarted(
     result = system_metrics_setup.task(_ctx(tmp_path, config=fixtures["config"]))
     assert result.success is True
     assert result.changed is True
-    assert (
-        fixtures["systemd_dir"] / "system_metrics-ingest.path"
-    ).read_text(encoding="utf-8") == _expected_ingest_path_unit(fixtures)
+    assert (fixtures["systemd_dir"] / "system_metrics-ingest.path").read_text(
+        encoding="utf-8"
+    ) == _expected_ingest_path_unit(fixtures)
     assert ["systemctl", "restart", "system_metrics-ingest.path"] in calls
 
 
@@ -1106,9 +1113,7 @@ def test_systemctl_commands_come_from_the_config(
         configured.service_unit_name,
         "--no-block",
     ] in calls
-    result = system_metrics_setup.task(
-        _ctx(tmp_path, force=True, config=config)
-    )
+    result = system_metrics_setup.task(_ctx(tmp_path, force=True, config=config))
     assert result.success is True
     assert [
         "systemctl",

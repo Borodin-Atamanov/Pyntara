@@ -29,6 +29,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import refresh_apt_index
 from pyntara.values import add_extra_repos as values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 
 
@@ -110,9 +111,7 @@ def _process_deb822(text: str) -> _FileRewrite:
         key_text = line[: key_start + len(components_key)]
         existing = line[key_start + len(components_key) :].split()
         missing = [
-            component
-            for component in values.COMPONENTS
-            if component not in existing
+            component for component in values.COMPONENTS if component not in existing
         ]
         if missing:
             satisfied = False
@@ -171,9 +170,7 @@ def _process_legacy(text: str) -> _FileRewrite:
             continue
         components = tokens[url_index + 2 :]
         missing = [
-            component
-            for component in values.COMPONENTS
-            if component not in components
+            component for component in values.COMPONENTS if component not in components
         ]
         if missing:
             satisfied = False
@@ -245,7 +242,10 @@ def _ensure_keep_debs_dropin() -> tuple[bool, str | None]:
                 return False, None
             path.unlink()
             return True, None
-        if path.exists() and path.read_text(encoding="utf-8") == values.KEEP_DEBS_DROPIN_CONTENT:
+        if (
+            path.exists()
+            and path.read_text(encoding="utf-8") == values.KEEP_DEBS_DROPIN_CONTENT
+        ):
             return False, None
         path.write_text(values.KEEP_DEBS_DROPIN_CONTENT, encoding="utf-8")
     except OSError as exc:
@@ -275,8 +275,7 @@ def task(ctx: Context) -> TaskResult:
             success=True,
             message="the add_extra_repos values are not declared, nothing was changed",
             warnings=(
-                "the add_extra_repos values are not declared: "
-                + ", ".join(absent),
+                "the add_extra_repos values are not declared: " + ", ".join(absent),
             ),
         )
     configured = values.COMPONENTS
@@ -313,9 +312,7 @@ def task(ctx: Context) -> TaskResult:
             _log(f"reading {path}: ubuntu section found, {status}")
         else:
             _log(f"reading {path}: no ubuntu section")
-    warnings.extend(
-        problem for _, state in states for problem in state.problems
-    )
+    warnings.extend(problem for _, state in states for problem in state.problems)
     if not has_ubuntu:
         warnings.append(
             "no Ubuntu archive section found in the apt sources; "
@@ -359,9 +356,7 @@ def task(ctx: Context) -> TaskResult:
         else:
             _log("refreshing apt index: apt-get update")
             try:
-                refresh_apt_index(
-                    ctx.config.engine, ctx.config.engine.command_timeout_seconds
-                )
+                refresh_apt_index(engine_values.COMMAND_TIMEOUT_SECONDS)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
                 warnings.append(f"apt index refresh: {exc}")
             else:
@@ -380,9 +375,7 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         _log(f"verification passed: {len(verified)} files satisfied")
-    message = (
-        f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
-    )
+    message = f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     if keep_changed:
         message = f"{message}; {_keep_debs_state_note()}"
     if warnings:

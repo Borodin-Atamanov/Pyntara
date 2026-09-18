@@ -132,8 +132,7 @@ def test_wrap_command_joins_long_commands_with_backslashes() -> None:
     """A long command copies as one command thanks to backslash joins."""
 
     command = (
-        'ssh -v -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" '
-        "5zmnq.onion"
+        'ssh -v -p 30222 -o ProxyCommand="nc -X 5 -x 127.0.0.1:9050 %h %p" 5zmnq.onion'
     )
     lines = telemetry_pdf._wrap_command(command, 72)
     assert len(lines) == 2
@@ -148,7 +147,6 @@ def test_commit_telemetry_pdf_never_raises_when_build_fails(
     """A broken PDF build drops only the PDF, never the report."""
 
     cfg = make_config(
-        task_data_root=tmp_path,
         system_metrics_command_path=tmp_path / "commit",
     )
     calls: list[list[str]] = []
@@ -181,7 +179,6 @@ def test_commit_telemetry_pdf_commits_the_pdf_bytes(
 
     commit_path = tmp_path / "commit"
     cfg = make_config(
-        task_data_root=tmp_path,
         system_metrics_command_path=commit_path,
     )
     calls: list[list[str]] = []

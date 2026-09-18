@@ -11,7 +11,6 @@ fixture points them at the temporary tree of the test.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -21,6 +20,7 @@ from support import make_config, make_context
 from pyntara.context import Context
 from pyntara.tasks import swapfile_service_install
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import swapfile_service_install as values
 
 UNIT_TEMPLATE = """\
@@ -45,7 +45,7 @@ WantedBy=multi-user.target
 RAM_KIB = 16 * 1024 * 1024
 FREE_BYTES = 100 * 1024**3
 TARGET_MB = (
-    int(RAM_KIB // make_config().engine.bytes_per_kib * values.RAM_MULTIPLIER)
+    int(RAM_KIB // engine_values.BYTES_PER_KIB * values.RAM_MULTIPLIER)
     + values.RAM_EXTRA_MB
 )
 
@@ -74,28 +74,26 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(values, "SWAPFILE_PATH", tmp_path / "swapfile")
     monkeypatch.setattr(values, "UNIT_TEMPLATE_FILE_NAME", "swapfile.service")
     monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "MemTotal:")
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
 
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
     """Context with a small safe config; the real file is never touched.
 
-    The engine values still come from the config document until the engine
-    stage; the section values are read from the values module, which the
-    autouse fixture points at the temporary tree. The systemd unit directory
-    and the repository root are the temporary tree of the test, because the
-    task writes the unit file there and reads the template from there.
+    The declared values are read from the values modules, which the autouse
+    fixture points at the temporary tree: the section values and the unit
+    directory of the engine, because the task writes the unit file there and
+    reads the template from there.
     """
 
     return make_context(
         task_name="swapfile_service_install",
         install_mode="server",
-        force_tasks=(
-            frozenset({"swapfile_service_install"}) if force else frozenset()
-        ),
+        force_tasks=(frozenset({"swapfile_service_install"}) if force else frozenset()),
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(systemd_unit_dir=tmp_path / "systemd"),
+        config=make_config(),
     )
 
 
@@ -210,21 +208,15 @@ def test_creates_swapfile_and_service(
 def test_target_size_follows_the_engine_byte_factor(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Another byte factor in the [engine] table is the factor the task
-    # counts RAM and free disk with, so it is not a value of the module.
+    # The declared byte factor is the factor the task counts RAM and free
+    # disk with, so the fixture points it at another number for this test.
+    monkeypatch.setattr(engine_values, "BYTES_PER_KIB", 1000)
     swapfile = _install_fixtures(monkeypatch, tmp_path)
     calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
     ctx = _ctx(tmp_path)
-    config = ctx.config
-    ctx = replace(
-        ctx,
-        config=replace(config, engine=replace(config.engine, bytes_per_kib=1000)),
-    )
     result = swapfile_service_install.task(ctx)
     assert result.success is True
-    ram_based = (
-        int(RAM_KIB // 1000 * values.RAM_MULTIPLIER) + values.RAM_EXTRA_MB
-    )
+    ram_based = int(RAM_KIB // 1000 * values.RAM_MULTIPLIER) + values.RAM_EXTRA_MB
     disk_based = int(FREE_BYTES // 1000 // 1000 * values.DISK_FRACTION)
     expected_mb = min(ram_based, disk_based)
     assert ["fallocate", "-l", f"{expected_mb}M", str(swapfile)] in calls
@@ -247,9 +239,7 @@ def test_activates_existing_file_when_service_missing(
     assert ["systemctl", "enable", "swapfile.service"] in calls
 
 
-def test_force_mode_recreates(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_force_mode_recreates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Everything is already configured, but the task is forced: it swaps the
     # file off, recreates it and re-enables the service.
     swapfile = _install_fixtures(monkeypatch, tmp_path)
@@ -371,9 +361,9 @@ def test_unit_template_name_comes_from_the_values(
     swapfile = _install_fixtures(
         monkeypatch, tmp_path, unit_template_file_name="other.service"
     )
-    (tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service").write_text(
-        "[Unit]\nDescription=wrong\n", encoding="utf-8"
-    )
+    (
+        tmp_path / "task_data" / "swapfile_service_install" / "swapfile.service"
+    ).write_text("[Unit]\nDescription=wrong\n", encoding="utf-8")
     calls = _install_fake(monkeypatch, swapfile, active=False, enabled=False)
     result = swapfile_service_install.task(_ctx(tmp_path))
     assert result.success is True

@@ -26,12 +26,16 @@ def test_load_config_i2pd_asset_and_command_values(tmp_path: Path) -> None:
     # and the identity wait round-trip from the shared document.
     config = load_checked_config(write_config(tmp_path, base_config()))
     section = config.i2pd_service_setup
-    assert section.codename_asset_name_template.format(
-        release_tag="2.55.0", codename="noble", arch="amd64"
-    ) == "i2pd_2.55.0-1noble1_amd64.deb"
-    assert section.generic_asset_name_template.format(
-        release_tag="2.55.0", arch="amd64"
-    ) == "i2pd_2.55.0-1_amd64.deb"
+    assert (
+        section.codename_asset_name_template.format(
+            release_tag="2.55.0", codename="noble", arch="amd64"
+        )
+        == "i2pd_2.55.0-1noble1_amd64.deb"
+    )
+    assert (
+        section.generic_asset_name_template.format(release_tag="2.55.0", arch="amd64")
+        == "i2pd_2.55.0-1_amd64.deb"
+    )
     assert section.os_release_codename_key == "VERSION_CODENAME"
     assert section.version_command == ("i2pd", "--version")
     assert section.service_enable_command == (

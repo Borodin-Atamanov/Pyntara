@@ -43,7 +43,6 @@ from pathlib import Path
 from string import Template
 from typing import NamedTuple
 
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -61,6 +60,7 @@ from pyntara.utils import (
     version_without_tag_prefix,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import scrcpy_setup as values
 
@@ -222,7 +222,7 @@ def _probe_client_answer(client: Path, timeout: float) -> str | None:
     command = substituted_command(values.VERSION_COMMAND, {"binary": str(client)})
     try:
         result = run_command(command, check=False, capture=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -233,22 +233,21 @@ def _probe_client_answer(client: Path, timeout: float) -> str | None:
 
 
 def _download_into_cache(
-    engine: EngineConfig,
     name: str,
     url: str,
     timeout: float,
 ) -> Path:
     """Download a release file into the cache; raises RuntimeError on failure.
 
-    The download goes to a sibling with the engine partial suffix and is
+    The download goes to a sibling with the declared partial suffix and is
     renamed only after a successful transfer, so a file in the cache is
     always a complete one.
     """
 
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    partial = values.DOWNLOAD_DIR / (name + engine.partial_download_file_suffix)
+    partial = values.DOWNLOAD_DIR / (name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     try:
-        run_command(download_command(engine, partial, url), timeout=timeout)
+        run_command(download_command(partial, url), timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"cannot download {url}: {exc}") from None
@@ -267,7 +266,7 @@ def _printed_digest(path: Path, timeout: float) -> str | None:
     command = substituted_command(values.CHECKSUM_COMMAND, {"file": str(path)})
     try:
         result = run_command(command, check=False, capture=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -361,7 +360,6 @@ def _switch_command_link(client: Path) -> None:
 
 
 def _deploy_release(
-    engine: EngineConfig,
     asset_name: str,
     asset_url: str,
     checksum_url: str,
@@ -380,28 +378,22 @@ def _deploy_release(
     note = ""
     for _attempt in range(2):
         try:
-            archive = _download_into_cache(engine, asset_name, asset_url, timeout)
+            archive = _download_into_cache(asset_name, asset_url, timeout)
             checksum_file = _download_into_cache(
-                engine, values.CHECKSUM_FILE_NAME, checksum_url, timeout
+                values.CHECKSUM_FILE_NAME, checksum_url, timeout
             )
         except RuntimeError as exc:
-            return _ReleaseOutcome(
-                version, str(exc), installed=False, fall_back=True
-            )
+            return _ReleaseOutcome(version, str(exc), installed=False, fall_back=True)
         verified, note = _verify_archive(archive, checksum_file, timeout)
         if verified:
             break
     else:
-        return _ReleaseOutcome(
-            version, note, installed=False, fall_back=False
-        )
+        return _ReleaseOutcome(version, note, installed=False, fall_back=False)
 
     try:
         tree, work_dir = _extract_tree(archive, timeout)
     except RuntimeError as exc:
-        return _ReleaseOutcome(
-            version, str(exc), installed=False, fall_back=True
-        )
+        return _ReleaseOutcome(version, str(exc), installed=False, fall_back=True)
     target = _version_dir(version)
     try:
         _install_dir().mkdir(parents=True, exist_ok=True)
@@ -465,19 +457,17 @@ def _install_from_apt(
 ) -> tuple[bool, str]:
     """Install the fallback packages; return (installed something, note)."""
 
-    engine = ctx.config.engine
     missing = [
         package
         for package in values.FALLBACK_PACKAGES
         if not package_is_installed(
-            engine, package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
+            package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
         )
     ]
     if not missing:
         return False, "the Ubuntu archive client is installed already"
     _log(f"installing from the Ubuntu archive: {', '.join(missing)}")
     installed, failures, apt_warnings = install_packages(
-        engine,
         missing,
         install_timeout=timeout,
         update_timeout=timeout,
@@ -491,9 +481,7 @@ def _install_from_apt(
     return True, f"installed from the Ubuntu archive: {', '.join(installed)}"
 
 
-def _ensure_udev_rules(
-    ctx: Context, timeout: float, warnings: list[str]
-) -> bool:
+def _ensure_udev_rules(ctx: Context, timeout: float, warnings: list[str]) -> bool:
     """Install the Android USB rules when they are missing; True when changed.
 
     The release archive carries no udev rules, so both sources need this
@@ -501,16 +489,13 @@ def _ensure_udev_rules(
     reported with what will not work instead of stopping the task.
     """
 
-    engine = ctx.config.engine
     if package_is_installed(
-        engine,
         values.UDEV_RULES_PACKAGE_NAME,
         common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
     ):
         return False
     _log(f"installing {values.UDEV_RULES_PACKAGE_NAME} for Android USB access")
     installed, failures, apt_warnings = install_packages(
-        engine,
         [values.UDEV_RULES_PACKAGE_NAME],
         install_timeout=timeout,
         update_timeout=timeout,
@@ -591,9 +576,9 @@ def task(ctx: Context) -> TaskResult:
     stdout and a step that cannot run becomes a warning of a completed task.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -605,8 +590,7 @@ def task(ctx: Context) -> TaskResult:
                 "the scrcpy_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
@@ -615,7 +599,7 @@ def task(ctx: Context) -> TaskResult:
     arch = ""
     release_error = ""
     try:
-        arch = dpkg_architecture(engine, timeout)
+        arch = dpkg_architecture(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         release_error = f"cannot determine the machine architecture: {exc}"
         warnings.append(release_error)
@@ -626,14 +610,14 @@ def task(ctx: Context) -> TaskResult:
     checksum_url = ""
     if not release_error:
         try:
-            release = fetch_latest_release(values.GITHUB_REPO, engine)
+            release = fetch_latest_release(values.GITHUB_REPO)
             tag = release_tag(release)
             assets = dict(asset_name_urls(release))
         except RuntimeError as exc:
             release_error = str(exc)
         else:
             asset_arch = release_asset_architecture(
-                engine.release_asset_architectures, arch
+                engine_values.RELEASE_ASSET_ARCHITECTURES, arch
             )
             asset_name = values.ARCHIVE_NAME_TEMPLATE.format(
                 asset_arch=asset_arch, release_tag=tag
@@ -655,14 +639,10 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking latest release: {tag}")
 
     if not release_error and complete and installed == version and not force:
-        messages.append(
-            f"already installed scrcpy {version} from the GitHub release"
-        )
+        messages.append(f"already installed scrcpy {version} from the GitHub release")
     elif not release_error:
         _log(f"installing scrcpy {version} from the GitHub release")
-        outcome = _deploy_release(
-            engine, asset_name, asset_url, checksum_url, version, timeout
-        )
+        outcome = _deploy_release(asset_name, asset_url, checksum_url, version, timeout)
         if outcome.installed:
             changed = True
             messages.append(outcome.detail)
@@ -673,9 +653,7 @@ def task(ctx: Context) -> TaskResult:
 
     if release_error:
         if complete:
-            warnings.append(
-                f"the GitHub release is unavailable: {release_error}"
-            )
+            warnings.append(f"the GitHub release is unavailable: {release_error}")
             messages.append(f"keeping the installed scrcpy {installed}")
         else:
             _log(f"the GitHub release is unavailable: {release_error}")
@@ -685,8 +663,7 @@ def task(ctx: Context) -> TaskResult:
             apt_binary = Path(values.APT_BINARY_PATH)
             if not apt_binary.is_file():
                 warnings.append(
-                    f"no scrcpy client at {apt_binary} after the Ubuntu archive "
-                    "install"
+                    f"no scrcpy client at {apt_binary} after the Ubuntu archive install"
                 )
             elif _probe_client_answer(apt_binary, timeout) is None:
                 warnings.append(
@@ -702,9 +679,7 @@ def task(ctx: Context) -> TaskResult:
 
     client, icon = _launcher_binary_and_icon()
     if client is None:
-        warnings.append(
-            "no scrcpy client to start, so no menu entry was written"
-        )
+        warnings.append("no scrcpy client to start, so no menu entry was written")
     else:
         data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
         for template_name, relative_path in (

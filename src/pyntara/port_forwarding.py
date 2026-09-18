@@ -628,9 +628,7 @@ def main() -> None:
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
     pf = cfg.port_forwarding_setup
-    configure_journal(
-        cfg.engine.with_journal_identifier(pf.journal_identifier)
-    )
+    configure_journal(pf.journal_identifier)
     kp = metrics.open_runtime_vault(cfg)
     if kp is None:
         _log(

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config
 
 from pyntara import utils
 from pyntara.utils import (
@@ -27,6 +25,7 @@ from pyntara.utils import (
     trim_whitespace,
     version_without_tag_prefix,
 )
+from pyntara.values import engine as engine_values
 
 # Two URLs for the parallel query tests: the shape of the addresses does
 # not matter there, only that both transfers run in one call.
@@ -81,19 +80,16 @@ def test_download_command_fills_the_template_and_appends_the_url(
     # The configured download template is filled from the values of the
     # call, the retry flags of the engine follow it and the URL closes the
     # command, so every task downloads with one definition.
-    engine = make_config().engine
     command = utils.download_command(
-        engine, tmp_path / "archive.tar.gz", "https://example.invalid/a.tar.gz"
+        tmp_path / "archive.tar.gz", "https://example.invalid/a.tar.gz"
     )
     assert command[:2] == ["curl", "--fail"]
-    assert command[command.index("--output") + 1] == str(
-        tmp_path / "archive.tar.gz"
-    )
+    assert command[command.index("--output") + 1] == str(tmp_path / "archive.tar.gz")
     assert command[command.index("--write-out") + 1] == (
-        engine.curl_download_write_out
+        engine_values.CURL_DOWNLOAD_WRITE_OUT
     )
     assert "--retry" in command
-    assert str(engine.curl_download_timeout_seconds) in command
+    assert str(engine_values.CURL_DOWNLOAD_TIMEOUT_SECONDS) in command
     assert command[-1] == "https://example.invalid/a.tar.gz"
     assert "{output_path}" not in command
 
@@ -101,45 +97,38 @@ def test_download_command_fills_the_template_and_appends_the_url(
 def test_release_query_command_uses_the_query_template() -> None:
     # The release query is the configured query call plus the retry flags
     # and the URL, so every task asks a release API the same way.
-    engine = make_config().engine
-    command = utils.release_query_command(
-        engine, "https://api.example.invalid/releases/latest"
-    )
-    assert command[: len(engine.curl_query_command)] == list(
-        engine.curl_query_command
+    command = utils.release_query_command("https://api.example.invalid/releases/latest")
+    assert command[: len(engine_values.CURL_QUERY_COMMAND)] == list(
+        engine_values.CURL_QUERY_COMMAND
     )
     assert "--silent" in command
     assert "--retry" in command
     assert command[-1] == "https://api.example.invalid/releases/latest"
 
 
-def test_os_family_is_debian_reads_the_configured_vocabulary() -> None:
-    # The family fields and the accepted values come from the engine: a
+def test_os_family_is_debian_reads_the_declared_vocabulary(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The family fields and the accepted values are declared values: a
     # derivative that declares the family in ID_LIKE is accepted, a value
-    # outside the configured list is not, and a rearranged vocabulary is
-    # honoured without touching the code.
-    engine = make_config().engine
-    assert utils.os_family_is_debian(
-        engine, {"ID": "ubuntu"}
-    )
-    assert utils.os_family_is_debian(
-        engine, {"ID_LIKE": "ubuntu debian"}
-    )
-    assert not utils.os_family_is_debian(engine, {"ID": "arch"})
-    narrowed = replace(engine, os_release_debian_family_names=("ubuntu",))
-    assert not utils.os_family_is_debian(narrowed, {"ID": "debian"})
-    renamed = replace(engine, os_release_family_keys=("FAMILY",))
-    assert utils.os_family_is_debian(renamed, {"FAMILY": "debian"})
-    assert not utils.os_family_is_debian(renamed, {"ID": "debian"})
+    # outside the declared list is not, and a rearranged vocabulary is
+    # honoured by changing the value.
+    assert utils.os_family_is_debian({"ID": "ubuntu"})
+    assert utils.os_family_is_debian({"ID_LIKE": "ubuntu debian"})
+    assert not utils.os_family_is_debian({"ID": "arch"})
+    monkeypatch.setattr(engine_values, "OS_RELEASE_DEBIAN_FAMILY_NAMES", ("ubuntu",))
+    assert not utils.os_family_is_debian({"ID": "debian"})
+    monkeypatch.setattr(engine_values, "OS_RELEASE_FAMILY_KEYS", ("FAMILY",))
+    monkeypatch.setattr(engine_values, "OS_RELEASE_DEBIAN_FAMILY_NAMES", ("debian",))
+    assert utils.os_family_is_debian({"FAMILY": "debian"})
+    assert not utils.os_family_is_debian({"ID": "debian"})
 
 
 def test_curl_command_refuses_an_unknown_placeholder() -> None:
     # A template with a placeholder nobody fills fails loudly instead of
     # running a command with a literal brace in it.
-    engine = make_config().engine
     with pytest.raises(KeyError):
         utils.curl_command(
-            engine,
             ("curl", "--output", "{wrong_placeholder}"),
             "https://example.invalid",
             timeout_seconds=1.0,
@@ -147,17 +136,15 @@ def test_curl_command_refuses_an_unknown_placeholder() -> None:
         )
 
 
-def test_package_status_query_comes_from_the_engine(
+def test_package_status_query_comes_from_the_declared_value(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The status query is a config value: the shipped template doubles the
+    # The status query is a declared value: the shipped template doubles the
     # braces of the literal ${Status}, because the substitution helper
     # formats the command as a template, so the run receives the single
-    # braces below. Another argv in the engine table is exactly what the
-    # helper runs, so a derivative that queries packages differently edits
-    # only the config.
-    engine = make_config().engine
-    assert engine.package_status_query_command == (
+    # braces below. Another argv is exactly what the helper runs, so a
+    # derivative that queries packages differently changes one value.
+    assert engine_values.PACKAGE_STATUS_QUERY_COMMAND == (
         "dpkg-query",
         "-W",
         "-f=${{Status}}",
@@ -170,13 +157,13 @@ def test_package_status_query_comes_from_the_engine(
         return _FakeProc(0, "install ok installed")
 
     monkeypatch.setattr(utils, "run_command", fake_run)
-    assert utils.package_is_installed(engine, "mc", 5.0) is True
+    assert utils.package_is_installed("mc", 5.0) is True
     assert calls == [["dpkg-query", "-W", "-f=${Status}", "mc"]]
 
-    replaced = replace(
-        engine, package_status_query_command=("myquery", "{package}", "-s")
+    monkeypatch.setattr(
+        engine_values, "PACKAGE_STATUS_QUERY_COMMAND", ("myquery", "{package}", "-s")
     )
-    assert utils.package_is_installed(replaced, "nc", 5.0) is True
+    assert utils.package_is_installed("nc", 5.0) is True
     assert calls[-1] == ["myquery", "nc", "-s"]
 
 
@@ -185,19 +172,18 @@ def test_package_is_installed_needs_the_installed_status(
 ) -> None:
     # A leftover configuration is not an installed package and a failing
     # query is not either: the helper needs the installed status line.
-    engine = make_config().engine
     monkeypatch.setattr(
         utils,
         "run_command",
         lambda *_args, **_kwargs: _FakeProc(0, "deinstall ok config-files"),
     )
-    assert utils.package_is_installed(engine, "mc", 5.0) is False
+    assert utils.package_is_installed("mc", 5.0) is False
     monkeypatch.setattr(
         utils,
         "run_command",
         lambda *_args, **_kwargs: _FakeProc(1, "install ok installed"),
     )
-    assert utils.package_is_installed(engine, "mc", 5.0) is False
+    assert utils.package_is_installed("mc", 5.0) is False
 
 
 def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,7 +191,6 @@ def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None
     # environment are config values: the helpers run exactly the configured
     # argv with the configured environment, so a derivative that installs
     # packages another way edits only the config.
-    engine = make_config().engine
     calls: list[list[str]] = []
     envs: list[dict[str, str]] = []
 
@@ -216,22 +201,25 @@ def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None
         return _FakeProc(0)
 
     monkeypatch.setattr(utils, "run_command", fake_run)
-    assert utils.install_package_once(engine, "mc", 30.0) == (True, "")
+    assert utils.install_package_once("mc", 30.0) == (True, "")
     assert calls == [["apt-get", "install", "-y", "mc"]]
     assert envs == [{"DEBIAN_FRONTEND": "noninteractive"}]
-    utils.refresh_apt_index(engine, 30.0)
+    utils.refresh_apt_index(30.0)
     assert calls[-1] == ["apt-get", "update"]
 
-    marker = replace(
-        engine,
-        apt_install_command=("myinstall", "{package}", "--yes"),
-        apt_update_command=("myupdate",),
-        apt_noninteractive_environment={"APT_ANSWER": "always"},
+    marker = "the install, the refresh and the environment are declared values"
+    monkeypatch.setattr(
+        engine_values, "APT_INSTALL_COMMAND", ("myinstall", "{package}", "--yes")
     )
-    assert utils.install_package_once(marker, "nc", 30.0) == (True, "")
+    monkeypatch.setattr(engine_values, "APT_UPDATE_COMMAND", ("myupdate",))
+    monkeypatch.setattr(
+        engine_values, "APT_NONINTERACTIVE_ENVIRONMENT", {"APT_ANSWER": "always"}
+    )
+    assert marker
+    assert utils.install_package_once("nc", 30.0) == (True, "")
     assert calls[-1] == ["myinstall", "nc", "--yes"]
     assert envs[-1] == {"APT_ANSWER": "always"}
-    utils.refresh_apt_index(marker, 30.0)
+    utils.refresh_apt_index(30.0)
     assert calls[-1] == ["myupdate"]
 
 
@@ -240,7 +228,6 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
 ) -> None:
     # One refresh for the whole list, one install per package, and no
     # refresh when the run asked to skip it.
-    engine = make_config().engine
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
@@ -249,7 +236,6 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
 
     monkeypatch.setattr(utils, "run_command", fake_run)
     installed, failures, warnings = utils.install_packages(
-        engine,
         ["mc", "nc"],
         install_timeout=30.0,
         update_timeout=30.0,
@@ -265,7 +251,6 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
 
     calls.clear()
     utils.install_packages(
-        engine,
         ["mc"],
         install_timeout=30.0,
         update_timeout=30.0,
@@ -388,9 +373,7 @@ def test_run_command_logs_capture_queries(
     run_command(["dpkg-query", "-W"], timeout=1800, capture=True)
     captured = capsys.readouterr().out
     assert "  run : dpkg-query -W" in captured
-    assert re.search(
-        r"^  /run: 0 \d+\.\d{3}s dpkg-query -W$", captured, re.MULTILINE
-    )
+    assert re.search(r"^  /run: 0 \d+\.\d{3}s dpkg-query -W$", captured, re.MULTILINE)
 
 
 def test_run_command_suppresses_log_on_request(
@@ -449,8 +432,7 @@ def test_run_command_mirrors_tracking_lines_to_journal(
     run_command(["true"], timeout=1800)
     assert "run : true" in journaled
     assert any(
-        re.match(r"^/run: 3 \d+\.\d{3}s true$", message)
-        for message in journaled
+        re.match(r"^/run: 3 \d+\.\d{3}s true$", message) for message in journaled
     )
 
 
@@ -579,13 +561,12 @@ def test_service_is_enabled_matches_only_enabled(
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         assert command == ["systemctl", "is-enabled", "svc.service"]
         assert kwargs["check"] is False
-        return _FakeProc(0 if output in ("enabled\n", "enabled-runtime\n") else 1, output)
+        return _FakeProc(
+            0 if output in ("enabled\n", "enabled-runtime\n") else 1, output
+        )
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert (
-        service_is_enabled(make_config().engine, "svc.service", timeout=5)
-        is expected
-    )
+    assert service_is_enabled("svc.service", timeout=5) is expected
 
 
 @pytest.mark.parametrize(
@@ -606,10 +587,7 @@ def test_service_is_active_matches_only_active(
         return _FakeProc(0 if output == "active\n" else 1, output)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert (
-        service_is_active(make_config().engine, "svc.service", timeout=5)
-        is expected
-    )
+    assert service_is_active("svc.service", timeout=5) is expected
 
 
 def test_service_state_queries_come_from_the_engine(
@@ -618,13 +596,14 @@ def test_service_state_queries_come_from_the_engine(
     # The two queries and the states that count as enabled or running are
     # config values: another argv and another state word are honoured, so a
     # derivative that spells them differently edits only the config.
-    engine = replace(
-        make_config().engine,
-        systemctl_is_enabled_command=("myctl", "boot-state", "{unit}"),
-        systemctl_is_active_command=("myctl", "run-state", "{unit}"),
-        systemd_enabled_states=("booted",),
-        systemd_active_state="running",
+    monkeypatch.setattr(
+        engine_values, "SYSTEMCTL_IS_ENABLED_COMMAND", ("myctl", "boot-state", "{unit}")
     )
+    monkeypatch.setattr(
+        engine_values, "SYSTEMCTL_IS_ACTIVE_COMMAND", ("myctl", "run-state", "{unit}")
+    )
+    monkeypatch.setattr(engine_values, "SYSTEMD_ENABLED_STATES", ("booted",))
+    monkeypatch.setattr(engine_values, "SYSTEMD_ACTIVE_STATE", "running")
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -634,8 +613,8 @@ def test_service_state_queries_come_from_the_engine(
         return _FakeProc(0, state)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert service_is_enabled(engine, "svc.service", timeout=5) is True
-    assert service_is_active(engine, "svc.service", timeout=5) is True
+    assert service_is_enabled("svc.service", timeout=5) is True
+    assert service_is_active("svc.service", timeout=5) is True
     assert seen == [
         ["myctl", "boot-state", "svc.service"],
         ["myctl", "run-state", "svc.service"],
@@ -662,9 +641,7 @@ def test_trim_whitespace_removes_edges_only(text: str, expected: str) -> None:
 class TestPortFreeing:
     """Tests for the port-listener and port-freeing helpers."""
 
-    def test_port_listener_pid_parses_ss(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_port_listener_pid_parses_ss(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # The pid is parsed from the process column of the ss output.
         def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
             del kwargs
@@ -674,7 +651,7 @@ class TestPortFreeing:
             )
 
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-        assert port_listener_pid(make_config().engine, 35353, timeout=30) == 34311
+        assert port_listener_pid(35353, timeout=30) == 34311
 
     def test_port_listener_pid_none_when_free(
         self, monkeypatch: pytest.MonkeyPatch
@@ -684,7 +661,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, ""),
         )
-        assert port_listener_pid(make_config().engine, 35353, timeout=30) is None
+        assert port_listener_pid(35353, timeout=30) is None
 
     def test_port_listener_pid_none_on_ss_failure(
         self, monkeypatch: pytest.MonkeyPatch
@@ -695,17 +672,15 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(7, ""),
         )
-        assert port_listener_pid(make_config().engine, 35353, timeout=30) is None
+        assert port_listener_pid(35353, timeout=30) is None
 
-    def test_service_main_pid_parses(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_service_main_pid_parses(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # The MainPID is parsed from systemctl show --value.
         monkeypatch.setattr(
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, "34311\n"),
         )
-        assert service_main_pid(make_config().engine, "x-ui.service", timeout=30) == 34311
+        assert service_main_pid("x-ui.service", timeout=30) == 34311
 
     def test_service_main_pid_none_when_stopped(
         self, monkeypatch: pytest.MonkeyPatch
@@ -715,7 +690,7 @@ class TestPortFreeing:
             "pyntara.utils.subprocess.run",
             lambda command, **kwargs: _FakeProc(0, "0\n"),
         )
-        assert service_main_pid(make_config().engine, "x-ui.service", timeout=30) is None
+        assert service_main_pid("x-ui.service", timeout=30) is None
 
     def test_ensure_port_free_free_port_does_nothing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -730,8 +705,10 @@ class TestPortFreeing:
             "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
         )
         result = ensure_port_free(
-            make_config().engine,
-            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353,
+            "x-ui.service",
+            timeout=30,
+            service_process_name="x-ui",
         )
         assert result is None
         assert killed == []
@@ -753,8 +730,7 @@ class TestPortFreeing:
                 if ss_calls == 1:
                     return _FakeProc(
                         0,
-                        'LISTEN 0 4096 *:35353 *:* '
-                        'users:(("x-ui",pid=34311,fd=11))\n',
+                        'LISTEN 0 4096 *:35353 *:* users:(("x-ui",pid=34311,fd=11))\n',
                     )
                 return _FakeProc(0, "")
             if command[0] == "systemctl" and command[1] == "show":
@@ -763,8 +739,10 @@ class TestPortFreeing:
 
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         result = ensure_port_free(
-            make_config().engine,
-            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353,
+            "x-ui.service",
+            timeout=30,
+            service_process_name="x-ui",
         )
         assert result is not None
         assert "stopped x-ui.service" in result
@@ -787,8 +765,7 @@ class TestPortFreeing:
                 if ss_calls == 1:
                     return _FakeProc(
                         0,
-                        'LISTEN 0 4096 *:35353 *:* '
-                        'users:(("x-ui",pid=999,fd=11))\n',
+                        'LISTEN 0 4096 *:35353 *:* users:(("x-ui",pid=999,fd=11))\n',
                     )
                 return _FakeProc(0, "")
             if command[0] == "systemctl" and command[1] == "show":
@@ -798,8 +775,10 @@ class TestPortFreeing:
         monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr("pyntara.utils.process_comm", lambda pid: "x-ui")
         result = ensure_port_free(
-            make_config().engine,
-            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353,
+            "x-ui.service",
+            timeout=30,
+            service_process_name="x-ui",
         )
         assert result is not None
         assert "stopped x-ui.service" in result
@@ -832,8 +811,10 @@ class TestPortFreeing:
             "pyntara.utils.os.kill", lambda pid, sig: killed.append((pid, sig))
         )
         result = ensure_port_free(
-            make_config().engine,
-            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353,
+            "x-ui.service",
+            timeout=30,
+            service_process_name="x-ui",
         )
         assert result is not None
         assert "terminated unknown process 999" in result
@@ -842,10 +823,12 @@ class TestPortFreeing:
     def test_port_kill_grace_and_poll_come_from_the_config(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The grace period and the pause between two lookups are config
+        # The grace period and the pause between two lookups are declared
         # values: a grace of two seconds with a clock that jumps to three
         # kills the process after a single pause, and that pause is the
-        # configured one.
+        # declared one.
+        monkeypatch.setattr(engine_values, "PORT_KILL_GRACE_SECONDS", 2)
+        monkeypatch.setattr(engine_values, "PORT_KILL_POLL_SECONDS", 0.5)
         killed: list[tuple[int, int]] = []
         naps: list[float] = []
         ss_calls = 0
@@ -858,8 +841,7 @@ class TestPortFreeing:
                 if ss_calls <= 2:
                     return _FakeProc(
                         0,
-                        'LISTEN 0 4096 *:35353 *:* '
-                        'users:(("other",pid=999,fd=9))\n',
+                        'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
                     )
                 return _FakeProc(0, "")
             if command[0] == "systemctl" and command[1] == "show":
@@ -875,12 +857,8 @@ class TestPortFreeing:
         )
         monotonic = iter([0.0, 0.0, 3.0])
         monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
-        engine = make_config(
-            port_kill_grace_seconds=2,
-            port_kill_poll_seconds=0.5,
-        ).engine
         result = ensure_port_free(
-            engine, 35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
         )
         assert result is not None
         assert "killed unknown process 999" in result
@@ -903,14 +881,12 @@ class TestPortFreeing:
                 if ss_calls == 1:
                     return _FakeProc(
                         0,
-                        'LISTEN 0 4096 *:35353 *:* '
-                        'users:(("other",pid=999,fd=9))\n',
+                        'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
                     )
                 if ss_calls == 2:
                     return _FakeProc(
                         0,
-                        'LISTEN 0 4096 *:35353 *:* '
-                        'users:(("other",pid=999,fd=9))\n',
+                        'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
                     )
                 return _FakeProc(0, "")
             if command[0] == "systemctl" and command[1] == "show":
@@ -925,8 +901,10 @@ class TestPortFreeing:
         monotonic = iter([0.0, 0.0, 6.0])
         monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
         result = ensure_port_free(
-            make_config().engine,
-            35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+            35353,
+            "x-ui.service",
+            timeout=30,
+            service_process_name="x-ui",
         )
         assert result is not None
         assert "killed unknown process 999" in result
@@ -938,23 +916,25 @@ class TestPortFreeing:
         # Even SIGKILL does not free the port: the helper raises.
         monkeypatch.setattr(
             "pyntara.utils.subprocess.run",
-            lambda command, **kwargs: _FakeProc(
-                0,
-                'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
-            )
-            if command[0] == "ss"
-            else _FakeProc(0, "0\n"),
+            lambda command, **kwargs: (
+                _FakeProc(
+                    0,
+                    'LISTEN 0 4096 *:35353 *:* users:(("other",pid=999,fd=9))\n',
+                )
+                if command[0] == "ss"
+                else _FakeProc(0, "0\n")
+            ),
         )
-        monkeypatch.setattr(
-            "pyntara.utils.os.kill", lambda pid, sig: None
-        )
+        monkeypatch.setattr("pyntara.utils.os.kill", lambda pid, sig: None)
         monkeypatch.setattr("pyntara.utils.time.sleep", lambda _seconds: None)
         monotonic = iter([0.0, 0.0, 6.0])
         monkeypatch.setattr("pyntara.utils.time.monotonic", lambda: next(monotonic))
         with pytest.raises(RuntimeError, match="still listens"):
             ensure_port_free(
-                make_config().engine,
-                35353, "x-ui.service", timeout=30, service_process_name="x-ui"
+                35353,
+                "x-ui.service",
+                timeout=30,
+                service_process_name="x-ui",
             )
 
 
@@ -965,10 +945,11 @@ def test_port_and_main_pid_queries_come_from_the_engine(
     # argv in the engine table is exactly what runs, the port and the unit
     # fill the placeholders, so a derivative that queries them differently
     # edits only the config.
-    engine = replace(
-        make_config().engine,
-        socket_listener_command=("myss", "--listen", "{port}"),
-        systemctl_main_pid_command=("myctl", "main-pid", "{unit}"),
+    monkeypatch.setattr(
+        engine_values, "SOCKET_LISTENER_COMMAND", ("myss", "--listen", "{port}")
+    )
+    monkeypatch.setattr(
+        engine_values, "SYSTEMCTL_MAIN_PID_COMMAND", ("myctl", "main-pid", "{unit}")
     )
     calls: list[list[str]] = []
 
@@ -982,8 +963,8 @@ def test_port_and_main_pid_queries_come_from_the_engine(
         return _FakeProc(0, "7\n")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert port_listener_pid(engine, 35353, timeout=30) == 7
-    assert service_main_pid(engine, "x-ui.service", timeout=30) == 7
+    assert port_listener_pid(35353, timeout=30) == 7
+    assert service_main_pid("x-ui.service", timeout=30) == 7
     assert calls == [
         ["myss", "--listen", "35353"],
         ["myctl", "main-pid", "x-ui.service"],
@@ -996,9 +977,8 @@ def test_the_stop_call_comes_from_the_engine(
     # The stop of the managed service is a config value as well: with the
     # shipped table the sequence is the ss query, the MainPID query, the
     # stop and the confirming query of the port.
-    engine = replace(
-        make_config().engine,
-        systemctl_stop_command=("myctl", "halt", "{unit}"),
+    monkeypatch.setattr(
+        engine_values, "SYSTEMCTL_STOP_COMMAND", ("myctl", "halt", "{unit}")
     )
     calls: list[list[str]] = []
     listener_outputs = [
@@ -1014,7 +994,7 @@ def test_the_stop_call_comes_from_the_engine(
         return _FakeProc(0, "34311\n")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    assert ensure_port_free(engine, 35353, "x-ui.service", 30) == (
+    assert ensure_port_free(35353, "x-ui.service", 30) == (
         "stopped x-ui.service listening on port 35353"
     )
     assert calls == [
@@ -1089,13 +1069,12 @@ class TestFetchUrlsInParallel:
             return process
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fake_popen)
-        engine = make_config().engine
-        assert fetch_urls_in_parallel(engine, URLS, 60, 1800.0) == "first\nsecond\n"
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "first\nsecond\n"
         command = commands[0]
         assert "--parallel" in command
         assert command[command.index("--max-time") + 1] == "60"
         assert command[-len(URLS) :] == list(URLS)
-        assert engine.curl_parallel_write_out in command
+        assert engine_values.CURL_PARALLEL_WRITE_OUT in command
         assert process.timeout_used == 1800.0
 
     def test_returns_nothing_when_the_url_list_is_empty(
@@ -1106,7 +1085,7 @@ class TestFetchUrlsInParallel:
             raise AssertionError("no process expected")
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
-        assert fetch_urls_in_parallel(make_config().engine, (), 60, 1800.0) == ""
+        assert fetch_urls_in_parallel((), 60, 1800.0) == ""
 
     def test_returns_nothing_when_curl_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1115,17 +1094,15 @@ class TestFetchUrlsInParallel:
             raise OSError("curl not found")
 
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", fail_popen)
-        assert fetch_urls_in_parallel(make_config().engine, URLS, 60, 1800.0) == ""
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == ""
 
     def test_kills_the_process_when_the_command_timeout_expires(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The command timeout bounds the call even when curl never ends.
         process = _FakePopen("answer\n", kill_before_output=True)
-        monkeypatch.setattr(
-            "pyntara.utils.subprocess.Popen", lambda *a, **k: process
-        )
-        assert fetch_urls_in_parallel(make_config().engine, URLS, 60, 1800.0) == "answer\n"
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", lambda *a, **k: process)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
         assert process.killed is True
 
 
@@ -1188,9 +1165,8 @@ def test_the_architecture_query_comes_from_the_engine(
 ) -> None:
     # Another architecture query in the [engine] table is exactly the argv
     # the helper runs, so the tool and its flags live in the config.
-    engine = replace(
-        make_config().engine,
-        dpkg_architecture_command=("my-dpkg", "--arch"),
+    monkeypatch.setattr(
+        engine_values, "DPKG_ARCHITECTURE_COMMAND", ("my-dpkg", "--arch")
     )
     calls: list[list[str]] = []
 
@@ -1199,7 +1175,5 @@ def test_the_architecture_query_comes_from_the_engine(
         return _FakeProc(0, "my-arch\n")
 
     monkeypatch.setattr(utils, "run_command", fake_run)
-    assert utils.dpkg_architecture(engine, 30.0) == "my-arch"
+    assert utils.dpkg_architecture(30.0) == "my-arch"
     assert calls == [["my-dpkg", "--arch"]]
-
-

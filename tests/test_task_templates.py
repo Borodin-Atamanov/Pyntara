@@ -84,8 +84,7 @@ def test_every_named_script_exists_in_its_task_data_directory() -> None:
             if not candidate.is_file():
                 missing.append(f"{key} = {value!r}")
     assert not missing, (
-        "clients named by the config and missing under "
-        f"task_data/<section>/: {missing}"
+        f"clients named by the config and missing under task_data/<section>/: {missing}"
     )
 
 

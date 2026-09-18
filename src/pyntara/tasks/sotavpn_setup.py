@@ -45,7 +45,7 @@ import time
 from pathlib import Path
 
 from pyntara import xui as xui_client
-from pyntara.config import EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import ThreeXuiXraySetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -58,6 +58,7 @@ from pyntara.utils import (
     user_session_environment,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import sotavpn_setup as values
 
@@ -135,7 +136,7 @@ def _settings_value(settings_path: Path, name: str) -> object | None:
 
     try:
         tree = ast.parse(settings_path.read_text(encoding="utf-8"))
-    except (OSError, SyntaxError):
+    except OSError, SyntaxError:
         return None
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -219,7 +220,6 @@ def _hand_the_work_directory_to_the_user(work_dir: Path) -> None:
 
 
 def _fetch_the_bridge(
-    engine: EngineConfig,
     timeout: float,
     warnings: list[str],
 ) -> tuple[Path, Path] | None:
@@ -234,14 +234,9 @@ def _fetch_the_bridge(
 
     work_dir = Path(tempfile.mkdtemp(prefix=values.ARCHIVE_TEMP_PREFIX))
     _hand_the_work_directory_to_the_user(work_dir)
-    archive = (
-        work_dir
-        / f"{values.ARCHIVE_TEMP_PREFIX}{values.ARCHIVE_TEMP_SUFFIX}"
-    )
+    archive = work_dir / f"{values.ARCHIVE_TEMP_PREFIX}{values.ARCHIVE_TEMP_SUFFIX}"
     try:
-        run_command(
-            download_command(engine, archive, values.ARCHIVE_URL), timeout=timeout
-        )
+        run_command(download_command(archive, values.ARCHIVE_URL), timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         warnings.append(f"the bridge archive was not downloaded: {exc}")
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -276,7 +271,6 @@ def _fetch_the_bridge(
 
 
 def _run_the_installer(
-    engine: EngineConfig,
     installer_path: Path,
     timeout: float,
 ) -> tuple[bool, str]:
@@ -286,8 +280,8 @@ def _run_the_installer(
     directory, the interpreter of the managed system and the path of the
     extracted installer filled in. The installer is started through the
     configured user wrapper, so the user-mode installation and its user
-    service belong to the desktop account; the session environment the
-    engine reads for that account goes into the environment of the call,
+    service belong to the desktop account; the session environment the run
+    reads for that account goes into the environment of the call,
     so the user manager is reachable from a run that has no session of its
     own.
     """
@@ -295,7 +289,7 @@ def _run_the_installer(
     placeholders = {
         "username": common_values.DESKTOP_USERNAME,
         "home_dir": common_values.DESKTOP_HOME_DIR,
-        "python": engine.system_python,
+        "python": engine_values.SYSTEM_PYTHON,
         "installer_path": str(installer_path),
     }
     command = [
@@ -304,8 +298,8 @@ def _run_the_installer(
     ]
     environment = user_session_environment(
         common_values.DESKTOP_USERNAME,
-        command_template=engine.session_environment_command,
-        keys=engine.session_environment_keys,
+        command_template=engine_values.SESSION_ENVIRONMENT_COMMAND,
+        keys=engine_values.SESSION_ENVIRONMENT_KEYS,
         timeout=timeout,
     )
     try:
@@ -316,7 +310,6 @@ def _run_the_installer(
 
 
 def _wait_for_the_bridge(
-    engine: EngineConfig,
     *,
     port: int,
     timeout: float,
@@ -333,7 +326,7 @@ def _wait_for_the_bridge(
     started = time.monotonic()
     while True:
         if _service_is_active(timeout) and (
-            port_listener_pid(engine, port, timeout) is not None
+            port_listener_pid(port, timeout) is not None
         ):
             _log(f"the bridge service is active and port {port} has a listener")
             return True
@@ -374,9 +367,7 @@ def _subscription_payload(
         ),
         fields["subscription_enabled"]: values.SUBSCRIPTION_ENABLED,
         fields["subscription_allow_private"]: values.SUBSCRIPTION_ALLOW_PRIVATE,
-        fields["subscription_allow_insecure"]: (
-            values.SUBSCRIPTION_ALLOW_INSECURE
-        ),
+        fields["subscription_allow_insecure"]: (values.SUBSCRIPTION_ALLOW_INSECURE),
         fields["subscription_prepend"]: values.SUBSCRIPTION_PREPEND,
     }
 
@@ -393,7 +384,6 @@ def _subscription_matches(
     """
 
     return all(existing.get(name) == value for name, value in payload.items())
-
 
 
 def _wait_for_the_nodes(
@@ -516,9 +506,9 @@ def task(ctx: Context) -> TaskResult:
     bridge again.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -533,8 +523,7 @@ def task(ctx: Context) -> TaskResult:
     # The panel vocabulary belongs to another section, which is not migrated yet:
     # this task reads it from the config document until that section's own turn.
     sub_cfg = ctx.config.three_x_ui_xray_setup
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
 
     key = _read_access_key(ctx)
@@ -552,7 +541,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     settings_path = _installed_settings_path()
 
-    fetched = _fetch_the_bridge(engine, timeout, warnings)
+    fetched = _fetch_the_bridge(timeout, warnings)
     if fetched is not None:
         work_dir, root = fetched
         try:
@@ -565,7 +554,7 @@ def task(ctx: Context) -> TaskResult:
                 f"{common_values.DESKTOP_USERNAME}"
             )
             installed, message = _run_the_installer(
-                engine, root / values.INSTALLER_FILE_NAME, timeout
+                root / values.INSTALLER_FILE_NAME, timeout
             )
             _log(message)
             if installed:
@@ -582,10 +571,8 @@ def task(ctx: Context) -> TaskResult:
             f"{values.SETTINGS_HTTP_PORT_KEY}: the panel has no address to "
             "subscribe to"
         )
-        return TaskResult(
-            success=True, changed=changed, warnings=tuple(warnings)
-        )
-    if not _wait_for_the_bridge(engine, port=port, timeout=timeout):
+        return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
+    if not _wait_for_the_bridge(port=port, timeout=timeout):
         warnings.append(
             f"the bridge did not answer with an active service on port {port} "
             f"within {values.BRIDGE_READY_WAIT_SECONDS} s"
@@ -595,23 +582,16 @@ def task(ctx: Context) -> TaskResult:
         env = xui_client.panel_environment(sub_cfg, timeout)
     except (FileNotFoundError, RuntimeError) as exc:
         warnings.append(f"the Sota subscription was not configured: {exc}")
-        return TaskResult(
-            success=True, changed=changed, warnings=tuple(warnings)
-        )
+        return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
 
     payload = _subscription_payload(sub_cfg, port=port, key=key)
     existing = xui_client.find_outbound_subscription_by_remark(
         sub_cfg, env, values.SUBSCRIPTION_REMARK, timeout
     )
     fields = sub_cfg.panel_field_keys
-    if (
-        existing is not None
-        and _subscription_matches(existing, payload)
-        and not force
-    ):
+    if existing is not None and _subscription_matches(existing, payload) and not force:
         _log(
-            f"the panel subscription {values.SUBSCRIPTION_REMARK} is configured "
-            "already"
+            f"the panel subscription {values.SUBSCRIPTION_REMARK} is configured already"
         )
     else:
         ok, message = xui_client.upsert_outbound_subscription(
@@ -622,9 +602,7 @@ def task(ctx: Context) -> TaskResult:
                 "the panel subscription was not written: "
                 f"{_without_the_key(message, key)}"
             )
-            return TaskResult(
-                success=True, changed=changed, warnings=tuple(warnings)
-            )
+            return TaskResult(success=True, changed=changed, warnings=tuple(warnings))
         changed = True
         _log(
             f"the panel subscription {values.SUBSCRIPTION_REMARK}: "
@@ -645,10 +623,7 @@ def task(ctx: Context) -> TaskResult:
         ok, message = xui_client.refresh_outbound_subscription(
             sub_cfg, env, subscription_id, timeout
         )
-        _log(
-            "the panel fetched the node list: "
-            f"{_without_the_key(message, key)}"
-        )
+        _log(f"the panel fetched the node list: {_without_the_key(message, key)}")
         if not ok:
             warnings.append(
                 "the panel did not fetch the node list: "

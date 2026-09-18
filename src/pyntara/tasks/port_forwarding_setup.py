@@ -29,7 +29,7 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__, deployment
-from pyntara.config import EngineConfig, PortForwardingSetupConfig
+from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -40,6 +40,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -109,9 +110,7 @@ def _service_is_failed(
     """True when the systemd service is in the failed state."""
 
     result = run_command(
-        substituted_command(
-            command, {"service_unit_name": service_name}
-        ),
+        substituted_command(command, {"service_unit_name": service_name}),
         check=False,
         capture=True,
         timeout=timeout,
@@ -120,7 +119,6 @@ def _service_is_failed(
 
 
 def _started_ok(
-    engine: EngineConfig,
     cfg: PortForwardingSetupConfig,
     service_name: str,
     timeout: float,
@@ -135,11 +133,9 @@ def _started_ok(
     """
 
     for _ in range(cfg.start_check_attempts):
-        if service_is_active(engine, service_name, timeout):
+        if service_is_active(service_name, timeout):
             return True
-        if _service_is_failed(
-            cfg.systemctl_is_failed_command, service_name, timeout
-        ):
+        if _service_is_failed(cfg.systemctl_is_failed_command, service_name, timeout):
             return False
         time.sleep(cfg.start_check_retry_delay_seconds)
     return True
@@ -166,7 +162,7 @@ def task(ctx: Context) -> TaskResult:
     the deployment stays in place.
     """
 
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     pf = ctx.config.port_forwarding_setup
     metrics = ctx.config.system_metrics_setup
@@ -183,8 +179,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         unit: str | None = _render_service_unit(
             pf,
-            task_data_dir(ctx.repo_root, ctx.task_name)
-            / pf.service_template_file_name,
+            task_data_dir(ctx.repo_root, ctx.task_name) / pf.service_template_file_name,
             venv_python,
             pf.service_module_name,
             system_config_path,
@@ -197,12 +192,12 @@ def task(ctx: Context) -> TaskResult:
         # installed on the machine.
         warnings.append(f"cannot read the service template: {exc}")
         unit = None
-    unit_dir = ctx.config.engine.systemd_unit_dir
+    unit_dir = engine_values.SYSTEMD_UNIT_DIR
     unit_ok = unit is not None and _unit_matches(unit_dir, service_name, unit)
     _log(f"checking unit {service_name}: {'ok' if unit_ok else 'missing or stale'}")
-    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
+    enabled = service_is_enabled(service_name, timeout)
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
-    active = service_is_active(ctx.config.engine, service_name, timeout)
+    active = service_is_active(service_name, timeout)
     _log(f"checking activity {service_name}: {'active' if active else 'inactive'}")
 
     if not force and unit_ok and enabled and active:
@@ -239,9 +234,7 @@ def task(ctx: Context) -> TaskResult:
         if unit_written:
             try:
                 run_command(
-                    substituted_command(
-                        pf.systemctl_daemon_reload_command, {}
-                    ),
+                    substituted_command(pf.systemctl_daemon_reload_command, {}),
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -275,7 +268,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(f"cannot start {service_name}: {exc}")
     else:
         _log(f"service {service_name} started")
-        if not _started_ok(ctx.config.engine, pf, service_name, timeout):
+        if not _started_ok(pf, service_name, timeout):
             warnings.append(
                 f"service {service_name} entered the failed state after start"
             )

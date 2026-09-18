@@ -25,6 +25,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import install_packages, package_is_installed, task_data_dir
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import imagemagick_setup as imagemagick_values
 from pyntara.values import missing_value_names
 
@@ -88,12 +89,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message="the imagemagick values are not declared, nothing was changed",
-            warnings=(
-                "the imagemagick values are not declared: " + ", ".join(absent),
-            ),
+            warnings=("the imagemagick values are not declared: " + ", ".join(absent),),
         )
-    engine = ctx.config.engine
-    install_timeout = engine.command_timeout_seconds
+    install_timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
@@ -101,12 +99,11 @@ def task(ctx: Context) -> TaskResult:
     missing = [
         package
         for package in imagemagick_values.PACKAGES
-        if not package_is_installed(engine, package, status_timeout)
+        if not package_is_installed(package, status_timeout)
     ]
     if missing:
         _log(f"installing: {', '.join(missing)}")
         installed, failures, install_warnings = install_packages(
-            engine,
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,

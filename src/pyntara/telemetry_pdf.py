@@ -31,23 +31,24 @@ from reportlab.pdfgen import canvas
 import pyntara.metrics
 from pyntara.config import Config, TelemetryPdfConfig
 from pyntara.logger import log_progress as _log
+from pyntara.values import engine as engine_values
 
 
 def _ssh_commands(cfg: Config, report: dict[str, object]) -> list[str]:
     """Every working ssh command of the report, in order.
 
-    A record carries the command under the name the engine config maps
-    from the meaning ssh (report_record_keys). A module may print one
-    record as an object or many as an array, so both shapes are read. A
-    record whose scope is host (the loopback) or link (a link-local
+    A record carries the command under the name the declared report
+    vocabulary maps from the meaning ssh (REPORT_RECORD_KEYS). A module may
+    print one record as an object or many as an array, so both shapes are
+    read. A record whose scope is host (the loopback) or link (a link-local
     address) can never connect and is skipped; the words come from the
-    engine config, like every other vocabulary of the report.
+    declared values, like every other vocabulary of the report.
     """
 
-    ssh_key = cfg.engine.report_record_keys["ssh"]
-    scope_key = cfg.engine.report_record_keys["scope"]
-    host_scope = cfg.engine.host_scope_name
-    link_scope = cfg.engine.link_scope_name
+    ssh_key = engine_values.REPORT_RECORD_KEYS["ssh"]
+    scope_key = engine_values.REPORT_RECORD_KEYS["scope"]
+    host_scope = engine_values.HOST_SCOPE_NAME
+    link_scope = engine_values.LINK_SCOPE_NAME
     keys = cfg.system_metrics_setup.collector.report_keys
     commands: list[str] = []
     seen: set[str] = set()

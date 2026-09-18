@@ -83,12 +83,12 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             '_README_TITLE_PREFIX = "# Pyntara "',
             # The line prefix the version tool rewrites in inst.sh, the same
             # kind of exception as the README title prefix above.
-            '_INSTALLER_VERSION_PREFIX = \'PYNTARA_VERSION="\'',
+            "_INSTALLER_VERSION_PREFIX = 'PYNTARA_VERSION=\"'",
         }
     ),
     "src/pyntara/augeas.py": frozenset(
         {
-            'AUGTOOL_VALUE_RE = re.compile(r\'^(?P<node>.+) = "(?P<value>.*)"$\')',
+            "AUGTOOL_VALUE_RE = re.compile(r'^(?P<node>.+) = \"(?P<value>.*)\"$')",
         }
     ),
     "src/pyntara/i2pd.py": frozenset(
@@ -102,7 +102,9 @@ VALUE_CONSTANTS_ALLOWED: dict[str, frozenset[str]] = {
             'FALLBACK_NOTE = "address read from the saved file, the keys file is missing or broken"',
         }
     ),
-    "src/pyntara/nextdns.py": frozenset({'PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")'}),
+    "src/pyntara/nextdns.py": frozenset(
+        {'PROFILE_ID_RE = re.compile(r"^[0-9a-f]{6}$")'}
+    ),
     "src/pyntara/port_forwarding.py": frozenset(
         {
             'FAILED_RE = re.compile(r"remote port forwarding failed for listen port")',
@@ -359,9 +361,7 @@ def test_the_guard_refuses_a_new_value_and_a_stale_entry() -> None:
     # and an entry whose value left the code fails as well, so the
     # allowlists can only shrink towards the empty state.
     with pytest.raises(AssertionError):
-        _assert_matches_allowlist(
-            "constant", {"module.py": frozenset({"NEW = 1"})}, {}
-        )
+        _assert_matches_allowlist("constant", {"module.py": frozenset({"NEW = 1"})}, {})
     with pytest.raises(AssertionError):
         _assert_matches_allowlist(
             "constant", {}, {"module.py": frozenset({"GONE = 1"})}
@@ -399,12 +399,8 @@ def test_every_rule_finds_its_shape_in_a_module(
         ")\n",
         encoding="utf-8",
     )
-    second.write_text(
-        "COPY_PATTERN = re.compile(r'[0-9a-f]{6}')\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(
-        "test_config_value_guard.PACKAGE_ROOT", package
-    )
+    second.write_text("COPY_PATTERN = re.compile(r'[0-9a-f]{6}')\n", encoding="utf-8")
+    monkeypatch.setattr("test_config_value_guard.PACKAGE_ROOT", package)
     monkeypatch.setattr(
         "test_config_value_guard.VALUE_DIRECTORIES", (package / "config",)
     )
@@ -414,7 +410,7 @@ def test_every_rule_finds_its_shape_in_a_module(
             "THRESHOLD_SECONDS = 30",
             "_PRIVATE_THRESHOLD_SECONDS = 30",
             "PROFILE_ID_PATTERN = re.compile(r'[0-9a-f]{6}')",
-            "STATE_FILE_PATH = Path(\"/var/lib/pyntara/state\")",
+            'STATE_FILE_PATH = Path("/var/lib/pyntara/state")',
             "MEMORY_FILE_PATH = Path('/proc/meminfo')",
         }
     )

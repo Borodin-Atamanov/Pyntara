@@ -3,8 +3,8 @@
 run_command is the single command-execution wrapper used by tasks: no
 shell, real-time output streaming, timeout and return-code checking
 (project rules, General engineering requirements). The timeout is a required
-parameter: the value comes from config.toml through Context, never from a
-hardcoded default (architecture contract, Configuration).
+parameter and the caller passes the value of its task, so a helper never
+counts on a hardcoded default (architecture contract, Configuration).
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import Path
 
 from pyntara import logger
-from pyntara.config.engine import EngineConfig
+from pyntara.values import engine as engine_values
 
 
 def task_data_dir(repo_root: Path, section: str) -> Path:
@@ -32,41 +32,37 @@ def task_data_dir(repo_root: Path, section: str) -> Path:
     return repo_root / "task_data" / section
 
 
-def package_is_installed(
-    engine: EngineConfig, package: str, timeout: float
-) -> bool:
+def package_is_installed(package: str, timeout: float) -> bool:
     """True when dpkg considers the package fully installed.
 
     The status query distinguishes "install ok installed" from leftovers
     like "deinstall ok config-files", so an uninstalled package is never
-    treated as installed. The timeout comes from config.toml and the query
-    from the engine table, so no task spells the flags of dpkg-query.
+    treated as installed. The timeout comes from the caller and the query
+    from the values package, so no task spells the flags of dpkg-query.
     """
 
     query = substituted_command(
-        engine.package_status_query_command, {"package": package}
+        engine_values.PACKAGE_STATUS_QUERY_COMMAND, {"package": package}
     )
     result = run_command(query, check=False, capture=True, timeout=timeout)
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
-def install_package_once(
-    engine: EngineConfig, package: str, timeout: float
-) -> tuple[bool, str]:
+def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
     """Install one package; return (success, error_text).
 
-    apt runs noninteractive through the environment of the engine table so
-    it never asks questions, and the argv of the install comes from the same
-    table. Any nonzero exit or timeout is a failure with the exception text;
-    the caller decides whether to retry.
+    apt runs noninteractive through the declared environment so it never asks
+    questions, and the argv of the install comes from the values package. Any
+    nonzero exit or timeout is a failure with the exception text; the caller
+    decides whether to retry.
     """
 
     try:
         run_command(
             substituted_command(
-                engine.apt_install_command, {"package": package}
+                engine_values.APT_INSTALL_COMMAND, {"package": package}
             ),
-            extra_env=dict(engine.apt_noninteractive_environment),
+            extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
             timeout=timeout,
         )
         return True, ""
@@ -74,7 +70,7 @@ def install_package_once(
         return False, str(exc)
 
 
-def refresh_apt_index(engine: EngineConfig, timeout: float) -> None:
+def refresh_apt_index(timeout: float) -> None:
     """Refresh the apt package index.
 
     One place runs the refresh, so the tasks that need a fresh index before
@@ -84,14 +80,13 @@ def refresh_apt_index(engine: EngineConfig, timeout: float) -> None:
     """
 
     run_command(
-        list(engine.apt_update_command),
-        extra_env=dict(engine.apt_noninteractive_environment),
+        list(engine_values.APT_UPDATE_COMMAND),
+        extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
         timeout=timeout,
     )
 
 
 def install_packages(
-    engine: EngineConfig,
     packages: list[str],
     *,
     install_timeout: float,
@@ -114,14 +109,14 @@ def install_packages(
     warnings: list[str] = []
     if not skip_update:
         try:
-            refresh_apt_index(engine, update_timeout)
+            refresh_apt_index(update_timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"apt index refresh: {exc}")
     for package in packages:
         ok = False
         error = ""
         for _ in range(retries + 1):
-            ok, error = install_package_once(engine, package, install_timeout)
+            ok, error = install_package_once(package, install_timeout)
             if ok:
                 break
         if ok:
@@ -157,38 +152,37 @@ def read_os_release(path: Path) -> dict[str, str]:
     return result
 
 
-def os_family_is_debian(engine: EngineConfig, os_release: dict[str, str]) -> bool:
+def os_family_is_debian(os_release: dict[str, str]) -> bool:
     """True when the os-release family fields name a Debian-based system.
 
     Debian-based distributions declare ID=debian or ID=ubuntu, and
     derivatives declare ID_LIKE=debian. The checked fields come from
-    engine.os_release_family_keys, so the check is not tied to one
+    engine_values.OS_RELEASE_FAMILY_KEYS, so the check is not tied to one
     spelling of the file, and the accepted values come from
-    engine.os_release_debian_family_names. Every field is split into
+    engine_values.OS_RELEASE_DEBIAN_FAMILY_NAMES. Every field is split into
     words before the comparison, so a derivative of a derivative such as
     ID_LIKE="ubuntu debian" still resolves to the Debian family.
     """
 
     words: set[str] = set()
-    for key in engine.os_release_family_keys:
+    for key in engine_values.OS_RELEASE_FAMILY_KEYS:
         words.update(word.casefold() for word in os_release.get(key, "").split())
     return bool(
-        words & {
-            name.casefold() for name in engine.os_release_debian_family_names
-        }
+        words
+        & {name.casefold() for name in engine_values.OS_RELEASE_DEBIAN_FAMILY_NAMES}
     )
 
 
-def dpkg_architecture(engine: EngineConfig, timeout: float) -> str:
+def dpkg_architecture(timeout: float) -> str:
     """The dpkg architecture of the target machine, e.g. amd64.
 
-    The configured architecture query is the single source of the Debian
+    The declared architecture query is the single source of the Debian
     architecture name used by package asset names. Raises
     CalledProcessError or TimeoutExpired when the query fails.
     """
 
     result = run_command(
-        list(engine.dpkg_architecture_command),
+        list(engine_values.DPKG_ARCHITECTURE_COMMAND),
         check=True,
         capture=True,
         timeout=timeout,
@@ -196,15 +190,13 @@ def dpkg_architecture(engine: EngineConfig, timeout: float) -> str:
     return result.stdout.strip()
 
 
-def release_asset_architecture(
-    architectures: dict[str, str], dpkg_arch: str
-) -> str:
+def release_asset_architecture(architectures: dict[str, str], dpkg_arch: str) -> str:
     """The release asset spelling of a dpkg architecture.
 
-    The mapping comes from the engine config and names the upstream
-    spelling of the architectures whose assets differ from the Debian
-    name; an architecture the mapping does not name keeps the dpkg
-    spelling, so an unknown target is never turned into a wrong asset name.
+    The mapping comes from the caller and names the upstream spelling of the
+    architectures whose assets differ from the Debian name; an architecture
+    the mapping does not name keeps the dpkg spelling, so an unknown target
+    is never turned into a wrong asset name.
     """
 
     return architectures.get(dpkg_arch, dpkg_arch)
@@ -275,8 +267,8 @@ def curl_flags(
     --retry-max-time bounds the total retry window and
     --retry-connrefused adds refused connections to the retryable set.
     The flags are the single definition for all task curl calls, so the
-    values come from the [engine] config and never diverge (architecture
-    contract, Configuration).
+    values come from one place and never diverge (architecture contract,
+    Configuration).
     """
 
     return [
@@ -298,12 +290,11 @@ def curl_flags(
 # One-line summary curl prints after a completed download: the actual byte
 # count, total time and average speed. The leading newline separates it
 # from the progress meter, which ends without one. The download template
-# of the [engine] table carries this format, and the release query curl
-# stays silent, because its stdout is parsed as JSON.
+# carries this format, and the release query curl stays silent, because its
+# stdout is parsed as JSON.
 
 
 def curl_command(
-    engine: EngineConfig,
     template: Sequence[str],
     url: str,
     *,
@@ -314,10 +305,10 @@ def curl_command(
 
     The template carries the arguments that describe the call itself, and
     its placeholders are replaced from substitutions. The retry and
-    timeout flags of the engine curl settings follow the template, and the
-    URL is the last argument, because curl reads its options before the
-    URL. One definition covers every curl call of every task, so the flags
-    can never diverge between them (architecture contract, Configuration).
+    timeout flags declared for curl follow the template, and the URL is the
+    last argument, because curl reads its options before the URL. One
+    definition covers every curl call of every task, so the flags can never
+    diverge between them (architecture contract, Configuration).
     """
 
     body = (
@@ -329,50 +320,46 @@ def curl_command(
         *body,
         *curl_flags(
             timeout_seconds,
-            engine.curl_retries,
-            engine.curl_connect_timeout_seconds,
-            engine.curl_retry_max_time_seconds,
-            engine.curl_retry_delay_seconds,
+            engine_values.CURL_RETRIES,
+            engine_values.CURL_CONNECT_TIMEOUT_SECONDS,
+            engine_values.CURL_RETRY_MAX_TIME_SECONDS,
+            engine_values.CURL_RETRY_DELAY_SECONDS,
         ),
         url,
     ]
 
 
-def download_command(
-    engine: EngineConfig, output_path: Path, url: str
-) -> list[str]:
+def download_command(output_path: Path, url: str) -> list[str]:
     """The curl call that downloads one URL into one file.
 
-    The command comes from the engine-wide curl_download_command template
-    with {output_path} replaced and the engine-wide download timeout, so
-    every task that fetches a release asset downloads it the same way.
+    The command comes from the declared CURL_DOWNLOAD_COMMAND template with
+    {output_path} replaced and the declared download timeout, so every task
+    that fetches a release asset downloads it the same way.
     """
 
     return curl_command(
-        engine,
-        engine.curl_download_command,
+        engine_values.CURL_DOWNLOAD_COMMAND,
         url,
-        timeout_seconds=engine.curl_download_timeout_seconds,
+        timeout_seconds=engine_values.CURL_DOWNLOAD_TIMEOUT_SECONDS,
         substitutions={
             "output_path": str(output_path),
-            "write_out": engine.curl_download_write_out,
+            "write_out": engine_values.CURL_DOWNLOAD_WRITE_OUT,
         },
     )
 
 
-def release_query_command(engine: EngineConfig, url: str) -> list[str]:
+def release_query_command(url: str) -> list[str]:
     """The curl call that fetches one metadata answer as text.
 
-    The command comes from the engine-wide curl_query_command template and
-    the engine-wide metadata timeout, so the release query of every task
-    that resolves a version is the same call.
+    The command comes from the declared CURL_QUERY_COMMAND template and the
+    declared metadata timeout, so the release query of every task that
+    resolves a version is the same call.
     """
 
     return curl_command(
-        engine,
-        engine.curl_query_command,
+        engine_values.CURL_QUERY_COMMAND,
         url,
-        timeout_seconds=engine.curl_timeout_seconds,
+        timeout_seconds=engine_values.CURL_TIMEOUT_SECONDS,
     )
 
 
@@ -443,24 +430,20 @@ def run_command(
             logger.log_run_end(command_text, None, time.perf_counter() - start)
         raise
     if log_command:
-        logger.log_run_end(
-            command_text, result.returncode, time.perf_counter() - start
-        )
+        logger.log_run_end(command_text, result.returncode, time.perf_counter() - start)
     return result
 
 
 # The marker curl writes after every parallel transfer, so a merged
-# answer text can be split back into one block per service, is the
-# configured engine.curl_parallel_source_marker; the write-out text of
-# the query prints it, and a check keeps the two values in step.
+# answer text can be split back into one block per service, is
+# engine_values.CURL_PARALLEL_SOURCE_MARKER; the write-out text of the
+# query prints it, and a check keeps the two values in step.
 
 
-def _parallel_curl_command(
-    engine: EngineConfig, urls: tuple[str, ...], timeout_seconds: float
-) -> list[str]:
+def _parallel_curl_command(urls: tuple[str, ...], timeout_seconds: float) -> list[str]:
     """The one curl call that queries every URL at the same time.
 
-    The command is the configured curl_parallel_command: --parallel runs
+    The command is engine_values.CURL_PARALLEL_COMMAND: --parallel runs
     the transfers together and --parallel-max keeps them all in flight,
     and the write-out text adds a marker line with the effective URL after
     each answer, so every answer can be attributed to the service that
@@ -470,31 +453,29 @@ def _parallel_curl_command(
     """
 
     return substituted_command(
-        engine.curl_parallel_command,
+        engine_values.CURL_PARALLEL_COMMAND,
         {
             "parallel_max": str(len(urls)),
             "timeout_seconds": str(timeout_seconds),
-            "write_out": engine.curl_parallel_write_out,
+            "write_out": engine_values.CURL_PARALLEL_WRITE_OUT,
         },
     ) + list(urls)
 
 
-def split_url_answers(
-    engine: EngineConfig, text: str
-) -> tuple[tuple[str, str], ...]:
+def split_url_answers(text: str) -> tuple[tuple[str, str], ...]:
     """Split marked curl output into (service URL, answer) pairs.
 
     curl writes the marker of a transfer after that transfer finished and
     after its answer, so the lines collected before a marker are the
-    answer of the service that marker names. The marker is the configured
-    curl_parallel_source_marker, the same token the write-out text of the
-    query prints. The order follows the completion of the transfers, not
-    the order of the URL list, and a transfer that answered nothing still
-    carries its marker, so an empty answer is told apart from a service
-    that was never asked.
+    answer of the service that marker names. The marker is
+    engine_values.CURL_PARALLEL_SOURCE_MARKER, the same token the write-out
+    text of the query prints. The order follows the completion of the
+    transfers, not the order of the URL list, and a transfer that answered
+    nothing still carries its marker, so an empty answer is told apart from
+    a service that was never asked.
     """
 
-    source_marker = engine.curl_parallel_source_marker
+    source_marker = engine_values.CURL_PARALLEL_SOURCE_MARKER
     answers: list[tuple[str, str]] = []
     pending: list[str] = []
     for line in text.splitlines():
@@ -508,7 +489,6 @@ def split_url_answers(
 
 
 def fetch_urls_in_parallel(
-    engine: EngineConfig,
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
@@ -539,7 +519,7 @@ def fetch_urls_in_parallel(
         return ""
     try:
         process = subprocess.Popen(
-            _parallel_curl_command(engine, urls, query_timeout_seconds),
+            _parallel_curl_command(urls, query_timeout_seconds),
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
@@ -555,7 +535,6 @@ def fetch_urls_in_parallel(
 
 
 def fetch_urls_by_source(
-    engine: EngineConfig,
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
@@ -568,72 +547,64 @@ def fetch_urls_by_source(
     """
 
     return split_url_answers(
-        engine,
-        fetch_urls_in_parallel(
-            engine, urls, query_timeout_seconds, command_timeout_seconds
-        ),
+        fetch_urls_in_parallel(urls, query_timeout_seconds, command_timeout_seconds),
     )
 
 
-def service_is_enabled(engine: EngineConfig, name: str, timeout: float) -> bool:
+def service_is_enabled(name: str, timeout: float) -> bool:
     """True when the systemd service is enabled for boot.
 
     systemctl is-enabled reports the boot state; the states that count as
-    enabled come from the engine table, so a unit enabled only for the
-    current boot (for example by a systemd generator) is honoured like a
-    persistent one, and every other output (disabled, masked, not-found)
-    is False. The query itself is a config value as well.
+    enabled are declared values, so a unit enabled only for the current boot
+    (for example by a systemd generator) is honoured like a persistent one,
+    and every other output (disabled, masked, not-found) is False. The query
+    itself is a declared value as well.
     """
 
     result = run_command(
-        substituted_command(
-            engine.systemctl_is_enabled_command, {"unit": name}
-        ),
+        substituted_command(engine_values.SYSTEMCTL_IS_ENABLED_COMMAND, {"unit": name}),
         check=False,
         capture=True,
         timeout=timeout,
     )
     return (
         result.returncode == 0
-        and result.stdout.strip() in engine.systemd_enabled_states
+        and result.stdout.strip() in engine_values.SYSTEMD_ENABLED_STATES
     )
 
 
-def service_is_active(engine: EngineConfig, name: str, timeout: float) -> bool:
+def service_is_active(name: str, timeout: float) -> bool:
     """True when the systemd service is currently running.
 
-    systemctl is-active reports the runtime state; the state that means
-    the service runs comes from the engine table, every other output
-    (inactive, failed, activating) is False. The query itself is a config
-    value as well.
+    systemctl is-active reports the runtime state; the state that means the
+    service runs is a declared value, every other output (inactive, failed,
+    activating) is False. The query itself is a declared value as well.
     """
 
     result = run_command(
-        substituted_command(
-            engine.systemctl_is_active_command, {"unit": name}
-        ),
+        substituted_command(engine_values.SYSTEMCTL_IS_ACTIVE_COMMAND, {"unit": name}),
         check=False,
         capture=True,
         timeout=timeout,
     )
     return (
         result.returncode == 0
-        and result.stdout.strip() == engine.systemd_active_state
+        and result.stdout.strip() == engine_values.SYSTEMD_ACTIVE_STATE
     )
 
 
-def port_listener_pid(engine: EngineConfig, port: int, timeout: float) -> int | None:
+def port_listener_pid(port: int, timeout: float) -> int | None:
     """The PID of the process listening on the TCP port, or None.
 
-    The query is a config value, so the argv of ss lives in the engine
-    table; the first pid=N token of the process column is parsed. None
+    The query is a declared value, so the argv of ss lives in the values
+    package; the first pid=N token of the process column is parsed. None
     when the port is free, when ss is unavailable, or when the query
     fails: an unknown listener is reported as absent so the caller can
     proceed safely.
     """
 
     result = run_command(
-        substituted_command(engine.socket_listener_command, {"port": str(port)}),
+        substituted_command(engine_values.SOCKET_LISTENER_COMMAND, {"port": str(port)}),
         check=False,
         capture=True,
         timeout=timeout,
@@ -647,19 +618,17 @@ def port_listener_pid(engine: EngineConfig, port: int, timeout: float) -> int | 
     return None
 
 
-def service_main_pid(
-    engine: EngineConfig, service_name: str, timeout: float
-) -> int | None:
+def service_main_pid(service_name: str, timeout: float) -> int | None:
     """The systemd MainPID of the service, or None when not running.
 
-    The query is a config value. The command prints 0 when the unit has no
+    The query is a declared value. The command prints 0 when the unit has no
     running main process; that is normalized to None, so a stopped service
     never matches a live listener.
     """
 
     result = run_command(
         substituted_command(
-            engine.systemctl_main_pid_command, {"unit": service_name}
+            engine_values.SYSTEMCTL_MAIN_PID_COMMAND, {"unit": service_name}
         ),
         check=False,
         capture=True,
@@ -690,7 +659,6 @@ def process_comm(pid: int) -> str | None:
 
 
 def ensure_port_free(
-    engine: EngineConfig,
     port: int,
     service_unit_name: str,
     timeout: float,
@@ -700,30 +668,30 @@ def ensure_port_free(
     """Free the TCP port for a new listener; returns the action taken.
 
     Detects the process listening on the port. When the listener is the
-    given systemd service (MainPID match) or carries the configured
-    process name, the service is stopped with systemctl. Any other
-    listener is an unknown process and is terminated with SIGTERM, then
-    SIGKILL after the configured port_kill_grace_seconds if it still
-    holds the port, the port being looked up again every
-    port_kill_poll_seconds. Returns
+    given systemd service (MainPID match) or carries the configured process
+    name, the service is stopped with systemctl. Any other listener is an
+    unknown process and is terminated with SIGTERM, then SIGKILL after
+    PORT_KILL_GRACE_SECONDS if it still holds the port, the port being
+    looked up again every PORT_KILL_POLL_SECONDS. Returns
     None when the port is already free, a short message otherwise.
     Raises RuntimeError when the port is still occupied after the action.
     """
 
-    pid = port_listener_pid(engine, port, timeout)
+    pid = port_listener_pid(port, timeout)
     if pid is None:
         return None
-    is_ours = pid == service_main_pid(engine, service_unit_name, timeout)
+    is_ours = pid == service_main_pid(service_unit_name, timeout)
     if not is_ours and service_process_name:
         is_ours = process_comm(pid) == service_process_name
     if is_ours:
         run_command(
             substituted_command(
-                engine.systemctl_stop_command, {"unit": service_unit_name}
+                engine_values.SYSTEMCTL_STOP_COMMAND,
+                {"unit": service_unit_name},
             ),
             timeout=timeout,
         )
-        if port_listener_pid(engine, port, timeout) is None:
+        if port_listener_pid(port, timeout) is None:
             return f"stopped {service_unit_name} listening on port {port}"
         # systemctl did not free the port: the listener is not the managed
         # service (for example a manually started binary), fall through to
@@ -733,25 +701,21 @@ def ensure_port_free(
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
         return None
-    deadline = time.monotonic() + engine.port_kill_grace_seconds
+    deadline = time.monotonic() + engine_values.PORT_KILL_GRACE_SECONDS
     while time.monotonic() < deadline:
-        if port_listener_pid(engine, port, timeout) is None:
+        if port_listener_pid(port, timeout) is None:
             return f"terminated unknown process {pid} on port {port}"
-        time.sleep(engine.port_kill_poll_seconds)
+        time.sleep(engine_values.PORT_KILL_POLL_SECONDS)
     try:
         os.kill(pid, signal.SIGKILL)
     except ProcessLookupError:
         return None
-    if port_listener_pid(engine, port, timeout) is not None:
-        raise RuntimeError(
-            f"process {pid} still listens on port {port} after SIGKILL"
-        )
+    if port_listener_pid(port, timeout) is not None:
+        raise RuntimeError(f"process {pid} still listens on port {port} after SIGKILL")
     return f"killed unknown process {pid} on port {port}"
 
 
-def substituted_command(
-    command: Sequence[str], values: Mapping[str, str]
-) -> list[str]:
+def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> list[str]:
     """The configured command with its {placeholders} filled in.
 
     A command whose arguments are ours to choose lives in the config with
@@ -763,30 +727,29 @@ def substituted_command(
     return [part.format(**values) for part in command]
 
 
-def kglobalaccel_names(engine: EngineConfig) -> dict[str, str]:
+def kglobalaccel_names() -> dict[str, str]:
     """The DBus names of the KGlobalAccel daemon, by placeholder of a client.
 
     The keyboard task and the appearance task talk to that daemon through
     the clients under task_data/, whose bodies receive the names as
     substitutions, and the commands of their sections name the same daemon;
-    the values live in the [engine] table, so both callers build the
-    mapping in one place and no name of the desktop interface stands in
-    code.
+    the names are declared values, so both callers build the mapping in one
+    place and no name of the desktop interface stands in code.
     """
 
     return {
-        "kglobalaccel_bus_name": engine.kglobalaccel_bus_name,
-        "kglobalaccel_object_path": engine.kglobalaccel_object_path,
-        "kglobalaccel_interface_name": engine.kglobalaccel_interface_name,
+        "kglobalaccel_bus_name": engine_values.KGLOBALACCEL_BUS_NAME,
+        "kglobalaccel_object_path": engine_values.KGLOBALACCEL_OBJECT_PATH,
+        "kglobalaccel_interface_name": (engine_values.KGLOBALACCEL_INTERFACE_NAME),
     }
 
 
 def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
     """Set the given file owner when the process runs as root.
 
-    The pair comes from the caller: the [engine] table carries the owner of
-    a file the run creates as root (root_owner_uid and root_owner_gid), and
-    ssh_daemon_setup and tor_setup pass the uid and the gid of a user. The
+    The pair comes from the caller: ROOT_OWNER_UID and ROOT_OWNER_GID name
+    the owner of a file the run creates as root, and ssh_daemon_setup and
+    tor_setup pass the uid and the gid of a user. The
     installer runs under sudo, so the ownership is applied on real
     machines; a non-root test run skips the chown, because it would fail
     without privileges.

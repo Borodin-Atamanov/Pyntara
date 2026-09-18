@@ -21,12 +21,12 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
-from pyntara.config import EngineConfig
 from pyntara.utils import (
     fetch_urls_in_parallel,
     run_command,
     substituted_command,
 )
+from pyntara.values import engine as engine_values
 
 
 @dataclass(frozen=True)
@@ -47,27 +47,27 @@ class PublicAddresses:
         return not self.ipv4 and not self.ipv6
 
 
-def local_addresses(engine: EngineConfig, timeout: float) -> tuple[str, ...]:
+def local_addresses(timeout: float) -> tuple[str, ...]:
     """Every global-scope address of the machine interfaces.
 
-    Parsed from the configured address query; loopback and link-local
+    Parsed from the declared address query; loopback and link-local
     addresses fall outside that scope. The addresses tell whether an
     address reported by an echo service really belongs to this machine (a
     white address) or the machine sits behind NAT. The family names the
-    query prints are the ones the engine maps its families to, so a
-    release that renames them is answered in that mapping.
+    query prints are the ones the declared mapping names, so a release that
+    renames them is answered in that mapping.
     """
 
     try:
         result = run_command(
-            list(engine.local_addresses_command),
+            list(engine_values.LOCAL_ADDRESSES_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return ()
-    family_names = set(engine.iproute2_address_family_names.values())
+    family_names = set(engine_values.IPROUTE2_ADDRESS_FAMILY_NAMES.values())
     addresses: list[str] = []
     for line in result.stdout.splitlines():
         fields = line.split()
@@ -80,34 +80,33 @@ def local_addresses(engine: EngineConfig, timeout: float) -> tuple[str, ...]:
     return tuple(addresses)
 
 
-def directly_connected_networks(
-    engine: EngineConfig, timeout: float
-) -> tuple[str, ...]:
+def directly_connected_networks(timeout: float) -> tuple[str, ...]:
     """Every subnet the kernel reports as directly connected, in order.
 
     Parsed from the kernel routes of both address families through the
-    configured route query, whose {family} placeholder takes the family
-    flag, built from the family named by the engine mapping of the command
-    line flag. These are the machine's own networks: a local network, a bridge
-    and the yggdrasil overlay all appear here, so a routing policy can
-    send them to the direct outbound whatever range they use. The subnets
-    are read from the kernel instead of being configured, so a machine
-    with an unusual local range is still handled correctly.
+    declared route query, whose {family} placeholder takes the family
+    flag, built from the family named by the declared mapping of the
+    command line flag. These are the machine's own networks: a local
+    network, a bridge and the yggdrasil overlay all appear here, so a
+    routing policy can send them to the direct outbound whatever range
+    they use. The subnets are read from the kernel instead of being
+    declared, so a machine with an unusual local range is still handled
+    correctly.
     """
 
     networks: list[str] = []
-    for flag in engine.address_family_by_flag:
+    for flag in engine_values.ADDRESS_FAMILY_BY_FLAG:
         try:
             result = run_command(
                 substituted_command(
-                    engine.directly_connected_networks_command,
+                    engine_values.DIRECTLY_CONNECTED_NETWORKS_COMMAND,
                     {"family": f"-{flag}"},
                 ),
                 check=False,
                 capture=True,
                 timeout=timeout,
             )
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             continue
         for line in result.stdout.splitlines():
             fields = line.split()
@@ -119,9 +118,7 @@ def directly_connected_networks(
     return tuple(networks)
 
 
-def default_route_address(
-    engine: EngineConfig, timeout: float
-) -> str | None:
+def default_route_address(timeout: float) -> str | None:
     """The address the machine uses to reach the internet, or None.
 
     The default route carries the source address of the outgoing
@@ -131,19 +128,18 @@ def default_route_address(
 
     try:
         result = run_command(
-            list(engine.default_route_command),
+            list(engine_values.DEFAULT_ROUTE_COMMAND),
             check=False,
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     for line in result.stdout.splitlines():
         fields = line.split()
         for index, field in enumerate(fields):
-            if (
-                field == engine.default_route_source_key
-                and index + 1 < len(fields)
+            if field == engine_values.DEFAULT_ROUTE_SOURCE_KEY and index + 1 < len(
+                fields
             ):
                 return fields[index + 1]
     return None
@@ -175,7 +171,6 @@ def parse_public_addresses(text: str) -> PublicAddresses:
 
 
 def fetch_public_addresses(
-    engine: EngineConfig,
     services: tuple[str, ...],
     query_timeout_seconds: int,
     command_timeout_seconds: float,
@@ -196,7 +191,5 @@ def fetch_public_addresses(
     if not services:
         return PublicAddresses()
     return parse_public_addresses(
-        fetch_urls_in_parallel(
-            engine, services, query_timeout_seconds, command_timeout_seconds
-        )
+        fetch_urls_in_parallel(services, query_timeout_seconds, command_timeout_seconds)
     )

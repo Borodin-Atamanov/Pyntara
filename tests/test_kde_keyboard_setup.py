@@ -11,17 +11,17 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
 from pyntara.tasks import kde_keyboard_setup as task_module
 from pyntara.utils import kglobalaccel_names, task_data_dir
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import kde_keyboard_setup as values
 
 
@@ -40,6 +40,7 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
     monkeypatch.setattr(values, "CONFIG_DIR", tmp_path / ".config")
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", {})
+
 
 SAMPLE_APPLETSRC = """\
 [Containments][2]
@@ -66,9 +67,7 @@ def _ctx(
 
     config_dir = values.CONFIG_DIR
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / values.APPLETSRC_FILE_NAME).write_text(
-        appletsrc, encoding="utf-8"
-    )
+    (config_dir / values.APPLETSRC_FILE_NAME).write_text(appletsrc, encoding="utf-8")
     return make_context(
         task_name="kde_keyboard_setup",
         install_mode="desktop",
@@ -137,9 +136,7 @@ def _install_fakes(
                         {
                             "action": action,
                             "requested": keys,
-                            "before": list(
-                                (hotkey_state or {}).get(action, [])
-                            ),
+                            "before": list((hotkey_state or {}).get(action, [])),
                             "after": keys,
                             "unsupported": [],
                             "missing": False,
@@ -153,12 +150,10 @@ def _install_fakes(
             return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
-    def fake_installed(_engine: object, package: str, timeout: float) -> bool:
+    def fake_installed(package: str, timeout: float) -> bool:
         return installed
 
-    def fake_install(
-        _engine: object, package: str, timeout: float
-    ) -> tuple[bool, str]:
+    def fake_install(package: str, timeout: float) -> tuple[bool, str]:
         if fail_install:
             return False, "cannot install"
         installs.append(package)
@@ -171,9 +166,9 @@ def _install_fakes(
         task_module,
         "session_bus_address",
         (
-            lambda username, **kwargs: "unix:path=/run/user/1000/bus"
-            if bus_pid
-            else None
+            lambda username, **kwargs: (
+                "unix:path=/run/user/1000/bus" if bus_pid else None
+            )
         ),
     )
     return writes, reloads, restarts, installs, live_applies
@@ -192,13 +187,18 @@ def test_first_run_writes_and_reloads(
     layout_writes = [
         command for command in writes if "--file" in command and "kxkbrc" in command
     ]
-    assert any("LayoutList" in command and "us,ru,es" in command for command in layout_writes)
-    assert any("Options" in command and "grp:caps_select" in command for command in layout_writes)
+    assert any(
+        "LayoutList" in command and "us,ru,es" in command for command in layout_writes
+    )
+    assert any(
+        "Options" in command and "grp:caps_select" in command
+        for command in layout_writes
+    )
     assert any("Use" in command and "true" in command for command in layout_writes)
-    display_writes = [
-        command for command in writes if "appletsrc" in " ".join(command)
-    ]
-    assert any("displayStyle" in command and "Flag" in command for command in display_writes)
+    display_writes = [command for command in writes if "appletsrc" in " ".join(command)]
+    assert any(
+        "displayStyle" in command and "Flag" in command for command in display_writes
+    )
     assert reloads
     assert restarts
     assert installs == []
@@ -249,9 +249,7 @@ def test_skip_when_already_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    writes, reloads, restarts, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False
@@ -276,9 +274,7 @@ def test_force_rewrites_even_when_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    writes, reloads, restarts, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -309,9 +305,7 @@ def test_package_install_failure_is_warning(
     # A failed package install is a warning; without the kwriteconfig6
     # provider the config writes are skipped and the task still completes.
     ctx = _ctx(tmp_path)
-    writes, _, _, _, _ = _install_fakes(
-        monkeypatch, installed=False, fail_install=True
-    )
+    writes, _, _, _, _ = _install_fakes(monkeypatch, installed=False, fail_install=True)
     result = task_module.task(ctx)
     assert result.success is True
     assert any("cannot install" in warning for warning in result.warnings)
@@ -340,9 +334,7 @@ def test_applet_missing_leaves_indicator(
     writes, _, restarts, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
-    display_writes = [
-        command for command in writes if "appletsrc" in " ".join(command)
-    ]
+    display_writes = [command for command in writes if "appletsrc" in " ".join(command)]
     assert display_writes == []
     assert restarts == []
 
@@ -435,9 +427,7 @@ def test_no_session_writes_hotkey_file(
     assert result.changed is True
     assert live_applies == []
     hotkey_writes = [
-        command
-        for command in writes
-        if "kglobalshortcutsrc" in " ".join(command)
+        command for command in writes if "kglobalshortcutsrc" in " ".join(command)
     ]
     assert any(
         SPANISH_ACTION in " ".join(command)
@@ -534,17 +524,17 @@ def test_live_apply_runs_the_script_the_values_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The client text comes from the task data file the values name and
-    # its DBus names come from the engine table, so editing that file or
+    # its DBus names come from the declared values, so editing that file or
     # another bus name changes what runs without touching the code.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    engine = replace(
-        ctx.config.engine,
-        kglobalaccel_bus_name="org.example.KGlobalAccel",
-        kglobalaccel_object_path="/example",
-        kglobalaccel_interface_name="org.example.GlobalAccel",
+    monkeypatch.setattr(
+        engine_values, "KGLOBALACCEL_BUS_NAME", "org.example.KGlobalAccel"
     )
-    ctx = replace(ctx, config=replace(ctx.config, engine=engine))
+    monkeypatch.setattr(engine_values, "KGLOBALACCEL_OBJECT_PATH", "/example")
+    monkeypatch.setattr(
+        engine_values, "KGLOBALACCEL_INTERFACE_NAME", "org.example.GlobalAccel"
+    )
     _, _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
@@ -554,7 +544,7 @@ def test_live_apply_runs_the_script_the_values_name(
     )
     shipped = script_path.read_text(encoding="utf-8")
     rendered = shipped
-    for placeholder, value in kglobalaccel_names(engine).items():
+    for placeholder, value in kglobalaccel_names().items():
         rendered = rendered.replace(f"${placeholder}", value)
     assert rendered in live_applies[0]
     assert shipped not in live_applies[0]
@@ -569,7 +559,7 @@ def test_live_apply_prefix_comes_from_the_values(
     # {python} slot and the client source following as the next argument.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    system_python = ctx.config.engine.system_python
+    system_python = engine_values.SYSTEM_PYTHON
     monkeypatch.setattr(
         values, "PYTHON_SCRIPT_COMMAND", (system_python, "--apply", "{python}")
     )
@@ -593,7 +583,7 @@ def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:
         home_env={},
         bus_env={},
         system_python="/usr/bin/python3",
-        kglobalaccel_names=kglobalaccel_names(make_config().engine),
+        kglobalaccel_names=kglobalaccel_names(),
     )
     assert changed is False
     assert error is not None
@@ -607,14 +597,10 @@ def test_session_hotkey_apply_failure_is_warning(
     # the reload and the panel restart are not skipped.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    _, reloads, restarts, _, _ = _install_fakes(
-        monkeypatch, fail_live_apply=True
-    )
+    _, reloads, restarts, _, _ = _install_fakes(monkeypatch, fail_live_apply=True)
     result = task_module.task(ctx)
     assert result.success is True
-    assert any(
-        "cannot apply layout hotkeys" in warning for warning in result.warnings
-    )
+    assert any("cannot apply layout hotkeys" in warning for warning in result.warnings)
     assert reloads
     assert restarts
 
@@ -648,9 +634,7 @@ def test_unsupported_shortcut_is_written_not_applied_live(
     assert result.success is True
     assert live_applies == []
     hotkey_writes = [
-        command
-        for command in writes
-        if "kglobalshortcutsrc" in " ".join(command)
+        command for command in writes if "kglobalshortcutsrc" in " ".join(command)
     ]
     assert any(SPANISH_ACTION in " ".join(command) for command in hotkey_writes)
 
@@ -660,12 +644,8 @@ def test_user_command_prefix_comes_from_the_values(
 ) -> None:
     # The wrapper that runs a command as the desktop user is a value: another
     # wrapper in the section is the argv the task builds.
-    monkeypatch.setattr(
-        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--")
-    )
-    assert task_module._as_user_command(
-        ["kreadconfig6", "--file", "kxkbrc"]
-    ) == [
+    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--"))
+    assert task_module._as_user_command(["kreadconfig6", "--file", "kxkbrc"]) == [
         "sudo",
         "-u",
         common_values.DESKTOP_USERNAME,
@@ -715,12 +695,8 @@ def test_mkdir_command_comes_from_the_values(
             command = ["mkdir", "-p", command[-1]]
         return real_as_user_command(command)
 
-    monkeypatch.setattr(
-        task_module, "_as_user_command", recording_as_user_command
-    )
-    monkeypatch.setattr(
-        values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}")
-    )
+    monkeypatch.setattr(task_module, "_as_user_command", recording_as_user_command)
+    monkeypatch.setattr(values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
     task_module.task(ctx)

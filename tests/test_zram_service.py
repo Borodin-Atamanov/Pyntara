@@ -24,6 +24,7 @@ from support import make_config, make_context
 from pyntara.context import Context
 from pyntara.tasks import zram_service
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import zram_service as values
 
 UNIT_TEMPLATE = """\
@@ -42,6 +43,20 @@ WantedBy=multi-user.target
 
 # 16 GiB RAM on 2 cores; the total target is 96 percent of RAM.
 RAM_KIB = 16 * 1024 * 1024
+
+
+@pytest.fixture(autouse=True)
+def _point_the_unit_directory_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own systemd unit directory.
+
+    The directory is a declared value of the engine, so the fixture points it
+    at the temporary directory of the test and the shipped value comes back
+    afterwards, so no test writes into /etc/systemd/system.
+    """
+
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
 
 
 def _ctx(
@@ -65,10 +80,7 @@ def _ctx(
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(
-            task_data_root=tmp_path,
-            systemd_unit_dir=tmp_path / "systemd",
-        ),
+        config=make_config(),
     )
 
 
@@ -88,16 +100,15 @@ def test_hot_add_read_interface_uses_the_configured_bit(
 def _target(tmp_path: Path) -> tuple[int, int]:
     """Target (device_count, per_device_bytes) with the shipped values.
 
-    The engine factors still come from the config document, so the helper builds
-    one for them; the section values are read by the task from its module.
+    The byte factor and the percent scale are declared engine values, and the
+    section values are read by the task from its module.
     """
 
-    config = make_config(task_data_root=tmp_path)
     return zram_service._calculate_devices(
         RAM_KIB,
         2,
-        config.engine.bytes_per_kib,
-        config.engine.percent_scale,
+        engine_values.BYTES_PER_KIB,
+        engine_values.PERCENT_SCALE,
     )
 
 
@@ -172,9 +183,7 @@ def _configure_device(sys_block: Path, index: int, size_bytes: int) -> None:
 
     device = sys_block / f"zram{index}"
     device.mkdir(parents=True, exist_ok=True)
-    (device / "comp_algorithm").write_text(
-        "lzo lzo-rle [zstd] zstd", encoding="utf-8"
-    )
+    (device / "comp_algorithm").write_text("lzo lzo-rle [zstd] zstd", encoding="utf-8")
     (device / "disksize").write_text(str(size_bytes), encoding="utf-8")
     (device / "reset").write_text("0", encoding="utf-8")
 
@@ -333,8 +342,7 @@ def _expected_unit(
             lines.append(f"ExecStart=/bin/sh -c 'echo 1 > {hot_add}'")
     for index in range(device_count):
         lines.append(
-            f"ExecStart=/bin/sh -c 'echo zstd > "
-            f"{sys_block}/zram{index}/comp_algorithm'"
+            f"ExecStart=/bin/sh -c 'echo zstd > {sys_block}/zram{index}/comp_algorithm'"
         )
         lines.append(
             f"ExecStart=/bin/sh -c 'echo {per_device_bytes} > "
@@ -345,14 +353,15 @@ def _expected_unit(
     return UNIT_TEMPLATE.replace("$exec_lines", "\n".join(lines))
 
 
-def test_calculate_devices_uses_96_percent_and_core_count() -> None:    # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
+def test_calculate_devices_uses_96_percent_and_core_count() -> (
+    None
+):  # 16 GiB RAM on 2 cores: two devices, each carrying half of 96 percent
     # of RAM rounded down to the 4096-byte zram page size.
-    config = make_config()
     device_count, per_device_bytes = zram_service._calculate_devices(
         RAM_KIB,
         2,
-        config.engine.bytes_per_kib,
-        config.engine.percent_scale,
+        engine_values.BYTES_PER_KIB,
+        engine_values.PERCENT_SCALE,
     )
     assert device_count == 2
     total_bytes = RAM_KIB * 1024 * 96 // 100
@@ -362,23 +371,24 @@ def test_calculate_devices_uses_96_percent_and_core_count() -> None:    # 16 GiB
     assert per_device_bytes * 2 >= total_bytes - 2 * 4096
 
 
-def test_device_target_follows_the_engine_factors() -> None:
-    # Another byte factor and another percent scale in the [engine] table
-    # are the factors the target is counted with, so neither is a value of
-    # the module.
-    config = make_config(bytes_per_kib=1000, percent_scale=50)
-    device_count, per_device_bytes = zram_service._calculate_devices(
-        RAM_KIB,
-        2,
-        config.engine.bytes_per_kib,
-        config.engine.percent_scale,
+def test_device_target_follows_the_engine_factors(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The byte factor and the percent scale are declared engine values, so
+    # the fixture points them at other numbers and the written unit carries
+    # the target counted with them.
+    monkeypatch.setattr(engine_values, "BYTES_PER_KIB", 1000)
+    monkeypatch.setattr(engine_values, "PERCENT_SCALE", 50)
+    fixtures = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, fixtures, enabled=False, active=set())
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    expected_total = RAM_KIB * 1000 * values.MEMORY_FRACTION_PERCENT // 50
+    per_device_bytes = (
+        expected_total // 2 // values.ALIGNMENT_BYTES * values.ALIGNMENT_BYTES
     )
-    expected_total = (
-        RAM_KIB * 1000 * values.MEMORY_FRACTION_PERCENT // 50
-    )
-    assert device_count == 2
-    assert per_device_bytes * 2 <= expected_total
-    assert per_device_bytes * 2 > expected_total - 2 * 4096
+    unit = (tmp_path / "systemd" / "zram.service").read_text(encoding="utf-8")
+    assert unit == _expected_unit(fixtures, 2, per_device_bytes)
 
 
 def test_read_cpu_count_returns_processor_count(
@@ -488,9 +498,7 @@ def test_fallback_cpu_count_uses_8(
 ) -> None:
     # Missing cpuinfo: the spec fallback of 8 devices is used and reported.
     fixtures = _install_fixtures(monkeypatch, tmp_path, with_cpuinfo=False)
-    calls, _, _ = _install_fake(
-        monkeypatch, fixtures, enabled=False, active=set()
-    )
+    calls, _, _ = _install_fake(monkeypatch, fixtures, enabled=False, active=set())
     result = zram_service.task(_ctx(tmp_path))
     assert result.success is True
     assert ["mkswap", "/dev/zram7"] in calls
@@ -501,9 +509,7 @@ def test_fallback_cpu_count_uses_8(
     assert "using fallback 8" in captured.out
 
 
-def test_removes_extra_devices(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_removes_extra_devices(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # Four devices exist, the target is two: the extras are swapped off,
     # removed and never reconfigured.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
@@ -537,9 +543,7 @@ def test_reset_retries_on_transient_busy(
     for index in range(device_count):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(device_count)}
-    _, _, _ = _install_fake(
-        monkeypatch, fixtures, enabled=True, active=set(active)
-    )
+    _, _, _ = _install_fake(monkeypatch, fixtures, enabled=True, active=set(active))
     reset_path = fixtures["sys_block"] / "zram0" / "reset"
     plain_write = zram_service._write_sysfs
     attempts = {"count": 0}
@@ -569,9 +573,7 @@ def test_reset_failure_after_retries_is_a_warning(
     for index in range(device_count):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(device_count)}
-    _, _, _ = _install_fake(
-        monkeypatch, fixtures, enabled=True, active=set(active)
-    )
+    _, _, _ = _install_fake(monkeypatch, fixtures, enabled=True, active=set(active))
     reset_path = fixtures["sys_block"] / "zram0" / "reset"
     plain_write = zram_service._write_sysfs
     attempts = {"count": 0}
@@ -602,9 +604,7 @@ def test_force_mode_reconfigures(
     for index in range(device_count):
         _configure_device(fixtures["sys_block"], index, per_device_bytes)
     active = {f"/dev/zram{index}" for index in range(device_count)}
-    calls, _, _ = _install_fake(
-        monkeypatch, fixtures, enabled=True, active=set(active)
-    )
+    calls, _, _ = _install_fake(monkeypatch, fixtures, enabled=True, active=set(active))
     result = zram_service.task(_ctx(tmp_path, force=True))
     assert result.success is True
     assert result.changed is True
@@ -630,9 +630,7 @@ def test_mkswap_failure_is_a_warning(
     assert result.success is True
     assert any("zram0 setup failed" in warning for warning in result.warnings)
     assert any("zram1 setup failed" in warning for warning in result.warnings)
-    assert not any(
-        call[0] == "swapon" and "--priority" in call for call in calls
-    )
+    assert not any(call[0] == "swapon" and "--priority" in call for call in calls)
 
 
 def test_modprobe_failure_reports_warning(
@@ -650,9 +648,7 @@ def test_modprobe_failure_reports_warning(
     )
     result = zram_service.task(_ctx(tmp_path))
     assert result.success is True
-    assert any(
-        "cannot load zram module" in warning for warning in result.warnings
-    )
+    assert any("cannot load zram module" in warning for warning in result.warnings)
     assert any(call[0] == "mkswap" for call in calls)
 
 
@@ -663,9 +659,7 @@ def test_missing_template_is_a_warning(
     # service file is skipped alone and the task completes.
     fixtures = _install_fixtures(monkeypatch, tmp_path)
     fixtures["template"].unlink()
-    calls, _, _ = _install_fake(
-        monkeypatch, fixtures, enabled=False, active=set()
-    )
+    calls, _, _ = _install_fake(monkeypatch, fixtures, enabled=False, active=set())
     result = zram_service.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -729,9 +723,7 @@ def test_commands_and_unit_lines_come_from_the_values(
     calls, _writes, _active = _install_fake(
         monkeypatch, fixtures, enabled=False, active=set()
     )
-    monkeypatch.setattr(
-        values, "MODULE_LOAD_COMMAND", ("my-load", "{module_name}")
-    )
+    monkeypatch.setattr(values, "MODULE_LOAD_COMMAND", ("my-load", "{module_name}"))
     monkeypatch.setattr(
         values,
         "SWAP_ON_COMMAND",

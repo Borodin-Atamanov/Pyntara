@@ -33,6 +33,7 @@ from pyntara.utils import (
     substituted_command,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import playwright_setup as playwright_values
 
@@ -86,7 +87,7 @@ def _cli_version(*, timeout: float) -> str:
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+    except subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError:
         return ""
     version = result.stdout.strip()
     if result.returncode != 0 or not version:
@@ -108,9 +109,7 @@ def task(ctx: Context) -> TaskResult:
     steps of this task, since without them npm cannot install anything.
     """
 
-    absent = missing_value_names(
-        playwright_values, playwright_values.READ_VALUE_NAMES
-    )
+    absent = missing_value_names(playwright_values, playwright_values.READ_VALUE_NAMES)
     absent += missing_value_names(common_values, common_values.READ_VALUE_NAMES)
     if absent:
         # A value that is not declared costs the task and never the run: the
@@ -119,12 +118,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message="the playwright values are not declared, nothing was changed",
-            warnings=(
-                "the playwright values are not declared: " + ", ".join(absent),
-            ),
+            warnings=("the playwright values are not declared: " + ", ".join(absent),),
         )
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
@@ -134,12 +130,11 @@ def task(ctx: Context) -> TaskResult:
     missing = [
         package
         for package in playwright_values.PACKAGES
-        if not package_is_installed(engine, package, status_timeout)
+        if not package_is_installed(package, status_timeout)
     ]
     if missing:
         _log("installing the playwright runtime packages")
         installed, failures, apt_warnings = install_packages(
-            engine,
             missing,
             install_timeout=timeout,
             update_timeout=timeout,
@@ -195,9 +190,7 @@ def task(ctx: Context) -> TaskResult:
 
     after_version = _cli_version(timeout=timeout)
     if not after_version:
-        warnings.append(
-            "playwright-cli did not become available after the install"
-        )
+        warnings.append("playwright-cli did not become available after the install")
         message = f"playwright-cli not available at {_cli_bin_path()}"
         if messages:
             message = f"{'; '.join(messages)}; {message}"

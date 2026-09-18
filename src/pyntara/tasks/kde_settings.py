@@ -39,7 +39,6 @@ from string import Template
 from typing import TypedDict
 from xml.etree import ElementTree
 
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -54,6 +53,7 @@ from pyntara.utils import (
     trim_whitespace,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import kde_settings as values
 from pyntara.values import missing_value_names
 
@@ -241,7 +241,7 @@ def _sync_config_value(
     return True
 
 
-def _apply_env(engine: EngineConfig) -> dict[str, str] | None:
+def _apply_env() -> dict[str, str] | None:
     """Environment that lets the plasma-apply tools reach the live session.
 
     The session variables are read from the session manager of the desktop
@@ -252,12 +252,12 @@ def _apply_env(engine: EngineConfig) -> dict[str, str] | None:
     """
 
     session = session_environment(
-        engine.desktop_username,
-        command_template=engine.session_environment_command,
-        keys=engine.session_environment_keys,
-        bus_key=engine.session_bus_key,
-        display_keys=engine.session_display_keys,
-        timeout=engine.process_check_timeout_seconds,
+        common_values.DESKTOP_USERNAME,
+        command_template=engine_values.SESSION_ENVIRONMENT_COMMAND,
+        keys=engine_values.SESSION_ENVIRONMENT_KEYS,
+        bus_key=engine_values.SESSION_BUS_KEY,
+        display_keys=engine_values.SESSION_DISPLAY_KEYS,
+        timeout=engine_values.PROCESS_CHECK_TIMEOUT_SECONDS,
     )
     if not session:
         return None
@@ -1973,18 +1973,17 @@ def task(ctx: Context) -> TaskResult:
                 "the kde_settings values are not declared: " + ", ".join(absent),
             ),
         )
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
     warnings: list[str] = []
     packages_failed = False
 
     for package in values.PACKAGES:
-        if package_is_installed(engine, package, timeout):
+        if package_is_installed(package, timeout):
             continue
         _log(f"installing {package}")
-        ok, error = install_package_once(engine, package, timeout)
+        ok, error = install_package_once(package, timeout)
         if not ok:
             packages_failed = True
             warning = f"cannot install {package}: {error}"
@@ -2024,7 +2023,7 @@ def task(ctx: Context) -> TaskResult:
         OSError,
     ) as exc:
         warnings.append(f"cannot create the user config directory: {exc}")
-    apply_env = _apply_env(ctx.config.engine)
+    apply_env = _apply_env()
     if apply_env is None:
         _log("no desktop session found, settings apply after login")
 
@@ -2109,8 +2108,8 @@ def task(ctx: Context) -> TaskResult:
             ),
             timeout=timeout,
             env=apply_env,
-            system_python=ctx.config.engine.system_python,
-            kglobalaccel_names=kglobalaccel_names(ctx.config.engine),
+            system_python=engine_values.SYSTEM_PYTHON,
+            kglobalaccel_names=kglobalaccel_names(),
             warnings=warnings,
         ),
     )
@@ -2160,7 +2159,7 @@ def task(ctx: Context) -> TaskResult:
         ),
         timeout=timeout,
         env=apply_env,
-        system_python=ctx.config.engine.system_python,
+        system_python=engine_values.SYSTEM_PYTHON,
     )
     if desktop_error is not None:
         _log(desktop_error)

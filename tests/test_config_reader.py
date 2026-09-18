@@ -34,7 +34,7 @@ def test_missing_file_returns_a_config_with_absent_values(
 ) -> None:
     config = load_config(tmp_path / "missing.toml")
     assert isinstance(config, Config)
-    assert config.engine.notice_timeout is None
+    assert config.hostname.hostname_random_bytes is None
     assert config.hostname.hostname_file is None
 
 
@@ -44,14 +44,14 @@ def test_empty_directory_returns_a_config_with_absent_values(
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     config = load_config(config_dir)
-    assert config.engine.notice_timeout is None
+    assert config.hostname.hostname_random_bytes is None
 
 
 def test_broken_toml_is_read_as_a_document_without_values(
     tmp_path: Path,
 ) -> None:
-    config = load_config(_write(tmp_path, "[engine\nnotice_timeout = 7\n"))
-    assert config.engine.notice_timeout is None
+    config = load_config(_write(tmp_path, "[hostname\nhostname_random_bytes = 4\n"))
+    assert config.hostname.hostname_random_bytes is None
 
 
 def test_unknown_section_and_key_are_ignored(tmp_path: Path) -> None:
@@ -60,20 +60,19 @@ def test_unknown_section_and_key_are_ignored(tmp_path: Path) -> None:
     config = load_config(
         _write(
             tmp_path,
-            '[engine]\nnotice_timeout = 7\nunknown_key = "x"\n'
+            '[hostname]\nhostname_random_bytes = 4\nunknown_key = "x"\n'
             '[unknown_section]\nmessage = "hello"\n',
         )
     )
-    assert config.engine.notice_timeout == 7
+    assert config.hostname.hostname_random_bytes == 4
 
 
 def test_absent_key_leaves_its_value_absent(tmp_path: Path) -> None:
     # The config is the only source of values: a key that is not there is a
     # value that is not there, never an invented one.
-    config = load_config(_write(tmp_path, "[engine]\nnotice_timeout = 7\n"))
-    assert config.engine.notice_timeout == 7
-    assert config.engine.task_data_root is None
-    assert config.engine.command_timeout_seconds is None
+    config = load_config(_write(tmp_path, "[hostname]\nhostname_random_bytes = 4\n"))
+    assert config.hostname.hostname_random_bytes == 4
+    assert config.hostname.hostname_file is None
 
 
 def test_absent_section_keeps_its_object_with_absent_values(
@@ -81,7 +80,7 @@ def test_absent_section_keeps_its_object_with_absent_values(
 ) -> None:
     # The section object always exists, so reading through it cannot raise an
     # attribute error; only the values are absent.
-    config = load_config(_write(tmp_path, "[engine]\nnotice_timeout = 7\n"))
+    config = load_config(_write(tmp_path, "[hostname]\nhostname_random_bytes = 4\n"))
     assert config.hostname.hostname_file is None
     assert config.ssh_daemon_setup.directives == ()
 
@@ -91,26 +90,27 @@ def test_value_of_an_unexpected_type_is_handed_over_as_it_is(
 ) -> None:
     # A wrong type is not repaired and not reported here: the task that
     # needed the value reports what it could not do, and the run continues.
-    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = "seven"\n'))
-    assert config.engine.notice_timeout == "seven"
+    config = load_config(
+        _write(tmp_path, '[hostname]\nhostname_random_bytes = "four"\n')
+    )
+    assert config.hostname.hostname_random_bytes == "four"
 
 
 def test_values_keep_the_shape_their_field_declares(tmp_path: Path) -> None:
     config = load_config(
         _write(
             tmp_path,
-            '[engine]\ntask_data_root = "/var/lib/pyntara"\n'
-            'desktop_detect_processes = ["kwin_wayland"]\n'
             '[hostname]\nhostname_file = "/etc/hostname"\n'
-            'set_hostname_command = ["hostnamectl", "set-hostname"]\n',
+            'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
+            '[add_extra_repos]\ncomponents = ["universe", "multiverse"]\n',
         )
     )
-    assert config.engine.task_data_root == Path("/var/lib/pyntara")
-    assert config.engine.desktop_detect_processes == ("kwin_wayland",)
+    assert config.hostname.hostname_file == "/etc/hostname"
     assert config.hostname.set_hostname_command == (
         "hostnamectl",
         "set-hostname",
     )
+    assert config.add_extra_repos.components == ("universe", "multiverse")
 
 
 def test_absent_config_keys_names_the_values_a_section_does_not_hold(
@@ -118,28 +118,28 @@ def test_absent_config_keys_names_the_values_a_section_does_not_hold(
 ) -> None:
     # The deployed services name the keys they cannot find, so the journal of
     # a machine shows config keys and not a Python error.
-    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
-    assert absent_config_keys(config.engine, ("notice_timeout",)) == ()
+    config = load_config(_write(tmp_path, "[hostname]\nhostname_random_bytes = 4\n"))
+    assert absent_config_keys(config.hostname, ("hostname_random_bytes",)) == ()
     assert absent_config_keys(
-        config.engine, ("notice_timeout", "task_data_root", "curl_retries")
-    ) == ("task_data_root", "curl_retries")
+        config.hostname, ("hostname_random_bytes", "hostname_file")
+    ) == ("hostname_file",)
 
 
 def test_absent_config_keys_ignores_a_key_of_a_wrong_type(tmp_path: Path) -> None:
     # A value of a wrong type is a value the document holds: naming it as
     # absent would be a lie, and no rule is applied here.
-    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = "seven"\n'))
-    assert absent_config_keys(config.engine, ("notice_timeout",)) == ()
+    config = load_config(
+        _write(tmp_path, '[hostname]\nhostname_random_bytes = "four"\n')
+    )
+    assert absent_config_keys(config.hostname, ("hostname_random_bytes",)) == ()
 
 
 def test_absent_config_keys_ignores_an_empty_array(tmp_path: Path) -> None:
     # An array the document does not have cannot be told from an empty array,
     # so an empty one is not reported as absent.
-    config = load_config(
-        _write(tmp_path, "[engine]\ndesktop_detect_processes = []\n")
-    )
-    assert config.engine.desktop_detect_processes == ()
-    assert absent_config_keys(config.engine, ("desktop_detect_processes",)) == ()
+    config = load_config(_write(tmp_path, "[add_extra_repos]\ncomponents = []\n"))
+    assert config.add_extra_repos.components == ()
+    assert absent_config_keys(config.add_extra_repos, ("components",)) == ()
 
 
 def test_absent_config_keys_ignores_a_missing_section(tmp_path: Path) -> None:
@@ -156,7 +156,7 @@ def test_describe_absent_config_keys_names_each_table_once(
 ) -> None:
     # The clause names the table and then the keys, so a long list stays
     # readable, and a table without absent keys is left out.
-    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
+    config = load_config(_write(tmp_path, "[engine]\nnotice_timeout = 7\n"))
     described = describe_absent_config_keys(
         (
             (
@@ -177,13 +177,13 @@ def test_describe_absent_config_keys_names_each_table_once(
 def test_describe_absent_config_keys_says_nothing_when_all_keys_are_there(
     tmp_path: Path,
 ) -> None:
-    config = load_config(_write(tmp_path, '[engine]\nnotice_timeout = 7\n'))
+    config = load_config(_write(tmp_path, "[hostname]\nhostname_random_bytes = 4\n"))
     assert (
         describe_absent_config_keys(
             (
                 (
-                    "engine",
-                    absent_config_keys(config.engine, ("notice_timeout",)),
+                    "hostname",
+                    absent_config_keys(config.hostname, ("hostname_random_bytes",)),
                 ),
             )
         )

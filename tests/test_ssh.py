@@ -31,9 +31,7 @@ def test_the_port_directive_comes_from_the_config() -> None:
     )
     assert ssh.ssh_port_from_directives(two_ports) == 2222
     assert (
-        ssh.ssh_port_from_directives(
-            replace(two_ports, port_directive="ListenPort")
-        )
+        ssh.ssh_port_from_directives(replace(two_ports, port_directive="ListenPort"))
         == 30222
     )
 

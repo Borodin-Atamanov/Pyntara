@@ -126,7 +126,6 @@ def _ctx(
         task_data_root=tmp_path,
         skip_apt_update=skip_apt_update,
         config=make_config(
-            task_data_root=tmp_path,
             ssh_daemon_root_ssh_dir=tmp_path / "root" / ".ssh",
             ssh_daemon_sshd_config_path=tmp_path / "etc" / "ssh" / "sshd_config",
             ssh_daemon_sshd_config_dropin_path=(
@@ -139,9 +138,7 @@ def _ctx(
     )
 
 
-def _install_fixtures(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> Path:
+def _install_fixtures(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     """Write the key fixtures; return the task data directory.
 
     The file names come from the make_config defaults, the same defaults
@@ -225,9 +222,7 @@ def _install_fake(
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg-query":
-            present = (
-                augeas_installed if command[-1] == AUGTOOL_PACKAGE else installed
-            )
+            present = augeas_installed if command[-1] == AUGTOOL_PACKAGE else installed
             if present:
                 return _FakeProc(0, "install ok installed\n")
             return _FakeProc(1, "deinstall ok config-files\n")
@@ -270,8 +265,7 @@ def _install_fake(
                 )
             return _FakeProc(
                 0,
-                "LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* "
-                'users:(("sshd",pid=1,fd=3))\n',
+                'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))\n',
             )
         return _FakeProc(0)
 
@@ -295,9 +289,7 @@ def _deploy_keys_directories(ctx: Context, tmp_path: Path) -> list[Path]:
 
     cfg = ctx.config.ssh_daemon_setup
     directories = [cfg.root_ssh_dir]
-    directories.extend(
-        tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k")
-    )
+    directories.extend(tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k"))
     for ssh_dir in directories:
         ssh_dir.mkdir(parents=True, exist_ok=True)
         (ssh_dir / cfg.private_key_file_name).write_bytes(PRIVATE_KEY_BYTES)
@@ -335,8 +327,7 @@ def test_already_configured_skips(
     assert result.message == "already configured"
     assert not any(call[0] == "apt-get" for call in calls)
     assert not any(
-        call[0] == "systemctl"
-        and call[1] not in ("is-enabled", "is-active")
+        call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
         for call in calls
     )
 
@@ -379,9 +370,7 @@ def test_install_retries_after_failures(
     calls = _install_fake(monkeypatch, installed=False, fail_install=2)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
-    install_calls = [
-        call for call in calls if call[:2] == ["apt-get", "install"]
-    ]
+    install_calls = [call for call in calls if call[:2] == ["apt-get", "install"]]
     assert len(install_calls) == 3
 
 
@@ -450,9 +439,9 @@ def test_writes_dropin_and_deploys_keys(
         assert (ssh_dir / cfg.port_forwarding_private_key_file_name).read_bytes() == (
             PF_PRIVATE_KEY_BYTES
         )
-        assert (
-            ssh_dir / cfg.port_forwarding_public_key_file_name
-        ).read_text(encoding="utf-8") == (PF_PUBLIC_KEY_LINE + "\n")
+        assert (ssh_dir / cfg.port_forwarding_public_key_file_name).read_text(
+            encoding="utf-8"
+        ) == (PF_PUBLIC_KEY_LINE + "\n")
         assert (ssh_dir / "authorized_keys").read_text(encoding="utf-8") == (
             PUBLIC_KEY_LINE + "\n" + PF_AUTHORIZED_LINE + "\n"
         )
@@ -482,9 +471,7 @@ def test_authorized_keys_has_no_duplicates_on_rerun(
     assert second.changed is False
     cfg = ctx.config.ssh_daemon_setup
     directories = [cfg.root_ssh_dir]
-    directories.extend(
-        tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k")
-    )
+    directories.extend(tmp_path / "home" / user / ".ssh" for user in ("i", "j", "k"))
     for ssh_dir in directories:
         lines = (ssh_dir / "authorized_keys").read_text(encoding="utf-8").splitlines()
         assert lines.count(PUBLIC_KEY_LINE) == 1
@@ -540,7 +527,12 @@ def test_missing_key_files_are_a_warning(
     _write_sshd_config(ctx)
     _install_fake(monkeypatch)
     cfg = ctx.config.ssh_daemon_setup
-    (Path(ctx.repo_root) / "task_data" / "ssh_daemon_setup" / cfg.public_key_file_name).unlink()
+    (
+        Path(ctx.repo_root)
+        / "task_data"
+        / "ssh_daemon_setup"
+        / cfg.public_key_file_name
+    ).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert any("missing in" in warning for warning in result.warnings)
@@ -568,9 +560,7 @@ def test_missing_port_forwarding_key_files_are_a_warning(
     ).unlink()
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
-    assert any(
-        "port-forwarding key files" in warning for warning in result.warnings
-    )
+    assert any("port-forwarding key files" in warning for warning in result.warnings)
     assert not cfg.root_ssh_dir.exists()
     assert cfg.sshd_config_dropin_path.is_file()
 
@@ -623,9 +613,7 @@ def test_empty_directives_removes_dropin(
     assert not cfg.sshd_config_dropin_path.exists()
 
 
-def test_enable_start_and_wait(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_enable_start_and_wait(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The service is disabled and inactive: the task enables and starts it
     # and waits for it to become active.
     _install_fixtures(monkeypatch, tmp_path)
@@ -676,13 +664,9 @@ def test_commands_come_from_the_config(
             "--no-block",
         ),
     )
-    ctx = replace(
-        ctx, config=replace(ctx.config, ssh_daemon_setup=configured)
-    )
+    ctx = replace(ctx, config=replace(ctx.config, ssh_daemon_setup=configured))
     cfg = ctx.config.ssh_daemon_setup
-    calls = _install_fake(
-        monkeypatch, enabled=False, active=False, socket_enabled=True
-    )
+    calls = _install_fake(monkeypatch, enabled=False, active=False, socket_enabled=True)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert ["sshd", "-T", "-C", "user=root"] in calls
@@ -742,9 +726,7 @@ def test_restart_and_reload_commands_come_from_the_config(
             "--quiet",
         ),
     )
-    ctx = replace(
-        ctx, config=replace(ctx.config, ssh_daemon_setup=configured)
-    )
+    ctx = replace(ctx, config=replace(ctx.config, ssh_daemon_setup=configured))
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_dropin_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.sshd_config_dropin_path.write_text(
@@ -794,9 +776,7 @@ def test_reload_when_active_and_non_port_changed(
     assert ["systemctl", "restart", "ssh.service"] not in calls
 
 
-def test_port_change_restarts(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_port_change_restarts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     # The Port directive changed while the service is active: a restart
     # is required, because reload does not rebind the listen socket.
     _install_fixtures(monkeypatch, tmp_path)
@@ -854,9 +834,7 @@ def test_socket_untouched_when_disabled(
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
-    assert not any(
-        call[0] == "systemctl" and "disable" in call for call in calls
-    )
+    assert not any(call[0] == "systemctl" and "disable" in call for call in calls)
 
 
 def test_sshd_t_verification_failure_is_a_warning(
@@ -980,9 +958,7 @@ def test_include_matches_relative_pattern(
     ctx = _ctx(tmp_path)
     cfg = ctx.config.ssh_daemon_setup
     cfg.sshd_config_path.parent.mkdir(parents=True)
-    cfg.sshd_config_path.write_text(
-        "Include sshd_config.d/*.conf\n", encoding="utf-8"
-    )
+    cfg.sshd_config_path.write_text("Include sshd_config.d/*.conf\n", encoding="utf-8")
     _install_fake(monkeypatch)
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True

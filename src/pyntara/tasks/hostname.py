@@ -34,6 +34,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import proquint_decode, proquint_encode, run_command, trim_whitespace
+from pyntara.values import engine as engine_values
 from pyntara.values import hostname as hostname_values
 from pyntara.values import missing_value_names
 
@@ -118,11 +119,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message="the hostname values are not declared, nothing was changed",
-            warnings=(
-                "the hostname values are not declared: " + ", ".join(absent),
-            ),
+            warnings=("the hostname values are not declared: " + ", ".join(absent),),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     hostname_file = Path(hostname_values.HOSTNAME_FILE)
     warnings: list[str] = []

@@ -6,10 +6,7 @@ the tests only touch temporary fixtures (docs/guides/developer-guide.md).
 
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
-from support import make_config
 
 from pyntara import public_address as public_address_module
 from pyntara.public_address import (
@@ -20,6 +17,7 @@ from pyntara.public_address import (
     local_addresses,
     parse_public_addresses,
 )
+from pyntara.values import engine as engine_values
 
 SERVICES = ("https://api4.ipify.org", "https://ipv6.ipify.org")
 
@@ -46,9 +44,7 @@ class TestParsePublicAddresses:
     def test_ignores_text_that_is_not_an_address(self) -> None:
         # An error page or a banner must never be reported as an address.
         text = "<html>error</html>\nnot-an-address\n203.0.113.9\n"
-        assert parse_public_addresses(text) == PublicAddresses(
-            ipv4=("203.0.113.9",)
-        )
+        assert parse_public_addresses(text) == PublicAddresses(ipv4=("203.0.113.9",))
 
     def test_keeps_the_arrival_order(self) -> None:
         text = "198.51.100.9 203.0.113.5 198.51.100.9\n"
@@ -75,7 +71,7 @@ class TestLocalAddresses:
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        assert local_addresses(make_config().engine, 30.0) == (
+        assert local_addresses(30.0) == (
             "10.10.0.1",
             "192.168.1.5",
             "2001:db8::5",
@@ -88,14 +84,14 @@ class TestLocalAddresses:
             raise OSError("ip not found")
 
         monkeypatch.setattr(public_address_module, "run_command", fail)
-        assert local_addresses(make_config().engine, 30.0) == ()
+        assert local_addresses(30.0) == ()
 
-    def test_the_family_names_come_from_the_engine_table(
+    def test_the_family_names_come_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # The words the address query prints are the ones the engine maps
-        # its families to: another mapping makes an output with other
-        # words readable, while the shipped mapping finds nothing in it.
+        # The words the address query prints are the ones the declared
+        # mapping names: another mapping makes an output with other words
+        # readable, while the shipped mapping finds nothing in it.
         output = (
             "2: enp1s0    inet4 10.10.0.1/24 scope global enp1s0\n"
             "3: wlp1s0    inet6 2001:db8::5/64 scope global\n"
@@ -105,13 +101,13 @@ class TestLocalAddresses:
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        engine = make_config().engine
-        assert local_addresses(engine, 30.0) == ("2001:db8::5",)
-        renamed = replace(
-            engine,
-            iproute2_address_family_names={"ipv4": "inet4", "ipv6": "inet6"},
+        assert local_addresses(30.0) == ("2001:db8::5",)
+        monkeypatch.setattr(
+            engine_values,
+            "IPROUTE2_ADDRESS_FAMILY_NAMES",
+            {"ipv4": "inet4", "ipv6": "inet6"},
         )
-        assert local_addresses(renamed, 30.0) == ("10.10.0.1", "2001:db8::5")
+        assert local_addresses(30.0) == ("10.10.0.1", "2001:db8::5")
 
 
 class TestDirectlyConnectedNetworks:
@@ -137,7 +133,7 @@ class TestDirectlyConnectedNetworks:
             return _Completed(outputs[family])
 
         monkeypatch.setattr(public_address_module, "run_command", fake_run)
-        assert directly_connected_networks(make_config().engine, 30.0) == (
+        assert directly_connected_networks(30.0) == (
             "10.10.0.0/24",
             "127.0.0.0/8",
             "200::/7",
@@ -151,14 +147,14 @@ class TestDirectlyConnectedNetworks:
             raise OSError("ip not found")
 
         monkeypatch.setattr(public_address_module, "run_command", fail)
-        assert directly_connected_networks(make_config().engine, 30.0) == ()
+        assert directly_connected_networks(30.0) == ()
 
-    def test_the_family_flags_come_from_the_engine_table(
+    def test_the_family_flags_come_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The families the kernel is asked about are the keys of the
-        # engine mapping of the command line flag: with one family named
-        # in the table the task asks about that one alone.
+        # declared mapping of the command line flag: with one family named
+        # in it the task asks about that one alone.
         seen: list[str] = []
 
         def fake_run(command: list[str], **kwargs: object) -> _Completed:
@@ -166,53 +162,42 @@ class TestDirectlyConnectedNetworks:
             return _Completed("10.10.0.0/24 dev enp1s0 proto kernel\n")
 
         monkeypatch.setattr(public_address_module, "run_command", fake_run)
-        engine = replace(
-            make_config().engine, address_family_by_flag={"4": "ipv4"}
-        )
-        assert directly_connected_networks(engine, 30.0) == ("10.10.0.0/24",)
+        monkeypatch.setattr(engine_values, "ADDRESS_FAMILY_BY_FLAG", {"4": "ipv4"})
+        assert directly_connected_networks(30.0) == ("10.10.0.0/24",)
         assert seen == ["-4"]
 
 
 class TestDefaultRouteAddress:
     """Tests for reading the address that reaches the router."""
 
-    def test_reads_the_source_address(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_reads_the_source_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
         output = (
-            "default via 192.168.1.1 dev wlp1s0 proto dhcp src 192.168.1.5 "
-            "metric 600\n"
+            "default via 192.168.1.1 dev wlp1s0 proto dhcp src 192.168.1.5 metric 600\n"
         )
         monkeypatch.setattr(
             public_address_module,
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        assert default_route_address(make_config().engine, 30.0) == "192.168.1.5"
+        assert default_route_address(30.0) == "192.168.1.5"
 
-    def test_the_source_keyword_comes_from_the_engine_table(
+    def test_the_source_keyword_comes_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         # The word that marks the source address belongs to the output of
-        # the configured command, so another keyword in the table reads
-        # that token instead, while the shipped keyword finds nothing.
+        # the declared command, so another keyword in the values reads that
+        # token instead, while the shipped keyword finds nothing.
         output = (
-            "default via 192.168.1.1 dev wlp1s0 source 192.168.1.7 "
-            "src 192.168.1.5\n"
+            "default via 192.168.1.1 dev wlp1s0 source 192.168.1.7 src 192.168.1.5\n"
         )
         monkeypatch.setattr(
             public_address_module,
             "run_command",
             lambda *a, **k: _Completed(output),
         )
-        engine = make_config().engine
-        assert default_route_address(engine, 30.0) == "192.168.1.5"
-        assert (
-            default_route_address(
-                replace(engine, default_route_source_key="source"), 30.0
-            )
-            == "192.168.1.7"
-        )
+        assert default_route_address(30.0) == "192.168.1.5"
+        monkeypatch.setattr(engine_values, "DEFAULT_ROUTE_SOURCE_KEY", "source")
+        assert default_route_address(30.0) == "192.168.1.7"
 
     def test_reports_nothing_without_a_route(
         self, monkeypatch: pytest.MonkeyPatch
@@ -222,7 +207,7 @@ class TestDefaultRouteAddress:
             "run_command",
             lambda *a, **k: _Completed(""),
         )
-        assert default_route_address(make_config().engine, 30.0) is None
+        assert default_route_address(30.0) is None
 
 
 class TestCollectPublicAddresses:
@@ -237,7 +222,6 @@ class TestCollectPublicAddresses:
         calls: list[tuple[tuple[str, ...], int, float]] = []
 
         def fake_fetch(
-            engine: object,
             urls: tuple[str, ...],
             query_timeout: int,
             command_timeout: float,
@@ -245,10 +229,8 @@ class TestCollectPublicAddresses:
             calls.append((urls, query_timeout, command_timeout))
             return "203.0.113.5\n203.0.113.5\n2001:db8::1\n"
 
-        monkeypatch.setattr(
-            public_address_module, "fetch_urls_in_parallel", fake_fetch
-        )
-        addresses = fetch_public_addresses(make_config().engine, SERVICES, 60, 1800.0)
+        monkeypatch.setattr(public_address_module, "fetch_urls_in_parallel", fake_fetch)
+        addresses = fetch_public_addresses(SERVICES, 60, 1800.0)
         assert addresses == PublicAddresses(
             ipv4=("203.0.113.5",),
             ipv6=("2001:db8::1",),
@@ -262,44 +244,40 @@ class TestCollectPublicAddresses:
         def fail_fetch(*args: object, **kwargs: object) -> str:
             raise AssertionError("no query expected")
 
-        monkeypatch.setattr(
-            public_address_module, "fetch_urls_in_parallel", fail_fetch
-        )
-        assert fetch_public_addresses(make_config().engine, (), 60, 1800.0).is_empty is True
+        monkeypatch.setattr(public_address_module, "fetch_urls_in_parallel", fail_fetch)
+        assert fetch_public_addresses((), 60, 1800.0).is_empty is True
 
 
 class TestConfiguredQueries:
     """Tests that the iproute2 vocabulary comes from the engine table."""
 
-    def test_queries_come_from_the_config(
+    def test_queries_come_from_the_values(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        # Another query in the [engine] table is exactly the argv the
-        # helpers run, and the family flag of the route query is the
-        # {family} placeholder of its template.
-        engine = replace(
-            make_config().engine,
-            local_addresses_command=("my-ip", "addr", "show"),
-            directly_connected_networks_command=(
-                "my-ip",
-                "route",
-                "show",
-                "{family}",
-            ),
-            default_route_command=("my-ip", "route", "default"),
+        # Another declared query is exactly the argv the helpers run, and the
+        # family flag of the route query is the {family} placeholder of its
+        # template.
+        monkeypatch.setattr(
+            engine_values, "LOCAL_ADDRESSES_COMMAND", ("my-ip", "addr", "show")
+        )
+        monkeypatch.setattr(
+            engine_values,
+            "DIRECTLY_CONNECTED_NETWORKS_COMMAND",
+            ("my-ip", "route", "show", "{family}"),
+        )
+        monkeypatch.setattr(
+            engine_values, "DEFAULT_ROUTE_COMMAND", ("my-ip", "route", "default")
         )
         calls: list[list[str]] = []
 
         def fake_run(command: list[str], **kwargs: object) -> _Completed:
             calls.append(list(command))
-            return _Completed(
-                "default via 192.168.1.1 dev wlp1s0 src 192.168.1.5\n"
-            )
+            return _Completed("default via 192.168.1.1 dev wlp1s0 src 192.168.1.5\n")
 
         monkeypatch.setattr(public_address_module, "run_command", fake_run)
-        assert local_addresses(engine, 30.0) == ()
-        assert directly_connected_networks(engine, 30.0) == ()
-        assert default_route_address(engine, 30.0) == "192.168.1.5"
+        assert local_addresses(30.0) == ()
+        assert directly_connected_networks(30.0) == ()
+        assert default_route_address(30.0) == "192.168.1.5"
         assert ["my-ip", "addr", "show"] in calls
         assert ["my-ip", "route", "show", "-4"] in calls
         assert ["my-ip", "route", "show", "-6"] in calls

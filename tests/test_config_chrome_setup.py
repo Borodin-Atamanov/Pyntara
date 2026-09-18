@@ -73,7 +73,9 @@ CHROME_BLOCK = (
             "settings_repo_url = 7\n",
         ),
         # settings_repo_ref is empty
-        base_config().replace('settings_repo_ref = "main"\n', 'settings_repo_ref = ""\n'),
+        base_config().replace(
+            'settings_repo_ref = "main"\n', 'settings_repo_ref = ""\n'
+        ),
         # settings_dir is a number, not a string
         base_config().replace(
             'settings_dir = "/var/cache/pyntara/chromium-settings"\n',

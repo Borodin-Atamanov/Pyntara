@@ -20,6 +20,7 @@ from support import make_config, make_context
 
 from pyntara.context import Context
 from pyntara.tasks import zswap_service
+from pyntara.values import engine as engine_values
 from pyntara.values import zswap_service as values
 
 UNIT_TEMPLATE = """\
@@ -39,8 +40,7 @@ WantedBy=multi-user.target
 # Target parameter values: the shipped table of the values module, which is
 # what the task must write on a real machine.
 TARGET = {
-    parameter.attribute_name: parameter.value
-    for parameter in values.PARAMETER_VALUES
+    parameter.attribute_name: parameter.value for parameter in values.PARAMETER_VALUES
 }
 
 # Kernel defaults on Kubuntu: zswap on with lzo at a 20 percent pool.
@@ -60,7 +60,9 @@ def _point_the_values_at_the_temporary_parameter_directory(
     """Give every test of this file its own kernel attribute directory.
 
     The path is a value of the task, so the fixture points it at the temporary
-    directory of the test and the shipped value comes back afterwards.
+    directory of the test and the shipped value comes back afterwards. The
+    declared unit directory of the engine is the temporary tree as well,
+    because the task writes its unit file there.
     """
 
     monkeypatch.setattr(
@@ -68,6 +70,7 @@ def _point_the_values_at_the_temporary_parameter_directory(
         "PARAMETERS_DIR_PATH",
         tmp_path / "sys" / "module" / "zswap" / "parameters",
     )
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
 
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
@@ -80,10 +83,7 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=True,
-        config=make_config(
-            task_data_root=tmp_path,
-            systemd_unit_dir=tmp_path / "systemd",
-        ),
+        config=make_config(),
     )
 
 
@@ -108,12 +108,7 @@ def _install_fixtures(
         (params_dir / name).write_text(
             f"{current_values.get(name, '')}\n", encoding="utf-8"
         )
-    template = (
-        tmp_path
-        / "task_data"
-        / "zswap_service"
-        / values.UNIT_TEMPLATE_FILE_NAME
-    )
+    template = tmp_path / "task_data" / "zswap_service" / values.UNIT_TEMPLATE_FILE_NAME
     template.parent.mkdir(parents=True, exist_ok=True)
     template.write_text(UNIT_TEMPLATE, encoding="utf-8")
     return {"params_dir": params_dir, "template": template}
@@ -436,7 +431,5 @@ def test_systemctl_enable_failure_is_a_warning(
     result = zswap_service.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    assert any(
-        "systemd setup failed" in warning for warning in result.warnings
-    )
+    assert any("systemd setup failed" in warning for warning in result.warnings)
     assert ("compressor", "zstd") in writes

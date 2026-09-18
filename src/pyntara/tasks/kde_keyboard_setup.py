@@ -29,7 +29,6 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -44,6 +43,7 @@ from pyntara.utils import (
     trim_whitespace,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import kde_keyboard_setup as values
 from pyntara.values import missing_value_names
 
@@ -74,7 +74,7 @@ def _home_env() -> dict[str, str]:
     return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
-def _session_bus_env(engine: EngineConfig) -> dict[str, str]:
+def _session_bus_env() -> dict[str, str]:
     """The one-entry environment that reaches the live session bus.
 
     The bus address comes from the session manager of the desktop user, so the
@@ -85,14 +85,14 @@ def _session_bus_env(engine: EngineConfig) -> dict[str, str]:
 
     bus = session_bus_address(
         common_values.DESKTOP_USERNAME,
-        command_template=engine.session_environment_command,
-        keys=engine.session_environment_keys,
-        bus_key=engine.session_bus_key,
-        timeout=engine.process_check_timeout_seconds,
+        command_template=engine_values.SESSION_ENVIRONMENT_COMMAND,
+        keys=engine_values.SESSION_ENVIRONMENT_KEYS,
+        bus_key=engine_values.SESSION_BUS_KEY,
+        timeout=engine_values.PROCESS_CHECK_TIMEOUT_SECONDS,
     )
     if bus is None:
         return {}
-    return {engine.session_bus_key: bus}
+    return {engine_values.SESSION_BUS_KEY: bus}
 
 
 def _per_layout_empty_list(layouts: tuple[str, ...]) -> str:
@@ -352,9 +352,7 @@ def _apply_hotkeys_live(
             "changes": [
                 {
                     "component_unique": values.LAYOUT_SWITCHER_COMPONENT_UNIQUE,
-                    "component_friendly": (
-                        values.LAYOUT_SWITCHER_COMPONENT_FRIENDLY
-                    ),
+                    "component_friendly": (values.LAYOUT_SWITCHER_COMPONENT_FRIENDLY),
                     "action": action,
                     "keys": [shortcut],
                 }
@@ -435,9 +433,9 @@ def task(ctx: Context) -> TaskResult:
     stop the provisioning.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -445,27 +443,24 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message=(
-                "the kde_keyboard_setup values are not declared, "
-                "nothing was changed"
+                "the kde_keyboard_setup values are not declared, nothing was changed"
             ),
             warnings=(
-                "the kde_keyboard_setup values are not declared: "
-                + ", ".join(absent),
+                "the kde_keyboard_setup values are not declared: " + ", ".join(absent),
             ),
         )
-    engine = ctx.config.engine
-    timeout = engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     home_env = _home_env()
-    bus_env = _session_bus_env(engine)
+    bus_env = _session_bus_env()
     changed = False
     warnings: list[str] = []
 
     for package in values.PACKAGES:
-        if package_is_installed(engine, package, timeout):
+        if package_is_installed(package, timeout):
             continue
         _log(f"installing {package}")
-        ok, error = install_package_once(engine, package, timeout)
+        ok, error = install_package_once(package, timeout)
         if not ok:
             warnings.append(f"cannot install {package}: {error}")
         else:
@@ -576,10 +571,7 @@ def task(ctx: Context) -> TaskResult:
                     timeout=timeout,
                     bool_value=False,
                 )
-                _log(
-                    "set indicator display style: "
-                    f"{values.INDICATOR_DISPLAY_STYLE}"
-                )
+                _log(f"set indicator display style: {values.INDICATOR_DISPLAY_STYLE}")
                 applet_changed = True
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"cannot write {values.APPLETSRC_FILE_NAME}: {exc}")
@@ -594,9 +586,7 @@ def task(ctx: Context) -> TaskResult:
                 force=force,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(
-                f"cannot write {common_values.SHORTCUTS_FILE_NAME}: {exc}"
-            )
+            warnings.append(f"cannot write {common_values.SHORTCUTS_FILE_NAME}: {exc}")
         if not bus_env:
             _log("no desktop session found, layout hotkeys apply at login")
         else:
@@ -609,8 +599,8 @@ def task(ctx: Context) -> TaskResult:
                 timeout=timeout,
                 home_env=home_env,
                 bus_env=bus_env,
-                system_python=engine.system_python,
-                kglobalaccel_names=kglobalaccel_names(engine),
+                system_python=engine_values.SYSTEM_PYTHON,
+                kglobalaccel_names=kglobalaccel_names(),
             )
             if hotkey_error is not None:
                 warnings.append(hotkey_error)
@@ -619,9 +609,7 @@ def task(ctx: Context) -> TaskResult:
     changed |= hotkeys_changed
 
     if layout_changed:
-        reload_error = _reload_kwin(
-            timeout=timeout, home_env=home_env, bus_env=bus_env
-        )
+        reload_error = _reload_kwin(timeout=timeout, home_env=home_env, bus_env=bus_env)
         if reload_error is not None:
             warnings.append(reload_error)
         _log("the layout switch option takes effect at the next login")

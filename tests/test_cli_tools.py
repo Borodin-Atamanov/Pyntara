@@ -7,7 +7,6 @@ the tests never touch the real system (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -19,6 +18,7 @@ from pyntara.context import Context
 from pyntara.tasks import cli_tools
 from pyntara.values import cli_tools as cli_tools_values
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 
 # Package set used by the tests; the real set stays in the values module.
@@ -45,9 +45,7 @@ def _point_the_values_at_the_test_set(
     """
 
     monkeypatch.setattr(cli_tools_values, "PACKAGES", TEST_PACKAGES)
-    monkeypatch.setattr(
-        cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 70
-    )
+    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 70)
 
 
 def _ctx() -> Context:
@@ -115,16 +113,11 @@ def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_share_follows_the_configured_percent_scale(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Another percent scale in the [engine] table is the scale the share is
-    # counted with, so the factor is not a value of the module.
+    # Another declared percent scale is the scale the share is counted with,
+    # so the factor is not a value of the module.
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
+    monkeypatch.setattr(engine_values, "PERCENT_SCALE", 200)
     ctx = _ctx()
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config, engine=replace(ctx.config.engine, percent_scale=200)
-        ),
-    )
     result = cli_tools.task(ctx)
     assert result.success is True
     assert "200%" in (result.message or "")
@@ -185,7 +178,11 @@ def test_apt_hang_reports_the_timeout_as_a_warning(
         calls.append(list(command))
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
-        if command[0] == "apt-get" and command[1] == "install" and command[-1] == "htop":
+        if (
+            command[0] == "apt-get"
+            and command[1] == "install"
+            and command[-1] == "htop"
+        ):
             raise subprocess.TimeoutExpired(command, timeout=1800)
         return _FakeProc(0)
 
@@ -377,9 +374,7 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
     hollywood_installs = [
         call
         for call in calls
-        if call[0] == "apt-get"
-        and call[1] == "install"
-        and call[-1] == "hollywood"
+        if call[0] == "apt-get" and call[1] == "install" and call[-1] == "hollywood"
     ]
     assert len(hollywood_installs) == 4
 
@@ -403,9 +398,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     result = cli_tools.task(ctx)
     assert result.success is True
-    installs = [
-        call for call in calls if call[0] == "apt-get" and call[1] == "install"
-    ]
+    installs = [call for call in calls if call[0] == "apt-get" and call[1] == "install"]
     assert len(installs) == 1
     assert result.warnings
 
@@ -453,9 +446,7 @@ def test_skip_apt_update_still_retries_installs(
     assert result.success is True
     assert "1/1" in (result.message or "")
     assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
-    installs = [
-        call for call in calls if call[0] == "apt-get" and call[1] == "install"
-    ]
+    installs = [call for call in calls if call[0] == "apt-get" and call[1] == "install"]
     assert len(installs) == 2
 
 
@@ -496,11 +487,7 @@ def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
         calls.append(list(command))
         if command[0] == "dpkg-query":
             return _FakeProc(1, "")
-        if (
-            command[0] == "apt-get"
-            and command[1] == "install"
-            and command[-1] != "mc"
-        ):
+        if command[0] == "apt-get" and command[1] == "install" and command[-1] != "mc":
             raise subprocess.CalledProcessError(100, command)
         return _FakeProc(0)
 
@@ -515,9 +502,7 @@ def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # One of two packages installs: exactly 50 percent, at the 50 percent
     # threshold, so the task succeeds (failure only below the threshold).
     monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc", "htop"))
-    monkeypatch.setattr(
-        cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50
-    )
+    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50)
     ctx = Context(
         install_mode="minimal",
         vault_password=None,

@@ -20,7 +20,7 @@ The ssh command needs the sshd listen port, so the command reads the
 single system config it is given, which is the same source the SSH
 daemon task writes (architecture contract, Configuration). Runs as
 `python -m pyntara.network_addresses CONFIG_PATH FAMILY`, where FAMILY
-is one of the flags the engine table maps to a family
+is one of the flags ADDRESS_FAMILY_BY_FLAG maps to a family
 (docs/spec/system-metrics.md, section Report collector).
 """
 
@@ -33,10 +33,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyntara.config import Config, EngineConfig, load_config
+from pyntara.config import Config, load_config
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.utils import run_command
+from pyntara.values import engine as engine_values
 
 
 @dataclass(frozen=True)
@@ -55,9 +56,9 @@ class InterfaceAddress:
         (every interface carries one), so the interface name is appended
         after a percent sign, which is the form ssh resolves. The address
         itself decides this, because the version of the address is a fact
-        and the names the engine table gives the families are a
+        and the names the declared mapping gives the families are a
         vocabulary; the scope value counts as a link scope only when it
-        equals the configured link_scope_name.
+        equals the declared LINK_SCOPE_NAME.
         """
 
         if self.scope == link_scope_name and _is_ipv6(self.address):
@@ -75,19 +76,19 @@ def _is_ipv6(address: str) -> bool:
 
 
 def parse_interface_addresses(
-    engine: EngineConfig, document: object, family: str
+    document: object, family: str
 ) -> tuple[InterfaceAddress, ...]:
     """Every address of one family in the document, in the order ip reports.
 
-    The document is the parsed output of the configured iproute2 query. A
+    The document is the parsed output of the declared iproute2 query. A
     document of an unexpected shape contributes nothing instead of
     raising, so a future iproute2 change is reported as a missing
     address, never as a traceback on the target machine. The family name
-    iproute2 prints is the configured one, so a rename of its vocabulary
-    is a config change.
+    iproute2 prints is the declared one, so a rename of its vocabulary is
+    a change of a declared value.
     """
 
-    ip_family = engine.iproute2_address_family_names[family]
+    ip_family = engine_values.IPROUTE2_ADDRESS_FAMILY_NAMES[family]
     addresses: list[InterfaceAddress] = []
     if not isinstance(document, list):
         return ()
@@ -123,24 +124,21 @@ def address_records(
 ) -> list[dict[str, object]]:
     """The report records of every address of one family.
 
-    The field names and the ssh command of a record come from the config,
-    so the shape of the report lives in one place.
+    The field names and the ssh command of a record come from the declared
+    values, so the shape of the report lives in one place.
     """
 
-    engine = cfg.engine
-    keys = engine.report_record_keys
-    link_scope_name = engine.link_scope_name
+    keys = engine_values.REPORT_RECORD_KEYS
+    link_scope_name = engine_values.LINK_SCOPE_NAME
     return [
         {
             keys["address"]: entry.address,
             keys["family"]: entry.family,
             keys["interface"]: entry.interface,
             keys["scope"]: entry.scope,
-            keys["ssh"]: ssh_command(
-                engine, entry.ssh_target(link_scope_name), ssh_port
-            ),
+            keys["ssh"]: ssh_command(entry.ssh_target(link_scope_name), ssh_port),
         }
-        for entry in parse_interface_addresses(engine, document, family)
+        for entry in parse_interface_addresses(document, family)
     ]
 
 
@@ -156,10 +154,10 @@ def main(argv: list[str]) -> int:
         print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
         return 2
     cfg = load_config(Path(argv[1]))
-    if argv[2] not in cfg.engine.address_family_by_flag:
+    if argv[2] not in engine_values.ADDRESS_FAMILY_BY_FLAG:
         print(f"usage: {argv[0]} CONFIG_PATH FAMILY", file=sys.stderr)
         return 2
-    family = cfg.engine.address_family_by_flag[argv[2]]
+    family = engine_values.ADDRESS_FAMILY_BY_FLAG[argv[2]]
     try:
         ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
     except RuntimeError as exc:
@@ -167,10 +165,10 @@ def main(argv: list[str]) -> int:
         return 1
     try:
         result = run_command(
-            list(cfg.engine.interface_addresses_command),
+            list(engine_values.INTERFACE_ADDRESSES_COMMAND),
             check=False,
             capture=True,
-            timeout=cfg.engine.command_timeout_seconds,
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
             log_command=False,
         )
     except (subprocess.TimeoutExpired, OSError) as exc:
@@ -191,7 +189,11 @@ def main(argv: list[str]) -> int:
     if not records:
         return 0
     print(
-        json.dumps(records, ensure_ascii=False, indent=cfg.engine.report_json_indent)
+        json.dumps(
+            records,
+            ensure_ascii=False,
+            indent=engine_values.REPORT_JSON_INDENT,
+        )
     )
     return 0
 

@@ -67,7 +67,7 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
             'journal_identifier = "auto_port_forwarding"\n'
             'service_template_file_name = "auto_port_forwarding.service"\n'
             'service_module_name = "pyntara.port_forwarding"\n'
-            'module_run_command = '
+            "module_run_command = "
             '["{python}", "-m", "{module}", "{config_path}"]\n'
             'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
             'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
@@ -110,13 +110,9 @@ def test_load_config_port_forwarding_section_parses(tmp_path: Path) -> None:
         # desired_port_min is zero
         lambda c: c.replace("desired_port_min = 32768", "desired_port_min = 0"),
         # desired_port_max is out of the TCP port space
-        lambda c: c.replace(
-            "desired_port_max = 60999", "desired_port_max = 70000"
-        ),
+        lambda c: c.replace("desired_port_max = 60999", "desired_port_max = 70000"),
         # desired_port_min exceeds desired_port_max
-        lambda c: c.replace(
-            "desired_port_min = 32768", "desired_port_min = 61000"
-        ),
+        lambda c: c.replace("desired_port_min = 32768", "desired_port_min = 61000"),
         # server_alive_interval_seconds is zero
         lambda c: c.replace(
             "server_alive_interval_seconds = 61", "server_alive_interval_seconds = 0"

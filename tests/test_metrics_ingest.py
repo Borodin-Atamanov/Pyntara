@@ -13,7 +13,6 @@ import pytest
 from support import make_config
 
 from pyntara.config import Config
-from pyntara.config.engine import EngineConfig
 from pyntara.metrics_ingest import main
 
 
@@ -23,17 +22,15 @@ def test_main_journals_under_the_configured_service_identifier(
     # The ingest announces itself in the journal under the identifier of its
     # own section, never under the engine name.
     config_path = tmp_path / "config.toml"
-    config = make_config(task_data_root=tmp_path)
-    configured: list[EngineConfig] = []
+    config = make_config()
+    configured: list[str] = []
     monkeypatch.setattr("pyntara.metrics_ingest.load_config", lambda path: config)
     monkeypatch.setattr("pyntara.metrics_ingest.configure_journal", configured.append)
     monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", lambda cfg: None)
-    monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_ingest", str(config_path)]
-    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics_ingest", str(config_path)])
     main()
     service_identifier = config.system_metrics_setup.service_journal_identifier
-    assert configured[-1].journal_identifier == service_identifier
+    assert configured[-1] == service_identifier
 
 
 def test_main_loads_config_and_ingests(
@@ -42,7 +39,7 @@ def test_main_loads_config_and_ingests(
     # main reads the config path from the argument, loads the config and
     # ingests the spool once.
     config_path = tmp_path / "config.toml"
-    config = make_config(task_data_root=tmp_path)
+    config = make_config()
     seen_paths: list[Path] = []
     ingested: list[Config] = []
 
@@ -55,9 +52,7 @@ def test_main_loads_config_and_ingests(
 
     monkeypatch.setattr("pyntara.metrics_ingest.load_config", fake_load)
     monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", fake_ingest)
-    monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_ingest", str(config_path)]
-    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics_ingest", str(config_path)])
     main()
     assert seen_paths == [config_path]
     assert ingested == [config]
@@ -102,7 +97,7 @@ def test_main_reports_a_failed_ingest_in_one_line(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # A failure while the ingest works is also reported in one line.
-    config = make_config(task_data_root=tmp_path)
+    config = make_config()
 
     def fail(cfg: Config) -> list[Path]:
         del cfg

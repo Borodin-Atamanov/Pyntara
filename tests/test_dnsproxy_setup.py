@@ -25,19 +25,16 @@ def _point_the_values_at_the_temporary_tree(
     test writes into /etc, /usr or /var.
     """
 
-    monkeypatch.setattr(
-        values, "SERVICE_UNIT_PATH", tmp_path / "dnsproxy.service"
-    )
+    monkeypatch.setattr(values, "SERVICE_UNIT_PATH", tmp_path / "dnsproxy.service")
     monkeypatch.setattr(values, "BINARY_PATH", tmp_path / "dnsproxy")
-    monkeypatch.setattr(
-        values, "RESOLVED_CONF_DIR", tmp_path / "resolved.conf.d"
-    )
+    monkeypatch.setattr(values, "RESOLVED_CONF_DIR", tmp_path / "resolved.conf.d")
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "download")
     monkeypatch.setattr(
         common_values,
         "PROFILE_ID_FILE_PATH",
         tmp_path / "nextdns_profile_id",
     )
+
 
 ROUTED_STATUS = (
     "Global\n"
@@ -51,7 +48,9 @@ ROUTED_STATUS = (
 )
 
 
-def test_discover_dns_servers_combines_and_sorts_both_command_outputs(monkeypatch: Any) -> None:
+def test_discover_dns_servers_combines_and_sorts_both_command_outputs(
+    monkeypatch: Any,
+) -> None:
     outputs = {
         "resolvectl": FakeProc(0, "Global:\nLink 2 (eth0): 192.168.1.1 2001:db8::2\n"),
         "nmcli": FakeProc(0, "IP4.DNS[1]:192.168.1.1\nIP6.DNS[1]:2001:db8::1\n"),
@@ -69,7 +68,9 @@ def test_discover_dns_servers_combines_and_sorts_both_command_outputs(monkeypatc
     assert [command[0] for command in calls] == ["resolvectl", "nmcli"]
 
 
-def test_discover_dns_servers_keeps_one_source_when_other_fails(monkeypatch: Any) -> None:
+def test_discover_dns_servers_keeps_one_source_when_other_fails(
+    monkeypatch: Any,
+) -> None:
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
         if command[0] == "resolvectl":
             return FakeProc(1, "")
@@ -92,12 +93,8 @@ def test_the_program_name_in_a_diagnostic_comes_from_the_command(
         return FakeProc(1, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    monkeypatch.setattr(
-        values, "RESOLVECTL_DNS_COMMAND", ("myresolvectl", "--status")
-    )
-    monkeypatch.setattr(
-        values, "NMCLI_DNS_COMMAND", ("mynmcli", "device", "show")
-    )
+    monkeypatch.setattr(values, "RESOLVECTL_DNS_COMMAND", ("myresolvectl", "--status"))
+    monkeypatch.setattr(values, "NMCLI_DNS_COMMAND", ("mynmcli", "device", "show"))
     result = task_module.discover_dns_servers(3.0)
     assert result.errors == (
         "myresolvectl exited with 1",
@@ -250,9 +247,7 @@ def test_command_builds_bootstrap_protocol_forms_after_all_other_args() -> None:
         index for index, arg in enumerate(command) if arg.startswith("--bootstrap=")
     ]
     last_other = max(
-        index
-        for index, arg in enumerate(command)
-        if not arg.startswith("--bootstrap=")
+        index for index, arg in enumerate(command) if not arg.startswith("--bootstrap=")
     )
     assert bootstrap_indices
     assert min(bootstrap_indices) > last_other
@@ -297,10 +292,7 @@ def test_command_with_empty_discovery_keeps_configured_pool_only() -> None:
         values.BOOTSTRAP_FORM_TEMPLATES
     )
     assert sum(arg.startswith("--fallback=") for arg in command) == expected_per_group
-    assert (
-        sum(arg.startswith("--bootstrap=") for arg in command)
-        == expected_per_group
-    )
+    assert sum(arg.startswith("--bootstrap=") for arg in command) == expected_per_group
 
 
 def _run_task(
@@ -318,7 +310,7 @@ def _run_task(
     resolvectl_status_output: str = "",
     device_status: str = "",
 ) -> tuple[Any, Path, list[list[str]]]:
-    '''Run the dnsproxy task with a uniform command mock and return the
+    """Run the dnsproxy task with a uniform command mock and return the
     result, the rendered service path and the recorded commands. provider_dns
     makes the discovery commands return a provider IPv4 and IPv6 resolver
     pair. occupied_port makes the port scan report one listener on the first
@@ -328,14 +320,12 @@ def _run_task(
     the nmcli check command raise FileNotFoundError, and
     resolvectl_status_output overrides the resolvectl status listing; an
     empty value uses a listing that routes through dnsproxy. probe controls
-    the pre-cutover dnsproxy answer check.'''
+    the pre-cutover dnsproxy answer check."""
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config(task_data_root=tmp_path)
+    config = make_config()
     monkeypatch.setattr(values, "APPEND_PROVIDER_DNS", append_provider_dns)
     (tmp_path / "nextdns_profile_id").write_text("39284e\n", encoding="utf-8")
-    context = make_context(
-        vault_password=PASSWORD, config=config, repo_root=Path.cwd()
-    )
+    context = make_context(vault_password=PASSWORD, config=config, repo_root=Path.cwd())
     monkeypatch.setattr(
         task_module,
         "fetch_latest_release",
@@ -374,7 +364,7 @@ def _run_task(
                 if stubborn_port or state["ss"] <= 2:
                     return FakeProc(
                         0,
-                        "LISTEN 0 4096 *:53053 *:* users:((\"dnsproxy\",pid=12345,fd=9))\n",
+                        'LISTEN 0 4096 *:53053 *:* users:(("dnsproxy",pid=12345,fd=9))\n',
                     )
             return FakeProc(0, "")
         if command == device_status_command:
@@ -383,7 +373,12 @@ def _run_task(
             return FakeProc(0, nmcli_active)
         if command == list(values.RESOLVECTL_STATUS_COMMAND):
             return FakeProc(0, resolvectl_status_output or ROUTED_STATUS)
-        if command[:4] == ["nmcli", "-t", "-f", "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns"]:
+        if command[:4] == [
+            "nmcli",
+            "-t",
+            "-f",
+            "ipv4.ignore-auto-dns,ipv6.ignore-auto-dns",
+        ]:
             return FakeProc(0, "ipv4.ignore-auto-dns:no\nipv6.ignore-auto-dns:no\n")
         if provider_dns and command == ["resolvectl", "dns"]:
             state["routedns"] += 1
@@ -454,15 +449,11 @@ def test_task_fails_early_without_the_nextdns_profile_file(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     service_path = tmp_path / "dnsproxy.service"
-    config = make_config(task_data_root=tmp_path)
-    context = make_context(
-        vault_password=PASSWORD, config=config, repo_root=Path.cwd()
-    )
+    config = make_config()
+    context = make_context(vault_password=PASSWORD, config=config, repo_root=Path.cwd())
     result = task_module.task(context)
     assert result.success is True
-    assert any(
-        "nextdns_setup_system_wide" in warning for warning in result.warnings
-    )
+    assert any("nextdns_setup_system_wide" in warning for warning in result.warnings)
     assert not service_path.exists()
 
 
@@ -492,9 +483,7 @@ def test_task_does_not_change_the_resolver_when_the_probe_fails(
 ) -> None:
     result, _, calls = _run_task(tmp_path, monkeypatch, probe=False)
     assert result.success is True
-    assert any(
-        "does not answer direct DNS" in warning for warning in result.warnings
-    )
+    assert any("does not answer direct DNS" in warning for warning in result.warnings)
     assert ["systemctl", "stop", "dnsproxy.service"] in calls
     dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
     assert not dropin.exists()
@@ -508,20 +497,13 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
         "lo:bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb:lo\n"
         "ygg:cccccccc-cccc-cccc-cccc-cccccccccccc:ygg\n"
     )
-    status = (
-        "enp0:ethernet\n"
-        "wlp0:wifi\n"
-        "ygg:tun\n"
-        "lo:loopback\n"
-    )
+    status = "enp0:ethernet\nwlp0:wifi\nygg:tun\nlo:loopback\n"
     result, _, calls = _run_task(
         tmp_path, monkeypatch, nmcli_active=active, device_status=status
     )
     assert result.success is True
     modifies = [
-        command
-        for command in calls
-        if command[:3] == ["nmcli", "connection", "modify"]
+        command for command in calls if command[:3] == ["nmcli", "connection", "modify"]
     ]
     modified_uuids = {command[3] for command in modifies}
     assert "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" in modified_uuids
@@ -532,27 +514,21 @@ def test_task_disables_auto_dns_on_active_connections_by_uuid(
     assert "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb" not in modified_uuids
     assert all("true" in command for command in modifies)
     reapplies = [
-        command
-        for command in calls
-        if command[:3] == ["nmcli", "device", "reapply"]
+        command for command in calls if command[:3] == ["nmcli", "device", "reapply"]
     ]
     assert ["nmcli", "device", "reapply", "wlp0"] in reapplies
     assert not any("ygg" in command for command in reapplies)
     assert not any(command[-1] == "lo" for command in reapplies)
 
 
-def test_task_succeeds_when_nmcli_is_missing(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_task_succeeds_when_nmcli_is_missing(tmp_path: Path, monkeypatch: Any) -> None:
     result, _, calls = _run_task(tmp_path, monkeypatch, nmcli_missing=True)
     assert result.success is True
     nmcli_modifies = [
-        command for command in calls
-        if command[:3] == ["nmcli", "connection", "modify"]
+        command for command in calls if command[:3] == ["nmcli", "connection", "modify"]
     ]
     nmcli_reapplies = [
-        command for command in calls
-        if command[:3] == ["nmcli", "device", "reapply"]
+        command for command in calls if command[:3] == ["nmcli", "device", "reapply"]
     ]
     assert not nmcli_modifies
     assert not nmcli_reapplies
@@ -614,9 +590,7 @@ def test_task_fails_when_nm_missing_and_resolved_not_in_stub_mode(
         resolvectl_status_output=status,
     )
     assert result.success is True
-    assert any(
-        "stub resolv.conf mode" in warning for warning in result.warnings
-    )
+    assert any("stub resolv.conf mode" in warning for warning in result.warnings)
 
 
 def test_task_succeeds_with_warning_when_per_link_provider_dns_survives_but_routing_goes_through_dnsproxy(
@@ -631,8 +605,7 @@ def test_task_succeeds_with_warning_when_per_link_provider_dns_survives_but_rout
     dropin = values.RESOLVED_CONF_DIR / values.RESOLVED_DROPIN_FILE_NAME
     assert dropin.exists()
     assert not any(
-        command[:3] == ["systemctl", "stop", "dnsproxy.service"]
-        for command in calls
+        command[:3] == ["systemctl", "stop", "dnsproxy.service"] for command in calls
     )
 
 
@@ -697,9 +670,7 @@ def test_task_fails_when_global_dns_missing_wildcard_routing_domain(
         "       DNS Servers: 127.0.0.1:53053 [::1]:53053\n"
         "        DNS Domain: local\n"
     )
-    result, _, _ = _run_task(
-        tmp_path, monkeypatch, resolvectl_status_output=status
-    )
+    result, _, _ = _run_task(tmp_path, monkeypatch, resolvectl_status_output=status)
     assert result.success is True
     assert any("no ~. routing domain" in warning for warning in result.warnings)
 
@@ -744,7 +715,7 @@ def test_release_and_download_curls_carry_configured_flags(
     # The release query runs through the shared release reader, which takes
     # the endpoint and the curl flags from the engine config; the flags of
     # the query itself are asserted in tests/test_github_release.py.
-    config = make_config(task_data_root=tmp_path)
+    make_config()
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> FakeProc:
@@ -753,8 +724,13 @@ def test_release_and_download_curls_carry_configured_flags(
         return FakeProc(0, '{"tag_name": "v0.84.1"}')
 
     monkeypatch.setattr("pyntara.github_release.run_command", fake_run)
-    payload = task_module.fetch_latest_release("AdguardTeam/dnsproxy", config.engine)
+    payload = task_module.fetch_latest_release(
+        "AdguardTeam/dnsproxy",
+    )
     assert payload["tag_name"] == "v0.84.1"
     curl_calls = [call for call in calls if call[0] == "curl"]
     assert curl_calls
-    assert "https://api.github.com/repos/AdguardTeam/dnsproxy/releases/latest" in curl_calls[0]
+    assert (
+        "https://api.github.com/repos/AdguardTeam/dnsproxy/releases/latest"
+        in curl_calls[0]
+    )

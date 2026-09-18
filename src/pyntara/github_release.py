@@ -13,27 +13,27 @@ from __future__ import annotations
 
 import json
 
-from pyntara.config import EngineConfig
 from pyntara.utils import release_query_command, run_command
+from pyntara.values import engine as engine_values
 
 
-def fetch_latest_release(repository: str, engine: EngineConfig) -> dict[str, object]:
+def fetch_latest_release(repository: str) -> dict[str, object]:
     """Return the payload of the latest release of a GitHub repository.
 
     repository is the owner/name pair, for example AdguardTeam/dnsproxy.
-    The URL is the engine-wide github_latest_release_url with {repo}
-    replaced and the command is the engine-wide release query, so every
-    task queries a release the same way. Raises RuntimeError when the
-    request fails or the payload is not usable JSON, so the caller reports
-    the reason instead of a raw exception.
+    The URL is the declared GITHUB_LATEST_RELEASE_URL with {repo} replaced
+    and the command is the declared release query, so every task queries a
+    release the same way. Raises RuntimeError when the request fails or the
+    payload is not usable JSON, so the caller reports the reason instead of
+    a raw exception.
     """
 
-    url = engine.github_latest_release_url.format(repo=repository)
+    url = engine_values.GITHUB_LATEST_RELEASE_URL.format(repo=repository)
     result = run_command(
-        release_query_command(engine, url),
+        release_query_command(url),
         check=False,
         capture=True,
-        timeout=engine.command_timeout_seconds,
+        timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
     )
     if result.returncode != 0:
         raise RuntimeError(f"cannot fetch {url}: exit {result.returncode}")

@@ -18,9 +18,7 @@ def test_load_config_nextdns_section_parses(tmp_path: Path) -> None:
     config = load_checked_config(write_config(tmp_path, base_config()))
     section = config.nextdns_setup_system_wide
     assert section.vault_group_title == "NextDNS"
-    assert section.profile_id_file_path == Path(
-        "/var/lib/pyntara/nextdns_profile_id"
-    )
+    assert section.profile_id_file_path == Path("/var/lib/pyntara/nextdns_profile_id")
     assert section.profile_id_file_mode == 0o644
     assert section.error_priority == 3
 

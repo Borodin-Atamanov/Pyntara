@@ -82,13 +82,9 @@ from config_helpers import (
             'icon_relative_path = ""',
         ),
         # binary_file_name is empty
-        base_config().replace(
-            'binary_file_name = "Telegram"', 'binary_file_name = ""'
-        ),
+        base_config().replace('binary_file_name = "Telegram"', 'binary_file_name = ""'),
         # updater_file_name is a number, not a string
-        base_config().replace(
-            'updater_file_name = "Updater"', "updater_file_name = 7"
-        ),
+        base_config().replace('updater_file_name = "Updater"', "updater_file_name = 7"),
         # archive_directory_name is empty
         base_config().replace(
             'archive_directory_name = "Telegram"',

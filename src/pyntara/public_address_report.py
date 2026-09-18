@@ -31,31 +31,16 @@ from pathlib import Path
 from pyntara.config import (
     PUBLIC_ADDRESS_CONFIG_KEYS,
     Config,
-    EngineConfig,
     absent_config_keys,
     load_config,
 )
 from pyntara.public_address import PublicAddresses, fetch_public_addresses
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
+from pyntara.values import engine as engine_values
 
 # The reason a family without an address carries into the report.
 NO_ANSWER_REASON = "no echo service reported an address of this family"
-
-
-def families_without_a_word(engine: EngineConfig) -> tuple[str, ...]:
-    """The address families the engine table cannot name in the report.
-
-    The words the report writes into its family field are config values
-    (engine.report_family_words); a table that misses one of them would
-    leave records whose family nobody can read, so the command names the
-    missing entry instead of printing such a document.
-    """
-
-    words = engine.report_family_words
-    return tuple(
-        name for name in ("ipv4", "ipv6") if not words.get(name)
-    )
 
 
 def address_records(
@@ -64,14 +49,13 @@ def address_records(
     """One record per reported address, plus a reason per silent family.
 
     The field names, the family words and the ssh command come from the
-    config, so the report shape lives in one place. The caller checked the
-    family words first (families_without_a_word), so every family of the
-    model has its word here.
+    declared values, so the report shape lives in one place. The family
+    words of the model are declared every time (the suite rules on the
+    module keep them complete), so every family has its word here.
     """
 
-    engine = cfg.engine
-    keys = engine.report_record_keys
-    words = engine.report_family_words
+    keys = engine_values.REPORT_RECORD_KEYS
+    words = engine_values.REPORT_FAMILY_WORDS
     records: list[dict[str, object]] = []
     for name, values in (
         ("ipv4", addresses.ipv4),
@@ -79,15 +63,13 @@ def address_records(
     ):
         family = words[name]
         if not values:
-            records.append(
-                {keys["family"]: family, keys["reason"]: NO_ANSWER_REASON}
-            )
+            records.append({keys["family"]: family, keys["reason"]: NO_ANSWER_REASON})
             continue
         records.extend(
             {
                 keys["address"]: address,
                 keys["family"]: family,
-                keys["ssh"]: ssh_command(engine, address, ssh_port),
+                keys["ssh"]: ssh_command(address, ssh_port),
             }
             for address in values
         )
@@ -115,14 +97,6 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    missing_words = families_without_a_word(cfg.engine)
-    if missing_words:
-        print(
-            "error: the engine table of the config has no "
-            "report_family_words entry for " + ", ".join(missing_words),
-            file=sys.stderr,
-        )
-        return 1
     if not echo.server_ip_services:
         print(
             "error: no echo service is configured in the "
@@ -136,7 +110,6 @@ def main(argv: list[str]) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     addresses = fetch_public_addresses(
-        cfg.engine,
         echo.server_ip_services,
         echo.server_ip_timeout_seconds,
         cfg.system_metrics_setup.collector.command_timeout_seconds,
@@ -151,7 +124,7 @@ def main(argv: list[str]) -> int:
         json.dumps(
             address_records(cfg, addresses, ssh_port),
             ensure_ascii=False,
-            indent=cfg.engine.report_json_indent,
+            indent=engine_values.REPORT_JSON_INDENT,
         )
     )
     return 0

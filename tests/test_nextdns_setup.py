@@ -18,6 +18,7 @@ from support import make_config, make_context
 from pyntara.nextdns_profile import select_profile_from_vault
 from pyntara.tasks import nextdns_setup_system_wide as task_module
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import nextdns_setup_system_wide as values
 
 VAULT_PASSWORD = "local-vault-password"
@@ -45,8 +46,6 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
-    owner_uid: int = 0,
-    owner_gid: int = 0,
 ):
     """Context safe for unit tests; the real files are never touched."""
 
@@ -58,18 +57,13 @@ def _ctx(
         repo_root=tmp_path,
         task_data_root=tmp_path,
         config=make_config(
-            task_data_root=tmp_path,
-            root_owner_uid=owner_uid,
-            root_owner_gid=owner_gid,
             local_vault_source_production=Path("secrets/production.vault"),
             local_vault_source_default=Path("secrets/default.vault"),
         ),
     )
 
 
-def _install_source_vault(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _install_source_vault(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Create a production source vault with a NextDNS group and five profiles."""
 
     vault = tmp_path / "secrets" / "production.vault"
@@ -121,7 +115,9 @@ def test_profile_file_owner_comes_from_the_engine_config(
         "chown",
         lambda path, uid, gid: chowned.append((path, uid, gid)),
     )
-    ctx = _ctx(tmp_path, owner_uid=7, owner_gid=11)
+    monkeypatch.setattr(engine_values, "ROOT_OWNER_UID", 7)
+    monkeypatch.setattr(engine_values, "ROOT_OWNER_GID", 11)
+    ctx = _ctx(tmp_path)
     result = task_module.task(ctx)
     assert result.success is True
     profile_file = common_values.PROFILE_ID_FILE_PATH
@@ -150,9 +146,7 @@ def test_already_done_when_file_matches(
     assert "already carries" in result.message
 
 
-def test_force_rewrites_file(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_force_rewrites_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _install_source_vault(tmp_path, monkeypatch)
     ctx = _ctx(tmp_path, force=True)
     monkeypatch.setattr(socket, "gethostname", lambda: "pyntara-test-host")

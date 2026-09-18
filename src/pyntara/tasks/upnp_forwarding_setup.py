@@ -36,6 +36,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 
 # Module-level paths and helpers are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -69,9 +70,7 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        exec_lines=f"ExecStart={command}", version=version
-    )
+    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
 
 
 def _render_timer_unit(
@@ -144,13 +143,12 @@ def task(ctx: Context) -> TaskResult:
     deployment stays in place.
     """
 
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     cfg = ctx.config.upnp_forwarding_setup
     metrics = ctx.config.system_metrics_setup
-    engine = ctx.config.engine
     venv_python = metrics.venv_dir / metrics.venv_python_relative_path
-    unit_dir = engine.systemd_unit_dir
+    unit_dir = engine_values.SYSTEMD_UNIT_DIR
     data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
     version, version_warning = deployment.deployed_version(
@@ -182,8 +180,8 @@ def task(ctx: Context) -> TaskResult:
         matches = _unit_matches(unit_dir, name, content)
         units_ok = units_ok and matches
         _log(f"checking unit {name}: {'ok' if matches else 'missing or stale'}")
-    timer_enabled = service_is_enabled(engine, cfg.timer_unit_name, timeout)
-    timer_active = service_is_active(engine, cfg.timer_unit_name, timeout)
+    timer_enabled = service_is_enabled(cfg.timer_unit_name, timeout)
+    timer_active = service_is_active(cfg.timer_unit_name, timeout)
     _log(
         f"checking autorun {cfg.timer_unit_name}: "
         f"{'enabled' if timer_enabled else 'disabled'}"
@@ -273,9 +271,7 @@ def task(ctx: Context) -> TaskResult:
                 cfg.systemctl_is_failed_command, cfg.service_unit_name, timeout
             )
         except (subprocess.SubprocessError, OSError) as exc:
-            warnings.append(
-                f"cannot check {cfg.service_unit_name}: {exc}"
-            )
+            warnings.append(f"cannot check {cfg.service_unit_name}: {exc}")
         else:
             if failed:
                 warnings.append(

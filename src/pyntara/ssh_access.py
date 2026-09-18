@@ -22,17 +22,18 @@ from __future__ import annotations
 
 from urllib.parse import urlparse
 
-from pyntara.config import EngineConfig
+from pyntara.values import engine as engine_values
 
 
-def socks_proxy_address(engine: EngineConfig, port: int) -> str:
+def socks_proxy_address(port: int) -> str:
     """The local SOCKS proxy address of an anonymity router.
 
-    The host comes from the engine, so the two routers and every reported
-    command share one spelling of the loopback address the proxies bind.
+    The host is the declared SSH_REPORT_PROXY_HOST, so the two routers and
+    every reported command share one spelling of the loopback address the
+    proxies bind.
     """
 
-    return f"{engine.ssh_report_proxy_host}:{port}"
+    return f"{engine_values.SSH_REPORT_PROXY_HOST}:{port}"
 
 
 def host_from_address(address: str) -> str:
@@ -52,29 +53,28 @@ def host_from_address(address: str) -> str:
 
 
 def ssh_command(
-    engine: EngineConfig,
     address: str,
     port: int,
     socks_proxy: str | None = None,
 ) -> str:
     """The ssh command that reaches address on port.
 
-    The command is built from the engine texts, so its form lives in the
-    config: the client is verbose, the port is always written so a reader
-    never has to know a default, and socks_proxy adds the ProxyCommand of
-    the anonymity network the address belongs to. An address that carries
-    a zone index (fe80::1%eth0) is used as it is, because the zone is what
-    makes a link scope address reachable.
+    The command is built from the declared formats, so its form lives in
+    the values package: the client is verbose, the port is always written
+    so a reader never has to know a default, and socks_proxy adds the
+    ProxyCommand of the anonymity network the address belongs to. An
+    address that carries a zone index (fe80::1%eth0) is used as it is,
+    because the zone is what makes a link scope address reachable.
     """
 
     proxy_option = ""
     if socks_proxy:
-        proxy_command = engine.ssh_report_socks_command_format.format(
+        proxy_command = engine_values.SSH_REPORT_SOCKS_COMMAND_FORMAT.format(
             proxy=socks_proxy
         )
-        proxy_option = engine.ssh_report_proxy_option_format.format(
+        proxy_option = engine_values.SSH_REPORT_PROXY_OPTION_FORMAT.format(
             proxy_command=proxy_command
         )
-    return engine.ssh_report_command_format.format(
+    return engine_values.SSH_REPORT_COMMAND_FORMAT.format(
         port=port, address=address, proxy_option=proxy_option
     )

@@ -68,7 +68,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from pyntara.config import EngineConfig, YggdrasilServiceSetupConfig
+from pyntara.config import YggdrasilServiceSetupConfig
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -85,6 +85,7 @@ from pyntara.utils import (
     substituted_command,
     version_from_output,
 )
+from pyntara.values import engine as engine_values
 from pyntara.yggdrasil import self_address_from_output
 
 # The yggdrasil version string from yggdrasil -version, e.g. Build
@@ -142,7 +143,7 @@ def _installed_version(cfg: YggdrasilServiceSetupConfig, timeout: float) -> str 
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
     if result.returncode != 0:
         return None
@@ -150,7 +151,6 @@ def _installed_version(cfg: YggdrasilServiceSetupConfig, timeout: float) -> str 
 
 
 def _download_asset(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     url: str,
@@ -158,7 +158,7 @@ def _download_asset(
 ) -> None:
     """Download the package into the download directory.
 
-    The command is the engine-wide download call, so the flags and the
+    The command is the declared download call, so the flags and the
     progress text are the same as in every other download of the run.
     Raises RuntimeError when curl fails, so the caller reports the
     reason.
@@ -167,7 +167,7 @@ def _download_asset(
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
         run_command(
-            download_command(engine, download_dir / name, url),
+            download_command(download_dir / name, url),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -175,7 +175,6 @@ def _download_asset(
 
 
 def _install_deb(
-    engine: EngineConfig,
     download_dir: Path,
     name: str,
     *,
@@ -194,9 +193,7 @@ def _install_deb(
     ok = False
     error = ""
     for _ in range(retries + 1):
-        ok, error = install_package_once(
-            engine, str(download_dir / name), install_timeout
-        )
+        ok, error = install_package_once(str(download_dir / name), install_timeout)
         if ok:
             break
     return ok, error
@@ -216,9 +213,7 @@ def _cleanup_downloads(download_dir: Path, name: str) -> None:
         pass
 
 
-def _render_config(
-    cfg: YggdrasilServiceSetupConfig, peers: list[str]
-) -> str:
+def _render_config(cfg: YggdrasilServiceSetupConfig, peers: list[str]) -> str:
     """Render the yggdrasil configuration document with the given peers.
 
     The key lives in the separate PEM file, so the rendered document
@@ -286,9 +281,7 @@ def _ensure_private_key(
             timeout=timeout,
         )
         if generated.returncode != 0:
-            raise RuntimeError(
-                f"cannot generate config: exit {generated.returncode}"
-            )
+            raise RuntimeError(f"cannot generate config: exit {generated.returncode}")
         exported = run_command(
             list(cfg.export_key_from_stdin_command),
             check=False,
@@ -297,9 +290,7 @@ def _ensure_private_key(
             input=generated.stdout,
         )
         if exported.returncode != 0:
-            raise RuntimeError(
-                f"cannot export private key: exit {exported.returncode}"
-            )
+            raise RuntimeError(f"cannot export private key: exit {exported.returncode}")
         key_text = exported.stdout
     cfg.private_key_path.parent.mkdir(parents=True, exist_ok=True)
     cfg.private_key_path.write_text(key_text, encoding="utf-8")
@@ -330,7 +321,7 @@ def _config_has_peers(cfg: YggdrasilServiceSetupConfig) -> bool:
 
     try:
         data = json.loads(cfg.config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return False
     if not isinstance(data, dict):
         return False
@@ -362,23 +353,20 @@ def _parse_md_peers(text: str) -> list[str]:
     """
 
     uris = PEER_URI_PATTERN.findall(text)
-    return list(
-        dict.fromkeys(uri for uri in uris if _is_parseable_peer_uri(uri))
-    )
+    return list(dict.fromkeys(uri for uri in uris if _is_parseable_peer_uri(uri)))
 
 
 def _download_peers(
-    engine: EngineConfig,
     cfg: YggdrasilServiceSetupConfig,
     timeout: float,
 ) -> list[str]:
     """Download and parse the public-peers list; save it next to the config.
 
-    Downloads the repository tarball with the engine-wide download
-    command, extracts every markdown file and collects the backtick peer
-    URIs. The full list is saved to peers_full_path for reference, while
-    the configuration only ever carries the selected working peers.
-    Raises RuntimeError when the download fails or yields no peers.
+    Downloads the repository tarball with the declared download command,
+    extracts every markdown file and collects the backtick peer URIs. The
+    full list is saved to peers_full_path for reference, while the
+    configuration only ever carries the selected working peers. Raises
+    RuntimeError when the download fails or yields no peers.
     """
 
     tmp_fd, tmp_name = tempfile.mkstemp(
@@ -388,7 +376,7 @@ def _download_peers(
     os.close(tmp_fd)
     try:
         run_command(
-            download_command(engine, Path(tmp_name), cfg.peers_tarball_url),
+            download_command(Path(tmp_name), cfg.peers_tarball_url),
             timeout=timeout,
         )
         try:
@@ -459,7 +447,7 @@ def _resolve_uri_addrs(uri: str) -> list[tuple[str, int]]:
         if not host or not port:
             return []
         infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
-    except (ValueError, socket.gaierror):
+    except ValueError, socket.gaierror:
         return []
     result: list[tuple[str, int]] = []
     for info in infos:
@@ -523,7 +511,7 @@ def _latencies_from_ctl(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return {}
     if result.returncode != 0:
         return {}
@@ -603,10 +591,7 @@ def _ensure_interface_unmanaged(
         os.chmod(cfg.nm_unmanaged_conf_path, cfg.nm_unmanaged_conf_file_mode)
         apply_owner(cfg.nm_unmanaged_conf_path, owner_uid, owner_gid)
         changed = True
-        _log(
-            f"marked interface {cfg.if_name} as unmanaged in "
-            "NetworkManager"
-        )
+        _log(f"marked interface {cfg.if_name} as unmanaged in NetworkManager")
     except OSError as exc:
         _log(f"cannot write the NetworkManager unmanaged rule: {exc}")
         return False
@@ -624,7 +609,7 @@ def _ensure_interface_unmanaged(
 
 
 def _cleanup_leftover_interface(
-    engine: EngineConfig, cfg: YggdrasilServiceSetupConfig, timeout: float
+    cfg: YggdrasilServiceSetupConfig, timeout: float
 ) -> None:
     """Remove a stale yggdrasil interface before the service starts.
 
@@ -660,12 +645,9 @@ def _cleanup_leftover_interface(
         exists = False
     if not exists:
         return
-    if service_is_active(engine, cfg.service_unit_name, timeout):
+    if service_is_active(cfg.service_unit_name, timeout):
         return
-    _log(
-        f"leftover interface {cfg.if_name} without a running service, "
-        "cleaning up"
-    )
+    _log(f"leftover interface {cfg.if_name} without a running service, cleaning up")
     try:
         profile_exists = (
             run_command(
@@ -707,18 +689,14 @@ def _cleanup_leftover_interface(
     try:
         if cfg.netplan_dir_path.is_dir():
             marker = cfg.netplan_interface_marker.format(interface_name=cfg.if_name)
-            for candidate in cfg.netplan_dir_path.glob(
-                f"*{cfg.netplan_file_suffix}"
-            ):
+            for candidate in cfg.netplan_dir_path.glob(f"*{cfg.netplan_file_suffix}"):
                 try:
                     text = candidate.read_text(encoding="utf-8")
                 except OSError:
                     continue
                 if marker not in text:
                     continue
-                backup = candidate.with_name(
-                    candidate.name + cfg.netplan_backup_suffix
-                )
+                backup = candidate.with_name(candidate.name + cfg.netplan_backup_suffix)
                 candidate.replace(backup)
                 _log(
                     f"moved netplan profile {candidate.name} for interface "
@@ -728,16 +706,14 @@ def _cleanup_leftover_interface(
         pass
 
 
-def _restart_service(
-    engine: EngineConfig, cfg: YggdrasilServiceSetupConfig, timeout: float
-) -> None:
+def _restart_service(cfg: YggdrasilServiceSetupConfig, timeout: float) -> None:
     """Restart the service, or start it cleanly when it is not running.
 
     The start path cleans a stale leftover interface up first, so a
     crashed previous run never blocks the start with its stale address.
     """
 
-    if service_is_active(engine, cfg.service_unit_name, timeout):
+    if service_is_active(cfg.service_unit_name, timeout):
         run_command(
             substituted_command(
                 cfg.service_restart_command,
@@ -746,7 +722,7 @@ def _restart_service(
             timeout=timeout,
         )
         return
-    _cleanup_leftover_interface(engine, cfg, timeout)
+    _cleanup_leftover_interface(cfg, timeout)
     run_command(
         substituted_command(
             cfg.service_start_command,
@@ -798,7 +774,7 @@ def _save_self_address(
                 )
                 if address is None:
                     reason = "the self address query reported no address"
-        except (subprocess.TimeoutExpired, OSError):
+        except subprocess.TimeoutExpired, OSError:
             reason = "the self address query is unavailable"
         if address is not None:
             cfg.address_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -826,9 +802,7 @@ def _save_self_address(
         time.sleep(pause)
 
 
-def _wait_for_connections(
-    cfg: YggdrasilServiceSetupConfig, timeout: float
-) -> int:
+def _wait_for_connections(cfg: YggdrasilServiceSetupConfig, timeout: float) -> int:
     """The live peer count, retried until the configured budget runs out.
 
     After the final restart the peers need a moment to re-establish
@@ -884,9 +858,9 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.yggdrasil_service_setup
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     warnings: list[str] = []
 
@@ -901,14 +875,14 @@ def task(ctx: Context) -> TaskResult:
         )
 
     try:
-        arch = dpkg_architecture(ctx.config.engine, timeout)
+        arch = dpkg_architecture(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         warnings.append(f"cannot determine dpkg architecture: {exc}")
         return done("yggdrasil not configured", False)
     _log(f"reading dpkg architecture: {arch}")
 
     try:
-        release = fetch_latest_release(cfg.github_repo, ctx.config.engine)
+        release = fetch_latest_release(cfg.github_repo)
         tag = release_tag(release)
     except RuntimeError as exc:
         warnings.append(str(exc))
@@ -928,8 +902,8 @@ def task(ctx: Context) -> TaskResult:
     installed_version = _installed_version(cfg, timeout)
     _log(f"checking installed version: {installed_version or 'not installed'}")
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(cfg.service_unit_name, timeout)
+    active = service_is_active(cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -949,10 +923,7 @@ def task(ctx: Context) -> TaskResult:
     # not enough: the peers may have gone stale, so the task must not
     # treat a dead node as already configured.
     has_connections = bool(_latencies_from_ctl(cfg, timeout))
-    _log(
-        "checking live connections: "
-        f"{'present' if has_connections else 'none'}"
-    )
+    _log(f"checking live connections: {'present' if has_connections else 'none'}")
     if (
         not force
         and not needs_install
@@ -971,7 +942,6 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading {asset_name} into {cfg.download_dir}")
         try:
             _download_asset(
-                ctx.config.engine,
                 cfg.download_dir,
                 asset_name,
                 asset_url,
@@ -983,7 +953,6 @@ def task(ctx: Context) -> TaskResult:
         _log("package downloaded")
         _log(f"installing package: apt-get install -y {asset_name}")
         ok, error = _install_deb(
-            ctx.config.engine,
             cfg.download_dir,
             asset_name,
             install_timeout=timeout,
@@ -1053,7 +1022,7 @@ def task(ctx: Context) -> TaskResult:
                 f"starting service {cfg.service_unit_name} with the "
                 "existing configuration"
             )
-            _cleanup_leftover_interface(ctx.config.engine, cfg, timeout)
+            _cleanup_leftover_interface(cfg, timeout)
             try:
                 run_command(
                     substituted_command(
@@ -1066,14 +1035,11 @@ def task(ctx: Context) -> TaskResult:
                 warnings.append(f"systemctl start failed: {exc}")
                 return done("yggdrasil node not running", True)
             changed = True
-        _log(
-            f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
-        )
+        _log(f"waiting {cfg.peer_probe_timeout_seconds}s for connections")
         time.sleep(cfg.peer_probe_timeout_seconds)
-        if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
+        if not service_is_active(cfg.service_unit_name, timeout):
             warnings.append(
-                f"service {cfg.service_unit_name} did not become active "
-                "after start"
+                f"service {cfg.service_unit_name} did not become active after start"
             )
             return done("yggdrasil node not running", changed)
         if not _latencies_from_ctl(cfg, timeout):
@@ -1096,7 +1062,6 @@ def task(ctx: Context) -> TaskResult:
     downloaded: list[str] | None = None
     try:
         downloaded = _download_peers(
-            ctx.config.engine,
             cfg,
             timeout,
         )
@@ -1127,14 +1092,13 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
-            _restart_service(ctx.config.engine, cfg, timeout)
+            _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl restart failed: {exc}")
             return done("yggdrasil not configured", True)
-        if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
+        if not service_is_active(cfg.service_unit_name, timeout):
             warnings.append(
-                f"service {cfg.service_unit_name} did not become active "
-                "after restart"
+                f"service {cfg.service_unit_name} did not become active after restart"
             )
             return done("yggdrasil node not running", True)
         _log("service active")
@@ -1167,16 +1131,11 @@ def task(ctx: Context) -> TaskResult:
 
     last_batch: list[str] = []
     for batch_index in range(total_batches):
-        batch = peers[
-            batch_index * batch_size : (batch_index + 1) * batch_size
-        ]
+        batch = peers[batch_index * batch_size : (batch_index + 1) * batch_size]
         if not batch:
             break
         last_batch = batch
-        _log(
-            f"batch {batch_index + 1}/{total_batches}: probing "
-            f"{len(batch)} peers"
-        )
+        _log(f"batch {batch_index + 1}/{total_batches}: probing {len(batch)} peers")
         _log(f"writing configuration {cfg.config_path} with probe batch")
         try:
             _write_config(cfg, batch, owner_uid, owner_gid)
@@ -1185,13 +1144,11 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", True)
         _log("configuration written")
         try:
-            _restart_service(ctx.config.engine, cfg, timeout)
+            _restart_service(cfg, timeout)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl restart failed: {exc}")
             return done("yggdrasil not configured", True)
-        _log(
-            f"waiting {cfg.peer_probe_timeout_seconds}s for connections"
-        )
+        _log(f"waiting {cfg.peer_probe_timeout_seconds}s for connections")
         time.sleep(cfg.peer_probe_timeout_seconds)
         connected = _journal_connected_addrs(
             cfg, cfg.peer_probe_timeout_seconds, timeout
@@ -1202,16 +1159,11 @@ def task(ctx: Context) -> TaskResult:
             addrs = _resolve_uri_addrs(uri)
             if any(addr in connected for addr in addrs):
                 working.append(uri)
-        _log(
-            f"batch {batch_index + 1}: {len(working)} of {len(batch)} "
-            f"peers connected"
-        )
+        _log(f"batch {batch_index + 1}: {len(working)} of {len(batch)} peers connected")
         if len(working) >= cfg.peer_target_count:
             latencies = _latencies_from_ctl(cfg, timeout)
             _log(f"read latencies for {len(latencies)} peer address(es)")
-            best_peers = _pick_best_peers(
-                working, latencies, cfg.peer_target_count
-            )
+            best_peers = _pick_best_peers(working, latencies, cfg.peer_target_count)
             _log(
                 f"batch {batch_index + 1}: keeping {len(best_peers)} peers "
                 "with the lowest ping"
@@ -1226,10 +1178,9 @@ def task(ctx: Context) -> TaskResult:
         "no batch reached the target; keeping the last tried batch "
         f"({len(last_batch)} peers) in the configuration"
     )
-    if not service_is_active(ctx.config.engine, cfg.service_unit_name, timeout):
+    if not service_is_active(cfg.service_unit_name, timeout):
         warnings.append(
-            f"service {cfg.service_unit_name} did not become active "
-            "after restart"
+            f"service {cfg.service_unit_name} did not become active after restart"
         )
         return done("yggdrasil node not running", True)
     live = _wait_for_connections(cfg, timeout)

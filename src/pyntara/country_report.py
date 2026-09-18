@@ -33,20 +33,19 @@ from pyntara.config import (
     load_config,
 )
 from pyntara.location import CountryReport, detect_country
+from pyntara.values import engine as engine_values
 
 
-def country_document(
-    report: CountryReport, word: str, keys: dict[str, str]
-) -> dict[str, object]:
+def country_document(report: CountryReport, word: str) -> dict[str, object]:
     """The report record of the detection, answers included.
 
-    The field names come from the engine map of report record keys, which
-    the address commands of the collector share, so the shape of a record
-    lives in one place. An answer that arrived as a JSON document keeps
-    its parsed structure, never a JSON string; a text answer keeps its
-    raw text.
+    The field names come from the declared REPORT_RECORD_KEYS, which the
+    address commands of the collector share, so the shape of a record lives
+    in one place. An answer that arrived as a JSON document keeps its parsed
+    structure, never a JSON string; a text answer keeps its raw text.
     """
 
+    keys = engine_values.REPORT_RECORD_KEYS
     return {
         keys["word"]: word,
         keys["in_country"]: report.in_country,
@@ -56,9 +55,7 @@ def country_document(
                 keys["source"]: answer.source,
                 keys["values"]: list(answer.values),
                 keys["document"]: (
-                    answer.document
-                    if answer.document is not None
-                    else answer.raw
+                    answer.document if answer.document is not None else answer.raw
                 ),
             }
             for answer in report.answers
@@ -94,7 +91,6 @@ def main(argv: list[str]) -> int:
         )
         return 1
     report = detect_country(
-        cfg.engine,
         setup.country_services,
         setup.country_word,
         setup.country_query_timeout_seconds,
@@ -108,11 +104,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(
         json.dumps(
-            country_document(
-                report, setup.country_word, cfg.engine.report_record_keys
-            ),
+            country_document(report, setup.country_word),
             ensure_ascii=False,
-            indent=cfg.engine.report_json_indent,
+            indent=engine_values.REPORT_JSON_INDENT,
         )
     )
     return 0

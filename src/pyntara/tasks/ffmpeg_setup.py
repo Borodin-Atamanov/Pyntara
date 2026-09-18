@@ -38,6 +38,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import ffmpeg_setup as ffmpeg_values
 from pyntara.values import missing_value_names
 
@@ -58,9 +59,7 @@ def _build_wayrecord(source_dir: Path, timeout: float) -> tuple[bool, str | None
     """
 
     binary_path = ffmpeg_values.WAYRECORD_BIN_PATH
-    sources = _wayrecord_sources(
-        source_dir, ffmpeg_values.WAYRECORD_SOURCE_FILE_NAMES
-    )
+    sources = _wayrecord_sources(source_dir, ffmpeg_values.WAYRECORD_SOURCE_FILE_NAMES)
     for source in sources:
         if not source.is_file():
             return False, f"missing wayrecord source: {source}"
@@ -123,9 +122,7 @@ def _deploy_desktop(ctx: Context, template_path: Path) -> tuple[bool, str | None
 
     target = ffmpeg_values.WAYRECORD_DESKTOP_PATH
     try:
-        content = _desktop_content(
-            template_path, ffmpeg_values.WAYRECORD_BIN_PATH
-        )
+        content = _desktop_content(template_path, ffmpeg_values.WAYRECORD_BIN_PATH)
         if target.is_file() and target.read_text(encoding="utf-8") == content:
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -157,12 +154,9 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(
             success=True,
             message="the ffmpeg values are not declared, nothing was changed",
-            warnings=(
-                "the ffmpeg values are not declared: " + ", ".join(absent),
-            ),
+            warnings=("the ffmpeg values are not declared: " + ", ".join(absent),),
         )
-    engine = ctx.config.engine
-    install_timeout = engine.command_timeout_seconds
+    install_timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
 
     installed_packages: list[str] = []
@@ -170,12 +164,11 @@ def task(ctx: Context) -> TaskResult:
     missing = [
         package
         for package in ffmpeg_values.PACKAGES
-        if not package_is_installed(engine, package, status_timeout)
+        if not package_is_installed(package, status_timeout)
     ]
     if missing:
         _log(f"installing: {', '.join(missing)}")
         installed, failures, install_warnings = install_packages(
-            engine,
             missing,
             install_timeout=install_timeout,
             update_timeout=install_timeout,
@@ -204,13 +197,10 @@ def task(ctx: Context) -> TaskResult:
     if installed_packages:
         messages.append(f"installed {', '.join(installed_packages)}")
     if engine_changed:
-        messages.append(
-            f"wayrecord engine built to {ffmpeg_values.WAYRECORD_BIN_PATH}"
-        )
+        messages.append(f"wayrecord engine built to {ffmpeg_values.WAYRECORD_BIN_PATH}")
     if desktop_changed:
         messages.append(
-            "wayrecord desktop entry written to "
-            f"{ffmpeg_values.WAYRECORD_DESKTOP_PATH}"
+            f"wayrecord desktop entry written to {ffmpeg_values.WAYRECORD_DESKTOP_PATH}"
         )
     if not messages:
         messages.append("already installed")

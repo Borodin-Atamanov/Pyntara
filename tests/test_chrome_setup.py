@@ -23,6 +23,7 @@ from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 
 # The real catalog from the values package; the mode-membership and
@@ -64,10 +65,20 @@ PROXY_FLAG = f" --proxy-server=socks5://127.0.0.1:{LOCAL_PROXY_PORT}"
 # manager widgets it appears under in the fixture.
 PINNED_LAUNCHER = "applications:google-chrome.desktop"
 ICON_TASKS_GROUP = (
-    "Containments", "2", "Applets", "5", "Configuration", "General",
+    "Containments",
+    "2",
+    "Applets",
+    "5",
+    "Configuration",
+    "General",
 )
 TASKMANAGER_GROUP = (
-    "Containments", "7", "Applets", "9", "Configuration", "General",
+    "Containments",
+    "7",
+    "Applets",
+    "9",
+    "Configuration",
+    "General",
 )
 # A Plasma appletsrc with one icons-only and one classic task manager in
 # two different panels, mirroring the real pinned launcher layout.
@@ -100,7 +111,7 @@ def _test_config(tmp_path: Path) -> Config:
     harness.
     """
 
-    return make_config(systemd_unit_dir=tmp_path / "systemd")
+    return make_config()
 
 
 @pytest.fixture(autouse=True)
@@ -110,11 +121,13 @@ def _point_the_values_at_the_temporary_tree(
     """Give every test its own writable tree for the section values.
 
     The paths the task writes are values of the section, plus the home of the
-    desktop user, which comes from the shared module. The fixture points them
-    at the temporary directory of the test and the shipped values come back
+    desktop user, which comes from the shared module, and the unit directory,
+    which comes from the engine values. The fixture points them at the
+    temporary directory of the test and the shipped values come back
     afterwards, so no test writes into /usr, /etc or a real home.
     """
 
+    monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     monkeypatch.setattr(values, "SETTINGS_DIR", tmp_path / "repo")
     monkeypatch.setattr(values, "SYSTEM_ROOT", tmp_path / "root")
     monkeypatch.setattr(
@@ -140,16 +153,9 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(
         values,
         "DESKTOP_OVERRIDE_PATH",
-        tmp_path
-        / "usr"
-        / "local"
-        / "share"
-        / "applications"
-        / "google-chrome.desktop",
+        tmp_path / "usr" / "local" / "share" / "applications" / "google-chrome.desktop",
     )
-    monkeypatch.setattr(
-        common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home")
-    )
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
@@ -189,9 +195,7 @@ def _write_desktop_source() -> None:
 def _write_appletsrc(text: str = APPLETSRC_TEXT) -> None:
     """Create the Plasma appletsrc of the desktop user."""
 
-    path = (
-        Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
-    )
+    path = Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -409,9 +413,7 @@ def test_desktop_content_appends_flags_to_each_exec() -> None:
         proxy_server=f"socks5://127.0.0.1:{LOCAL_PROXY_PORT}",
         user_data_dir="/home/i/.config/google-chrome-cdp",
     )
-    exec_lines = [
-        line for line in content.splitlines() if line.startswith("Exec=")
-    ]
+    exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
     assert len(exec_lines) == 2
     for line in exec_lines:
         assert line.endswith(
@@ -428,9 +430,7 @@ def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
         proxy_server="",
         user_data_dir="",
     )
-    exec_lines = [
-        line for line in content.splitlines() if line.startswith("Exec=")
-    ]
+    exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
     assert len(exec_lines) == 2
     for line in exec_lines:
         assert line.endswith(CDP_FLAGS)
@@ -460,8 +460,7 @@ def test_desktop_content_follows_the_launch_flags(
     for line in content.splitlines():
         if line.startswith("Exec="):
             assert line.endswith(
-                " --proxy-server=socks5://127.0.0.1:10808 "
-                "--remote-debugging-port=31337"
+                " --proxy-server=socks5://127.0.0.1:10808 --remote-debugging-port=31337"
             )
             assert "--user-data-dir" not in line
 
@@ -479,15 +478,11 @@ def test_the_desktop_entry_key_comes_from_the_values(
         proxy_server="",
         user_data_dir="",
     )
-    starts_lines = [
-        line for line in content.splitlines() if line.startswith("Starts=")
-    ]
+    starts_lines = [line for line in content.splitlines() if line.startswith("Starts=")]
     assert len(starts_lines) == 2
     for line in starts_lines:
         assert line.endswith(CDP_FLAGS)
-    assert not any(
-        line.startswith("Exec=") for line in content.splitlines()
-    )
+    assert not any(line.startswith("Exec=") for line in content.splitlines())
 
 
 def test_local_proxy_server_reads_the_three_x_ui_section(
@@ -495,13 +490,9 @@ def test_local_proxy_server_reads_the_three_x_ui_section(
 ) -> None:
     ctx = _ctx(tmp_path)
     _fake_run_factory(monkeypatch)
-    client_config = replace(
-        ctx.config.three_x_ui_xray_setup, local_proxy_port=10888
-    )
+    client_config = replace(ctx.config.three_x_ui_xray_setup, local_proxy_port=10888)
 
-    proxy_server, note = chrome_setup._local_proxy_server(
-        make_config().engine, client_config, timeout=60
-    )
+    proxy_server, note = chrome_setup._local_proxy_server(client_config, timeout=60)
 
     assert proxy_server == "socks5://127.0.0.1:10888"
     assert note is None
@@ -514,7 +505,7 @@ def test_local_proxy_server_without_a_listener_returns_a_note(
     _fake_run_factory(monkeypatch, local_proxy_listening=False)
 
     proxy_server, note = chrome_setup._local_proxy_server(
-        make_config().engine, ctx.config.three_x_ui_xray_setup, timeout=60
+        ctx.config.three_x_ui_xray_setup, timeout=60
     )
 
     assert proxy_server == ""
@@ -531,9 +522,7 @@ def test_local_proxy_server_without_configured_address_returns_a_note(
         ctx.config.three_x_ui_xray_setup, local_proxy_listen_address=""
     )
 
-    proxy_server, note = chrome_setup._local_proxy_server(
-        make_config().engine, client_config, timeout=60
-    )
+    proxy_server, note = chrome_setup._local_proxy_server(client_config, timeout=60)
 
     assert proxy_server == ""
     assert note is not None
@@ -552,9 +541,7 @@ def test_full_flow_mounts_the_profile_mirror_and_enables_it(
     result = chrome_setup.task(ctx)
 
     assert result.success
-    unit_file = (
-        ctx.config.engine.systemd_unit_dir / values.MOUNT_SERVICE_UNIT_NAME
-    )
+    unit_file = engine_values.SYSTEMD_UNIT_DIR / values.MOUNT_SERVICE_UNIT_NAME
     unit_text = unit_file.read_text(encoding="utf-8")
     profile_dir = chrome_setup._profile_dir()
     assert (
@@ -623,9 +610,7 @@ def test_keyring_armored_file_name_comes_from_the_values(
     # The proof of the value: another armored file name in the module is the
     # name the download writes.
     ctx = _ctx(tmp_path)
-    monkeypatch.setattr(
-        values, "KEYRING_ARMORED_FILE_NAME", "other-key.pub"
-    )
+    monkeypatch.setattr(values, "KEYRING_ARMORED_FILE_NAME", "other-key.pub")
     _write_repo()
     _write_desktop_source()
     calls = _fake_run_factory(monkeypatch, chrome_installed=False)
@@ -638,7 +623,9 @@ def test_keyring_armored_file_name_comes_from_the_values(
     assert dearmor[-1].endswith("other-key.pub")
 
 
-def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_full_flow_applies_everything(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     ctx = _ctx(tmp_path)
     _write_repo()
     _write_desktop_source()
@@ -652,16 +639,13 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
     assert values.APT_SOURCE_PATH.is_file()
     assert values.KEYRING_PATH.is_file()
     assert values.KEYRING_PATH.stat().st_size > 0
-    assert (
-        chrome_setup._source_text(
-            Path(__file__).resolve().parents[1]
-            / "task_data"
-            / "chrome_setup"
-            / values.APT_SOURCE_TEMPLATE_FILE_NAME,
-            values.KEYRING_PATH,
-        )
-        in values.APT_SOURCE_PATH.read_text(encoding="utf-8")
-    )
+    assert chrome_setup._source_text(
+        Path(__file__).resolve().parents[1]
+        / "task_data"
+        / "chrome_setup"
+        / values.APT_SOURCE_TEMPLATE_FILE_NAME,
+        values.KEYRING_PATH,
+    ) in values.APT_SOURCE_PATH.read_text(encoding="utf-8")
     assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
     policy = (
         values.SYSTEM_ROOT
@@ -672,9 +656,10 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
         / "managed"
         / "chrome.json"
     )
-    assert policy.read_bytes() == SYSTEM_FILES[
-        "etc/opt/chrome/policies/managed/chrome.json"
-    ]
+    assert (
+        policy.read_bytes()
+        == SYSTEM_FILES["etc/opt/chrome/policies/managed/chrome.json"]
+    )
     extension = (
         values.SYSTEM_ROOT
         / "opt"
@@ -683,9 +668,10 @@ def test_full_flow_applies_everything(tmp_path: Path, monkeypatch: pytest.Monkey
         / "extensions"
         / "abcdefghijklmnop.json"
     )
-    assert extension.read_bytes() == SYSTEM_FILES[
-        "opt/google/chrome/extensions/abcdefghijklmnop.json"
-    ]
+    assert (
+        extension.read_bytes()
+        == SYSTEM_FILES["opt/google/chrome/extensions/abcdefghijklmnop.json"]
+    )
     assert json.loads(_profile_path().read_text(encoding="utf-8")) == (
         PREFERENCES_CONTENT
     )
@@ -729,9 +715,7 @@ def test_pin_appends_launcher_to_every_taskbar(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _write_appletsrc()
-    calls = _pin_run_fakes(
-        monkeypatch, current="applications:org.kde.dolphin.desktop"
-    )
+    calls = _pin_run_fakes(monkeypatch, current="applications:org.kde.dolphin.desktop")
 
     changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
 
@@ -752,15 +736,23 @@ def test_the_launcher_group_comes_from_the_values(
     # a value of the foreign file the task edits: another group in the module
     # is the group the task looks for, and the shipped one stops matching the
     # fixture.
-    monkeypatch.setattr(
-        values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers")
-    )
+    monkeypatch.setattr(values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers"))
     assert chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT) == [
         (
-            "Containments", "2", "Applets", "5", "Pinned", "Launchers",
+            "Containments",
+            "2",
+            "Applets",
+            "5",
+            "Pinned",
+            "Launchers",
         ),
         (
-            "Containments", "7", "Applets", "9", "Pinned", "Launchers",
+            "Containments",
+            "7",
+            "Applets",
+            "9",
+            "Pinned",
+            "Launchers",
         ),
     ]
 
@@ -805,9 +797,7 @@ def test_full_flow_pins_launcher_and_restarts_panel(
     result = chrome_setup.task(ctx)
 
     assert result.success
-    assert "pinned the Chrome launcher to the Plasma taskbar" in (
-        result.message or ""
-    )
+    assert "pinned the Chrome launcher to the Plasma taskbar" in (result.message or "")
     assert any("kwriteconfig6" in call for call in calls)
     restarts = [call for call in calls if call[0] == "systemctl"]
     assert any("plasma-plasmashell.service" in call for call in restarts)
@@ -830,9 +820,7 @@ def test_second_run_changes_nothing_when_target_reached(
     assert "already set up" in (result.message or "")
     assert not any(call[0] == "curl" for call in calls)
     assert not any(call[0] == "apt-get" for call in calls)
-    assert not any(
-        call[:2] == ["systemctl", "daemon-reload"] for call in calls
-    )
+    assert not any(call[:2] == ["systemctl", "daemon-reload"] for call in calls)
 
 
 def test_merge_restores_repo_value_keeping_unrelated(
@@ -924,8 +912,7 @@ def test_install_failure_is_warning(
 
     assert result.success
     assert any(
-        "cannot install google-chrome-stable" in warning
-        for warning in result.warnings
+        "cannot install google-chrome-stable" in warning for warning in result.warnings
     )
     assert _profile_path().exists()
     assert values.DESKTOP_OVERRIDE_PATH.exists()
@@ -949,19 +936,11 @@ def test_missing_templates_leave_settings_in_place(
     result = chrome_setup.task(ctx)
 
     assert result.success
-    assert any(
-        "missing apt source template" in warning
-        for warning in result.warnings
-    )
-    assert any(
-        "missing mirror unit template" in warning
-        for warning in result.warnings
-    )
+    assert any("missing apt source template" in warning for warning in result.warnings)
+    assert any("missing mirror unit template" in warning for warning in result.warnings)
     assert _profile_path().exists()
     assert not any(call[0] == "curl" for call in calls)
-    assert not any(
-        call[:2] == ["systemctl", "enable"] for call in calls
-    )
+    assert not any(call[:2] == ["systemctl", "enable"] for call in calls)
 
 
 def test_desktop_override_warns_when_packaged_entry_missing(
@@ -1024,9 +1003,7 @@ def test_user_command_prefix_comes_from_the_values(
 ) -> None:
     # The wrapper that runs a command as the desktop user is a value of the
     # section: another wrapper is the argv the task builds.
-    monkeypatch.setattr(
-        values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}")
-    )
+    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}"))
     assert chrome_setup._as_user_command(
         ["kwriteconfig6", "--file", "plasmashellrc"]
     ) == [

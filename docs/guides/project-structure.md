@@ -16,7 +16,7 @@ The helpers fit files where one setting is one line and the line order does not 
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
-config/ — Engine configuration, single source of truth for the Python part. One TOML file per top-level section still kept there (engine.toml, cli_tools.toml, ...); the loader joins them in sorted order into one document. The task catalog is not here: it lives in src/pyntara/values/tasks.py. See docs/contracts/architecture.md.  
+config/ — Engine configuration, single source of truth for the sections that are not migrated to the values package yet. One TOML file per such top-level section (cli_tools.toml, ...); the loader joins them in sorted order into one document. The values of the engine itself and of every migrated section live in src/pyntara/values/. The task catalog is not here: it lives in src/pyntara/values/tasks.py. See docs/contracts/architecture.md.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 scripts/check_gates.sh — Every gate of docs/guides/developer-guide.md in one command: the linting, both type checks, the test suite and the four bash suites. Run by hand before a landing and by .github/workflows/checks.yml in the pipeline. Its --fast argument checks only the touched python files and the test modules that match them by name.
@@ -96,7 +96,7 @@ One module per task, each exposing task(ctx) -> TaskResult. Task names come from
 
 Each TOML file in config/ has a corresponding module in src/pyntara/config/ with a frozen dataclass, read by the runtime reader through the field names of that dataclass. The checks of a section live in tests/config_checks.py. Tasks receive the whole Config through Context and access their section by name. Which value types the sections hold, and which never go into the config, is [Config content](../spec/config-content.md).
 
-engine -> config/engine.py -> EngineConfig -> all tasks via Context  
+engine -> src/pyntara/values/engine.py -> READ_VALUE_NAMES -> every module that reads a value  
 cli_tools -> config/cli_tools.py -> CliToolsConfig -> cli_tools  
 chrome_setup -> config/chrome_setup.py -> ChromeSetupConfig -> chrome_setup  
 add_extra_repos -> config/add_extra_repos.py -> AddExtraReposConfig -> add_extra_repos  

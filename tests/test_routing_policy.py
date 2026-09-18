@@ -129,7 +129,10 @@ def make_policy(**overrides: Any) -> LocalProxyPolicy:
             "ext-site:geosite_RU.dat:ru-available-only-inside",
         ),
         "russia_direct_ip_categories": ("ext-ip:geoip_RU.dat:ru-whitelist",),
-        "geo_restricted_domain_categories": ("geosite:category-ai-!cn", "geosite:netflix"),
+        "geo_restricted_domain_categories": (
+            "geosite:category-ai-!cn",
+            "geosite:netflix",
+        ),
         "russia_domain_strategy": "IPIfNonMatch",
         "outside_russia_domain_strategy": "AsIs",
         "panel_inbound_protocol": "mixed",
@@ -199,17 +202,13 @@ class TestParseVlessLink:
         )
 
     def test_a_link_without_the_spider_path_still_works(self) -> None:
-        profile = parse_link(
-            "vless://id@host.example:8443?security=reality&pbk=KEY"
-        )
+        profile = parse_link("vless://id@host.example:8443?security=reality&pbk=KEY")
         assert profile is not None
         assert profile.spider_x == ""
         assert profile.port == 8443
 
     def test_an_ipv6_host_in_brackets_is_read(self) -> None:
-        profile = parse_link(
-            "vless://id@[2001:db8::1]:443?security=reality&pbk=KEY"
-        )
+        profile = parse_link("vless://id@[2001:db8::1]:443?security=reality&pbk=KEY")
         assert profile is not None
         assert profile.address == "2001:db8::1"
 
@@ -246,9 +245,7 @@ class TestParseVlessLink:
         # The proof of the value: a link that carries no port reaches the
         # port the config names, so the operator decides what such a link
         # means without a code change.
-        profile = parse_link(
-            "vless://id@host.example?security=reality&pbk=KEY", 8443
-        )
+        profile = parse_link("vless://id@host.example?security=reality&pbk=KEY", 8443)
         assert profile is not None
         assert profile.port == 8443
 
@@ -435,7 +432,9 @@ class TestBuildRoutingRules:
             "direct",
         ]
         blocked_domains = [
-            rule for rule in rules if rule.get("domain") == ["ext-site:geosite_RU.dat:ru-blocked-all"]
+            rule
+            for rule in rules
+            if rule.get("domain") == ["ext-site:geosite_RU.dat:ru-blocked-all"]
         ]
         assert len(blocked_domains) == 1
         assert blocked_domains[0]["outboundTag"] == "pyntara-remote"
@@ -454,7 +453,9 @@ class TestBuildRoutingRules:
             name_indexes = [
                 index for index, rule in enumerate(rules) if rule.get("domain")
             ]
-            address_indexes = [index for index, rule in enumerate(rules) if rule.get("ip")]
+            address_indexes = [
+                index for index, rule in enumerate(rules) if rule.get("ip")
+            ]
             assert name_indexes, "the policy must carry name rules"
             assert address_indexes, "the policy must carry address rules"
             assert max(name_indexes) < min(address_indexes)
@@ -517,12 +518,22 @@ class TestApplyRoutingPolicy:
         )
         assert changed is True
         tags = [outbound["tag"] for outbound in outbounds_of(updated)]
-        assert tags == ["direct", "blocked", "pyntara-remote", "pyntara-tor", "pyntara-i2p"]
+        assert tags == [
+            "direct",
+            "blocked",
+            "pyntara-remote",
+            "pyntara-tor",
+            "pyntara-i2p",
+        ]
 
     def test_keeps_the_api_rule_first_and_the_foreign_rules(self) -> None:
         template = make_template()
         rules_of(template).append(
-            {"type": "field", "domain": ["domain:example.test"], "outboundTag": "direct"}
+            {
+                "type": "field",
+                "domain": ["domain:example.test"],
+                "outboundTag": "direct",
+            }
         )
         updated, _ = apply_routing_policy(
             template,
@@ -532,7 +543,11 @@ class TestApplyRoutingPolicy:
         )
         rules = rules_of(updated)
         assert rules[0]["inboundTag"] == ["api"]
-        assert {"type": "field", "domain": ["domain:example.test"], "outboundTag": "direct"} in rules
+        assert {
+            "type": "field",
+            "domain": ["domain:example.test"],
+            "outboundTag": "direct",
+        } in rules
 
     def test_keeps_a_foreign_rule_that_names_the_proxy_tag(self) -> None:
         # A rule an operator wrote may scope itself to the local proxy among
@@ -564,7 +579,9 @@ class TestApplyRoutingPolicy:
         rules = rules_of(updated)
         assert not any(rule.get("protocol") == ["bittorrent"] for rule in rules)
         direct = next(
-            outbound for outbound in outbounds_of(updated) if outbound["tag"] == "direct"
+            outbound
+            for outbound in outbounds_of(updated)
+            if outbound["tag"] == "direct"
         )
         assert direct["settings"] == {"domainStrategy": "AsIs"}
 
@@ -578,7 +595,9 @@ class TestApplyRoutingPolicy:
         rules = rules_of(updated)
         assert any(rule.get("protocol") == ["bittorrent"] for rule in rules)
         direct = next(
-            outbound for outbound in outbounds_of(updated) if outbound["tag"] == "direct"
+            outbound
+            for outbound in outbounds_of(updated)
+            if outbound["tag"] == "direct"
         )
         settings = direct["settings"]
         assert isinstance(settings, dict)
@@ -628,7 +647,15 @@ class TestApplyRoutingPolicy:
         assert changed is True
         assert routing_strategy(outside) == "AsIs"
         tags = [rule["outboundTag"] for rule in rules_of(outside)]
-        assert tags == ["api", "blocked", "pyntara-tor", "pyntara-i2p", "direct", "direct", "pyntara-remote"]
+        assert tags == [
+            "api",
+            "blocked",
+            "pyntara-tor",
+            "pyntara-i2p",
+            "direct",
+            "direct",
+            "pyntara-remote",
+        ]
 
     def test_the_input_template_is_not_modified(self) -> None:
         template = make_template()
@@ -731,9 +758,7 @@ class TestFastestPool:
         template = make_template()
         routing = template["routing"]
         assert isinstance(routing, dict)
-        routing["balancers"] = [
-            {"tag": "manual", "selector": ["x"], "strategy": {}}
-        ]
+        routing["balancers"] = [{"tag": "manual", "selector": ["x"], "strategy": {}}]
         updated, _ = apply_fastest_pool(
             template,
             _FIELDS,
@@ -764,9 +789,7 @@ class TestFastestPool:
         )
         assert changed_first is True
         assert changed_second is False
-        assert json.dumps(second, sort_keys=True) == json.dumps(
-            first, sort_keys=True
-        )
+        assert json.dumps(second, sort_keys=True) == json.dumps(first, sort_keys=True)
 
     def test_apply_fastest_pool_does_not_modify_its_input(self) -> None:
         template = make_template()
@@ -853,9 +876,7 @@ class TestFastestPool:
             remote_balancer_tag="pyntara-fastest",
         )
         assert changed is False
-        assert json.dumps(second, sort_keys=True) == json.dumps(
-            first, sort_keys=True
-        )
+        assert json.dumps(second, sort_keys=True) == json.dumps(first, sort_keys=True)
 
     def test_the_pool_balancer_tag_is_written_into_the_rules(self) -> None:
         # The panel task writes the pool and its rules in one document, so

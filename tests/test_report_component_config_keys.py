@@ -157,8 +157,7 @@ def test_component_reports_the_missing_keys_through_the_list(
     source = Path(module.__file__ or "").read_text(encoding="utf-8")
     aliases = _aliases_of_section(ast.parse(source), section)
     assert any(
-        f"absent_config_keys({alias}, {list_name})" in source
-        for alias in aliases
+        f"absent_config_keys({alias}, {list_name})" in source for alias in aliases
     ), (
         f"{module.__name__} reports the absent keys of [{section}] with "
         f"something other than {list_name}"

@@ -59,7 +59,9 @@ def _fake_session_command(
 
     captured: dict[str, Any] = {}
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         captured["command"] = command
         captured["kwargs"] = kwargs
         return subprocess.CompletedProcess(command, returncode, stdout, "")

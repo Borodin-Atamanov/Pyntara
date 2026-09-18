@@ -23,6 +23,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import run_command, substituted_command
+from pyntara.values import engine as engine_values
 
 
 def task(ctx: Context) -> TaskResult:
@@ -40,7 +41,7 @@ def task(ctx: Context) -> TaskResult:
 
     collector = ctx.config.system_metrics_setup.collector
     service_name = collector.service_unit_name
-    unit_path = ctx.config.engine.systemd_unit_dir / service_name
+    unit_path = engine_values.SYSTEMD_UNIT_DIR / service_name
     if not unit_path.is_file():
         _log(f"collector unit {unit_path} not deployed, skipping")
         return TaskResult(
@@ -55,7 +56,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             start_argv,
-            timeout=ctx.config.engine.command_timeout_seconds,
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         warning = f"cannot start collector service {service_name}: {exc}"

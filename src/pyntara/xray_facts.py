@@ -20,7 +20,7 @@ import socket
 from dataclasses import dataclass
 
 from pyntara import upnp
-from pyntara.config import Config, EngineConfig, ThreeXuiXraySetupConfig
+from pyntara.config import Config, ThreeXuiXraySetupConfig
 from pyntara.logger import log_progress as _log
 from pyntara.public_address import (
     PublicAddresses,
@@ -50,9 +50,7 @@ class _RunFacts:
     client_address: str | None = None
 
 
-def _public_addresses(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> PublicAddresses:
+def _public_addresses(cfg: ThreeXuiXraySetupConfig, timeout: float) -> PublicAddresses:
     """The public addresses the configured echo services report.
 
     The shared helper does the parallel query, so the task only decides
@@ -60,16 +58,13 @@ def _public_addresses(
     """
 
     return fetch_public_addresses(
-        engine,
         cfg.server_ip_services,
         cfg.server_ip_timeout_seconds,
         timeout,
     )
 
 
-def _collect_run_facts(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> _RunFacts:
+def _collect_run_facts(cfg: ThreeXuiXraySetupConfig, timeout: float) -> _RunFacts:
     """Collect the addresses and the router address once for this run.
 
     The UPnP client package is installed here, before the first stage
@@ -81,8 +76,8 @@ def _collect_run_facts(
     router is never asked.
     """
 
-    public = _public_addresses(engine, cfg, timeout)
-    local = local_addresses(engine, timeout)
+    public = _public_addresses(cfg, timeout)
+    local = local_addresses(timeout)
     router_address: str | None = None
     if cfg.upnp_enabled:
         if _machine_public_address(public, local) is not None:
@@ -90,19 +85,15 @@ def _collect_run_facts(
                 "a public address sits on this machine, "
                 "the router needs no port forwarding"
             )
-        elif _ensure_upnp_client(engine, cfg, timeout):
+        elif _ensure_upnp_client(cfg, timeout):
             _log("looking for a UPnP router")
             router_address = upnp.router_external_address(
-                engine, cfg.upnp_client_command, timeout
+                cfg.upnp_client_command, timeout
             )
             if router_address is None:
-                _log(
-                    "no UPnP router on this network, port forwarding is skipped"
-                )
+                _log("no UPnP router on this network, port forwarding is skipped")
             else:
-                _log(
-                    f"UPnP router reports its internet address {router_address}"
-                )
+                _log(f"UPnP router reports its internet address {router_address}")
     return _RunFacts(
         public_addresses=public,
         local_addresses=local,
@@ -111,7 +102,6 @@ def _collect_run_facts(
 
 
 def _forward_upnp_ports(
-    engine: EngineConfig,
     cfg: ThreeXuiXraySetupConfig,
     facts: _RunFacts,
     timeout: float,
@@ -136,7 +126,6 @@ def _forward_upnp_ports(
     )
     _log(f"asking the router to forward port {cfg.inbound_port} for clients")
     forwarded = upnp.forward_inbound_port(
-        engine,
         cfg.upnp_client_command,
         description,
         cfg.inbound_port,
@@ -151,7 +140,6 @@ def _forward_upnp_ports(
             "for the certificate challenge"
         )
         upnp.forward_inbound_port(
-            engine,
             cfg.upnp_client_command,
             description,
             cfg.acme_port,
@@ -171,9 +159,7 @@ def _forward_upnp_ports(
     return forwarded.address
 
 
-def _ensure_upnp_client(
-    engine: EngineConfig, cfg: ThreeXuiXraySetupConfig, timeout: float
-) -> bool:
+def _ensure_upnp_client(cfg: ThreeXuiXraySetupConfig, timeout: float) -> bool:
     """True when the UPnP client program is present, installing it if needed.
 
     The port forwarding uses the external upnpc tool, exactly like the
@@ -184,9 +170,9 @@ def _ensure_upnp_client(
     progress line and never a warning.
     """
 
-    if package_is_installed(engine, cfg.upnp_package, timeout):
+    if package_is_installed(cfg.upnp_package, timeout):
         return True
-    installed, error = install_package_once(engine, cfg.upnp_package, timeout)
+    installed, error = install_package_once(cfg.upnp_package, timeout)
     if not installed:
         _log(f"UPnP client package {cfg.upnp_package} is unavailable: {error}")
         return False

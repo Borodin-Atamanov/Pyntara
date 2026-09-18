@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config
 
 from pyntara import upnp as upnp_module
 from pyntara.upnp import (
@@ -25,11 +24,7 @@ from pyntara.upnp import (
     parse_port_mappings,
     router_external_address,
 )
-
-# The engine table of the shared test document: the vocabulary of the
-# upnpc client lives there, so the expectations follow the config instead
-# of repeating its values.
-ENGINE = make_config().engine
+from pyntara.values import engine as engine_values
 
 STATUS_OUTPUT = """upnpc: miniupnpc library test client
 ExternalIPAddress = 190.55.165.52
@@ -47,7 +42,9 @@ class TestParseExternalAddress:
 
     def test_reads_the_address(self) -> None:
         assert (
-            parse_external_address(STATUS_OUTPUT, ENGINE.upnpc_external_address_key)
+            parse_external_address(
+                STATUS_OUTPUT, engine_values.UPNPC_EXTERNAL_ADDRESS_KEY
+            )
             == "190.55.165.52"
         )
 
@@ -58,14 +55,14 @@ class TestParseExternalAddress:
         assert (
             parse_external_address(
                 "ExternalIPAddress = 0.0.0.0\n",
-                ENGINE.upnpc_external_address_key,
+                engine_values.UPNPC_EXTERNAL_ADDRESS_KEY,
             )
             is None
         )
         assert (
             parse_external_address(
                 "ExternalIPAddress = ::\n",
-                ENGINE.upnpc_external_address_key,
+                engine_values.UPNPC_EXTERNAL_ADDRESS_KEY,
             )
             is None
         )
@@ -73,7 +70,7 @@ class TestParseExternalAddress:
     def test_ignores_a_router_that_does_not_answer(self) -> None:
         assert (
             parse_external_address(
-                "No IGD UPnP Device found\n", ENGINE.upnpc_external_address_key
+                "No IGD UPnP Device found\n", engine_values.UPNPC_EXTERNAL_ADDRESS_KEY
             )
             is None
         )
@@ -107,7 +104,9 @@ class TestParsePortMappings:
 
     def test_reads_both_mappings(self) -> None:
         assert parse_port_mappings(
-            LIST_OUTPUT, ENGINE.upnpc_protocol_names, ENGINE.upnpc_mapping_arrow
+            LIST_OUTPUT,
+            engine_values.UPNPC_PROTOCOL_NAMES,
+            engine_values.UPNPC_MAPPING_ARROW,
         ) == [
             PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray"),
             PortMapping("UDP", 6881, "192.168.1.5", 6881, "other"),
@@ -119,7 +118,7 @@ class TestParsePortMappings:
         # spaces; the description is read as the quoted field.
         text = " 2 TCP 39222->192.168.1.52:30222 'pyntara upnp ssh' '' 0\n"
         assert parse_port_mappings(
-            text, ENGINE.upnpc_protocol_names, ENGINE.upnpc_mapping_arrow
+            text, engine_values.UPNPC_PROTOCOL_NAMES, engine_values.UPNPC_MAPPING_ARROW
         ) == [PortMapping("TCP", 39222, "192.168.1.52", 30222, "pyntara upnp ssh")]
 
     def test_finds_the_mapping_of_a_port(self) -> None:
@@ -127,16 +126,16 @@ class TestParsePortMappings:
             LIST_OUTPUT,
             443,
             "tcp",
-            ENGINE.upnpc_protocol_names,
-            ENGINE.upnpc_mapping_arrow,
+            engine_values.UPNPC_PROTOCOL_NAMES,
+            engine_values.UPNPC_MAPPING_ARROW,
         ) == PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")
         assert (
             mapping_for(
                 LIST_OUTPUT,
                 8443,
                 "TCP",
-                ENGINE.upnpc_protocol_names,
-                ENGINE.upnpc_mapping_arrow,
+                engine_values.UPNPC_PROTOCOL_NAMES,
+                engine_values.UPNPC_MAPPING_ARROW,
             )
             is None
         )
@@ -145,8 +144,8 @@ class TestParsePortMappings:
         assert (
             parse_port_mappings(
                 "No IGD UPnP Device found on the network\n",
-                ENGINE.upnpc_protocol_names,
-                ENGINE.upnpc_mapping_arrow,
+                engine_values.UPNPC_PROTOCOL_NAMES,
+                engine_values.UPNPC_MAPPING_ARROW,
             )
             == []
         )
@@ -155,7 +154,7 @@ class TestParsePortMappings:
         # The protocol of a mapping line comes from the config, so a line
         # of a protocol this client version names differently is skipped.
         assert parse_port_mappings(
-            LIST_OUTPUT, ("tcp",), ENGINE.upnpc_mapping_arrow
+            LIST_OUTPUT, ("tcp",), engine_values.UPNPC_MAPPING_ARROW
         ) == [PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")]
 
     def test_finds_a_mapping_for_the_port(self) -> None:
@@ -163,16 +162,16 @@ class TestParsePortMappings:
             LIST_OUTPUT,
             443,
             "tcp",
-            ENGINE.upnpc_protocol_names,
-            ENGINE.upnpc_mapping_arrow,
+            engine_values.UPNPC_PROTOCOL_NAMES,
+            engine_values.UPNPC_MAPPING_ARROW,
         ) == PortMapping("TCP", 443, "192.168.1.5", 443, "pyntara xray")
         assert (
             mapping_for(
                 LIST_OUTPUT,
                 8443,
                 "TCP",
-                ENGINE.upnpc_protocol_names,
-                ENGINE.upnpc_mapping_arrow,
+                engine_values.UPNPC_PROTOCOL_NAMES,
+                engine_values.UPNPC_MAPPING_ARROW,
             )
             is None
         )
@@ -182,8 +181,8 @@ class TestParsePortMappings:
                 LIST_OUTPUT,
                 443,
                 "UDP",
-                ENGINE.upnpc_protocol_names,
-                ENGINE.upnpc_mapping_arrow,
+                engine_values.UPNPC_PROTOCOL_NAMES,
+                engine_values.UPNPC_MAPPING_ARROW,
             )
             is None
         )
@@ -192,9 +191,7 @@ class TestParsePortMappings:
 class TestEnsurePortForwarding:
     """Tests for the forwarding request and its read-back."""
 
-    def test_keeps_an_existing_mapping(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_keeps_an_existing_mapping(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # A rerun of the machine that owns the rule must not add a second
         # rule for the same port: the mark of the rule and the target it
         # delivers to are both already what the caller asks for.
@@ -206,7 +203,7 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE, "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
+            "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
         )
         assert all("-a" not in command for command in commands)
 
@@ -225,12 +222,14 @@ class TestEnsurePortForwarding:
                 return _FakeProc(0, "")
             listing_calls += 1
             if listing_calls == 1:
-                return _FakeProc(0, LIST_OUTPUT.replace(" 0 TCP   443", " 0 TCP   8443"))
+                return _FakeProc(
+                    0, LIST_OUTPUT.replace(" 0 TCP   443", " 0 TCP   8443")
+                )
             return _FakeProc(0, LIST_OUTPUT)
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE, "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
+            "upnpc", "pyntara xray", "192.168.1.5", 443, "TCP", 30.0
         )
         add = next(command for command in commands if "-a" in command)
         assert add[add.index("-a") + 1 :] == ["192.168.1.5", "443", "443", "TCP"]
@@ -243,9 +242,7 @@ class TestEnsurePortForwarding:
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
         assert (
-            ensure_port_forwarding(
-                ENGINE, "upnpc", "d", "192.168.1.5", 443, "TCP", 30.0
-            )
+            ensure_port_forwarding("upnpc", "d", "192.168.1.5", 443, "TCP", 30.0)
             is False
         )
 
@@ -255,9 +252,7 @@ class TestEnsurePortForwarding:
         # This router replaces a rule silently, so a port another machine
         # holds for another host is refused instead of taken; the caller
         # then tries another port.
-        other_host = (
-            " 0 TCP   443->192.168.1.9:443  'pyntara xray testhost2'  ''\n"
-        )
+        other_host = " 0 TCP   443->192.168.1.9:443  'pyntara xray testhost2'  ''\n"
         commands: list[list[str]] = []
 
         def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -267,7 +262,6 @@ class TestEnsurePortForwarding:
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert (
             ensure_port_forwarding(
-                ENGINE,
                 "upnpc",
                 "pyntara xray testhost",
                 "192.168.1.5",
@@ -305,7 +299,6 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE,
             "upnpc",
             "pyntara xray testhost",
             "192.168.1.5",
@@ -335,7 +328,6 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE,
             "upnpc",
             "pyntara ssh",
             "192.168.1.5",
@@ -371,7 +363,6 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert ensure_port_forwarding(
-            ENGINE,
             "upnpc",
             "pyntara ssh",
             "192.168.1.5",
@@ -394,7 +385,7 @@ class TestEnsurePortForwarding:
         monkeypatch.setattr(
             upnp_module, "run_command", lambda *a, **k: _FakeProc(1, "No IGD\n")
         )
-        assert router_external_address(ENGINE, "upnpc", 30.0) is None
+        assert router_external_address("upnpc", 30.0) is None
 
     def test_a_caller_that_prints_a_document_can_keep_the_log_quiet(
         self, monkeypatch: pytest.MonkeyPatch
@@ -410,10 +401,9 @@ class TestEnsurePortForwarding:
 
         monkeypatch.setattr(upnp_module, "run_command", fake_run)
         assert (
-            router_external_address(ENGINE, "upnpc", 30.0, log_command=False)
-            == "190.55.165.52"
+            router_external_address("upnpc", 30.0, log_command=False) == "190.55.165.52"
         )
-        assert list_mappings(ENGINE, "upnpc", 30.0, log_command=False) != ""
+        assert list_mappings("upnpc", 30.0, log_command=False) != ""
         assert seen == [False, False]
 
 
@@ -429,12 +419,12 @@ class TestForwardInboundPort:
         forwarded: bool = True,
     ) -> None:
         monkeypatch.setattr(
-            upnp_module, "router_external_address", lambda _e, _c, _t: router
+            upnp_module, "router_external_address", lambda _c, _t: router
         )
         monkeypatch.setattr(
             upnp_module,
             "default_route_address",
-            lambda _e, _t: internal,
+            lambda _t: internal,
         )
         monkeypatch.setattr(
             upnp_module,
@@ -447,7 +437,6 @@ class TestForwardInboundPort:
     ) -> None:
         self._requirements(monkeypatch)
         assert forward_inbound_port(
-            ENGINE,
             "upnpc",
             "pyntara xray",
             443,
@@ -462,7 +451,7 @@ class TestForwardInboundPort:
         # Without an observed address there is nothing to compare, so the
         # router answer is the only available source.
         self._requirements(monkeypatch)
-        assert forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) == (
+        assert forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) == (
             ForwardedAddress("190.55.165.52", True)
         )
 
@@ -475,7 +464,6 @@ class TestForwardInboundPort:
         # reaches instead of being dropped.
         self._requirements(monkeypatch, router="100.64.0.7")
         assert forward_inbound_port(
-            ENGINE,
             "upnpc",
             "d",
             443,
@@ -488,17 +476,13 @@ class TestForwardInboundPort:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._requirements(monkeypatch, router=None)
-        assert (
-            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
-        )
+        assert forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
 
     def test_returns_nothing_when_the_mapping_is_refused(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         self._requirements(monkeypatch, forwarded=False)
-        assert (
-            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
-        )
+        assert forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None
 
     def test_returns_nothing_when_the_program_is_missing(
         self, monkeypatch: pytest.MonkeyPatch
@@ -509,6 +493,4 @@ class TestForwardInboundPort:
             raise FileNotFoundError("upnpc not found")
 
         monkeypatch.setattr(upnp_module, "run_command", fail)
-        assert (
-            forward_inbound_port(ENGINE, "upnpc", "d", 443, "TCP", (), 30.0) is None
-        )
+        assert forward_inbound_port("upnpc", "d", 443, "TCP", (), 30.0) is None

@@ -56,6 +56,7 @@ from pyntara.utils import (
     substituted_command,
     trim_whitespace,
 )
+from pyntara.values import engine as engine_values
 
 
 def _structured_document(output: str) -> object | None:
@@ -189,10 +190,10 @@ def collect(cfg: Config) -> dict[str, object]:
     return {
         keys["generated_at"]: datetime.now()
         .astimezone()
-        .strftime(cfg.engine.datetime_format),
+        .strftime(engine_values.DATETIME_FORMAT),
         keys["ready_percent"]: percent_ready(
             network,
-            cfg.engine.percent_scale,
+            engine_values.PERCENT_SCALE,
             keys["status"],
             words["ok"],
         ),
@@ -328,9 +329,7 @@ def _commit_telemetry_pdf(cfg: Config, report: dict[str, object]) -> None:
         pdf_bytes = telemetry_pdf.build(cfg, report, hostname)
         if pdf_bytes is None:
             return
-        pdf_name = metrics.telemetry_pdf_report_file_name.format(
-            hostname=hostname
-        )
+        pdf_name = metrics.telemetry_pdf_report_file_name.format(hostname=hostname)
         pdf_path = Path(tempfile.gettempdir()) / pdf_name
         pdf_path.write_bytes(pdf_bytes)
         os.chmod(pdf_path, collector.report_file_mode)
@@ -415,7 +414,7 @@ def trigger_collection(cfg: Config) -> bool:
             command,
             check=False,
             capture=True,
-            timeout=cfg.engine.command_timeout_seconds,
+            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(
@@ -449,9 +448,7 @@ def main() -> None:
     cfg = load_config(Path(sys.argv[1]))
     metrics = cfg.system_metrics_setup
     collector = metrics.collector
-    configure_journal(
-        cfg.engine.with_journal_identifier(collector.journal_identifier)
-    )
+    configure_journal(collector.journal_identifier)
     absent = describe_absent_config_keys(
         (
             (
@@ -468,9 +465,7 @@ def main() -> None:
         print(f"error: the collector cannot run: {absent}", file=sys.stderr)
         return
     try:
-        lock = _acquire_lock(
-            collector.lock_file_path, cfg.engine.error_priority
-        )
+        lock = _acquire_lock(collector.lock_file_path, engine_values.ERROR_PRIORITY)
         if lock is None:
             _log("another collector instance is running, exiting")
             return

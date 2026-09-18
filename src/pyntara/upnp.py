@@ -8,9 +8,9 @@ such a router can then be reached from the internet even though its own
 interface carries a private address.
 
 The module installs nothing and knows no package names: it runs the
-command it is given, together with the vocabulary of the client from the
-[engine] table, so the calls, the field of the status output and the
-format of the mapping list are values of the config.
+command it is given, together with the declared vocabulary of the client,
+so the calls, the field of the status output and the format of the mapping
+list are values of the values package.
 """
 
 from __future__ import annotations
@@ -19,10 +19,10 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
-from pyntara.config import EngineConfig
 from pyntara.logger import log_progress
 from pyntara.public_address import default_route_address
 from pyntara.utils import run_command, substituted_command, trim_whitespace
+from pyntara.values import engine as engine_values
 
 
 def mapping_description(template: str, hostname: str) -> str:
@@ -38,9 +38,7 @@ def mapping_description(template: str, hostname: str) -> str:
     return template.format(hostname=hostname)
 
 
-def parse_external_address(
-    text: str, address_key: str
-) -> str | None:
+def parse_external_address(text: str, address_key: str) -> str | None:
     """The router internet address from the upnpc status output, or None.
 
     The field the address is printed under is a config value, so another
@@ -156,7 +154,6 @@ def mapping_for(
 
 
 def router_external_address(
-    engine: EngineConfig,
     command: str,
     timeout: float,
     log_command: bool = True,
@@ -174,20 +171,21 @@ def router_external_address(
     try:
         result = run_command(
             substituted_command(
-                engine.upnpc_status_command, {"command": command}
+                engine_values.UPNPC_STATUS_COMMAND, {"command": command}
             ),
             check=False,
             capture=True,
             timeout=timeout,
             log_command=log_command,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return None
-    return parse_external_address(result.stdout, engine.upnpc_external_address_key)
+    return parse_external_address(
+        result.stdout, engine_values.UPNPC_EXTERNAL_ADDRESS_KEY
+    )
 
 
 def list_mappings(
-    engine: EngineConfig,
     command: str,
     timeout: float,
     log_command: bool = True,
@@ -201,20 +199,19 @@ def list_mappings(
     try:
         result = run_command(
             substituted_command(
-                engine.upnpc_mapping_list_command, {"command": command}
+                engine_values.UPNPC_MAPPING_LIST_COMMAND, {"command": command}
             ),
             check=False,
             capture=True,
             timeout=timeout,
             log_command=log_command,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return ""
     return result.stdout
 
 
 def forward_inbound_port(
-    engine: EngineConfig,
     command: str,
     description: str,
     port: int,
@@ -245,18 +242,16 @@ def forward_inbound_port(
     """
 
     if router_address is None:
-        router_address = router_external_address(engine, command, timeout)
+        router_address = router_external_address(command, timeout)
     if router_address is None:
         log_progress("no UPnP router on this network, port forwarding skipped")
         return None
-    internal_address = default_route_address(engine, timeout)
+    internal_address = default_route_address(timeout)
     if internal_address is None:
-        log_progress(
-            "cannot read the default route address, port forwarding skipped"
-        )
+        log_progress("cannot read the default route address, port forwarding skipped")
         return None
     if not ensure_port_forwarding(
-        engine, command, description, internal_address, port, protocol, timeout
+        command, description, internal_address, port, protocol, timeout
     ):
         log_progress(f"router refused the port {port} mapping")
         return None
@@ -264,9 +259,7 @@ def forward_inbound_port(
         f"router forwards port {port} to {internal_address} "
         f"(router address {router_address})"
     )
-    globally_reachable = (
-        not observed_addresses or router_address in observed_addresses
-    )
+    globally_reachable = not observed_addresses or router_address in observed_addresses
     if not globally_reachable:
         log_progress(
             "router address differs from the observed address: the provider "
@@ -279,7 +272,6 @@ def forward_inbound_port(
 
 
 def ensure_port_forwarding(
-    engine: EngineConfig,
     command: str,
     description: str,
     internal_address: str,
@@ -307,10 +299,10 @@ def ensure_port_forwarding(
     """
 
     target = (internal_address, port if internal_port is None else internal_port)
-    protocols = engine.upnpc_protocol_names
-    arrow = engine.upnpc_mapping_arrow
+    protocols = engine_values.UPNPC_PROTOCOL_NAMES
+    arrow = engine_values.UPNPC_MAPPING_ARROW
     existing = mapping_for(
-        list_mappings(engine, command, timeout),
+        list_mappings(command, timeout),
         port,
         protocol,
         protocols,
@@ -326,14 +318,13 @@ def ensure_port_forwarding(
             )
         elif existing.description != description:
             log_progress(
-                f"port {port} carries the rule of another machine, "
-                "it is left alone"
+                f"port {port} carries the rule of another machine, it is left alone"
             )
             return False
     try:
         run_command(
             substituted_command(
-                engine.upnpc_mapping_add_command,
+                engine_values.UPNPC_MAPPING_ADD_COMMAND,
                 {
                     "command": command,
                     "description": description,
@@ -347,16 +338,20 @@ def ensure_port_forwarding(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.TimeoutExpired, OSError):
+    except subprocess.TimeoutExpired, OSError:
         return False
     existing = mapping_for(
-        list_mappings(engine, command, timeout),
+        list_mappings(command, timeout),
         port,
         protocol,
         protocols,
         arrow,
     )
-    return existing is not None and (
-        existing.internal_address,
-        existing.internal_port,
-    ) == target
+    return (
+        existing is not None
+        and (
+            existing.internal_address,
+            existing.internal_port,
+        )
+        == target
+    )

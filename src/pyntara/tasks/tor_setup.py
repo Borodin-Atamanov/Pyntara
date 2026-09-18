@@ -68,7 +68,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara.config import EngineConfig, TorSetupConfig
+from pyntara.config import TorSetupConfig
 from pyntara.config_edit import add_line_to_file
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -85,11 +85,10 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import engine as engine_values
 
 
-def _render_config(
-    cfg: TorSetupConfig, ssh_port: int, template_path: Path
-) -> str:
+def _render_config(cfg: TorSetupConfig, ssh_port: int, template_path: Path) -> str:
     """Render the drop-in from the configured template.
 
     The template carries the ownership comment and the owned options as
@@ -127,9 +126,7 @@ def _ensure_torrc_include(cfg: TorSetupConfig) -> tuple[bool, str | None]:
         return False, f"{cfg.torrc_path} is missing"
     include_line = f"{cfg.include_directive} {cfg.torrc_include_path}"
     try:
-        changed = add_line_to_file(
-            cfg.torrc_path, include_line, cfg.torrc_comment_sign
-        )
+        changed = add_line_to_file(cfg.torrc_path, include_line, cfg.torrc_comment_sign)
     except OSError as exc:
         return False, f"cannot update {cfg.torrc_path}: {exc}"
     return changed, None
@@ -148,9 +145,7 @@ def _verify_config(cfg: TorSetupConfig, timeout: float) -> str | None:
     would report an empty reason.
     """
 
-    argv = substituted_command(
-        cfg.verify_config_command, {"tor_user": cfg.tor_user}
-    )
+    argv = substituted_command(cfg.verify_config_command, {"tor_user": cfg.tor_user})
     try:
         result = run_command(
             argv,
@@ -213,7 +208,6 @@ def _ensure_hidden_service_dir(cfg: TorSetupConfig) -> None:
 
 
 def _wait_active(
-    engine: EngineConfig,
     service_name: str,
     attempts: int,
     retry_delay_seconds: float,
@@ -227,7 +221,7 @@ def _wait_active(
 
     for _ in range(attempts):
         time.sleep(retry_delay_seconds)
-        if service_is_active(engine, service_name, timeout):
+        if service_is_active(service_name, timeout):
             return True
     return False
 
@@ -284,18 +278,17 @@ def task(ctx: Context) -> TaskResult:
     """
 
     cfg = ctx.config.tor_setup
-    timeout = ctx.config.engine.command_timeout_seconds
-    owner_uid = ctx.config.engine.root_owner_uid
-    owner_gid = ctx.config.engine.root_owner_gid
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
+    owner_uid = engine_values.ROOT_OWNER_UID
+    owner_gid = engine_values.ROOT_OWNER_GID
     force = ctx.task_name in ctx.force_tasks
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name)
-        / cfg.dropin_template_file_name
+        task_data_dir(ctx.repo_root, ctx.task_name) / cfg.dropin_template_file_name
     )
     hostname_file_path = cfg.hidden_service_dir / cfg.hostname_file_name
     warnings: list[str] = []
 
-    installed = package_is_installed(ctx.config.engine, cfg.package_name, timeout)
+    installed = package_is_installed(cfg.package_name, timeout)
     _log(
         f"checking package {cfg.package_name}: "
         f"{'installed' if installed else 'missing'}"
@@ -310,10 +303,7 @@ def task(ctx: Context) -> TaskResult:
         # published address are still handled.
         warnings.append(str(exc))
     if ssh_port is not None:
-        _log(
-            f"reading SSH listen port from ssh_daemon_setup directives: "
-            f"{ssh_port}"
-        )
+        _log(f"reading SSH listen port from ssh_daemon_setup directives: {ssh_port}")
 
     changed = False
     if not installed:
@@ -321,7 +311,7 @@ def task(ctx: Context) -> TaskResult:
         ok = False
         error = ""
         for _ in range(cfg.install_retries + 1):
-            ok, error = install_package_once(ctx.config.engine, cfg.package_name, timeout)
+            ok, error = install_package_once(cfg.package_name, timeout)
             if ok:
                 break
         if ok:
@@ -344,9 +334,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     target_config = (
-        _render_config(cfg, ssh_port, template_path)
-        if ssh_port is not None
-        else None
+        _render_config(cfg, ssh_port, template_path) if ssh_port is not None else None
     )
     current_config = _read_dropin(cfg.torrc_dropin_path)
     config_changed = target_config is not None and (
@@ -364,8 +352,8 @@ def task(ctx: Context) -> TaskResult:
         f"{'matches' if _saved_address_matches(cfg.address_file_path, address) else 'missing or stale'}"
     )
 
-    enabled = service_is_enabled(ctx.config.engine, cfg.service_unit_name, timeout)
-    active = service_is_active(ctx.config.engine, cfg.service_unit_name, timeout)
+    enabled = service_is_enabled(cfg.service_unit_name, timeout)
+    active = service_is_active(cfg.service_unit_name, timeout)
     _log(
         f"checking autorun service {cfg.service_unit_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -428,13 +416,7 @@ def task(ctx: Context) -> TaskResult:
             _log("service enabled")
             changed = True
 
-    if (
-        not active
-        or config_changed
-        or include_changed
-        or address is None
-        or force
-    ):
+    if not active or config_changed or include_changed or address is None or force:
         action = "restart" if active else "start"
         service_command = (
             cfg.service_restart_command if active else cfg.service_start_command
@@ -456,7 +438,6 @@ def task(ctx: Context) -> TaskResult:
                 f"{cfg.start_check_attempts} checks)"
             )
             if _wait_active(
-                ctx.config.engine,
                 cfg.service_unit_name,
                 cfg.start_check_attempts,
                 cfg.start_check_retry_delay_seconds,
@@ -484,10 +465,7 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     if address:
-        _log(
-            f"SSH onion address: {address} "
-            f"(virtual port {cfg.onion_ssh_port})"
-        )
+        _log(f"SSH onion address: {address} (virtual port {cfg.onion_ssh_port})")
         message = (
             f"tor {cfg.package_name} installed, service {cfg.service_unit_name} "
             f"active, SSH onion address {address}, "

@@ -34,6 +34,7 @@ from value_checks import (
 )
 
 import pyntara
+from pyntara.values import engine as engine_values
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
@@ -42,6 +43,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "cli_tools",
     "common",
     "dnsproxy_setup",
+    "engine",
     "ffmpeg_setup",
     "hostname",
     "imagemagick_setup",
@@ -176,10 +178,7 @@ def _read_names_by_attribute() -> dict[str, set[str]]:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         aliases: dict[str, str] = {}
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.ImportFrom)
-                and node.module == "pyntara.values"
-            ):
+            if isinstance(node, ast.ImportFrom) and node.module == "pyntara.values":
                 for imported in node.names:
                     if imported.name in VALUES_MODULE_NAMES:
                         aliases[imported.asname or imported.name] = imported.name
@@ -345,9 +344,12 @@ def test_the_vault_entry_title_rule_refuses_a_title_the_structure_lacks() -> Non
     # the task looked finished, which is the silent failure the rule refuses.
     with pytest.raises(ValueRuleError):
         check_vault_entry_title("no_such_entry", "local_vault_setup.TITLE")
-    assert check_vault_entry_title(
-        "pyntara_local_vault_password", "local_vault_setup.TITLE"
-    ) == "pyntara_local_vault_password"
+    assert (
+        check_vault_entry_title(
+            "pyntara_local_vault_password", "local_vault_setup.TITLE"
+        )
+        == "pyntara_local_vault_password"
+    )
 
 
 def test_the_read_list_names_exactly_the_declared_values() -> None:
@@ -370,3 +372,30 @@ def test_every_declared_value_is_read_somewhere() -> None:
         for name in sorted(_declared_value_names(module_name) - reads[module_name]):
             unread.append(f"{module_name}.{name}")
     assert not unread, f"values no module reads: {unread}"
+
+
+def test_the_declared_byte_factors_agree() -> None:
+    # Two factors that describe the same machine constant must not drift: a
+    # mebibyte that is not 1024 kibibytes would size every swapfile and every
+    # zram device from a number no kernel uses.
+    assert engine_values.BYTES_PER_MIB == engine_values.BYTES_PER_KIB**2
+
+
+def test_the_parallel_marker_is_part_of_the_parallel_write_out() -> None:
+    # The marker is what the collector splits a merged answer text with, and
+    # the text curl prints is what the marker must appear in: a marker that is
+    # no longer in the text would break the attribution of every answer
+    # silently, on the target machine only.
+    assert (
+        engine_values.CURL_PARALLEL_SOURCE_MARKER
+        in engine_values.CURL_PARALLEL_WRITE_OUT
+    )
+
+
+def test_every_flag_family_has_a_report_word() -> None:
+    # The report names the family of every record with the declared words, and
+    # it does so without a fallback: a family of the flag mapping that no word
+    # names raises on the target machine while the report is printed.
+    assert set(engine_values.REPORT_FAMILY_WORDS) >= set(
+        engine_values.ADDRESS_FAMILY_BY_FLAG.values()
+    )

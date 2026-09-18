@@ -7,7 +7,6 @@ standardizes the answers and merges them (docs/guides/developer-guide.md).
 from __future__ import annotations
 
 import pytest
-from support import make_config
 
 from pyntara import location as location_module
 from pyntara.location import (
@@ -43,7 +42,9 @@ class TestNormalizeText:
             ("", ""),
         ],
     )
-    def test_turns_every_separator_into_a_space(self, value: str, expected: str) -> None:
+    def test_turns_every_separator_into_a_space(
+        self, value: str, expected: str
+    ) -> None:
         assert normalize_text(value) == expected
 
 
@@ -189,9 +190,7 @@ class TestDetectCountry:
     ) -> None:
         calls: list[tuple[tuple[str, ...], float, float]] = []
 
-        def fake_fetch(
-            engine: object, urls: tuple[str, ...], query: float, command: float
-        ) -> tuple:
+        def fake_fetch(urls: tuple[str, ...], query: float, command: float) -> tuple:
             calls.append((urls, query, command))
             return (
                 ("https://ip2c.org/self", "1;RU;RUS;Russia"),
@@ -199,9 +198,7 @@ class TestDetectCountry:
             )
 
         monkeypatch.setattr(location_module, "fetch_urls_by_source", fake_fetch)
-        report = detect_country(
-            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
-        )
+        report = detect_country(SERVICES, COUNTRY_WORD, 60, 1800.0)
         assert report.in_country is True
         assert report.matched_word == "russia"
         assert report.values == ("1", "RU", "RUS", "Russia")
@@ -215,18 +212,14 @@ class TestDetectCountry:
             "fetch_urls_by_source",
             lambda *a, **k: (("https://ip2c.org/self", "1;AR;ARG;Argentina"),),
         )
-        report = detect_country(
-            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
-        )
+        report = detect_country(SERVICES, COUNTRY_WORD, 60, 1800.0)
         assert report.in_country is False
         assert report.matched_word is None
 
     def test_reports_no_country_when_nothing_answered(self) -> None:
         # An empty service list must not start a query and must not turn
         # into a country.
-        report = detect_country(
-            make_config().engine, (), COUNTRY_WORD, 60, 1800.0
-        )
+        report = detect_country((), COUNTRY_WORD, 60, 1800.0)
         assert report.in_country is False
         assert report.answers == ()
         assert report.values == ()
@@ -246,11 +239,8 @@ class TestDescribeAnswers:
                 ("https://ifconfig.co/json", ""),
             ),
         )
-        report = detect_country(
-            make_config().engine, SERVICES, COUNTRY_WORD, 60, 1800.0
-        )
+        report = detect_country(SERVICES, COUNTRY_WORD, 60, 1800.0)
         assert describe_answers(report) == (
             "https://ip2c.org/self: 1, RU, RUS, Russia",
             "https://ifconfig.co/json: no answer",
         )
-

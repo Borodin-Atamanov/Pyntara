@@ -23,7 +23,6 @@ from pykeepass.exceptions import CredentialsError
 from pyntara import task_catalog
 from pyntara.config import (
     Config,
-    EngineConfig,
     load_config,
 )
 from pyntara.context import Context
@@ -38,6 +37,8 @@ from pyntara.utils import (
     session_environment,
     substituted_command,
 )
+from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 
 app = typer.Typer(invoke_without_command=True)
@@ -112,13 +113,13 @@ def _env(name: str) -> str | None:
     return value
 
 
-def _env_flag(engine: EngineConfig, name: str) -> bool:
+def _env_flag(name: str) -> bool:
     """Read a boolean environment variable; True for a configured answer.
 
-    The accepted answers are environment_flag_true_values of the engine
-    table, compared without case and without surrounding spaces. Any other
-    value, including an unset or empty variable, is False. The explicit
-    value list prevents a stray "0" from silently enabling a flag.
+    The accepted answers are the declared ENVIRONMENT_FLAG_TRUE_VALUES,
+    compared without case and without surrounding spaces. Any other value,
+    including an unset or empty variable, is False. The explicit value list
+    prevents a stray "0" from silently enabling a flag.
     """
 
     value = os.environ.get(name)
@@ -126,7 +127,7 @@ def _env_flag(engine: EngineConfig, name: str) -> bool:
         return False
     answer = value.strip().casefold()
     return answer in {
-        word.casefold() for word in engine.environment_flag_true_values
+        word.casefold() for word in engine_values.ENVIRONMENT_FLAG_TRUE_VALUES
     }
 
 
@@ -142,44 +143,39 @@ def _load_config() -> Config:
     return load_config(CONFIG_PATH)
 
 
-def _export_desktop_session(engine: EngineConfig) -> None:
+def _export_desktop_session() -> None:
     """Hand the live desktop session environment to the whole run.
 
-    One export puts the session variables of the configured desktop user into
-    the environment of this process, so every task and every child process
-    inherits them: a run started over a remote console then configures the
-    desktop exactly like a run started inside the session. The step runs
-    before the mode detection, which reads a session variable as direct
-    evidence of a desktop session and falls back to the configured process
-    names when there is none. Nothing is exported when the config names no
-    desktop user, when the session manager of that user does not answer, or
-    when the session reports no bus or display variable; the desktop tasks
-    then write their values and report that they apply at the next login.
+    One export puts the session variables of the desktop user of the machine
+    into the environment of this process, so every task and every child
+    process inherits them: a run started over a remote console then
+    configures the desktop exactly like a run started inside the session.
+    The step runs before the mode detection, which reads a session variable
+    as direct evidence of a desktop session and falls back to the declared
+    process names when there is none. Nothing is exported when the session
+    manager of that user does not answer, or when the session reports no bus
+    or display variable; the desktop tasks then write their values and
+    report that they apply at the next login.
     """
 
-    if not engine.desktop_username:
-        log_event(
-            "Desktop session not read: engine.desktop_username is not set, "
-            "desktop settings apply at the next login"
-        )
-        return
+    username = common_values.DESKTOP_USERNAME
     session = session_environment(
-        engine.desktop_username,
-        command_template=engine.session_environment_command,
-        keys=engine.session_environment_keys,
-        bus_key=engine.session_bus_key,
-        display_keys=engine.session_display_keys,
-        timeout=engine.process_check_timeout_seconds,
+        username,
+        command_template=engine_values.SESSION_ENVIRONMENT_COMMAND,
+        keys=engine_values.SESSION_ENVIRONMENT_KEYS,
+        bus_key=engine_values.SESSION_BUS_KEY,
+        display_keys=engine_values.SESSION_DISPLAY_KEYS,
+        timeout=engine_values.PROCESS_CHECK_TIMEOUT_SECONDS,
     )
     if not session:
         log_event(
-            f"No live desktop session for {engine.desktop_username}, "
+            f"No live desktop session for {username}, "
             "desktop settings apply at the next login"
         )
         return
     exported = export_session_environment(session)
     log_event(
-        f"Desktop session of {engine.desktop_username} exported: "
+        f"Desktop session of {username} exported: "
         + " ".join(f"{name}={session[name]}" for name in exported)
     )
 
@@ -202,10 +198,10 @@ def _warn_and_continue(message: str, notice_timeout: int | None) -> None:
     print("\r", end="", flush=True, file=sys.stderr)
 
 
-def _process_running(engine: EngineConfig, name: str, timeout: float) -> bool:
+def _process_running(name: str, timeout: float) -> bool:
     """True when a process with the exact name is running.
 
-    The query is the [engine] process_check_command with its {process_name}
+    The query is the declared PROCESS_CHECK_COMMAND with its {process_name}
     replaced by the name, and the exit status alone answers: zero means
     running. A missing tool, a timeout and a failed query all mean "not
     running", because the check only picks a default install mode and must
@@ -213,7 +209,7 @@ def _process_running(engine: EngineConfig, name: str, timeout: float) -> bool:
     """
 
     command = substituted_command(
-        engine.process_check_command, {"process_name": name}
+        engine_values.PROCESS_CHECK_COMMAND, {"process_name": name}
     )
     executable = shutil.which(command[0])
     if executable is None:
@@ -226,29 +222,29 @@ def _process_running(engine: EngineConfig, name: str, timeout: float) -> bool:
             timeout=timeout,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return result.returncode == 0
 
 
-def detect_default_mode(engine: EngineConfig) -> str:
+def detect_default_mode() -> str:
     """Pick the default install mode without asking: desktop when a desktop
     session is present, otherwise server. Mirrors inst.sh detection.
 
-    The desktop processes are engine.desktop_detect_processes, the list of
-    process names whose presence marks a desktop session, and the check
-    runs only when no session variable is set.
+    The desktop processes are the declared DESKTOP_DETECT_PROCESSES, the
+    list of process names whose presence marks a desktop session, and the
+    check runs only when no session variable is set.
     """
 
     if os.environ.get("XDG_CURRENT_DESKTOP") or os.environ.get("DESKTOP_SESSION"):
         return "desktop"
-    for process in engine.desktop_detect_processes:
-        if _process_running(engine, process, engine.process_check_timeout_seconds):
+    for process in engine_values.DESKTOP_DETECT_PROCESSES:
+        if _process_running(process, engine_values.PROCESS_CHECK_TIMEOUT_SECONDS):
             return "desktop"
     return "server"
 
 
-def _resolve_mode(cfg: EngineConfig) -> str:
+def _resolve_mode() -> str:
     """Resolve the install mode from PYNTARA_INSTALL_MODE or auto-detection.
 
     A missing variable is not an error: the mode is auto-detected and
@@ -259,18 +255,18 @@ def _resolve_mode(cfg: EngineConfig) -> str:
 
     mode = _env("PYNTARA_INSTALL_MODE")
     if mode is None:
-        detected = detect_default_mode(cfg)
+        detected = detect_default_mode()
         log_event(f"Install mode not set, using detected default: {detected}")
         return detected
     if mode in tasks_values.MODES:
         return mode
-    detected = detect_default_mode(cfg)
+    detected = detect_default_mode()
     _warn_and_continue(
         f"Install mode '{mode}' was set through environment variables but not "
         f"found in the configuration, applied mode '{detected}'. If this does "
         "not suit you, interrupt the program and redefine the mode through "
         "environment variables. Execution continues in",
-        cfg.notice_timeout,
+        engine_values.NOTICE_TIMEOUT,
     )
     return detected
 
@@ -303,16 +299,15 @@ def _resolve_task_names(
 
 
 def _resolve_force_tasks(
-    engine: EngineConfig,
     names: list[str],
     notice_timeout: int | None,
     tasks: tuple[tasks_values.TaskSpec, ...],
 ) -> frozenset[str]:
     """Force task list from PYNTARA_FORCE_TASKS, filtered to the run set.
 
-    The keyword engine.force_all_keyword (case-insensitive) forces every task
-    in the run set. Every other entry must be a known task that is part of the
-    run set, matched case-insensitively; the canonical catalog names are
+    The keyword FORCE_ALL_KEYWORD (case-insensitive) forces every task in the
+    run set. Every other entry must be a known task that is part of the run
+    set, matched case-insensitively; the canonical catalog names are
     returned. Invalid entries are not fatal: an error notice is shown, the run
     pauses so the user can interrupt, then the run continues with the valid
     entries.
@@ -324,7 +319,7 @@ def _resolve_force_tasks(
     force_names = selection.split()
     known = {task.name.casefold() for task in tasks}
     names_folded = {name.casefold() for name in names}
-    all_keyword = engine.force_all_keyword.casefold()
+    all_keyword = engine_values.FORCE_ALL_KEYWORD.casefold()
     invalid = [
         name
         for name in force_names
@@ -356,7 +351,7 @@ def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
     """
 
     force_tasks = _resolve_force_tasks(
-        cfg.engine, names, cfg.engine.notice_timeout, tasks_values.CATALOG
+        names, engine_values.NOTICE_TIMEOUT, tasks_values.CATALOG
     )
     return Context(
         install_mode=mode,
@@ -364,8 +359,8 @@ def _run_context(cfg: Config, mode: str, names: list[str]) -> Context:
         vault_source=_env("PYNTARA_VAULT_SOURCE"),
         force_tasks=force_tasks,
         repo_root=REPO_ROOT,
-        task_data_root=cfg.engine.task_data_root,
-        skip_apt_update=_env_flag(cfg.engine, "PYNTARA_SKIP_APT_UPDATE"),
+        task_data_root=engine_values.TASK_DATA_ROOT,
+        skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
         config=cfg,
     )
 
@@ -375,8 +370,8 @@ def run() -> None:
     """Run the Pyntara provisioning engine."""
 
     cfg = _load_config()
-    configure_journal(cfg.engine)
-    _export_desktop_session(cfg.engine)
+    configure_journal(engine_values.JOURNAL_IDENTIFIER)
+    _export_desktop_session()
     if not tasks_values.CATALOG:
         # Without the catalog there is nothing to run, so the run reports the
         # state instead of finishing as if the machine were provisioned.
@@ -385,8 +380,10 @@ def run() -> None:
             to_stderr=True,
         )
         raise typer.Exit(1)
-    mode = _resolve_mode(cfg.engine)
-    names = _resolve_task_names(mode, cfg.engine.notice_timeout, tasks_values.CATALOG)
+    mode = _resolve_mode()
+    names = _resolve_task_names(
+        mode, engine_values.NOTICE_TIMEOUT, tasks_values.CATALOG
+    )
     ctx = _run_context(cfg, mode, names)
     log_event(f"Install mode: {mode}")
     log_event(f"Tasks: {' '.join(names)}")
@@ -394,9 +391,7 @@ def run() -> None:
         log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
     results = run_tasks(ctx, names)
     failed = [
-        name
-        for name, result in results
-        if not result.success and not result.skipped
+        name for name, result in results if not result.success and not result.skipped
     ]
     warned = [
         name

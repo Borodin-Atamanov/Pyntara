@@ -20,7 +20,7 @@ from support import make_config
 
 from pyntara import metrics_collect
 from pyntara.config import CollectorModuleConfig
-from pyntara.config.engine import EngineConfig
+from pyntara.values import engine as engine_values
 
 IPV4 = CollectorModuleConfig(
     name="ipv4", command=("ip", "-4", "addr", "show", "scope", "global")
@@ -45,11 +45,8 @@ def _config(tmp_path: Path, **kwargs: Any):
     """Config with a safe command path and lock path inside tmp_path."""
 
     return make_config(
-        task_data_root=tmp_path,
         system_metrics_command_path=tmp_path / "usr" / "local" / "bin" / "commit",
-        system_metrics_collector_lock_file_path=(
-            tmp_path / "run" / "collector.lock"
-        ),
+        system_metrics_collector_lock_file_path=(tmp_path / "run" / "collector.lock"),
         **kwargs,
     )
 
@@ -163,18 +160,19 @@ def test_ready_percent_counts_sources_not_records() -> None:
     entries: list[dict[str, object]] = [
         {
             "status": "ok",
-            "output": [
-                {"address": f"10.0.0.{index}"} for index in range(30)
-            ],
+            "output": [{"address": f"10.0.0.{index}"} for index in range(30)],
         },
         {"status": "empty", "output": ""},
     ]
-    assert metrics_collect.percent_ready(
-        entries,
-        make_config().engine.percent_scale,
-        REPORT_KEYS["status"],
-        REPORT_WORDS["ok"],
-    ) == 50
+    assert (
+        metrics_collect.percent_ready(
+            entries,
+            engine_values.PERCENT_SCALE,
+            REPORT_KEYS["status"],
+            REPORT_WORDS["ok"],
+        )
+        == 50
+    )
 
 
 def test_run_module_classifies_ok_empty_error(
@@ -261,11 +259,7 @@ def test_run_module_preserves_internal_newlines(
     # trailing whitespace of the whole text is removed.
     _fake_run(
         monkeypatch,
-        {
-            ("lines",): _FakeProc(
-                0, "  \nfirst line\nsecond line\n\n  "
-            )
-        },
+        {("lines",): _FakeProc(0, "  \nfirst line\nsecond line\n\n  ")},
     )
     module = CollectorModuleConfig(name="lines", command=("lines",))
     assert metrics_collect._run_module(module, 15, REPORT_KEYS, REPORT_WORDS) == {
@@ -299,16 +293,19 @@ def test_percent_ready_counts_only_ok() -> None:
         {"status": "empty"},
         {"status": "error"},
     ]
-    assert metrics_collect.percent_ready(
-        entries,
-        make_config().engine.percent_scale,
-        REPORT_KEYS["status"],
-        REPORT_WORDS["ok"],
-    ) == 50
+    assert (
+        metrics_collect.percent_ready(
+            entries,
+            engine_values.PERCENT_SCALE,
+            REPORT_KEYS["status"],
+            REPORT_WORDS["ok"],
+        )
+        == 50
+    )
     assert (
         metrics_collect.percent_ready(
             [],
-            make_config().engine.percent_scale,
+            engine_values.PERCENT_SCALE,
             REPORT_KEYS["status"],
             REPORT_WORDS["ok"],
         )
@@ -325,12 +322,15 @@ def test_percent_ready_follows_the_configured_scale() -> None:
         {"status": "empty"},
         {"status": "error"},
     ]
-    assert metrics_collect.percent_ready(
-        entries,
-        10,
-        REPORT_KEYS["status"],
-        REPORT_WORDS["ok"],
-    ) == 5
+    assert (
+        metrics_collect.percent_ready(
+            entries,
+            10,
+            REPORT_KEYS["status"],
+            REPORT_WORDS["ok"],
+        )
+        == 5
+    )
 
 
 def test_collect_builds_report_body(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -397,9 +397,9 @@ def test_the_report_vocabulary_comes_from_the_config(
             ("ip", "-6", "addr", "show", "scope", "global"): _FakeProc(0, ""),
         },
     )
+    monkeypatch.setattr(engine_values, "DATETIME_FORMAT", "%H:%M")
     cfg = _config(
         Path("/tmp"),
-        engine_datetime_format="%H:%M",
         system_metrics_collector_report_keys=keys,
         system_metrics_collector_report_status_words=words,
         system_metrics_collector_network_modules=(IPV4, IPV6),
@@ -503,7 +503,10 @@ def test_commit_report_writes_commits_and_removes(
     calls = _fake_run(
         monkeypatch,
         {
-            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)): _FakeProc(0, "ok"),
+            (
+                str(tmp_path / "usr" / "local" / "bin" / "commit"),
+                str(tmp_path / report_name),
+            ): _FakeProc(0, "ok"),
         },
     )
     monkeypatch.setattr(
@@ -517,7 +520,12 @@ def test_commit_report_writes_commits_and_removes(
         "system": [],
     }
     assert metrics_collect._commit_report(cfg, report) is True
-    assert calls == [[str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)]]
+    assert calls == [
+        [
+            str(tmp_path / "usr" / "local" / "bin" / "commit"),
+            str(tmp_path / report_name),
+        ]
+    ]
     assert not (tmp_path / report_name).exists()
 
 
@@ -531,9 +539,10 @@ def test_commit_report_failure_returns_false(
     _fake_run(
         monkeypatch,
         {
-            (str(tmp_path / "usr" / "local" / "bin" / "commit"), str(tmp_path / report_name)): _FakeProc(
-                1, "", "file already pending"
-            ),
+            (
+                str(tmp_path / "usr" / "local" / "bin" / "commit"),
+                str(tmp_path / report_name),
+            ): _FakeProc(1, "", "file already pending"),
         },
     )
     monkeypatch.setattr(
@@ -553,9 +562,7 @@ def test_commit_report_failure_returns_false(
 def test_main_missing_config_argument_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(
-        "sys.argv", ["pyntara.metrics_collect"]
-    )
+    monkeypatch.setattr("sys.argv", ["pyntara.metrics_collect"])
     with pytest.raises(SystemExit) as exc:
         metrics_collect.main()
     assert exc.value.code == 1
@@ -615,20 +622,19 @@ def test_main_journals_under_the_configured_collector_identifier(
     # subsection, never under the engine name, so a journal query separates
     # the collector from the service and from the run that deployed them.
     cfg = _config(tmp_path)
-    configured: list[EngineConfig] = []
+    configured: list[str] = []
     monkeypatch.setattr(metrics_collect, "load_config", lambda path: cfg)
     monkeypatch.setattr(metrics_collect, "configure_journal", configured.append)
-    monkeypatch.setattr(metrics_collect, "_acquire_lock", lambda path, error_priority: object())
+    monkeypatch.setattr(
+        metrics_collect, "_acquire_lock", lambda path, error_priority: object()
+    )
     monkeypatch.setattr(metrics_collect, "collect_until_ready", lambda cfg: {})
     monkeypatch.setattr(metrics_collect, "_commit_report", lambda cfg, report: True)
     monkeypatch.setattr(
         "sys.argv", ["pyntara.metrics_collect", str(tmp_path / "config.toml")]
     )
     metrics_collect.main()
-    assert (
-        configured[-1].journal_identifier
-        == cfg.system_metrics_setup.collector.journal_identifier
-    )
+    assert configured[-1] == cfg.system_metrics_setup.collector.journal_identifier
 
 
 def test_main_collects_and_commits(
@@ -714,7 +720,9 @@ def test_main_commit_failure_exits_one(
             ("ip", "-4", "addr", "show", "scope", "global"): _FakeProc(
                 0, "inet 10.0.0.1\n"
             ),
-            (commit_cmd, str(tmp_path / report_name)): _FakeProc(1, "", "spool missing"),
+            (commit_cmd, str(tmp_path / report_name)): _FakeProc(
+                1, "", "spool missing"
+            ),
         },
     )
     monkeypatch.setattr(

@@ -23,6 +23,7 @@ from support import FakeProc, make_config
 from pyntara import metrics_send
 from pyntara.config import Config
 from pyntara.metrics_send import dispatch_entries, send_google_queue
+from pyntara.values import engine as engine_values
 
 SUFFIX_LENGTH = 12
 URL = "https://script.google.com/macros/s/abcdefghijklmnopqrstuvwxyz/exec"
@@ -34,7 +35,6 @@ def _send_config(tmp_path: Path, **kwargs: Any) -> Config:
     """Config whose queue, vault and password file live in the temporary dir."""
 
     return make_config(
-        task_data_root=tmp_path,
         system_metrics_dir=tmp_path / "metrics",
         local_vault_path=tmp_path / "secrets" / "pyntara.vault",
         local_vault_pass_file_path=tmp_path / "etc" / "pass",
@@ -241,9 +241,7 @@ def test_the_answer_prefix_comes_from_the_config(
     # answer a success while the shipped one refuses it.
     cfg = _send_config(tmp_path)
     _install_vault(tmp_path)
-    metrics = replace(
-        cfg.system_metrics_setup, google_script_answer_ok_prefix="DONE"
-    )
+    metrics = replace(cfg.system_metrics_setup, google_script_answer_ok_prefix="DONE")
     renamed = replace(cfg, system_metrics_setup=metrics)
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "report.txt", "x", time.time())
@@ -269,9 +267,7 @@ def test_a_refusing_answer_is_printed_as_one_bounded_line(
     # page itself, so the line stays readable and names what answered.
     cfg = _send_config(tmp_path)
     _install_vault(tmp_path)
-    metrics = replace(
-        cfg.system_metrics_setup, google_script_answer_excerpt_chars=40
-    )
+    metrics = replace(cfg.system_metrics_setup, google_script_answer_excerpt_chars=40)
     renamed = replace(cfg, system_metrics_setup=metrics)
     page = "<html>" + "x" * 400 + "</html>"
     _fake_curl(monkeypatch, stdout=page)
@@ -323,7 +319,7 @@ def test_send_skips_empty_and_oversized_entries(
 def test_skipped_entry_is_journaled_at_the_configured_level(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The proof of the value: another error level in the [engine] table is
+    # The proof of the value: another error level in the declared values is
     # the level of the line that reports a skipped queue entry.
     levels: list[int | None] = []
     monkeypatch.setattr(
@@ -331,7 +327,8 @@ def test_skipped_entry_is_journaled_at_the_configured_level(
         "_log",
         lambda message, **kwargs: levels.append(kwargs.get("priority")),
     )
-    cfg = _send_config(tmp_path, error_priority=5)
+    monkeypatch.setattr(engine_values, "ERROR_PRIORITY", 5)
+    cfg = _send_config(tmp_path)
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "empty.txt", "", time.time())
     send_google_queue(cfg)

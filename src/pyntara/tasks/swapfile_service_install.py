@@ -31,6 +31,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import swapfile_service_install as values
 
@@ -139,9 +140,9 @@ def task(ctx: Context) -> TaskResult:
     continues with the remaining tasks and never stops here.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -157,11 +158,11 @@ def task(ctx: Context) -> TaskResult:
                 + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     service_name = values.SERVICE_UNIT_NAME
-    bytes_per_kib = ctx.config.engine.bytes_per_kib
-    bytes_per_mib = ctx.config.engine.bytes_per_mib
+    bytes_per_kib = engine_values.BYTES_PER_KIB
+    bytes_per_mib = engine_values.BYTES_PER_MIB
     warnings: list[str] = []
 
     measured = True
@@ -183,8 +184,7 @@ def task(ctx: Context) -> TaskResult:
     free_disk_mb = free_disk_kib // bytes_per_kib
     _log(f"reading RAM from {MEMINFO_PATH}: {ram_mb} MiB")
     _log(
-        f"reading free disk space on {values.SWAPFILE_PATH.parent}: "
-        f"{free_disk_mb} MiB"
+        f"reading free disk space on {values.SWAPFILE_PATH.parent}: {free_disk_mb} MiB"
     )
 
     multiplier = values.RAM_MULTIPLIER
@@ -205,12 +205,11 @@ def task(ctx: Context) -> TaskResult:
         _log(f"checking swapfile {values.SWAPFILE_PATH}: absent")
     else:
         _log(
-            f"checking swapfile {values.SWAPFILE_PATH}: exists, size: "
-            f"{current_mb} MiB"
+            f"checking swapfile {values.SWAPFILE_PATH}: exists, size: {current_mb} MiB"
         )
     active = _swap_active(timeout)
     _log(f"checking system service activation: {'active' if active else 'inactive'}")
-    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
+    enabled = service_is_enabled(service_name, timeout)
     _log(
         f"checking autorun service {service_name}: "
         f"{'enabled' if enabled else 'disabled'}"
@@ -349,8 +348,7 @@ def task(ctx: Context) -> TaskResult:
                 changed = True
 
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name)
-        / values.UNIT_TEMPLATE_FILE_NAME
+        task_data_dir(ctx.repo_root, ctx.task_name) / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     content: str | None = None
@@ -359,7 +357,7 @@ def task(ctx: Context) -> TaskResult:
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     if content is not None:
-        unit_dir = ctx.config.engine.systemd_unit_dir
+        unit_dir = engine_values.SYSTEMD_UNIT_DIR
         _log(f"writing unit file {unit_dir / service_name}")
         unit_written = False
         try:

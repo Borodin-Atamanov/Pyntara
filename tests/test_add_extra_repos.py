@@ -137,7 +137,9 @@ def _record_calls(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     return calls
 
 
-def test_already_satisfied_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_already_satisfied_skips(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Every Ubuntu section already lists every configured component: the
     # task skips and never touches apt.
     satisfied = UBUNTU_DEB822.replace(
@@ -152,7 +154,9 @@ def test_already_satisfied_skips(monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     assert not calls
 
 
-def test_appends_missing_components(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_appends_missing_components(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # Only main is enabled: the task appends the missing components to both
     # Ubuntu sections, keeps everything else and refreshes the index once.
     sources_dir = _install_sources(
@@ -218,7 +222,10 @@ def test_legacy_sources_list_is_rewritten(
     assert result.success is True
     assert result.changed is True
     text = legacy.read_text(encoding="utf-8")
-    assert "deb http://archive.ubuntu.com/ubuntu/ resolute main universe restricted multiverse" in text
+    assert (
+        "deb http://archive.ubuntu.com/ubuntu/ resolute main universe restricted multiverse"
+        in text
+    )
     assert (
         "deb http://security.ubuntu.com/ubuntu/ resolute-security main universe "
         "restricted multiverse # security" in text
@@ -258,13 +265,14 @@ def test_no_ubuntu_section_is_a_warning(
 ) -> None:
     # Only a third-party source exists: there is no Ubuntu archive section
     # to manage, so the task reports the reason and changes nothing.
-    _install_sources(monkeypatch, tmp_path, {"google-chrome.sources": THIRD_PARTY_DEB822})
+    _install_sources(
+        monkeypatch, tmp_path, {"google-chrome.sources": THIRD_PARTY_DEB822}
+    )
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is False
     assert any(
-        "no Ubuntu archive section found" in warning
-        for warning in result.warnings
+        "no Ubuntu archive section found" in warning for warning in result.warnings
     )
 
 
@@ -296,9 +304,7 @@ def test_ubuntu_section_without_components_line_is_a_warning(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is False
-    assert any(
-        "without a Components line" in warning for warning in result.warnings
-    )
+    assert any("without a Components line" in warning for warning in result.warnings)
 
 
 def test_unreadable_source_file_is_a_warning(
@@ -352,9 +358,7 @@ def test_the_deb822_field_names_come_from_the_values(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    text = (tmp_path / "sources.list.d" / "ubuntu.sources").read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / "sources.list.d" / "ubuntu.sources").read_text(encoding="utf-8")
     assert "Parts: main universe restricted multiverse\n" in text
 
 
@@ -371,9 +375,7 @@ def test_the_source_file_suffixes_come_from_the_values(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    text = (tmp_path / "sources.list.d" / "ubuntu.apt").read_text(
-        encoding="utf-8"
-    )
+    text = (tmp_path / "sources.list.d" / "ubuntu.apt").read_text(encoding="utf-8")
     assert text.count("Components: main universe restricted multiverse") == 2
 
     shipped_dir = tmp_path / "shipped"
@@ -387,9 +389,7 @@ def test_the_source_file_suffixes_come_from_the_values(
     untouched = add_extra_repos.task(_ctx(shipped_dir))
     assert untouched.success is True
     assert "no apt source files found" in untouched.warnings
-    assert (shipped_dir / "ubuntu.apt").read_text(
-        encoding="utf-8"
-    ) == UBUNTU_DEB822
+    assert (shipped_dir / "ubuntu.apt").read_text(encoding="utf-8") == UBUNTU_DEB822
 
 
 def _satisfied_ubuntu() -> str:

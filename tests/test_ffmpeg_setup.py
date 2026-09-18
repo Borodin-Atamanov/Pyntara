@@ -111,9 +111,7 @@ def _ctx(
 
     monkeypatch.setattr(ffmpeg_values, "PACKAGES", TEST_PACKAGES)
     monkeypatch.setattr(ffmpeg_values, "WAYRECORD_BIN_PATH", wayrecord_bin_path)
-    monkeypatch.setattr(
-        ffmpeg_values, "WAYRECORD_DESKTOP_PATH", wayrecord_desktop_path
-    )
+    monkeypatch.setattr(ffmpeg_values, "WAYRECORD_DESKTOP_PATH", wayrecord_desktop_path)
     return make_context(
         task_name="ffmpeg_setup",
         repo_root=repo_root or _FIXTURE_REPO or _CLONE_ROOT,
@@ -186,9 +184,7 @@ def test_the_shipped_values_name_the_meta_package() -> None:
     # name, so dpkg-query sees it as installed.
     assert "ffmpeg" in ffmpeg_values.PACKAGES
     assert ffmpeg_values.WAYRECORD_BIN_PATH.name == "pyntara-wayrecord"
-    assert ffmpeg_values.WAYRECORD_DESKTOP_PATH.name == (
-        "pyntara-wayrecord.desktop"
-    )
+    assert ffmpeg_values.WAYRECORD_DESKTOP_PATH.name == ("pyntara-wayrecord.desktop")
     # The build toolchain is part of the package set.
     for build_dep in ("gcc", "libwayland-dev", "libpipewire-0.3-dev", "pkgconf"):
         assert build_dep in ffmpeg_values.PACKAGES
@@ -197,17 +193,13 @@ def test_the_shipped_values_name_the_meta_package() -> None:
 def test_all_installed_skips_apt_and_rebuild(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_bin_path.write_bytes(WAYRECORD_BINARY)
     wayrecord_bin_path.chmod(0o755)
     wayrecord_desktop_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_desktop_path.write_text(
-        ffmpeg_setup._desktop_content(
-            _desktop_template_path(), wayrecord_bin_path
-        ),
+        ffmpeg_setup._desktop_content(_desktop_template_path(), wayrecord_bin_path),
         encoding="utf-8",
     )
     calls = _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
@@ -227,9 +219,7 @@ def test_all_installed_skips_apt_and_rebuild(
 def test_installs_missing_package(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     calls = _command_fake(monkeypatch, installed=set())
     result = ffmpeg_setup.task(
         _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
@@ -250,9 +240,7 @@ def test_installs_missing_package(
 def test_skip_apt_update_skips_the_update(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     calls = _command_fake(monkeypatch, installed=set())
     result = ffmpeg_setup.task(
         _ctx(
@@ -275,9 +263,7 @@ def test_install_failure_is_a_warning(
 ) -> None:
     # The package install fails: the reason is reported and the engine is
     # still built from the sources of the repository.
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     _command_fake(monkeypatch, installed=set(), install_rc=1)
     result = ffmpeg_setup.task(
         _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
@@ -289,9 +275,7 @@ def test_install_failure_is_a_warning(
 def test_wayrecord_built_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
         _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
@@ -306,17 +290,13 @@ def test_wayrecord_built_when_missing(
 def test_wayrecord_idempotent_when_matching(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_bin_path.write_bytes(WAYRECORD_BINARY)
     wayrecord_bin_path.chmod(0o755)
     wayrecord_desktop_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_desktop_path.write_text(
-        ffmpeg_setup._desktop_content(
-            _desktop_template_path(), wayrecord_bin_path
-        ),
+        ffmpeg_setup._desktop_content(_desktop_template_path(), wayrecord_bin_path),
         encoding="utf-8",
     )
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
@@ -333,9 +313,7 @@ def test_desktop_template_name_comes_from_the_values(
 ) -> None:
     # The fixture clone carries only the template name the values give, so
     # a name written in the code could not find a template at all.
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     template_dir = _desktop_template_path().parent
     (template_dir / "pyntara-wayrecord.desktop").unlink()
     (template_dir / "other.desktop").write_text(
@@ -357,9 +335,7 @@ def test_desktop_template_name_comes_from_the_values(
 def test_wayrecord_rebuilt_when_different(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     wayrecord_bin_path.parent.mkdir(parents=True, exist_ok=True)
     wayrecord_bin_path.write_bytes(b"old stale engine")
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
@@ -376,28 +352,20 @@ def test_build_failure_is_a_warning(
 ) -> None:
     # The engine build fails: the reason is reported and the desktop entry
     # is still deployed.
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
-    _command_fake(
-        monkeypatch, installed=set(TEST_PACKAGES), build_rc=1
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
+    _command_fake(monkeypatch, installed=set(TEST_PACKAGES), build_rc=1)
     result = ffmpeg_setup.task(
         _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
     )
     assert result.success is True
-    assert any(
-        "cannot build wayrecord" in warning for warning in result.warnings
-    )
+    assert any("cannot build wayrecord" in warning for warning in result.warnings)
     assert wayrecord_desktop_path.is_file()
 
 
 def test_desktop_written_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(
-        monkeypatch, tmp_path
-    )
+    wayrecord_bin_path, wayrecord_desktop_path = _wayrecord_env(monkeypatch, tmp_path)
     _command_fake(monkeypatch, installed=set(TEST_PACKAGES))
     result = ffmpeg_setup.task(
         _ctx(monkeypatch, wayrecord_bin_path, wayrecord_desktop_path)
@@ -435,8 +403,7 @@ def test_the_desktop_entry_grants_the_interface_the_engine_binds() -> None:
     granted_names = granted[0].split(";")
     for name in bound:
         assert name in granted_names, (
-            f"the desktop entry grants {granted_names}, "
-            f"but the engine binds {name}"
+            f"the desktop entry grants {granted_names}, but the engine binds {name}"
         )
 
 
@@ -460,6 +427,4 @@ def test_wayrecord_missing_template_is_a_warning(
         )
     )
     assert result.success is True
-    assert any(
-        "missing wayrecord source" in warning for warning in result.warnings
-    )
+    assert any("missing wayrecord source" in warning for warning in result.warnings)

@@ -91,9 +91,7 @@ from config_helpers import assert_config_error, base_config
             'service_unit_name = "zram.service"', 'service_unit_name = ""'
         ),
         # zram reset_busy_attempts is zero
-        base_config().replace(
-            "reset_busy_attempts = 5", "reset_busy_attempts = 0"
-        ),
+        base_config().replace("reset_busy_attempts = 5", "reset_busy_attempts = 0"),
         # zram reset_busy_retry_delay_seconds is a string, not a number
         base_config().replace(
             "reset_busy_retry_delay_seconds = 0.5",

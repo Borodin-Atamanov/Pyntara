@@ -31,6 +31,7 @@ from pyntara.config import (
 )
 from pyntara.ssh_access import socks_proxy_address, ssh_command
 from pyntara.tor import onion_address_from_hostname_file
+from pyntara.values import engine as engine_values
 
 # The identity may have been recreated between two provisioning runs
 # without the task noticing, so the saved address file is the fallback of
@@ -77,15 +78,14 @@ def access_record(cfg: Config) -> tuple[dict[str, object] | None, str]:
     address, note = resolve_address(setup.hidden_service_dir, setup.address_file_path)
     if not address:
         return None, "Tor SSH onion address is not available"
-    engine = cfg.engine
-    keys = engine.report_record_keys
-    proxy = socks_proxy_address(engine, setup.socks_port)
+    keys = engine_values.REPORT_RECORD_KEYS
+    proxy = socks_proxy_address(setup.socks_port)
     record: dict[str, object] = {
         keys["channel"]: setup.report_channel_name,
         keys["address"]: address,
         keys["port"]: setup.onion_ssh_port,
         keys["proxy"]: proxy,
-        keys["ssh"]: ssh_command(engine, address, setup.onion_ssh_port, proxy),
+        keys["ssh"]: ssh_command(address, setup.onion_ssh_port, proxy),
     }
     if note:
         record[keys["note"]] = note
@@ -103,7 +103,13 @@ def main(argv: list[str]) -> int:
     if record is None:
         print(error, file=sys.stderr)
         return 1
-    print(json.dumps(record, ensure_ascii=False, indent=cfg.engine.report_json_indent))
+    print(
+        json.dumps(
+            record,
+            ensure_ascii=False,
+            indent=engine_values.REPORT_JSON_INDENT,
+        )
+    )
     return 0
 
 

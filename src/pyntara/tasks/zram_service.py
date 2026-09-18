@@ -37,6 +37,7 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import zram_service as values
 
@@ -95,9 +96,7 @@ def _read_cpu_count() -> tuple[int, bool]:
     except OSError:
         return values.FALLBACK_CPU_COUNT, True
     count = sum(
-        1
-        for line in text.splitlines()
-        if line.startswith(values.CPUINFO_PROCESSOR_KEY)
+        1 for line in text.splitlines() if line.startswith(values.CPUINFO_PROCESSOR_KEY)
     )
     if count == 0:
         return values.FALLBACK_CPU_COUNT, True
@@ -115,14 +114,11 @@ def _calculate_devices(
     The total capacity is the configured fraction of installed RAM; it is
     split evenly across the devices and rounded down to the configured
     byte boundary that the zram driver requires for disksize. The byte
-    factor and the percent scale come from the engine table.
+    factor and the percent scale are declared values.
     """
 
     total_bytes = (
-        ram_kib
-        * bytes_per_kib
-        * values.MEMORY_FRACTION_PERCENT
-        // percent_scale
+        ram_kib * bytes_per_kib * values.MEMORY_FRACTION_PERCENT // percent_scale
     )
     per_device_bytes = (
         total_bytes // cpu_count // values.ALIGNMENT_BYTES * values.ALIGNMENT_BYTES
@@ -163,20 +159,16 @@ def _read_disksize(index: int, module_name: str) -> int | None:
 
     try:
         text = (
-            SYS_BLOCK_PATH.joinpath(
-                _device_name(module_name, index), "disksize"
-            )
+            SYS_BLOCK_PATH.joinpath(_device_name(module_name, index), "disksize")
             .read_text(encoding="utf-8")
             .strip()
         )
         return int(text)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 
-def _read_active_algorithm(
-    index: int, module_name: str
-) -> str | None:
+def _read_active_algorithm(index: int, module_name: str) -> str | None:
     """Currently active compression algorithm for one device, or None.
 
     comp_algorithm lists every supported algorithm; the active one is
@@ -184,11 +176,9 @@ def _read_active_algorithm(
     """
 
     try:
-        text = (
-            SYS_BLOCK_PATH.joinpath(
-                _device_name(module_name, index), "comp_algorithm"
-            ).read_text(encoding="utf-8")
-        )
+        text = SYS_BLOCK_PATH.joinpath(
+            _device_name(module_name, index), "comp_algorithm"
+        ).read_text(encoding="utf-8")
     except OSError:
         return None
     for token in text.split():
@@ -245,9 +235,7 @@ def _hot_add_read_interface() -> bool:
     return bool(mode & values.HOT_ADD_READABLE_MODE_BIT)
 
 
-def _add_devices(
-    count: int, read_interface: bool, module_name: str
-) -> str | None:
+def _add_devices(count: int, read_interface: bool, module_name: str) -> str | None:
     """Create devices via hot_add; return an error message or None.
 
     On the read-to-add interface every read creates one device and
@@ -342,21 +330,15 @@ def _render_unit(
     trip on stray dollar signs.
     """
 
-    lines: list[str] = [
-        values.UNIT_LOAD_LINE.format(module_name=values.MODULE_NAME)
-    ]
+    lines: list[str] = [values.UNIT_LOAD_LINE.format(module_name=values.MODULE_NAME)]
     for index in range(1, device_count):
         if read_interface:
             lines.append(
-                values.UNIT_ADD_READ_LINE.format(
-                    hot_add_path=str(ZRAM_HOT_ADD_PATH)
-                )
+                values.UNIT_ADD_READ_LINE.format(hot_add_path=str(ZRAM_HOT_ADD_PATH))
             )
         else:
             lines.append(
-                values.UNIT_ADD_WRITE_LINE.format(
-                    hot_add_path=str(ZRAM_HOT_ADD_PATH)
-                )
+                values.UNIT_ADD_WRITE_LINE.format(hot_add_path=str(ZRAM_HOT_ADD_PATH))
             )
     for index in range(device_count):
         lines.append(
@@ -428,9 +410,9 @@ def task(ctx: Context) -> TaskResult:
     computed at all, so the task ends with the reason in the warnings.
     """
 
-    absent = missing_value_names(
-        values, values.READ_VALUE_NAMES
-    ) + missing_value_names(common_values, common_values.READ_VALUE_NAMES)
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
     if absent:
         # A value that is not declared costs the task and never the run: the
         # names are reported in plain words and the runner carries on with the
@@ -442,12 +424,12 @@ def task(ctx: Context) -> TaskResult:
                 "the zram_service values are not declared: " + ", ".join(absent),
             ),
         )
-    timeout = ctx.config.engine.command_timeout_seconds
+    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     service_name = values.SERVICE_UNIT_NAME
-    percent_scale = ctx.config.engine.percent_scale
-    bytes_per_kib = ctx.config.engine.bytes_per_kib
-    bytes_per_mib = ctx.config.engine.bytes_per_mib
+    percent_scale = engine_values.PERCENT_SCALE
+    bytes_per_kib = engine_values.BYTES_PER_KIB
+    bytes_per_mib = engine_values.BYTES_PER_MIB
     warnings: list[str] = []
 
     try:
@@ -478,7 +460,7 @@ def task(ctx: Context) -> TaskResult:
     )
 
     active_paths = _active_swap_devices(timeout)
-    enabled = service_is_enabled(ctx.config.engine, service_name, timeout)
+    enabled = service_is_enabled(service_name, timeout)
     existing_count = _existing_device_count(values.MODULE_NAME)
     _log(f"checking existing {values.MODULE_NAME} devices: {existing_count}")
     _log(f"checking active swap devices: {len(active_paths)}")
@@ -633,8 +615,7 @@ def task(ctx: Context) -> TaskResult:
         _log("verification passed")
 
     template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name)
-        / values.UNIT_TEMPLATE_FILE_NAME
+        task_data_dir(ctx.repo_root, ctx.task_name) / values.UNIT_TEMPLATE_FILE_NAME
     )
     _log(f"rendering unit template from {template_path}")
     content: str | None = None
@@ -645,7 +626,7 @@ def task(ctx: Context) -> TaskResult:
     except OSError as exc:
         warnings.append(f"cannot read unit template: {exc}")
     if content is not None:
-        unit_dir = ctx.config.engine.systemd_unit_dir
+        unit_dir = engine_values.SYSTEMD_UNIT_DIR
         _log(f"writing unit file {unit_dir / service_name}")
         unit_written = False
         try:

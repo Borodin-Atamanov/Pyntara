@@ -17,9 +17,7 @@ from config_helpers import (
     "content",
     [
         # packages is a string, not an array
-        base_config().replace(
-            'packages = ["ffmpeg"]', 'packages = "ffmpeg"'
-        ),
+        base_config().replace('packages = ["ffmpeg"]', 'packages = "ffmpeg"'),
         # packages contains a number, not strings
         base_config().replace('packages = ["ffmpeg"]', "packages = [1]"),
         # wayrecord_bin_path is a number, not a string
@@ -47,10 +45,8 @@ from config_helpers import (
         ),
         # package_install_retries is a string
         base_config().replace(
-            "package_status_timeout_seconds = 30\n"
-            "package_install_retries = 3\n",
-            "package_status_timeout_seconds = 30\n"
-            'package_install_retries = "3"\n',
+            "package_status_timeout_seconds = 30\npackage_install_retries = 3\n",
+            'package_status_timeout_seconds = 30\npackage_install_retries = "3"\n',
         ),
         # wayrecord_source_file_names is a string, not an array
         base_config().replace(

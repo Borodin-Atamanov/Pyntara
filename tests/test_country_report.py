@@ -13,14 +13,14 @@ from pathlib import Path
 
 import pytest
 from config_helpers import base_config, write_config
-from support import make_config
 
 from pyntara import country_report
 from pyntara.location import CountryReport, ServiceAnswer
+from pyntara.values import engine as engine_values
 
-# The field names of a record, as the engine map carries them: the tests
+# The field names of a record, as the declared values carry them: the tests
 # never spell one themselves.
-RECORD_KEYS = make_config().engine.report_record_keys
+RECORD_KEYS = engine_values.REPORT_RECORD_KEYS
 
 
 def _config(tmp_path: Path) -> Path:
@@ -33,7 +33,9 @@ def _report(*answers: ServiceAnswer, word: str | None = None) -> CountryReport:
         for value in answer.values:
             if value and value not in values:
                 values.append(value)
-    return CountryReport(answers=tuple(answers), values=tuple(values), matched_word=word)
+    return CountryReport(
+        answers=tuple(answers), values=tuple(values), matched_word=word
+    )
 
 
 def _fake_detection(report: CountryReport):
@@ -54,7 +56,7 @@ def test_document_carries_the_decision_and_the_answers() -> None:
             fields=(),
         )
     )
-    document = country_report.country_document(report, "russia", RECORD_KEYS)
+    document = country_report.country_document(report, "russia")
     assert document == {
         "word": "russia",
         "in_country": False,
@@ -81,7 +83,7 @@ def test_a_json_answer_is_kept_structured_not_a_string() -> None:
             document={"country": "AR", "country_name": "Argentina"},
         )
     )
-    document = country_report.country_document(report, "russia", RECORD_KEYS)
+    document = country_report.country_document(report, "russia")
     assert document["answers"] == [
         {
             "source": "https://ifconfig.co/json",
@@ -91,9 +93,11 @@ def test_a_json_answer_is_kept_structured_not_a_string() -> None:
     ]
 
 
-def test_the_record_keys_come_from_the_engine_table() -> None:
-    # The field names of the record are engine values: another map is the
-    # document the command prints, so the shape lives in the config.
+def test_the_record_keys_come_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The field names of the record are declared values: another map is the
+    # document the command prints, so the shape lives in one place.
     report = _report(
         ServiceAnswer(
             source="https://ip2c.org/self",
@@ -109,12 +113,17 @@ def test_the_record_keys_come_from_the_engine_table() -> None:
     keys["answers"] = "replies"
     keys["source"] = "service"
     keys["document"] = "body"
-    assert country_report.country_document(report, "russia", keys) == {
+    monkeypatch.setattr(engine_values, "REPORT_RECORD_KEYS", keys)
+    assert country_report.country_document(report, "russia") == {
         "target": "russia",
         "hit": False,
         "seen": ["AR"],
         "replies": [
-            {"service": "https://ip2c.org/self", "seen": ["AR"], "body": "1;AR;ARG;Argentina"}
+            {
+                "service": "https://ip2c.org/self",
+                "seen": ["AR"],
+                "body": "1;AR;ARG;Argentina",
+            }
         ],
     }
 
@@ -129,12 +138,7 @@ def test_document_marks_a_named_country() -> None:
         ),
         word="russia",
     )
-    assert (
-        country_report.country_document(report, "russia", RECORD_KEYS)[
-            "in_country"
-        ]
-        is True
-    )
+    assert country_report.country_document(report, "russia")["in_country"] is True
 
 
 def test_main_prints_the_document(
@@ -170,9 +174,7 @@ def test_main_reports_a_silent_detection(
     tmp_path: Path,
 ) -> None:
     config_path = _config(tmp_path)
-    monkeypatch.setattr(
-        country_report, "detect_country", _fake_detection(_report())
-    )
+    monkeypatch.setattr(country_report, "detect_country", _fake_detection(_report()))
     assert country_report.main(["country_report", str(config_path)]) == 1
     captured = capsys.readouterr()
     assert captured.out == ""

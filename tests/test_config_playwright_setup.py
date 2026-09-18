@@ -17,14 +17,12 @@ from config_helpers import (
     "content",
     [
         # packages is a string, not an array
-        base_config().replace(
-            'packages = ["nodejs", "npm"]', 'packages = "nodejs"'
-        ),
+        base_config().replace('packages = ["nodejs", "npm"]', 'packages = "nodejs"'),
         # packages contains a number, not strings
         base_config().replace('packages = ["nodejs", "npm"]', "packages = [1]"),
         # username is a number, not a string
         base_config().replace(
-            "[playwright_setup]\nusername = \"i\"",
+            '[playwright_setup]\nusername = "i"',
             "[playwright_setup]\nusername = 42",
         ),
         # home_dir is a number, not a string
@@ -32,15 +30,11 @@ from config_helpers import (
             'home_dir = "/home/i"\npackages', "home_dir = 42\npackages"
         ),
         # cli_package is a number, not a string
-        base_config().replace(
-            'cli_package = "@playwright/cli"', "cli_package = 42"
-        ),
+        base_config().replace('cli_package = "@playwright/cli"', "cli_package = 42"),
         # package_status_timeout_seconds of this section is a string
         base_config().replace(
-            'packages = ["nodejs", "npm"]\n'
-            "package_status_timeout_seconds = 30\n",
-            'packages = ["nodejs", "npm"]\n'
-            'package_status_timeout_seconds = "30"\n',
+            'packages = ["nodejs", "npm"]\npackage_status_timeout_seconds = 30\n',
+            'packages = ["nodejs", "npm"]\npackage_status_timeout_seconds = "30"\n',
         ),
         # package_install_retries of this section is a string
         base_config().replace(

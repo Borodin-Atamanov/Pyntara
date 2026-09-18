@@ -29,106 +29,13 @@ def base_config() -> str:
     """
 
     return (
-        '[engine]\ntask_data_root = "/tmp"\nsystemd_unit_dir = "/etc/systemd/system"\nnotice_timeout = 7\nforce_all_keyword = "all"\n'
-        "command_timeout_seconds = 8000\ncurl_timeout_seconds = 777\n"
-        "curl_download_timeout_seconds = 7777\ncurl_retries = 17\n"
-        "curl_retry_delay_seconds = 3\ncurl_connect_timeout_seconds = 60\n"
-        "curl_retry_max_time_seconds = 7777\n"
-        'curl_download_command = ["curl", "--fail", "--location", "--show-error", "--output", "{output_path}", "--write-out", "{write_out}"]\n'
-        'curl_download_write_out = "took %{time_total}s"\n'
-        'curl_query_command = ["curl", "--fail", "--silent", "--show-error", "--location"]\n'
-        'curl_parallel_command = ["curl", "--parallel", "--parallel-max", "{parallel_max}", "--max-time", "{timeout_seconds}", "--write-out", "{write_out}"]\n'
-        'curl_parallel_write_out = "\\n@@pyntara-source@@ %{url_effective}\\n"\n'
-        'curl_parallel_source_marker = "@@pyntara-source@@"\n'
-        'environment_flag_true_values = ["1", "true", "yes"]\n'
-        "report_json_indent = 2\n"
-        'datetime_format = "%Y-%m-%d-%H-%M-%S"\n'
-        'ssh_report_command_format = "ssh -v -p {port}{proxy_option} {address}"\n'
-        'ssh_report_proxy_option_format = \' -o ProxyCommand="{proxy_command}"\'\n'
-        'ssh_report_socks_command_format = "nc -X 5 -x {proxy} %h %p"\n'
-        'ssh_report_proxy_host = "127.0.0.1"\n'
-        'report_record_keys = { channel = "channel", address = "address", port = "port", proxy = "proxy", ssh = "ssh", note = "note", server = "server", local_port = "local_port", remote_port = "remote_port", family = "family", interface = "interface", scope = "scope", word = "word", in_country = "in_country", values = "values", answers = "answers", source = "source", document = "document", reason = "reason" }\n'
-        'report_family_words = { ipv4 = "ipv4", ipv6 = "ipv6" }\n'
-        'os_release_family_keys = ["ID", "ID_LIKE"]\n'
-        'os_release_debian_family_names = ["debian", "ubuntu"]\n'
-        'github_latest_release_url = "https://api.github.com/repos/{repo}/releases/latest"\n'
-        'github_release_download_url = "https://github.com/{repo}/releases/download/v{version}/{asset_name}"\n'
-        'release_asset_architectures = { amd64 = "x86_64", arm64 = "aarch64" }\n'
-        'partial_download_file_suffix = ".download"\n'
-        'system_python = "/usr/bin/python3"\n'
-        'journal_identifier = "pyntara-engine"\n'
-        'journal_command = ["systemd-cat", "--identifier", "{identifier}"]\n'
-        'journal_priority_command = ["systemd-cat", "--identifier", '
-        '"{identifier}", "--priority", "{priority}"]\n'
-        "root_owner_uid = 0\nroot_owner_gid = 0\n"
-        "percent_scale = 100\nbytes_per_kib = 1024\nbytes_per_mib = 1048576\n"
-        "nanoseconds_per_second = 1000000000\n"
-        "error_priority = 3\n"
-        "progress_priority = 7\n"
-        "process_check_timeout_seconds = 5\n"
-        'process_check_command = ["pgrep", "-x", "{process_name}"]\n'
-        "task_start_delay_seconds = 0.5\n"
-        'desktop_detect_processes = ["kwin_wayland", "plasmashell"]\n'
-        'kglobalaccel_bus_name = "org.kde.kglobalaccel"\n'
-        'kglobalaccel_object_path = "/kglobalaccel"\n'
-        'kglobalaccel_interface_name = "org.kde.KGlobalAccel"\n'
-        'desktop_username = "i"\n'
-        'session_environment_command = ["systemctl", "--machine", "{username}@.host", "--user", "show-environment"]\n'
-        'session_environment_keys = ["DBUS_SESSION_BUS_ADDRESS", "WAYLAND_DISPLAY", "DISPLAY", "XAUTHORITY", "XDG_RUNTIME_DIR"]\n'
-        'session_bus_key = "DBUS_SESSION_BUS_ADDRESS"\n'
-        'session_display_keys = ["WAYLAND_DISPLAY", "DISPLAY"]\n'
-        'upnpc_status_command = ["{command}", "-s"]\n'
-        'upnpc_mapping_list_command = ["{command}", "-l"]\n'
-        'upnpc_mapping_add_command = ["{command}", "-e", "{description}", "-a", "{internal_address}", "{internal_port}", "{external_port}", "{protocol}"]\n'
-        'upnpc_external_address_key = "ExternalIPAddress"\n'
-        'upnpc_protocol_names = ["TCP", "UDP"]\n'
-        'upnpc_mapping_arrow = "->"\n'
-        'local_addresses_command = ["ip", "-o", "addr", "show", "scope", "global"]\n'
-        'directly_connected_networks_command = ["ip", "-o", "{family}", "route", "show", "proto", "kernel"]\n'
-        'default_route_command = ["ip", "-4", "route", "show", "default"]\n'
-        'default_route_source_key = "src"\n'
-        'augtool_command = ["augtool", "--noautoload"]\n'
-        'augeas_files_node_prefix = "/files"\n'
-        'augeas_lens_line = "set /augeas/load/entry/lens {lens}"\n'
-        'augeas_incl_line = "set /augeas/load/entry/incl {path}"\n'
-        'augeas_load_line = "load"\n'
-        'augeas_print_line = "print {node}"\n'
-        'augeas_save_line = "save"\n'
-        'augeas_comment_line = \'set {node}/#comment "{header}"\'\n'
-        'augeas_container_line = "set {node}/{container}[last()] {value}"\n'
-        'augeas_directive_line = \'set {node}/{name} "{value}"\'\n'
-        'augeas_container_directive_line = \'set {node}/{container}[last()]/{name}[last()] "{value}"\'\n'
-        'augeas_remove_line = "rm {node}/{name}"\n'
-        'augeas_container_remove_line = "rm {node}/{container}/{name}"\n'
-        'interface_addresses_command = ["ip", "-j", "addr", "show"]\n'
-        'address_family_by_flag = { "4" = "ipv4", "6" = "ipv6" }\n'
-        'iproute2_address_family_names = { "ipv4" = "inet", "ipv6" = "inet6" }\n'
-        'link_scope_name = "link"\nhost_scope_name = "host"\n'
-        'dpkg_architecture_command = ["dpkg", "--print-architecture"]\n'
-        'package_status_query_command = '
-        '["dpkg-query", "-W", "-f=${{Status}}", "{package}"]\n'
-        'apt_update_command = ["apt-get", "update"]\n'
-        'apt_install_command = ["apt-get", "install", "-y", "{package}"]\n'
-        'apt_noninteractive_environment = { DEBIAN_FRONTEND = "noninteractive" }\n'
-        'systemctl_is_enabled_command = ["systemctl", "is-enabled", "{unit}"]\n'
-        'systemctl_is_active_command = ["systemctl", "is-active", "{unit}"]\n'
-        'systemd_enabled_states = ["enabled", "enabled-runtime"]\n'
-        'systemd_active_state = "active"\n'
-        'socket_listener_command = ["ss", "-tlnp", "sport = :{port}"]\n'
-        'systemctl_main_pid_command = '
-        '["systemctl", "show", "-p", "MainPID", "--value", "{unit}"]\n'
-        'systemctl_stop_command = ["systemctl", "stop", "{unit}"]\n'
-        "port_kill_grace_seconds = 5\n"
-        "port_kill_poll_seconds = 0.2\n"
         '[cli_tools]\npackages = ["mc"]\npackage_status_timeout_seconds = 30\n'
         "package_install_retries = 3\npackage_success_threshold_percent = 70\n"
-
         '[imagemagick_setup]\npackages = ["imagemagick"]\n'
         'policy_path = "/etc/ImageMagick-7/policy.xml"\n'
         'policy_template_file_name = "policy.xml"\n'
         'policy_backup_file_suffix = ".bak"\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
-
         '[ffmpeg_setup]\npackages = ["ffmpeg"]\n'
         'wayrecord_bin_path = "/usr/local/bin/pyntara-wayrecord"\n'
         'wayrecord_desktop_path = "/usr/share/applications/pyntara-wayrecord.desktop"\nwayrecord_file_mode = "0755"\n'
@@ -138,7 +45,6 @@ def base_config() -> str:
         'wayrecord_build_flags_command = ["pkg-config", "--cflags", "--libs", "wayland-client", "libpipewire-0.3"]\n'
         'wayrecord_compile_command = ["gcc", "-O2", "-o", "{output}"]\n'
         "package_status_timeout_seconds = 30\npackage_install_retries = 3\n"
-
         '[add_extra_repos]\ncomponents = ["universe"]\n'
         'ubuntu_hosts = ["archive.ubuntu.com"]\nkeep_downloaded_debs = true\n'
         'uris_field_name = "uris:"\ncomponents_field_name = "components:"\n'
@@ -153,7 +59,7 @@ def base_config() -> str:
         '[hostname]\nhostname_file = "/etc/hostname"\n'
         "hostname_random_bytes = 4\n"
         'set_hostname_command = ["hostnamectl", "set-hostname"]\n'
-        '[kde_keyboard_setup]\n'
+        "[kde_keyboard_setup]\n"
         'packages = ["libkf6config-bin", "qdbus-qt6", "python3-dbus", "python3-pyqt6"]\n'
         'username = "i"\n'
         'home_dir = "/home/i"\n'
@@ -185,7 +91,7 @@ def base_config() -> str:
         'kconfig_false_value = "false"\n'
         'layout_switcher_component_unique = "KDE Keyboard Layout Switcher"\n'
         'layout_switcher_component_friendly = "Keyboard Layout Switcher"\n'
-        'shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }\n'
+        "shortcut_modifier_bits = { Ctrl = 0x04000000, Alt = 0x08000000, Shift = 0x02000000, Meta = 0x10000000 }\n"
         'apply_hotkeys_script_file_name = "apply_hotkeys.py"\n'
         'runuser_command = ["runuser", "-u", "{username}", "--"]\n'
         'kreadconfig_command = ["kreadconfig6", "--file", "{file_name}"]\n'
@@ -195,7 +101,6 @@ def base_config() -> str:
         'config_bool_type_flag = ["--type", "bool"]\n'
         'mkdir_command = ["mkdir", "-p", "{path}"]\n'
         'python_script_command = ["{python}", "-c"]\n'
-
         '[swapfile_service_install]\nswapfile_path = "/swapfile"\n'
         'meminfo_total_key = "MemTotal:"\n'
         "ram_multiplier = 2\nram_extra_mb = 4096\ndisk_fraction = 0.5\n"
@@ -212,7 +117,7 @@ def base_config() -> str:
         'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         '[zswap_service]\nenabled = true\ncompressor = "zstd"\n'
         "max_pool_percent = 50\naccept_threshold_percent = 100\n"
-        'shrinker_enabled = true\n'
+        "shrinker_enabled = true\n"
         'parameters_dir_path = "/sys/module/zswap/parameters"\n'
         'parameter_names = ["enabled", "compressor", "max_pool_percent", "accept_threshold_percent", "shrinker_enabled"]\n'
         'unit_template_file_name = "zswap.service"\n'
@@ -225,7 +130,7 @@ def base_config() -> str:
         "memory_fraction_percent = 96\nfallback_cpu_count = 8\n"
         'meminfo_total_key = "MemTotal:"\n'
         'cpuinfo_processor_key = "processor"\n'
-        'alignment_bytes = 4096\nreset_busy_attempts = 5\n'
+        "alignment_bytes = 4096\nreset_busy_attempts = 5\n"
         "reset_busy_retry_delay_seconds = 0.5\n"
         'hot_add_readable_mode_bit = "0400"\n'
         'service_unit_name = "zram.service"\n'
@@ -238,14 +143,14 @@ def base_config() -> str:
         'swap_on_command = ["swapon", "--priority", "{swap_priority}", "{device_path}"]\n'
         'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
         'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
-        'unit_load_line = "ExecStart=/bin/sh -c \'modprobe {module_name} || true\'"\n'
+        "unit_load_line = \"ExecStart=/bin/sh -c 'modprobe {module_name} || true'\"\n"
         'unit_add_read_line = "ExecStart=/bin/cat {hot_add_path}"\n'
-        'unit_add_write_line = "ExecStart=/bin/sh -c \'echo 1 > {hot_add_path}\'"\n'
-        'unit_algorithm_line = "ExecStart=/bin/sh -c \'echo {compressor} > {algorithm_attribute}\'"\n'
-        'unit_disksize_line = "ExecStart=/bin/sh -c \'echo {size_bytes} > {disksize_attribute}\'"\n'
+        "unit_add_write_line = \"ExecStart=/bin/sh -c 'echo 1 > {hot_add_path}'\"\n"
+        "unit_algorithm_line = \"ExecStart=/bin/sh -c 'echo {compressor} > {algorithm_attribute}'\"\n"
+        "unit_disksize_line = \"ExecStart=/bin/sh -c 'echo {size_bytes} > {disksize_attribute}'\"\n"
         'unit_format_line = "ExecStart=/sbin/mkswap {device_path}"\n'
         'unit_swap_on_line = "ExecStart=/sbin/swapon --priority {swap_priority} {device_path}"\n'
-        '[i2pd_service_setup]\n'
+        "[i2pd_service_setup]\n"
         'github_repo = "PurpleI2P/i2pd"\n'
         'download_dir = "/var/lib/pyntara/i2pd-download"\n'
         'os_release_file_path = "/etc/os-release"\n'
@@ -427,7 +332,7 @@ def base_config() -> str:
         'vault_entry_title = "three_x_ui_credentials"\n'
         'connection_vault_entry_title = "xray_connection"\n'
         'share_addr_strategy = "custom"\n'
-        'inbound_port = 443\n'
+        "inbound_port = 443\n"
         "route_test_port = 443\n"
         'route_test_network = "tcp"\n'
         'route_test_protocol = "tls"\n'
@@ -587,7 +492,7 @@ def base_config() -> str:
         'public_key_file_name = "id_ed25519.pub"\n'
         'port_forwarding_private_key_file_name = "id_ed25519_pf"\n'
         'port_forwarding_public_key_file_name = "id_ed25519_pf.pub"\n'
-        'port_forwarding_authorized_keys_options = \'restrict,port-forwarding,permitlisten="*"\'\n'
+        "port_forwarding_authorized_keys_options = 'restrict,port-forwarding,permitlisten=\"*\"'\n"
         'private_key_file_mode = "0600"\n'
         'public_key_file_mode = "0644"\n'
         'authorized_keys_file_mode = "0600"\n'
@@ -601,7 +506,7 @@ def base_config() -> str:
         'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
         'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
         'service_reload_command = ["systemctl", "reload", "{service_unit_name}"]\n'
-        '[[ssh_daemon_setup.directives]]\n'
+        "[[ssh_daemon_setup.directives]]\n"
         'name = "PubkeyAuthentication"\n'
         'value = "yes"\n'
         "[ssh_client_setup]\n"
@@ -718,10 +623,10 @@ def base_config() -> str:
         'upstream_mode = "load_balance"\ncache_enabled = true\n'
         "cache_size_bytes = 16777216\n"
         'bootstrap_resolvers = ["1.1.1.1", "2606:4700:4700::1111"]\n'
-        'append_provider_dns = true\n'
+        "append_provider_dns = true\n"
         "timeout_seconds = 55\nlog_rate_limit_interval_seconds = 3777\nlog_rate_limit_burst = 7777\n"
-        'service_restart_seconds = 2.0\ninstall_retries = 3\n'
-        'start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n'
+        "service_restart_seconds = 2.0\ninstall_retries = 3\n"
+        "start_check_attempts = 5\nstart_check_retry_delay_seconds = 1.0\n"
         'resolved_conf_dir = "/etc/systemd/resolved.conf.d"\n'
         'resolved_dropin_file_name = "pyntara-dnsproxy.conf"\nresolved_dropin_file_mode = "0644"\n'
         'staged_binary_file_mode = "0755"\n'
@@ -764,12 +669,12 @@ def base_config() -> str:
         'service_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
         'service_start_command = ["systemctl", "start", "{service_unit_name}"]\n'
         'service_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
-        'verification_error_excerpt_length = 200\n'
+        "verification_error_excerpt_length = 200\n"
         'ss_tcp_listen_command = ["ss", "-lntp"]\n'
         'ss_udp_listen_command = ["ss", "-lunp"]\n'
         'kill_command = ["kill"]\n'
         'service_log_command = ["journalctl", "-u", "{unit}", "--no-pager", "-n", "20"]\n'
-        'service_log_excerpt_length = 400\n'
+        "service_log_excerpt_length = 400\n"
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\nprofile_id_file_mode = "0644"\n'
         "[rustdesk_setup]\n"
         'github_repo = "rustdesk/rustdesk"\n'
@@ -798,9 +703,9 @@ def base_config() -> str:
         "start_check_attempts = 10\n"
         "start_check_retry_delay_seconds = 1.0\n"
         "service_settle_delay_seconds = 3.0\n"
-        '[[rustdesk_setup.options]]\n'
+        "[[rustdesk_setup.options]]\n"
         'key = "stop-service"\nvalue = ""\n'
-        '[[rustdesk_setup.options]]\n'
+        "[[rustdesk_setup.options]]\n"
         'key = "enable-udp-punch"\nvalue = "Y"\n'
         "[scrcpy_setup]\n"
         'username = "i"\n'
@@ -968,7 +873,7 @@ def base_config() -> str:
         'system_metrics_dir = "/var/lib/pyntara/metrics"\n'
         'system_metrics_dir_mode = "0700"\nqueue_file_mode = "0600"\n'
         'max_queue_file_size_bytes = 104857600\nsend_order = "oldest_first"\n'
-        'queue_file_suffix_length = 12\n'
+        "queue_file_suffix_length = 12\n"
         'queue_file_suffix_alphabet = "abcxyz0123456789"\n'
         'spool_dir = "/var/spool/system_metrics"\nspool_dir_mode = "1733"\n'
         'spool_dir_permission_mask = "7777"\n'
@@ -987,18 +892,18 @@ def base_config() -> str:
         'systemctl_enable_command = ["systemctl", "enable", "{unit_name}"]\n'
         'systemctl_restart_command = ["systemctl", "restart", "{unit_name}"]\n'
         'systemctl_start_command = ["systemctl", "start", "{unit_name}"]\n'
-        'send_service_command = '
+        "send_service_command = "
         '["{python}", "-m", "pyntara.metrics", "{config_path}"]\n'
-        'ingest_service_command = '
+        "ingest_service_command = "
         '["{python}", "-m", "pyntara.metrics_ingest", "{config_path}"]\n'
-        'collector_service_command = '
+        "collector_service_command = "
         '["{python}", "-m", "pyntara.metrics_collect", "{config_path}"]\n'
-        'venv_version_command = '
+        "venv_version_command = "
         '["{python}", "-c", "import pyntara; print(pyntara.__version__)"]\n'
-        'venv_create_command = '
+        "venv_create_command = "
         '["{uv}", "venv", "{venv_dir}", "--python", "{python_version}", '
         '"--no-managed-python"]\n'
-        'venv_sync_command = '
+        "venv_sync_command = "
         '["{uv}", "sync", "--project", "{repo_root}", "--active", "--locked", '
         '"--no-dev", "--no-editable"]\n'
         'venv_reinstall_flags = ["--reinstall-package", "pyntara"]\n'
@@ -1016,7 +921,7 @@ def base_config() -> str:
         'telemetry_pdf_report_file_name = "network-{hostname}.pdf"\n'
         'telemetry_password_entry_title = "telemetry_password"\n'
         'telemetry_pdf_vault_entry_titles = ["three_x_ui_credentials", "xray_connection", "rustdesk_password"]\n'
-        '[system_metrics_setup.collector]\n'
+        "[system_metrics_setup.collector]\n"
         "boot_delay_seconds = 30\n"
         'daily_send_times = ["12:00:00", "00:00:00"]\n'
         "threshold_percent = 50\n"
@@ -1035,18 +940,18 @@ def base_config() -> str:
         '"ready_percent", network = "network", system = "system", name = "name", '
         'status = "status", output = "output" }\n'
         'report_status_words = { ok = "ok", empty = "empty", error = "error" }\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "ipv4"\n'
         'command = ["ip", "-4", "addr", "show", "scope", "global"]\n'
-        '[[system_metrics_setup.collector.network_modules]]\n'
+        "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "ipv6"\n'
         'command = ["ip", "-6", "addr", "show", "scope", "global"]\n'
-        '[[system_metrics_setup.collector.system_modules]]\n'
+        "[[system_metrics_setup.collector.system_modules]]\n"
         'name = "hostname"\n'
         'command = ["hostname"]\n'
-        '[system_metrics_setup.telemetry_pdf]\n'
+        "[system_metrics_setup.telemetry_pdf]\n"
         'font = "Courier"\nfont_size = 12\nline_width_chars = 72\n'
-        'margin = 36\n'
+        "margin = 36\n"
         'section_ssh = "SSH"\nsection_secrets = "SECRETS"\n'
         'section_json = "NETWORK.JSON"\n'
         'nextdns_module_name = "nextdns"\n'
@@ -1103,9 +1008,7 @@ def load_checked_config(path: Path) -> Config:
     return strict_config_from_document(document)
 
 
-def assert_config_error(
-    tmp_path: Path, content: str, match: str | None = None
-) -> None:
+def assert_config_error(tmp_path: Path, content: str, match: str | None = None) -> None:
     """Write content as config.toml and expect load_config to raise.
 
     match narrows the assertion to a ConfigError message fragment; without

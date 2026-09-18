@@ -23,7 +23,6 @@ from support import FakeProc, make_config
 
 import pyntara.port_forwarding as pf
 from pyntara.config import Config
-from pyntara.config.engine import EngineConfig
 from pyntara.forwarding_ports import candidate_ports, desired_port
 from pyntara.port_forwarding import (
     _normalize_host,
@@ -50,10 +49,10 @@ FAKE_BIN = (
     "done\n"
     'PORT="${R_SPEC%%:*}"\n'
     'if [[ -n "${FAKE_SSH_ARGV_LOG:-}" ]]; then echo "$R_SPEC" >> "$FAKE_SSH_ARGV_LOG"; fi\n'
-    '# The busy script holds one line per attempt: the ports the server\n'
-    '# refuses for that attempt, space separated. A consumed line is\n'
-    '# dropped, and the last line repeats, so a script with one line\n'
-    '# describes a port that stays taken.\n'
+    "# The busy script holds one line per attempt: the ports the server\n"
+    "# refuses for that attempt, space separated. A consumed line is\n"
+    "# dropped, and the last line repeats, so a script with one line\n"
+    "# describes a port that stays taken.\n"
     'BUSY=""\n'
     'if [[ -n "${FAKE_SSH_BUSY_SCRIPT:-}" && -r "${FAKE_SSH_BUSY_SCRIPT}" ]]; then\n'
     '  BUSY="$(head -n 1 "$FAKE_SSH_BUSY_SCRIPT")"\n'
@@ -73,6 +72,7 @@ FAKE_BIN = (
     "exit 0\n"
 )
 
+
 def _write_executable(path: Path, content: str) -> Path:
     path.write_text(content, encoding="utf-8")
     path.chmod(0o755)
@@ -88,9 +88,7 @@ def _fake_bin(tmp_path: Path) -> Path:
     return bindir
 
 
-def _agent_env(
-    bindir: Path, lifetime: float = 1, **extra: str
-) -> dict[str, str]:
+def _agent_env(bindir: Path, lifetime: float = 1, **extra: str) -> dict[str, str]:
     """An environment that resolves ssh through the fake bin directory.
 
     lifetime is how long the fake ssh keeps the tunnel open. A test that
@@ -119,11 +117,13 @@ def _make_vault(tmp_path: Path) -> PyKeePass:
     kp.add_entry(
         group, title="Server 001", username="", password="", url="169.58.51.98"
     )
+    kp.add_entry(group, title="Server 002", username="", password="", url="2001:db8::1")
     kp.add_entry(
-        group, title="Server 002", username="", password="", url="2001:db8::1"
-    )
-    kp.add_entry(
-        group, title="Server 003", username="", password="", url="https://vpn.example.com"
+        group,
+        title="Server 003",
+        username="",
+        password="",
+        url="https://vpn.example.com",
     )
     kp.add_entry(group, title="Broken", username="", password="", url="")
     kp.add_entry(
@@ -173,9 +173,7 @@ class TestOwnServers:
         config = make_config()
         own_addresses(config)
         assert seen == [
-            float(
-                config.port_forwarding_setup.own_addresses_timeout_seconds
-            )
+            float(config.port_forwarding_setup.own_addresses_timeout_seconds)
         ]
 
     def test_own_addresses_failure_keeps_everything(
@@ -243,7 +241,9 @@ class TestVaultReads:
 
     def test_read_passphrase(self, tmp_path: Path) -> None:
         kp = _make_vault(tmp_path)
-        assert read_passphrase(kp, "ssh_passphase_for_port_forwarding") == "the-passphrase"
+        assert (
+            read_passphrase(kp, "ssh_passphase_for_port_forwarding") == "the-passphrase"
+        )
 
     def test_read_passphrase_missing_entry(self, tmp_path: Path) -> None:
         path = tmp_path / "vault.kdbx"
@@ -254,9 +254,7 @@ class TestVaultReads:
 
 class TestStartForward:
     @pytest.fixture(autouse=True)
-    def _config(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _config(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.config = make_config(
             port_forwarding_connect_timeout_seconds=1,
         )
@@ -405,9 +403,7 @@ class TestStartAgent:
         assert captured[section.display_env_key] == section.askpass_display
         assert captured[section.passphrase_env_key] == "passphrase"
         askpass_variable = next(iter(section.askpass_env))
-        assert captured[askpass_variable].endswith(
-            section.askpass_helper_file_name
-        )
+        assert captured[askpass_variable].endswith(section.askpass_helper_file_name)
 
 
 def test_state_write_uses_the_configured_suffix_and_indent(
@@ -423,9 +419,7 @@ def test_state_write_uses_the_configured_suffix_and_indent(
     assert target.read_text(encoding="utf-8") == json.dumps(
         state, ensure_ascii=False, indent=section.state_json_indent
     )
-    assert not (
-        tmp_path / f"state.json{section.state_temp_file_suffix}"
-    ).exists()
+    assert not (tmp_path / f"state.json{section.state_temp_file_suffix}").exists()
 
 
 def test_a_failed_state_write_leaves_no_temporary_file(
@@ -448,18 +442,14 @@ def test_a_failed_state_write_leaves_no_temporary_file(
     save_state(config, {"server": {"30222": 20001}})
     assert target.read_text(encoding="utf-8") == before
     assert list(tmp_path.iterdir()) == [target]
-    assert not (
-        tmp_path / f"state.json{section.state_temp_file_suffix}"
-    ).exists()
+    assert not (tmp_path / f"state.json{section.state_temp_file_suffix}").exists()
 
 
 class TestOpenTunnel:
     """Tests for the walk over the candidate chain of the machine."""
 
     @pytest.fixture(autouse=True)
-    def _env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.tmp = tmp_path
         self.bindir = _fake_bin(tmp_path)
         self.key = tmp_path / "key"
@@ -502,9 +492,7 @@ class TestOpenTunnel:
         """A busy script with one line per attempt, in the given order."""
 
         script = self.tmp / "busy.txt"
-        script.write_text(
-            "".join(f"{line}\n" for line in lines), encoding="utf-8"
-        )
+        script.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
         return script
 
     def _second_candidate(self) -> int:
@@ -607,16 +595,13 @@ class TestOpenTunnel:
 
 class TestRunForwardLoop:
     @pytest.fixture(autouse=True)
-    def _env(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.tmp = tmp_path
         self.bindir = _fake_bin(tmp_path)
         self.state_path = tmp_path / "state.json"
         self.key = tmp_path / "key"
         self.argv_log = tmp_path / "argv.txt"
         self.config = make_config(
-            task_data_root=tmp_path,
             port_forwarding_connect_timeout_seconds=1,
             port_forwarding_state_file_path=self.state_path,
         )
@@ -666,9 +651,7 @@ class TestRunForwardLoop:
 
     def _busy_script(self, *lines: object) -> Path:
         script = self.tmp / "busy.txt"
-        script.write_text(
-            "".join(f"{line}\n" for line in lines), encoding="utf-8"
-        )
+        script.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
         return script
 
     def _second_candidate(self) -> int:
@@ -684,9 +667,7 @@ class TestRunForwardLoop:
     def test_state_file_carries_the_given_mode(self, tmp_path: Path) -> None:
         # The mode and the location of the state file come from the
         # config, so no literal of the write can slip in.
-        config = make_config(
-            port_forwarding_state_file_path=tmp_path / "state.json"
-        )
+        config = make_config(port_forwarding_state_file_path=tmp_path / "state.json")
         save_state(config, {"server": {"30222": 20000}})
         target = config.port_forwarding_setup.state_file_path
         assert stat.S_IMODE(target.stat().st_mode) == (
@@ -701,9 +682,10 @@ class TestRunForwardLoop:
         self._run(state, self._agent_env())
         recorded = state["server"]["30222"]
         assert recorded == desired_port(self.config, "testhost")
-        assert json.loads(self.state_path.read_text(encoding="utf-8"))["server"][
-            "30222"
-        ] == recorded
+        assert (
+            json.loads(self.state_path.read_text(encoding="utf-8"))["server"]["30222"]
+            == recorded
+        )
         assert len(self.triggers) == 1
 
     def test_the_port_returns_to_the_first_candidate_on_reconnect(self) -> None:
@@ -762,13 +744,10 @@ class TestRunForwardLoop:
 
 class TestMain:
     @pytest.fixture(autouse=True)
-    def _base(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def _base(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         self.root_ssh = tmp_path / "root" / ".ssh"
         self.root_ssh.mkdir(parents=True)
         self.config = make_config(
-            task_data_root=tmp_path,
             port_forwarding_connect_timeout_seconds=1,
             ssh_daemon_root_ssh_dir=self.root_ssh,
         )
@@ -783,17 +762,13 @@ class TestMain:
     def _kp(self, *, group: bool, passphrase: bool) -> SimpleNamespace:
         entries = []
         if passphrase:
-            entries.append(
-                SimpleNamespace(password="the-passphrase")
-            )
+            entries.append(SimpleNamespace(password="the-passphrase"))
         group_entries = [SimpleNamespace(url="169.58.51.98")]
         return SimpleNamespace(
             find_groups=lambda name, first: (
                 SimpleNamespace(entries=group_entries) if group else None
             ),
-            find_entries=lambda title, first: (
-                entries[0] if passphrase else None
-            ),
+            find_entries=lambda title, first: entries[0] if passphrase else None,
         )
 
     def test_journals_under_the_configured_service_identifier(
@@ -802,7 +777,7 @@ class TestMain:
         # The auto forwarding service announces itself under its own
         # configured identifier, never under the engine name, so a journal
         # query separates the service from the run that deployed it.
-        configured: list[EngineConfig] = []
+        configured: list[str] = []
         monkeypatch.setattr(pf, "configure_journal", configured.append)
         monkeypatch.setattr(
             pf.metrics,
@@ -811,8 +786,7 @@ class TestMain:
         )
         pf.main()
         expected = self.config.port_forwarding_setup.journal_identifier
-        assert configured[-1].journal_identifier == expected
-        assert configured[-1].journal_command == self.config.engine.journal_command
+        assert configured[-1] == expected
 
     def test_exits_cleanly_without_servers(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -820,7 +794,9 @@ class TestMain:
         # A vault without the server group means nothing to connect to;
         # the service exits cleanly instead of failing.
         monkeypatch.setattr(
-            pf.metrics, "open_runtime_vault", lambda cfg: self._kp(group=False, passphrase=True)
+            pf.metrics,
+            "open_runtime_vault",
+            lambda cfg: self._kp(group=False, passphrase=True),
         )
         pf.main()
 
@@ -830,7 +806,9 @@ class TestMain:
         # A vault without the passphrase entry cannot unlock the key, so
         # the service exits cleanly.
         monkeypatch.setattr(
-            pf.metrics, "open_runtime_vault", lambda cfg: self._kp(group=True, passphrase=False)
+            pf.metrics,
+            "open_runtime_vault",
+            lambda cfg: self._kp(group=True, passphrase=False),
         )
         pf.main()
 
@@ -866,10 +844,13 @@ class TestMain:
                 return None
 
         monkeypatch.setattr(
-            pf.metrics, "open_runtime_vault",
+            pf.metrics,
+            "open_runtime_vault",
             lambda cfg: self._kp(group=True, passphrase=True),
         )
-        monkeypatch.setattr(pf, "_start_agent", lambda *args, **kwargs: {"PATH": "/bin"})
+        monkeypatch.setattr(
+            pf, "_start_agent", lambda *args, **kwargs: {"PATH": "/bin"}
+        )
         monkeypatch.setattr(pf.threading, "Thread", FakeThread)
         pf.main()
         assert len(created) == 1
