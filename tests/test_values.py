@@ -35,6 +35,7 @@ from value_checks import (
 
 import pyntara
 from pyntara.values import engine as engine_values
+from pyntara.values import port_forwarding_setup as port_forwarding_values
 
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
@@ -52,6 +53,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "local_vault_setup",
     "nextdns_setup_system_wide",
     "playwright_setup",
+    "port_forwarding_setup",
     "rustdesk_setup",
     "scrcpy_setup",
     "sotavpn_setup",
@@ -90,6 +92,13 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
     ("rustdesk_setup", "ID_FILE_MODE", check_file_mode),
     ("rustdesk_setup", "VAULT_ENTRY_TITLE", check_vault_entry_title),
     ("scrcpy_setup", "FALLBACK_PACKAGES", check_nonempty_text_tuple),
+    ("port_forwarding_setup", "ASKPASS_HELPER_FILE_MODE", check_file_mode),
+    ("port_forwarding_setup", "STATE_FILE_MODE", check_file_mode),
+    (
+        "port_forwarding_setup",
+        "PASSPHRASE_ENTRY_TITLE",
+        check_vault_entry_title,
+    ),
     ("sotavpn_setup", "KEY_ENTRY_TITLE", check_vault_entry_title),
     ("ssh_client_setup", "DROPIN_FILE_MODE", check_file_mode),
     ("swapfile_service_install", "SWAPFILE_MODE", check_file_mode),
@@ -390,6 +399,24 @@ def test_the_parallel_marker_is_part_of_the_parallel_write_out() -> None:
         engine_values.CURL_PARALLEL_SOURCE_MARKER
         in engine_values.CURL_PARALLEL_WRITE_OUT
     )
+
+
+def test_the_askpass_env_carries_the_helper_placeholder() -> None:
+    # The unlock hands the helper path to ssh through this map, so the
+    # placeholder is what makes the helper findable; a map without it
+    # would start ssh-add against a path that does not exist.
+    askpass_env = port_forwarding_values.ASKPASS_ENV
+    assert askpass_env
+    assert any("{helper_path}" in value for value in askpass_env.values())
+
+
+def test_the_askpass_helper_prints_the_declared_passphrase_variable() -> None:
+    # The helper is a script of its own: it must name the variable the
+    # unlock sets, otherwise ssh-add receives an empty passphrase and the
+    # key never loads on the target machine.
+    name = port_forwarding_values.PASSPHRASE_ENV_KEY
+    content = port_forwarding_values.ASKPASS_HELPER_CONTENT
+    assert name in content
 
 
 def test_every_flag_family_has_a_report_word() -> None:

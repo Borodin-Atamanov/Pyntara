@@ -372,7 +372,7 @@ command = ["cat", "/var/lib/pyntara/nextdns_profile_id"]
 # module instead of an error.
 [[system_metrics_setup.collector.network_modules]]
 name = "port_forwarding"
-command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]
+command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", "pyntara.port_forwarding_state"]
 
 # The upnp module reads the rules of the home router through the UPnP
 # client and reports the one this machine owns, so every network report

@@ -83,7 +83,7 @@ def candidate_ports(cfg: Config, hostname: str) -> tuple[int, ...]:
     """
 
     attempts = cfg.upnp_forwarding_setup.mapping_attempts
-    return tuple(islice(forwarding_ports.candidate_ports(cfg, hostname), attempts))
+    return tuple(islice(forwarding_ports.candidate_ports(hostname), attempts))
 
 
 def ensure_client_package(cfg: Config) -> bool:

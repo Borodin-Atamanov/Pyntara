@@ -423,7 +423,7 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "[[system_metrics_setup.collector.network_modules]]\n"
         'name = "port_forwarding"\n'
         'command = ["/usr/local/lib/pyntara/venv/bin/python", "-m", '
-        '"pyntara.port_forwarding_state", "/etc/pyntara/config.toml"]\n'
+        '"pyntara.port_forwarding_state"]\n'
         "[[system_metrics_setup.collector.system_modules]]",
     )
     config = load_checked_config(write_config(tmp_path, content))
@@ -464,7 +464,6 @@ def test_collector_parses_anonymous_network_modules(tmp_path: Path) -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.port_forwarding_state",
-        "/etc/pyntara/config.toml",
     )
 
 
@@ -484,11 +483,11 @@ def test_nextdns_module_path_matches_nextdns_config() -> None:
     )
 
 
-def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
+def test_port_forwarding_module_command_carries_no_config_path() -> None:
     # The port_forwarding collector module reads the state file through
-    # the single system config the collector deploys, so the argument of
-    # the module command must be that config and not a copy of the state
-    # path: a copied path could drift away from the section that owns it.
+    # the declared values of its own section, so its command carries no
+    # config path at all: a path in the command would be dead weight and
+    # could drift away from the section that owns the value.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     modules = config.system_metrics_setup.collector.network_modules
@@ -499,7 +498,6 @@ def test_port_forwarding_module_path_matches_port_forwarding_config() -> None:
         "/usr/local/lib/pyntara/venv/bin/python",
         "-m",
         "pyntara.port_forwarding_state",
-        str(config.system_metrics_setup.system_config_path),
     )
 
 
@@ -544,11 +542,13 @@ def test_repository_collector_network_module_names() -> None:
 
 
 def test_pyntara_command_modules_read_the_single_system_config() -> None:
-    # A module that runs a pyntara command needs ports and paths, and it
-    # reads them from the single system config, so every such command
-    # carries the configured system_config_path as an argument; a module
-    # that named another config would break on a machine where the path
-    # differs. The family modules append their family flag after it.
+    # A module that runs a pyntara command and still reads the config
+    # needs ports and paths from it, so its command carries the configured
+    # system_config_path as an argument; a module that named another config
+    # would break on a machine where the path differs. The family modules
+    # append their family flag after it, and the port_forwarding module is
+    # out of this rule because it reads the declared values of its own
+    # section instead of the config.
     repo_root = Path(__file__).resolve().parents[1]
     config = load_checked_config(repo_root / "config")
     system_config_path = str(config.system_metrics_setup.system_config_path)
@@ -556,6 +556,7 @@ def test_pyntara_command_modules_read_the_single_system_config() -> None:
         module
         for module in config.system_metrics_setup.collector.network_modules
         if any("pyntara." in part for part in module.command)
+        and module.name != "port_forwarding"
     ]
     assert command_modules
     for module in command_modules:

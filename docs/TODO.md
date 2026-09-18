@@ -1518,3 +1518,41 @@ machine in this turn, and the probe is named with the figure.
     morning (09:31) and to the x-ui REALITY client of an unrelated connection
     (09:47), and the curl lines that look like errors only carry the --show-error
     flag.
+
+148. Stage F opened on 2026-09-18 with the port_forwarding_setup section
+    (branch upnp-forwarding-values). The plan said "the smallest coupled section
+    first", and the first probe corrected that order: the shared module
+    pyntara/forwarding_ports.py reads the DESIRED_PORT_MIN and DESIRED_PORT_MAX of
+    this section for both forwarding schemes, so the router section cannot move
+    before it, and the port section went first. Its values now live in
+    src/pyntara/values/port_forwarding_setup.py (48 names, registered in
+    VALUES_MODULE_NAMES, whose generic guards then demanded that every one of them
+    is read somewhere), and config/port_forwarding_setup.toml,
+    src/pyntara/config/port_forwarding_setup.py and
+    tests/test_config_port_forwarding_setup.py went to the trash together with the
+    validator of the section, the fragment of tests/config_helpers.py, the two
+    make_config parameters of tests/support.py, the coverage entry and the rule
+    that the passphrase title names a vault entry (it is now
+    check_vault_entry_title in EXTRA_VALUE_RULES, with two relations of the
+    unlock checked in tests/test_values.py).
+    Two couplings stayed on purpose and are the reason this section could not be
+    migrated alone: the deployed service port_forwarding.py still reads the config
+    for the deployment venv and for the call that wakes the report collector,
+    which belong to system_metrics_setup, so its unit command keeps
+    {config_path}; and network_addresses.py still reads the Port directive of
+    ssh_daemon_setup. The state command port_forwarding_state.py needed nothing
+    from the config any more, so it lost its CONFIG_PATH argument and the command
+    of the collector module lost the path with it - the one place where this turn
+    touched the not-yet-migrated metrics section.
+    Five helpers of the service lost the config parameter they no longer read
+    (own_addresses, _start_agent, _kill_agent, _build_ssh_command, save_state),
+    which is the simplification the migration buys: a function that took the whole
+    document to read one value now takes nothing.
+    Live proof on the local machine, production run with
+    PYNTARA_REPO_BRANCH=upnp-forwarding-values: exit code 0, "All 31 tasks
+    finished", 88 seconds, no failure and no warning; port_forwarding_setup
+    rewrote its unit and restarted the service, the deployment venv carries the
+    new values module, and the service journal shows the tunnel coming up
+    ("forwarding local port 30222 to remote port 37892") with the values read from
+    the package. Every gate passes: ruff, ruff format, mypy strict over 137 source
+    files, mypy over the tests, 2252 unit tests and the four bash suites.

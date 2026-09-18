@@ -9,7 +9,6 @@ disabled by conftest.
 
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
 from string import Template
 
@@ -17,10 +16,10 @@ import pytest
 from support import FakeProc, make_config, make_context
 
 from pyntara import __version__
-from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
 from pyntara.values import engine as engine_values
+from pyntara.values import port_forwarding_setup as values
 
 UNIT_TEMPLATE = """\
 [Unit]
@@ -60,10 +59,12 @@ def _install_fixtures(
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(port_forwarding_setup.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(
+        values, "STATE_FILE_PATH", tmp_path / "port_forwarding_state.json"
+    )
     config = make_config(
         system_metrics_venv_dir=venv_dir,
         system_metrics_system_config_path=system_config,
-        port_forwarding_state_file_path=tmp_path / "port_forwarding_state.json",
     )
     ctx = make_context(
         task_data_root=tmp_path,
@@ -112,7 +113,6 @@ def _install_fake(
 def _expected_unit(
     venv_python: Path,
     system_config: Path,
-    cfg: PortForwardingSetupConfig,
     version: str = __version__,
 ) -> str:
     """The unit the task must render for the given fixtures."""
@@ -121,13 +121,13 @@ def _expected_unit(
         [
             str(venv_python),
             "-m",
-            cfg.service_module_name,
+            values.SERVICE_MODULE_NAME,
             str(system_config),
         ]
     )
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
-        restart_seconds=cfg.service_restart_seconds,
+        restart_seconds=values.SERVICE_RESTART_SECONDS,
         version=version,
     )
 
@@ -142,12 +142,8 @@ def test_deploys_unit_and_starts_service(
     result = port_forwarding_setup.task(ctx)
     assert result.success
     assert result.changed
-    service = ctx.config.port_forwarding_setup.service_unit_name
-    expected = _expected_unit(
-        venv_python,
-        system_config,
-        ctx.config.port_forwarding_setup,
-    )
+    service = values.SERVICE_UNIT_NAME
+    expected = _expected_unit(venv_python, system_config)
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     command_names = [tuple(command) for command in calls]
     assert ("systemctl", "daemon-reload") in command_names
@@ -155,32 +151,35 @@ def test_deploys_unit_and_starts_service(
     assert ("systemctl", "restart", service) in command_names
 
 
-def test_service_exec_line_comes_from_the_config(tmp_path: Path) -> None:
+def test_service_exec_line_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     # The line the deployed unit starts with is a config value: another
-    # command in the table is exactly what the unit runs, with the venv
+    # command in the values is exactly what the unit runs, with the venv
     # interpreter, the module and the config path in their placeholders.
-    cfg = make_config().port_forwarding_setup
+    monkeypatch.setattr(
+        values,
+        "MODULE_RUN_COMMAND",
+        ("myrun", "-m", "{module}", "{config_path}"),
+    )
     template = tmp_path / "auto_port_forwarding.service"
     template.write_text(
         "[Service]\n$exec_lines\nRestartSec=$restart_seconds\n",
         encoding="utf-8",
     )
     unit = port_forwarding_setup._render_service_unit(
-        replace(
-            cfg,
-            module_run_command=("myrun", "-m", "{module}", "{config_path}"),
-        ),
         template,
         Path("/venv/bin/python"),
-        cfg.service_module_name,
+        values.SERVICE_MODULE_NAME,
         Path("/etc/pyntara/config.toml"),
-        cfg.service_restart_seconds,
+        values.SERVICE_RESTART_SECONDS,
         "0.3.516",
     )
     assert (
-        f"ExecStart=myrun -m {cfg.service_module_name} /etc/pyntara/config.toml" in unit
+        f"ExecStart=myrun -m {values.SERVICE_MODULE_NAME} /etc/pyntara/config.toml"
+        in unit
     )
-    assert f"RestartSec={cfg.service_restart_seconds}" in unit
+    assert f"RestartSec={values.SERVICE_RESTART_SECONDS}" in unit
 
 
 def test_the_unit_carries_the_version_of_the_deployed_code(
@@ -196,7 +195,7 @@ def test_the_unit_carries_the_version_of_the_deployed_code(
     _install_fake(monkeypatch, active=True, venv_version="0.3.999")
     result = port_forwarding_setup.task(ctx)
     assert result.success
-    service = ctx.config.port_forwarding_setup.service_unit_name
+    service = values.SERVICE_UNIT_NAME
     unit = (systemd_dir / service).read_text(encoding="utf-8")
     assert "# Deployed by Pyntara 0.3.999" in unit
     assert not result.warnings
@@ -213,10 +212,9 @@ def test_a_unit_of_another_version_is_rewritten_and_the_service_restarted(
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    cfg = ctx.config.port_forwarding_setup
-    service = cfg.service_unit_name
+    service = values.SERVICE_UNIT_NAME
     systemd_dir.mkdir(parents=True)
-    older = _expected_unit(venv_python, system_config, cfg).replace(
+    older = _expected_unit(venv_python, system_config).replace(
         f"# Deployed by Pyntara {__version__}", "# Deployed by Pyntara 0.0.1"
     )
     (systemd_dir / service).write_text(older, encoding="utf-8")
@@ -225,7 +223,7 @@ def test_a_unit_of_another_version_is_rewritten_and_the_service_restarted(
     assert result.success
     assert result.changed
     assert (systemd_dir / service).read_text(encoding="utf-8") == _expected_unit(
-        venv_python, system_config, cfg
+        venv_python, system_config
     )
     assert any(command[1] == "restart" for command in calls)
 
@@ -242,7 +240,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
     _install_fake(monkeypatch, active=True, venv_version=None)
     result = port_forwarding_setup.task(ctx)
     assert result.success
-    service = ctx.config.port_forwarding_setup.service_unit_name
+    service = values.SERVICE_UNIT_NAME
     unit = (systemd_dir / service).read_text(encoding="utf-8")
     assert f"# Deployed by Pyntara {__version__}" in unit
     assert any("cannot read the version" in warning for warning in result.warnings)
@@ -251,40 +249,34 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
 def test_renders_the_configured_module_and_commands(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The unit runs the module the config names and the task drives the
-    # unit with the configured commands, so a renamed module or a command
-    # that grew an argument is a config change and never a code change.
+    # The unit runs the declared module and the task drives the unit with
+    # the declared commands, so a renamed module or a command that grew an
+    # argument is a value change and never a code change.
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    ctx = replace(
-        ctx,
-        config=replace(
-            ctx.config,
-            port_forwarding_setup=replace(
-                ctx.config.port_forwarding_setup,
-                service_module_name="other.module",
-                systemctl_restart_command=(
-                    "systemctl",
-                    "restart",
-                    "{service_unit_name}",
-                    "--no-block",
-                ),
-            ),
+    monkeypatch.setattr(values, "SERVICE_MODULE_NAME", "other.module")
+    monkeypatch.setattr(
+        values,
+        "SYSTEMCTL_RESTART_COMMAND",
+        (
+            "systemctl",
+            "restart",
+            "{service_unit_name}",
+            "--no-block",
         ),
     )
     calls = _install_fake(monkeypatch, active=True)
     result = port_forwarding_setup.task(ctx)
     assert result.success
-    pf = ctx.config.port_forwarding_setup
-    unit = (systemd_dir / pf.service_unit_name).read_text(encoding="utf-8")
-    expected = _expected_unit(venv_python, system_config, pf)
+    unit = (systemd_dir / values.SERVICE_UNIT_NAME).read_text(encoding="utf-8")
+    expected = _expected_unit(venv_python, system_config)
     assert unit == expected
     assert "-m other.module" in unit
     assert (
         "systemctl",
         "restart",
-        pf.service_unit_name,
+        values.SERVICE_UNIT_NAME,
         "--no-block",
     ) in [tuple(command) for command in calls]
 
@@ -295,12 +287,8 @@ def test_skips_when_already_configured(
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    service = ctx.config.port_forwarding_setup.service_unit_name
-    expected = _expected_unit(
-        venv_python,
-        system_config,
-        ctx.config.port_forwarding_setup,
-    )
+    service = values.SERVICE_UNIT_NAME
+    expected = _expected_unit(venv_python, system_config)
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
     calls = _install_fake(monkeypatch, enabled=True, active=True)
@@ -320,12 +308,8 @@ def test_restarts_when_deployed_but_inactive(
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    service = ctx.config.port_forwarding_setup.service_unit_name
-    expected = _expected_unit(
-        venv_python,
-        system_config,
-        ctx.config.port_forwarding_setup,
-    )
+    service = values.SERVICE_UNIT_NAME
+    expected = _expected_unit(venv_python, system_config)
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text(expected, encoding="utf-8")
     calls = _install_fake(monkeypatch, enabled=True, active=False)
@@ -341,7 +325,7 @@ def test_force_rewrites_and_restarts(
     systemd_dir, venv_python, system_config, ctx = _install_fixtures(
         monkeypatch, tmp_path
     )
-    service = ctx.config.port_forwarding_setup.service_unit_name
+    service = values.SERVICE_UNIT_NAME
     systemd_dir.mkdir(parents=True)
     (systemd_dir / service).write_text("stale\n", encoding="utf-8")
     calls = _install_fake(monkeypatch, enabled=True, active=True)
@@ -354,11 +338,7 @@ def test_force_rewrites_and_restarts(
     result = port_forwarding_setup.task(force_ctx)
     assert result.success
     assert result.changed
-    expected = _expected_unit(
-        venv_python,
-        system_config,
-        ctx.config.port_forwarding_setup,
-    )
+    expected = _expected_unit(venv_python, system_config)
     assert (systemd_dir / service).read_text(encoding="utf-8") == expected
     assert any(command[1] == "restart" for command in calls)
 
@@ -371,7 +351,7 @@ def test_the_state_file_is_never_touched(
     # forced one removes it, and a routine restart therefore keeps the
     # ports the machine asked for.
     _, _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
-    state_path = ctx.config.port_forwarding_setup.state_file_path
+    state_path = values.STATE_FILE_PATH
     state_path.parent.mkdir(parents=True, exist_ok=True)
     written = '{"169.58.51.98": {"30222": 46132}}\n'
     state_path.write_text(written, encoding="utf-8")
@@ -433,7 +413,7 @@ def test_missing_template_is_a_warning(
     result = port_forwarding_setup.task(ctx)
     assert result.success
     assert any("template" in warning for warning in result.warnings)
-    service = ctx.config.port_forwarding_setup.service_unit_name
+    service = values.SERVICE_UNIT_NAME
     assert (
         "systemctl",
         "restart",

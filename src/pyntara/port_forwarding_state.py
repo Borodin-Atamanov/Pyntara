@@ -13,22 +13,21 @@ configured and prints nothing with exit code 0, so a machine without the
 vault data shows an empty module instead of an error. A corrupt state
 file is reported as an error, never silently dropped.
 
-The state file path comes from the single system config the command is
-given, which is the same value the service writes and the task deploys,
-so the report and the tunnels can never disagree
+The state file path comes from the values of the port_forwarding_setup
+section, which are the same values the service writes and the task
+deploys, so the report and the tunnels can never disagree
 (docs/spec/system-metrics.md, section Report collector). Runs as
-`python -m pyntara.port_forwarding_state CONFIG_PATH`.
+`python -m pyntara.port_forwarding_state`.
 """
 
 from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
-from pyntara.config import Config, absent_config_keys, load_config
 from pyntara.ssh_access import host_from_address, ssh_command
 from pyntara.values import engine as engine_values
+from pyntara.values import port_forwarding_setup as values
 
 
 def local_port_number(value: object) -> int | str:
@@ -45,17 +44,17 @@ def local_port_number(value: object) -> int | str:
         return str(value)
 
 
-def state_records(cfg: Config, raw: object) -> list[dict[str, object]]:
+def state_records(raw: object) -> list[dict[str, object]]:
     """One record per server and local port of the parsed state file.
 
     A malformed entry is skipped instead of raising: the file is written
     by the service, and one unreadable entry must not hide the rest of
-    the forwarding state. The channel name and the field names come from
-    the config and the declared values.
+    the forwarding state. The channel name comes from the values of the
+    section and the field names from the declared report vocabulary.
     """
 
     keys = engine_values.REPORT_RECORD_KEYS
-    channel = cfg.port_forwarding_setup.report_channel_name
+    channel = values.REPORT_CHANNEL_NAME
     records: list[dict[str, object]] = []
     if not isinstance(raw, dict):
         return records
@@ -85,19 +84,10 @@ def main(argv: list[str]) -> int:
     wrong argument count and 1 on an unreadable or corrupt state file.
     """
 
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} CONFIG_PATH", file=sys.stderr)
+    if len(argv) != 1:
+        print(f"usage: {argv[0]}", file=sys.stderr)
         return 2
-    cfg = load_config(Path(argv[1]))
-    missing = absent_config_keys(cfg.port_forwarding_setup, ("state_file_path",))
-    if missing:
-        print(
-            "error: the port_forwarding_setup section of the config has no "
-            + ", ".join(missing),
-            file=sys.stderr,
-        )
-        return 1
-    path = cfg.port_forwarding_setup.state_file_path
+    path = values.STATE_FILE_PATH
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -108,7 +98,7 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    records = state_records(cfg, raw)
+    records = state_records(raw)
     if not records:
         return 0
     print(

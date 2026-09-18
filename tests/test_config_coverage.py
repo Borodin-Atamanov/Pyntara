@@ -295,9 +295,6 @@ def test_test_factory_config_keeps_the_vault_entry_cross_checks() -> None:
         "system_metrics_setup.google_script_key_entry_title": (
             factory.system_metrics_setup.google_script_key_entry_title
         ),
-        "port_forwarding_setup.passphrase_entry_title": (
-            factory.port_forwarding_setup.passphrase_entry_title
-        ),
         "rustdesk_setup.vault_entry_title": (factory.rustdesk_setup.vault_entry_title),
         "three_x_ui_xray_setup.vault_entry_title": (
             factory.three_x_ui_xray_setup.vault_entry_title

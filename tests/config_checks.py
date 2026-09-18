@@ -32,7 +32,6 @@ from pyntara.config import (
     LocalVaultSetupConfig,
     NextdnsSetupSystemWideConfig,
     PlaywrightSetupConfig,
-    PortForwardingSetupConfig,
     RustdeskOptionConfig,
     RustdeskSetupConfig,
     ScrcpySetupConfig,
@@ -1694,9 +1693,6 @@ def _playwright_setup_table(raw: object) -> PlaywrightSetupConfig:
     )
 
 
-# from port_forwarding_setup.py
-
-
 def _positive_int_field(raw: object, name: str) -> int:
     """Validate a positive integer config value."""
 
@@ -1713,282 +1709,6 @@ def _port_field(raw: object, name: str) -> int:
     if not 1 <= value <= 65535:
         raise ConfigError(f"{name} must be a TCP port from 1 to 65535")
     return value
-
-
-def _port_forwarding_setup_table(raw: object) -> PortForwardingSetupConfig:
-    """Validate the [port_forwarding_setup] table and build the config.
-
-    Every value is required and typed. The desired port range must be
-    ordered and inside the TCP port space; the backoff values are
-    positive integers, the reconnect pause grows geometrically by the
-    multiplier until the ceiling; error_priority is an integer 0-7.
-    """
-
-    if not isinstance(raw, dict):
-        raise ConfigError("[port_forwarding_setup] section is missing or not a table")
-    section = "port_forwarding_setup."
-    vault_group_title = _nonempty_string_field(
-        raw.get("vault_group_title"), section + "vault_group_title"
-    )
-    passphrase_entry_title = _nonempty_string_field(
-        raw.get("passphrase_entry_title"), section + "passphrase_entry_title"
-    )
-    remote_ssh_user = _nonempty_string_field(
-        raw.get("remote_ssh_user"), section + "remote_ssh_user"
-    )
-    desired_port_min = _port_field(
-        raw.get("desired_port_min"), section + "desired_port_min"
-    )
-    desired_port_max = _port_field(
-        raw.get("desired_port_max"), section + "desired_port_max"
-    )
-    if desired_port_min > desired_port_max:
-        raise ConfigError(
-            "port_forwarding_setup.desired_port_min must not exceed desired_port_max"
-        )
-    server_alive_interval_seconds = _positive_int_field(
-        raw.get("server_alive_interval_seconds"),
-        section + "server_alive_interval_seconds",
-    )
-    server_alive_count_max = _positive_int_field(
-        raw.get("server_alive_count_max"), section + "server_alive_count_max"
-    )
-    connect_timeout_seconds = _positive_int_field(
-        raw.get("connect_timeout_seconds"), section + "connect_timeout_seconds"
-    )
-    own_addresses_timeout_seconds = _positive_int_field(
-        raw.get("own_addresses_timeout_seconds"),
-        section + "own_addresses_timeout_seconds",
-    )
-    agent_start_timeout_seconds = _positive_int_field(
-        raw.get("agent_start_timeout_seconds"),
-        section + "agent_start_timeout_seconds",
-    )
-    key_unlock_timeout_seconds = _positive_int_field(
-        raw.get("key_unlock_timeout_seconds"),
-        section + "key_unlock_timeout_seconds",
-    )
-    askpass_helper_file_mode = _octal_mode_field(
-        raw.get("askpass_helper_file_mode"), section + "askpass_helper_file_mode"
-    )
-    askpass_display = _nonempty_string_field(
-        raw.get("askpass_display"), section + "askpass_display"
-    )
-    state_file_mode = _octal_mode_field(
-        raw.get("state_file_mode"), section + "state_file_mode"
-    )
-    backoff_base_seconds = _positive_int_field(
-        raw.get("backoff_base_seconds"), section + "backoff_base_seconds"
-    )
-    backoff_multiplier = _positive_int_field(
-        raw.get("backoff_multiplier"), section + "backoff_multiplier"
-    )
-    backoff_max_seconds = _positive_int_field(
-        raw.get("backoff_max_seconds"), section + "backoff_max_seconds"
-    )
-    state_file_path = Path(
-        _nonempty_string_field(raw.get("state_file_path"), section + "state_file_path")
-    )
-    service_unit_name = _nonempty_string_field(
-        raw.get("service_unit_name"), section + "service_unit_name"
-    )
-    service_restart_seconds = _positive_int_field(
-        raw.get("service_restart_seconds"), section + "service_restart_seconds"
-    )
-    journal_identifier = _nonempty_string_field(
-        raw.get("journal_identifier"), section + "journal_identifier"
-    )
-    service_template_file_name = _nonempty_string_field(
-        raw.get("service_template_file_name"),
-        section + "service_template_file_name",
-    )
-    service_module_name = _nonempty_string_field(
-        raw.get("service_module_name"), section + "service_module_name"
-    )
-    module_run_command = _placeholder_command_field(
-        raw.get("module_run_command"),
-        section + "module_run_command",
-        ("{python}", "{module}", "{config_path}"),
-    )
-    command_checks: dict[str, tuple[str, ...]] = {}
-    for key in (
-        "systemctl_daemon_reload_command",
-        "systemctl_enable_command",
-        "systemctl_restart_command",
-        "systemctl_is_failed_command",
-    ):
-        command = _string_list(raw.get(key), section + key)
-        if not command:
-            raise ConfigError(f"port_forwarding_setup.{key} must not be empty")
-        command_checks[key] = command
-    for key in (
-        "systemctl_enable_command",
-        "systemctl_restart_command",
-        "systemctl_is_failed_command",
-    ):
-        if "{service_unit_name}" not in " ".join(command_checks[key]):
-            raise ConfigError(
-                f"port_forwarding_setup.{key} must carry the "
-                "{service_unit_name} placeholder"
-            )
-    start_check_attempts = _positive_int_field(
-        raw.get("start_check_attempts"), section + "start_check_attempts"
-    )
-    start_check_retry_delay_seconds = _float_field(
-        raw.get("start_check_retry_delay_seconds"),
-        section + "start_check_retry_delay_seconds",
-    )
-    if start_check_retry_delay_seconds <= 0:
-        raise ConfigError(
-            "port_forwarding_setup.start_check_retry_delay_seconds must be positive"
-        )
-    service_commands: dict[str, tuple[str, ...]] = {}
-    for key, required_placeholders in (
-        ("own_addresses_command", ()),
-        ("agent_start_command", ()),
-        ("key_add_command", ("{key_path}",)),
-        (
-            "ssh_forward_command",
-            (
-                "{ssh_port}",
-                "{key_path}",
-                "{remote_port}",
-                "{local_port}",
-                "{user}",
-                "{host}",
-                "{remote_bind_address}",
-                "{server_alive_interval_seconds}",
-                "{server_alive_count_max}",
-                "{connect_timeout_seconds}",
-            ),
-        ),
-    ):
-        command = _string_list(raw.get(key), section + key)
-        if not command:
-            raise ConfigError(f"port_forwarding_setup.{key} must not be empty")
-        joined = " ".join(command)
-        for placeholder in required_placeholders:
-            if placeholder not in joined:
-                raise ConfigError(
-                    f"port_forwarding_setup.{key} must carry the "
-                    f"{placeholder} placeholder"
-                )
-        service_commands[key] = command
-    remote_bind_address = _nonempty_string_field(
-        raw.get("remote_bind_address"), section + "remote_bind_address"
-    )
-    agent_socket_env_key = _nonempty_string_field(
-        raw.get("agent_socket_env_key"), section + "agent_socket_env_key"
-    )
-    agent_pid_env_key = _nonempty_string_field(
-        raw.get("agent_pid_env_key"), section + "agent_pid_env_key"
-    )
-    display_env_key = _nonempty_string_field(
-        raw.get("display_env_key"), section + "display_env_key"
-    )
-    passphrase_env_key = _nonempty_string_field(
-        raw.get("passphrase_env_key"), section + "passphrase_env_key"
-    )
-    askpass_env = _string_map(raw.get("askpass_env"), section + "askpass_env")
-    if not askpass_env:
-        raise ConfigError("port_forwarding_setup.askpass_env must not be empty")
-    if "{helper_path}" not in " ".join(askpass_env.values()):
-        raise ConfigError(
-            "port_forwarding_setup.askpass_env must carry the {helper_path} placeholder"
-        )
-    askpass_helper_dir_prefix = _nonempty_string_field(
-        raw.get("askpass_helper_dir_prefix"),
-        section + "askpass_helper_dir_prefix",
-    )
-    askpass_helper_file_name = _nonempty_string_field(
-        raw.get("askpass_helper_file_name"), section + "askpass_helper_file_name"
-    )
-    askpass_helper_content = _nonempty_string_field(
-        raw.get("askpass_helper_content"), section + "askpass_helper_content"
-    )
-    if passphrase_env_key not in askpass_helper_content:
-        raise ConfigError(
-            "port_forwarding_setup.askpass_helper_content must print "
-            "port_forwarding_setup.passphrase_env_key"
-        )
-    forward_outcome_poll_seconds = _float_field(
-        raw.get("forward_outcome_poll_seconds"),
-        section + "forward_outcome_poll_seconds",
-    )
-    if forward_outcome_poll_seconds <= 0:
-        raise ConfigError(
-            "port_forwarding_setup.forward_outcome_poll_seconds must be positive"
-        )
-    state_temp_file_suffix = _nonempty_string_field(
-        raw.get("state_temp_file_suffix"), section + "state_temp_file_suffix"
-    )
-    state_json_indent = _int_field(
-        raw.get("state_json_indent"), section + "state_json_indent"
-    )
-    if state_json_indent < 0:
-        raise ConfigError(
-            "port_forwarding_setup.state_json_indent must not be negative"
-        )
-    error_priority = _int_field(raw.get("error_priority"), section + "error_priority")
-    if not 0 <= error_priority <= 7:
-        raise ConfigError(
-            "port_forwarding_setup.error_priority must be between 0 and 7"
-        )
-    return PortForwardingSetupConfig(
-        vault_group_title=vault_group_title,
-        passphrase_entry_title=passphrase_entry_title,
-        remote_ssh_user=remote_ssh_user,
-        desired_port_min=desired_port_min,
-        desired_port_max=desired_port_max,
-        server_alive_interval_seconds=server_alive_interval_seconds,
-        server_alive_count_max=server_alive_count_max,
-        connect_timeout_seconds=connect_timeout_seconds,
-        own_addresses_timeout_seconds=own_addresses_timeout_seconds,
-        agent_start_timeout_seconds=agent_start_timeout_seconds,
-        key_unlock_timeout_seconds=key_unlock_timeout_seconds,
-        askpass_helper_file_mode=askpass_helper_file_mode,
-        askpass_display=askpass_display,
-        state_file_mode=state_file_mode,
-        backoff_base_seconds=backoff_base_seconds,
-        backoff_multiplier=backoff_multiplier,
-        backoff_max_seconds=backoff_max_seconds,
-        state_file_path=state_file_path,
-        service_unit_name=service_unit_name,
-        service_restart_seconds=service_restart_seconds,
-        journal_identifier=journal_identifier,
-        service_template_file_name=service_template_file_name,
-        service_module_name=service_module_name,
-        systemctl_daemon_reload_command=command_checks[
-            "systemctl_daemon_reload_command"
-        ],
-        systemctl_enable_command=command_checks["systemctl_enable_command"],
-        systemctl_restart_command=command_checks["systemctl_restart_command"],
-        module_run_command=module_run_command,
-        systemctl_is_failed_command=command_checks["systemctl_is_failed_command"],
-        start_check_attempts=start_check_attempts,
-        start_check_retry_delay_seconds=start_check_retry_delay_seconds,
-        own_addresses_command=service_commands["own_addresses_command"],
-        agent_start_command=service_commands["agent_start_command"],
-        key_add_command=service_commands["key_add_command"],
-        ssh_forward_command=service_commands["ssh_forward_command"],
-        remote_bind_address=remote_bind_address,
-        agent_socket_env_key=agent_socket_env_key,
-        agent_pid_env_key=agent_pid_env_key,
-        display_env_key=display_env_key,
-        passphrase_env_key=passphrase_env_key,
-        askpass_env=askpass_env,
-        askpass_helper_dir_prefix=askpass_helper_dir_prefix,
-        askpass_helper_file_name=askpass_helper_file_name,
-        askpass_helper_content=askpass_helper_content,
-        forward_outcome_poll_seconds=forward_outcome_poll_seconds,
-        state_temp_file_suffix=state_temp_file_suffix,
-        state_json_indent=state_json_indent,
-        report_channel_name=_nonempty_string_field(
-            raw.get("report_channel_name"),
-            "port_forwarding_setup.report_channel_name",
-        ),
-        error_priority=error_priority,
-    )
 
 
 # from upnp_forwarding_setup.py
@@ -5950,17 +5670,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             "system_metrics_setup.google_script_key_entry_title must name an "
             "entry of the [vault_structure] table"
         )
-    port_forwarding_setup = _port_forwarding_setup_table(
-        document.get("port_forwarding_setup")
-    )
-    if not any(
-        entry.title == port_forwarding_setup.passphrase_entry_title
-        for entry in vault_structure.entries
-    ):
-        raise ConfigError(
-            "port_forwarding_setup.passphrase_entry_title must name an entry "
-            "of the [vault_structure] table"
-        )
     upnp_forwarding_setup = _upnp_forwarding_setup_table(
         document.get("upnp_forwarding_setup")
     )
@@ -6034,7 +5743,6 @@ def strict_config_from_document(document: dict[str, Any]) -> Config:
             document.get("nextdns_setup_system_wide")
         ),
         playwright_setup=_playwright_setup_table(document.get("playwright_setup")),
-        port_forwarding_setup=port_forwarding_setup,
         upnp_forwarding_setup=upnp_forwarding_setup,
         rustdesk_setup=rustdesk_setup,
         scrcpy_setup=_scrcpy_setup_table(document.get("scrcpy_setup")),

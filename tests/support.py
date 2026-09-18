@@ -456,10 +456,6 @@ def make_config(
     nextdns_profile_id_file_path: Path = Path("/var/lib/pyntara/nextdns_profile_id"),
     nextdns_profile_id_file_mode: int = 0o644,
     nextdns_error_priority: int = 3,
-    port_forwarding_connect_timeout_seconds: int = 31,
-    port_forwarding_state_file_path: Path = Path(
-        "/var/lib/pyntara/port_forwarding_state.json"
-    ),
 ) -> Config:
     """Config with values safe for unit tests; the real file is never touched."""
 
@@ -719,11 +715,6 @@ def make_config(
             profile_id_file_path=nextdns_profile_id_file_path,
             profile_id_file_mode=nextdns_profile_id_file_mode,
             error_priority=nextdns_error_priority,
-        ),
-        port_forwarding_setup=replace(
-            base.port_forwarding_setup,
-            connect_timeout_seconds=port_forwarding_connect_timeout_seconds,
-            state_file_path=port_forwarding_state_file_path,
         ),
         rustdesk_setup=replace(
             base.rustdesk_setup,

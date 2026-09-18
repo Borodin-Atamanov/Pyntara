@@ -29,7 +29,6 @@ from pathlib import Path
 from string import Template
 
 from pyntara import __version__, deployment
-from pyntara.config import PortForwardingSetupConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -41,13 +40,13 @@ from pyntara.utils import (
     task_data_dir,
 )
 from pyntara.values import engine as engine_values
+from pyntara.values import port_forwarding_setup as values
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
 
 
 def _render_service_unit(
-    cfg: PortForwardingSetupConfig,
     template_path: Path,
     venv_python: Path,
     module_name: str,
@@ -57,19 +56,18 @@ def _render_service_unit(
 ) -> str:
     """Render the service unit template with the ExecStart line substituted.
 
-    The service runs the venv python with the configured port_forwarding
-    module and the configured system config path as its only argument; the
-    line is fully expanded here, so the template carries no shell variables
-    of its own. The restart pause comes from the config, and the version
-    line names the deployed code this unit belongs to: a unit on the
-    machine that carries another version is a stale unit, so the task
-    writes it again and restarts the service, and the code that runs is
-    the code the unit was rendered for.
+    The service runs the venv python with the declared port_forwarding module
+    and the configured system config path as its only argument; the line is
+    fully expanded here, so the template carries no shell variables of its
+    own. The restart pause is a declared value, and the version line names the
+    deployed code this unit belongs to: a unit on the machine that carries
+    another version is a stale unit, so the task writes it again and restarts
+    the service, and the code that runs is the code the unit was rendered for.
     """
 
     command = " ".join(
         substituted_command(
-            cfg.module_run_command,
+            values.MODULE_RUN_COMMAND,
             {
                 "python": str(venv_python),
                 "module": module_name,
@@ -119,7 +117,6 @@ def _service_is_failed(
 
 
 def _started_ok(
-    cfg: PortForwardingSetupConfig,
     service_name: str,
     timeout: float,
 ) -> bool:
@@ -132,12 +129,12 @@ def _started_ok(
     as ok, failed ends as an error.
     """
 
-    for _ in range(cfg.start_check_attempts):
+    for _ in range(values.START_CHECK_ATTEMPTS):
         if service_is_active(service_name, timeout):
             return True
-        if _service_is_failed(cfg.systemctl_is_failed_command, service_name, timeout):
+        if _service_is_failed(values.SYSTEMCTL_IS_FAILED_COMMAND, service_name, timeout):
             return False
-        time.sleep(cfg.start_check_retry_delay_seconds)
+        time.sleep(values.START_CHECK_RETRY_DELAY_SECONDS)
     return True
 
 
@@ -164,11 +161,10 @@ def task(ctx: Context) -> TaskResult:
 
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    pf = ctx.config.port_forwarding_setup
     metrics = ctx.config.system_metrics_setup
     venv_python = metrics.venv_dir / metrics.venv_python_relative_path
     system_config_path = metrics.system_config_path
-    service_name = pf.service_unit_name
+    service_name = values.SERVICE_UNIT_NAME
     warnings: list[str] = []
     version, version_warning = deployment.deployed_version(
         metrics.venv_version_command, venv_python, timeout, __version__
@@ -178,12 +174,12 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         unit: str | None = _render_service_unit(
-            pf,
-            task_data_dir(ctx.repo_root, ctx.task_name) / pf.service_template_file_name,
+
+            task_data_dir(ctx.repo_root, ctx.task_name) / values.SERVICE_TEMPLATE_FILE_NAME,
             venv_python,
-            pf.service_module_name,
+            values.SERVICE_MODULE_NAME,
             system_config_path,
-            pf.service_restart_seconds,
+            values.SERVICE_RESTART_SECONDS,
             version,
         )
     except OSError as exc:
@@ -234,7 +230,7 @@ def task(ctx: Context) -> TaskResult:
         if unit_written:
             try:
                 run_command(
-                    substituted_command(pf.systemctl_daemon_reload_command, {}),
+                    substituted_command(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -242,7 +238,7 @@ def task(ctx: Context) -> TaskResult:
 
     if not enabled:
         enable_argv = substituted_command(
-            pf.systemctl_enable_command, {"service_unit_name": service_name}
+            values.SYSTEMCTL_ENABLE_COMMAND, {"service_unit_name": service_name}
         )
         try:
             run_command(enable_argv, timeout=timeout)
@@ -260,7 +256,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     restart_argv = substituted_command(
-        pf.systemctl_restart_command, {"service_unit_name": service_name}
+        values.SYSTEMCTL_RESTART_COMMAND, {"service_unit_name": service_name}
     )
     try:
         run_command(restart_argv, timeout=timeout)
@@ -268,7 +264,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(f"cannot start {service_name}: {exc}")
     else:
         _log(f"service {service_name} started")
-        if not _started_ok(pf, service_name, timeout):
+        if not _started_ok(service_name, timeout):
             warnings.append(
                 f"service {service_name} entered the failed state after start"
             )

@@ -38,7 +38,6 @@ from .loader import (
 )
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
-from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskOptionConfig, RustdeskSetupConfig
 from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
@@ -113,7 +112,6 @@ __all__ = [
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
     "PlaywrightSetupConfig",
-    "PortForwardingSetupConfig",
     "RustdeskOptionConfig",
     "RustdeskSetupConfig",
     "ScrcpySetupConfig",

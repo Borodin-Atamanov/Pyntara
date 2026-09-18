@@ -49,6 +49,7 @@ from pyntara.metrics_collect import trigger_collection
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import host_from_address
 from pyntara.utils import backoff_delay, substituted_command
+from pyntara.values import port_forwarding_setup as values
 
 # With -v the client prints a positive confirmation when the server
 # accepted the requested remote port, so a forward is confirmed by its own
@@ -72,7 +73,9 @@ def read_server_addresses(kp: PyKeePass, group_title: str) -> list[str]:
     group = kp.find_groups(name=group_title, first=True)
     if group is None:
         return []
-    return [entry.url.strip() for entry in group.entries if entry.url and entry.url.strip()]
+    return [
+        entry.url.strip() for entry in group.entries if entry.url and entry.url.strip()
+    ]
 
 
 def _normalize_host(host: str) -> str:
@@ -97,7 +100,7 @@ def _normalize_host(host: str) -> str:
     return host.lower()
 
 
-def own_addresses(cfg: Config) -> set[str]:
+def own_addresses() -> set[str]:
     """The machine's own IP addresses from the configured ip call.
 
     The addresses come from the local interfaces, both families, so a
@@ -106,17 +109,15 @@ def own_addresses(cfg: Config) -> set[str]:
     server: that errs toward forwarding instead of dropping a real
     server. The command and its timeout are values of the table.
     """
-
-    pf = cfg.port_forwarding_setup
     try:
         result = subprocess.run(
-            list(pf.own_addresses_command),
+            list(values.OWN_ADDRESSES_COMMAND),
             capture_output=True,
             text=True,
-            timeout=pf.own_addresses_timeout_seconds,
+            timeout=values.OWN_ADDRESSES_TIMEOUT_SECONDS,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return set()
     if result.returncode != 0:
         return set()
@@ -166,7 +167,6 @@ def read_passphrase(kp: PyKeePass, entry_title: str) -> str | None:
 
 
 def _start_agent(
-    cfg: Config,
     passphrase: str,
     key_path: Path,
 ) -> dict[str, str] | None:
@@ -183,14 +183,12 @@ def _start_agent(
     which must stay executable by its owner only, and askpass_display is
     the display ssh-add hands to that helper.
     """
-
-    pf = cfg.port_forwarding_setup
     try:
         agent_out = subprocess.run(
-            list(pf.agent_start_command),
+            list(values.AGENT_START_COMMAND),
             capture_output=True,
             text=True,
-            timeout=pf.agent_start_timeout_seconds,
+            timeout=values.AGENT_START_TIMEOUT_SECONDS,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -199,47 +197,45 @@ def _start_agent(
     if agent_out.returncode != 0:
         _log(f"cannot start the ssh-agent: exited {agent_out.returncode}")
         return None
-    socket_setting = pf.agent_socket_env_key + "="
-    pid_setting = pf.agent_pid_env_key + "="
+    socket_setting = values.AGENT_SOCKET_ENV_KEY + "="
+    pid_setting = values.AGENT_PID_ENV_KEY + "="
     env = dict(os.environ)
     for line in agent_out.stdout.splitlines():
         line = line.strip()
         if line.startswith(socket_setting):
-            env[pf.agent_socket_env_key] = line.split("=", 1)[1].split(";", 1)[0]
+            env[values.AGENT_SOCKET_ENV_KEY] = line.split("=", 1)[1].split(";", 1)[0]
         elif line.startswith(pid_setting):
-            env[pf.agent_pid_env_key] = line.split("=", 1)[1].split(";", 1)[0]
-    if pf.agent_socket_env_key not in env:
+            env[values.AGENT_PID_ENV_KEY] = line.split("=", 1)[1].split(";", 1)[0]
+    if values.AGENT_SOCKET_ENV_KEY not in env:
         _log("cannot start the ssh-agent: no socket reported")
         return None
-    helper_dir = Path(tempfile.mkdtemp(prefix=pf.askpass_helper_dir_prefix))
-    helper = helper_dir / pf.askpass_helper_file_name
-    helper.write_text(pf.askpass_helper_content, encoding="utf-8")
-    helper.chmod(pf.askpass_helper_file_mode)
+    helper_dir = Path(tempfile.mkdtemp(prefix=values.ASKPASS_HELPER_DIR_PREFIX))
+    helper = helper_dir / values.ASKPASS_HELPER_FILE_NAME
+    helper.write_text(values.ASKPASS_HELPER_CONTENT, encoding="utf-8")
+    helper.chmod(values.ASKPASS_HELPER_FILE_MODE)
     add_env = dict(env)
-    for name, value in pf.askpass_env.items():
+    for name, value in values.ASKPASS_ENV.items():
         add_env[name] = value.format(helper_path=str(helper))
-    add_env[pf.display_env_key] = pf.askpass_display
-    add_env[pf.passphrase_env_key] = passphrase
+    add_env[values.DISPLAY_ENV_KEY] = values.ASKPASS_DISPLAY
+    add_env[values.PASSPHRASE_ENV_KEY] = passphrase
     try:
         added = subprocess.run(
-            substituted_command(
-                pf.key_add_command, {"key_path": str(key_path)}
-            ),
+            substituted_command(values.KEY_ADD_COMMAND, {"key_path": str(key_path)}),
             env=add_env,
             capture_output=True,
             text=True,
-            timeout=pf.key_unlock_timeout_seconds,
+            timeout=values.KEY_UNLOCK_TIMEOUT_SECONDS,
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         _log(f"cannot unlock the port-forwarding key: {exc}")
         _remove_helper(helper_dir)
-        _kill_agent(cfg, env)
+        _kill_agent(env)
         return None
     _remove_helper(helper_dir)
     if added.returncode != 0:
         _log(f"cannot unlock the port-forwarding key {key_path}")
-        _kill_agent(cfg, env)
+        _kill_agent(env)
         return None
     return env
 
@@ -264,7 +260,7 @@ def _remove_helper(helper_dir: Path) -> None:
         pass
 
 
-def _kill_agent(cfg: Config, env: dict[str, str]) -> None:
+def _kill_agent(env: dict[str, str]) -> None:
     """Kill the dedicated agent process, best effort.
 
     Called when the key unlock failed and the agent is useless, or when
@@ -274,18 +270,15 @@ def _kill_agent(cfg: Config, env: dict[str, str]) -> None:
     signal are values of the table and of the standard library.
     """
 
-    pf = cfg.port_forwarding_setup
-
-    agent_pid = env.get(pf.agent_pid_env_key)
+    agent_pid = env.get(values.AGENT_PID_ENV_KEY)
     if agent_pid:
         try:
             os.kill(int(agent_pid), signal.SIGTERM)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             pass
 
 
 def _build_ssh_command(
-    cfg: Config,
     key_path: Path,
     ssh_port: int,
     server: str,
@@ -306,10 +299,8 @@ def _build_ssh_command(
     of guessing. Every argument of the call is a value of the table, so no
     option of the tunnel lives in the module.
     """
-
-    pf = cfg.port_forwarding_setup
     return substituted_command(
-        pf.ssh_forward_command,
+        values.SSH_FORWARD_COMMAND,
         {
             "ssh_port": str(ssh_port),
             "key_path": str(key_path),
@@ -317,12 +308,10 @@ def _build_ssh_command(
             "local_port": str(local_port),
             "user": user,
             "host": host_from_address(server),
-            "remote_bind_address": pf.remote_bind_address,
-            "server_alive_interval_seconds": str(
-                pf.server_alive_interval_seconds
-            ),
-            "server_alive_count_max": str(pf.server_alive_count_max),
-            "connect_timeout_seconds": str(pf.connect_timeout_seconds),
+            "remote_bind_address": values.REMOTE_BIND_ADDRESS,
+            "server_alive_interval_seconds": str(values.SERVER_ALIVE_INTERVAL_SECONDS),
+            "server_alive_count_max": str(values.SERVER_ALIVE_COUNT_MAX),
+            "connect_timeout_seconds": str(values.CONNECT_TIMEOUT_SECONDS),
         },
     )
 
@@ -361,9 +350,9 @@ def start_forward(
     """
 
     command = _build_ssh_command(
-        cfg, key_path, ssh_port, server, user, str(remote_port), local_port
+        key_path, ssh_port, server, user, str(remote_port), local_port
     )
-    poll_seconds = cfg.port_forwarding_setup.forward_outcome_poll_seconds
+    poll_seconds = values.FORWARD_OUTCOME_POLL_SECONDS
     proc = subprocess.Popen(
         command,
         stdout=subprocess.DEVNULL,
@@ -399,7 +388,7 @@ def start_forward(
             break
         try:
             chunk = proc.stderr.read()
-        except (BlockingIOError, ValueError):
+        except BlockingIOError, ValueError:
             chunk = ""
         if chunk:
             buffer += chunk
@@ -410,7 +399,7 @@ def start_forward(
     while True:
         try:
             chunk = proc.stderr.read()
-        except (BlockingIOError, ValueError):
+        except BlockingIOError, ValueError:
             chunk = ""
         if not chunk:
             break
@@ -433,7 +422,7 @@ def load_state(path: Path) -> dict[str, dict[str, int]]:
 
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     result: dict[str, dict[str, int]] = {}
     for server, ports in raw.items():
@@ -447,9 +436,7 @@ def load_state(path: Path) -> dict[str, dict[str, int]]:
     return result
 
 
-def save_state(
-    cfg: Config, state: dict[str, dict[str, int]]
-) -> None:
+def save_state(state: dict[str, dict[str, int]]) -> None:
     """Persist the state atomically with root-only mode; errors are logged.
 
     The write goes through a temporary file in the same directory, so a
@@ -461,17 +448,15 @@ def save_state(
     a file left in the state directory beside the state file is exactly
     the leftover this cleanup is here to prevent.
     """
-
-    pf = cfg.port_forwarding_setup
-    path = pf.state_file_path
-    temp = path.with_name(path.name + pf.state_temp_file_suffix)
+    path = values.STATE_FILE_PATH
+    temp = path.with_name(path.name + values.STATE_TEMP_FILE_SUFFIX)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         temp.write_text(
-            json.dumps(state, ensure_ascii=False, indent=pf.state_json_indent),
+            json.dumps(state, ensure_ascii=False, indent=values.STATE_JSON_INDENT),
             encoding="utf-8",
         )
-        os.chmod(temp, pf.state_file_mode)
+        os.chmod(temp, values.STATE_FILE_MODE)
         os.replace(temp, path)
     except OSError as exc:
         _log(f"cannot save the port-forwarding state {path}: {exc}")
@@ -501,35 +486,32 @@ def _open_tunnel(
     connection problem is not a busy port. Returns the live process with
     the accepted port, or None when no tunnel could be opened.
     """
-
-    pf = cfg.port_forwarding_setup
-    for port in candidate_ports(cfg, socket.gethostname()):
+    for port in candidate_ports(socket.gethostname()):
         proc, busy, error = start_forward(
             env,
             cfg,
             key_path,
             ssh_port,
             server,
-            pf.remote_ssh_user,
+            values.REMOTE_SSH_USER,
             port,
             local_port,
-            pf.connect_timeout_seconds,
+            values.CONNECT_TIMEOUT_SECONDS,
         )
         if busy:
             _log(
                 f"{server}: remote port {port} is taken there, "
                 "trying the next candidate"
             )
-            time.sleep(pf.backoff_base_seconds)
+            time.sleep(values.BACKOFF_BASE_SECONDS)
             continue
         if error is not None:
             _log(f"{server}: cannot connect for local {local_port}: {error}")
             return None
         return proc, port
     _log(
-        f"{server}: every port of the range is taken, "
-        "no tunnel for this attempt",
-        priority=pf.error_priority,
+        f"{server}: every port of the range is taken, no tunnel for this attempt",
+        priority=values.ERROR_PRIORITY,
     )
     return None
 
@@ -556,22 +538,18 @@ def run_forward_loop(
     backoff, so a single drop after a long uptime waits only the base
     pause.
     """
-
-    pf = cfg.port_forwarding_setup
     reconnect = 0
     while True:
         try:
-            opened = _open_tunnel(
-                cfg, server, ssh_port, local_port, key_path, env
-            )
+            opened = _open_tunnel(cfg, server, ssh_port, local_port, key_path, env)
             if opened is None:
                 reconnect += 1
                 time.sleep(
                     backoff_delay(
                         reconnect,
-                        pf.backoff_base_seconds,
-                        pf.backoff_multiplier,
-                        pf.backoff_max_seconds,
+                        values.BACKOFF_BASE_SECONDS,
+                        values.BACKOFF_MULTIPLIER,
+                        values.BACKOFF_MAX_SECONDS,
                     )
                 )
                 continue
@@ -580,7 +558,7 @@ def run_forward_loop(
             with lock:
                 if state.get(server, {}).get(str(local_port)) != port:
                     state.setdefault(server, {})[str(local_port)] = port
-                    save_state(cfg, state)
+                    save_state(state)
                     changed_port = True
             if changed_port:
                 trigger_collection(cfg)
@@ -588,26 +566,26 @@ def run_forward_loop(
             connected_at = time.monotonic()
             proc.wait()
             _log(f"{server}: connection to {port} dropped, reconnecting")
-            if time.monotonic() - connected_at >= pf.backoff_max_seconds:
+            if time.monotonic() - connected_at >= values.BACKOFF_MAX_SECONDS:
                 reconnect = 0
             reconnect += 1
             time.sleep(
                 backoff_delay(
                     reconnect,
-                    pf.backoff_base_seconds,
-                    pf.backoff_multiplier,
-                    pf.backoff_max_seconds,
+                    values.BACKOFF_BASE_SECONDS,
+                    values.BACKOFF_MULTIPLIER,
+                    values.BACKOFF_MAX_SECONDS,
                 )
             )
         except Exception as exc:  # noqa: BLE001 - the loop must never die silently
-            _log(f"{server}: unexpected error: {exc}", priority=pf.error_priority)
+            _log(f"{server}: unexpected error: {exc}", priority=values.ERROR_PRIORITY)
             reconnect += 1
             time.sleep(
                 backoff_delay(
                     reconnect,
-                    pf.backoff_base_seconds,
-                    pf.backoff_multiplier,
-                    pf.backoff_max_seconds,
+                    values.BACKOFF_BASE_SECONDS,
+                    values.BACKOFF_MULTIPLIER,
+                    values.BACKOFF_MAX_SECONDS,
                 )
             )
 
@@ -627,21 +605,20 @@ def main() -> None:
         print("error: missing config path argument", file=sys.stderr)
         raise SystemExit(1)
     cfg = load_config(Path(sys.argv[1]))
-    pf = cfg.port_forwarding_setup
-    configure_journal(pf.journal_identifier)
+    configure_journal(values.JOURNAL_IDENTIFIER)
     kp = metrics.open_runtime_vault(cfg)
     if kp is None:
         _log(
             "cannot open the runtime vault; the service will be restarted",
-            priority=pf.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         raise SystemExit(1)
-    servers = read_server_addresses(kp, pf.vault_group_title)
-    own = own_addresses(cfg)
+    servers = read_server_addresses(kp, values.VAULT_GROUP_TITLE)
+    own = own_addresses()
     servers, skipped = filter_own_servers(servers, own)
     if skipped:
         _log(f"skipping own server address(es): {', '.join(skipped)}")
-    passphrase = read_passphrase(kp, pf.passphrase_entry_title)
+    passphrase = read_passphrase(kp, values.PASSPHRASE_ENTRY_TITLE)
     if not servers:
         _log(
             "no port-forwarding servers to connect to: the vault group is "
@@ -650,9 +627,9 @@ def main() -> None:
         return
     if not passphrase:
         _log(
-            f"vault entry {pf.passphrase_entry_title!r} is absent, "
+            f"vault entry {values.PASSPHRASE_ENTRY_TITLE!r} is absent, "
             "connecting to nothing",
-            priority=pf.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         return
     ssh_port = ssh_port_from_directives(cfg.ssh_daemon_setup)
@@ -663,14 +640,14 @@ def main() -> None:
     if not key_path.is_file():
         _log(
             f"port-forwarding key missing: {key_path}; the service will be restarted",
-            priority=pf.error_priority,
+            priority=values.ERROR_PRIORITY,
         )
         raise SystemExit(1)
-    env = _start_agent(cfg, passphrase, key_path)
+    env = _start_agent(passphrase, key_path)
     if env is None:
-        _log("cannot unlock the port-forwarding key", priority=pf.error_priority)
+        _log("cannot unlock the port-forwarding key", priority=values.ERROR_PRIORITY)
         raise SystemExit(1)
-    state = load_state(pf.state_file_path)
+    state = load_state(values.STATE_FILE_PATH)
     lock = threading.Lock()
     threads = [
         threading.Thread(

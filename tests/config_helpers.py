@@ -528,53 +528,6 @@ def base_config() -> str:
         'profile_id_file_path = "/var/lib/pyntara/nextdns_profile_id"\n'
         'profile_id_file_mode = "0644"\n'
         "error_priority = 3\n"
-        "[port_forwarding_setup]\n"
-        'vault_group_title = "port_forwarding_servers"\n'
-        'passphrase_entry_title = "ssh_passphase_for_port_forwarding"\n'
-        'remote_ssh_user = "i"\n'
-        "desired_port_min = 32768\n"
-        "desired_port_max = 60999\n"
-        "server_alive_interval_seconds = 61\n"
-        "server_alive_count_max = 3\n"
-        "connect_timeout_seconds = 31\n"
-        "own_addresses_timeout_seconds = 15\n"
-        "agent_start_timeout_seconds = 15\n"
-        "key_unlock_timeout_seconds = 30\n"
-        'askpass_helper_file_mode = "0700"\n'
-        'askpass_display = ":0"\n'
-        'state_file_mode = "0600"\n'
-        "backoff_base_seconds = 2\n"
-        "backoff_multiplier = 2\n"
-        "backoff_max_seconds = 1024\n"
-        'state_file_path = "/var/lib/pyntara/port_forwarding_state.json"\n'
-        'service_unit_name = "auto_port_forwarding.service"\n'
-        "service_restart_seconds = 30\n"
-        'journal_identifier = "auto_port_forwarding"\n'
-        'service_template_file_name = "auto_port_forwarding.service"\n'
-        'service_module_name = "pyntara.port_forwarding"\n'
-        'module_run_command = ["{python}", "-m", "{module}", "{config_path}"]\n'
-        'systemctl_daemon_reload_command = ["systemctl", "daemon-reload"]\n'
-        'systemctl_enable_command = ["systemctl", "enable", "{service_unit_name}"]\n'
-        'systemctl_restart_command = ["systemctl", "restart", "{service_unit_name}"]\n'
-        'systemctl_is_failed_command = ["systemctl", "is-failed", "{service_unit_name}"]\n'
-        "start_check_attempts = 10\nstart_check_retry_delay_seconds = 1\n"
-        'own_addresses_command = ["ip", "-o", "addr", "show"]\n'
-        'agent_start_command = ["ssh-agent", "-s"]\n'
-        'key_add_command = ["ssh-add", "{key_path}"]\n'
-        'ssh_forward_command = ["ssh", "-p", "{ssh_port}", "-N", "-v", "-o", "ExitOnForwardFailure=yes", "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=accept-new", "-o", "ServerAliveInterval={server_alive_interval_seconds}", "-o", "ServerAliveCountMax={server_alive_count_max}", "-o", "ConnectTimeout={connect_timeout_seconds}", "-i", "{key_path}", "-R", "{remote_port}:{remote_bind_address}:{local_port}", "{user}@{host}"]\n'
-        'remote_bind_address = "localhost"\n'
-        'agent_socket_env_key = "SSH_AUTH_SOCK"\n'
-        'agent_pid_env_key = "SSH_AGENT_PID"\n'
-        'display_env_key = "DISPLAY"\n'
-        'passphrase_env_key = "PF_KEY_PASSPHRASE"\n'
-        'askpass_env = { SSH_ASKPASS = "{helper_path}", SSH_ASKPASS_REQUIRE = "force" }\n'
-        'askpass_helper_dir_prefix = "pyntara-pf-"\n'
-        'askpass_helper_file_name = "askpass.sh"\n'
-        'askpass_helper_content = "#!/bin/sh\\necho \\"$PF_KEY_PASSPHRASE\\"\\n"\n'
-        "forward_outcome_poll_seconds = 0.2\n"
-        'state_temp_file_suffix = ".tmp"\nstate_json_indent = 2\n'
-        'report_channel_name = "port_forwarding"\n'
-        "error_priority = 3\n"
         "[upnp_forwarding_setup]\n"
         'upnp_package = "miniupnpc"\n'
         'upnp_client_command = "upnpc"\n'

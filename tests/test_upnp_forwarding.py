@@ -125,13 +125,13 @@ class TestCandidatePorts:
         # schemes name the machine with the same value.
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
-        assert ports[0] == desired_port(config, "testhost")
+        assert ports[0] == desired_port("testhost")
 
     def test_every_further_candidate_carries_the_attempt_number(self) -> None:
         config = make_config()
         ports = forwarding.candidate_ports(config, "testhost")
-        assert ports[1] == desired_port(config, "testhost2")
-        assert ports[2] == desired_port(config, "testhost3")
+        assert ports[1] == desired_port("testhost2")
+        assert ports[2] == desired_port("testhost3")
 
     def test_no_candidate_is_tried_twice(self) -> None:
         # The number of candidates is a config value; a hash that repeats an

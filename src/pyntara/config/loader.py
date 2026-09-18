@@ -31,7 +31,6 @@ from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
-from .port_forwarding_setup import PortForwardingSetupConfig
 from .rustdesk_setup import RustdeskSetupConfig
 from .scrcpy_setup import ScrcpySetupConfig
 from .sotavpn_setup import SotavpnSetupConfig
@@ -80,7 +79,6 @@ class Config:
     vocalinux_setup: VocalinuxSetupConfig
     nextdns_setup_system_wide: NextdnsSetupSystemWideConfig
     playwright_setup: PlaywrightSetupConfig
-    port_forwarding_setup: PortForwardingSetupConfig
     upnp_forwarding_setup: UpnpForwardingSetupConfig
     rustdesk_setup: RustdeskSetupConfig
     scrcpy_setup: ScrcpySetupConfig
