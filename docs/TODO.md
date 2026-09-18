@@ -1104,6 +1104,158 @@ machine in this turn, and the probe is named with the figure.
     tests/config_helpers.py and the config coverage guard, then stage H for the
     documents that still describe the config, and stage I, the live proof, which
     waits for the name of the target machine.
+128. Where the kde_settings branch stands on 2026-09-17: stage 1 is committed and
+    the branch is pushed, so the recovered values module is safe in the
+    repository and main is untouched. Stage 2 is the task refactor, measured as
+    108 reads that map to a constant of the module by upper casing the name, 4
+    reads that map to the shared module (username, home_dir,
+    global_shortcuts_file_name, kconfig_true_value) and the records read
+    cfg.kconfig, which becomes values.KCONFIG_RECORDS; each of the about forty
+    helper functions loses its cfg parameter and the call site loses the
+    argument. Stage 1 of this branch is the only one of the four whose gate is
+    green: stage 2 leaves the tests reading the config section, which is the red
+    window the user allowed inside a branch.
+129. Stage 2 of kde_settings, first half, committed on 2026-09-17 in the red
+    window of the branch. Converted: the KConfig vocabulary helpers
+    (_kconfig_command, _kreadconfig, _kwriteconfig, _delete_kconfig_key,
+    _sync_config_value, _notify_flag, _as_user_command, _home_env), the
+    appearance commands, the automatic theme switch, NumLock, the touchpad, the
+    Wayland virtual keyboard, the cursor theme, the cursor overrides of the two
+    themes, the loop over the KConfig records and the test that recognises a
+    shortcut record. The values module gained KCONFIG_BOOL_TYPE, the type word
+    the records carry, and the --type flag now takes that constant instead of a
+    second copy of the word.
+    Remaining when the commit was written, counted with grep and mypy:
+    23 annotations still naming KdeSettingsConfig, about 50 call sites still
+    passing cfg, about 110 reads, 77 mypy errors and 23 ruff F821 errors. The
+    completion does not need a search: ruff names every leftover annotation, and
+    mypy names every call site with the wrong argument count or type, so the
+    next turn works from those two lists and finishes the file.
+    The numbers are the reason a section is written in one turn when it fits:
+    the mechanical part of kde_settings alone is about 320 edits across a
+    2244-line task, so it is the only section of the migration that needs the
+    multi-commit branch the user allowed.
+130. Stage 2 of kde_settings finished on 2026-09-17 and is green where it can be:
+    the task reads pyntara.values.kde_settings at every point of use and takes
+    the desktop user, the home, the shortcut file name and the boolean spelling
+    from pyntara.values.common; it carries the missing-values guard and reports
+    "the kde_settings values are not declared, nothing was changed" in plain
+    words, so a values module that is not declared costs the task and never the
+    run; the values module is registered in VALUES_MODULE_NAMES and in
+    MIGRATED_SECTIONS, and both guards pass. ruff, ruff format and mypy --strict
+    are clean on the task, the values module and the whole package.
+    Two facts of the conversion are worth keeping. The values module gained
+    KCONFIG_BOOL_TYPE and its --type flag now takes that constant, so the word of
+    a KConfig flag has one home. The four user-relative directory values are
+    strings in the module (the absolute-path rule cannot apply to a relative
+    path), so the code builds a Path from them where it joins them.
+    What remains before the section is done in stage 3 and stage 4: the tests
+    still configure the section through make_config
+    (kde_settings_home_dir, kde_settings_virtual_keyboard_enabled,
+    kde_settings_system_look_and_feel_dir, kde_settings_kconfig) and import
+    KdeSettingsConfig, KConfigRecord, KCONFIG_BOOL_TYPE, KCONFIG_STRING_TYPE and
+    KCONFIG_TYPES from pyntara.config, which is why 58 of the 77 tests of the
+    section fail on this commit (measured, not estimated); the idiom to copy is
+    the one of every migrated
+    section, a test helper that points the values module at the tmp_path
+    fixtures. The config copy of the section, its check, its fragment of the
+    shared test document and its spec section follow in stage 4.
+131. Stage 3 of kde_settings, first half, committed on 2026-09-17. The test file
+    now takes the record type from the values module, points the home of the
+    desktop user and every value of the section at the temporary tree through
+    one autouse fixture that registers each value for restoration (so a value a
+    test moves comes back after that test), builds its context without a config
+    section, and reads the kconfig records from values.KCONFIG_RECORDS. The
+    number of passing tests in the file went from 19 of 77 to 30 of 77 after the
+    first half and the group of the Places panel and the touchpad click method,
+    which now move a value with a plain assignment on the values module that the
+    autouse fixture restores.
+    What stage 3 still owes, measured with a grep over the test file: ten make_config
+    calls that still pass kde_settings_ parameters (kde_settings_home_dir five
+    times, kde_settings_automatic_look_and_feel three,
+    kde_settings_system_look_and_feel_dir three), the helper _places_cfg and the
+    helper _preconfigure_user_files that still take or return the section config,
+    the tests that rename a value through dataclasses.replace(cfg, ...) and must
+    move to monkeypatch.setattr on the values module, and the call sites of
+    _granted_script_hotkeys and of the helpers the tests call directly
+    (_apply_env, _apply_theme_cursor_overrides, _apply_user_dirs,
+    _apply_konsole_profile, _apply_kwin_scripts, _apply_shortcuts_live,
+    _write_script_hotkey_records, _apply_sddm, _apply_desktop_count_live) that
+    still pass the section config as their first argument. The idiom of every
+    migrated section applies: a test moves a value with monkeypatch.setattr on
+    the values module.
+132. Stage 3 of kde_settings, second half, in progress on 2026-09-17. Passing
+    tests in the section file: 52 of 77, reached in strides of 25 (first half),
+    30 (Places and touchpad), 37 (six helper groups), 44 (KWin scripts, hotkey
+    records, SDDM) and 52 (the helper of the file now also states the state its
+    tests expect: the native day and night switch is off unless a test asks for
+    it, because the shipped value is on while the old test document had it off).
+    Two regressions of these strides are recorded. One is fixed: a helper call
+    removed as unused context carried a side effect, so the call stays and only
+    its result is dropped. One is understood: the XDG user directories test
+    asserted the test document spelling of the directive while the task now
+    reads the shipped one, and the assertion now binds to values.USER_DIRS. The
+    same divergence between the test document and the shipped values explains
+    the two remaining assertion failures (the package list of the missing
+    package test and the click method of the touchpad test).
+    The 25 tests that still fail are, with the exact reason, a list the next
+    stride can work through: 15 of them pass the section config as the first
+    argument of a helper that no longer takes one (one site each for
+    _granted_script_hotkeys, _script_hotkey_pairs, _shortcut_record_changes,
+    _notify_flag, _declare_missing_prefixes, _preconfigure_user_files,
+    _as_user_command, _appearance_command, _kconfig_command, _write_user_file
+    and _apply_theme_cursor_overrides; three for _places_xbel_hidden; five for
+    _apply_shortcuts_live; four for _apply_desktop_count_live), two are the
+    assertion failures above, and five are the command tests at the end of the
+    file that rename a value through dataclasses.replace(cfg, ...) and must move
+    to writing the values module.
+133. Stage 3 of kde_settings, third stride, on 2026-09-17: passing tests went from
+    52 of 77 to 68 of 77. Converted in this stride: the Places namespaces, the
+    metadata owner, the xbel hidden tests and the notify flag test now write the
+    value they mean on the values module instead of renaming a copy of the
+    section config; the five command tests at the end of the file write the
+    values before calling the helper, so each binds to the value it changes and
+    not to a copy of it; the helper _preconfigure_user_files lost its config
+    argument and reads the values module; the script hotkey pair test and the
+    shortcut record test read the values; and the four live desktop count calls
+    lost their first argument.
+    The nine tests that still fail are exactly: the missing package test and the
+    touchpad click method test, whose expectations still carry the test document
+    spelling of a shipped value, the five live shortcut tests whose calls still
+    pass the section config first, the kconfig record skip test whose fake state
+    still asks for the granted script hotkeys with the config, and the dbus
+    names test that still renames the section config.
+134. Stage 3 of kde_settings finished on 2026-09-17: all 77 tests of the section
+    pass and ruff is clean on the file. The last stride bound three expectations
+    to the values instead of the test document spelling (the package list, the
+    click method through CLICK_METHOD_VALUES, and the DBus names, which the test
+    now writes on the values module), and gave the second test helper the same
+    expected state as the first one: the fixed dark theme with a system theme
+    directory that does not exist, because the shipped value turns the native
+    day and night switch on and a task test that expects an idempotent run must
+    state the state it expects. Two lessons for the remaining sections: a helper
+    that builds a context must state every value its tests expect, and an
+    expectation copied from the shared test document is a defect once the task
+    reads the values module. Stage 4, the removal of the config copy of the
+    section, is next.
 
 
 
+
+135. Stage 4 of kde_settings finished on 2026-09-18, and the whole gate is green
+    with 2341 tests. The config copy of the section is gone: config/kde_settings.toml,
+    src/pyntara/config/kde_settings.py and tests/test_config_kde_settings.py went
+    to the trash; the section field and the five re-exported names left the config
+    package and the loader; the section block of tests/config_checks.py (about 500
+    lines with its record validators) and the fragment of the shared test document
+    are deleted; the make_config parameters of the section are gone; the coverage
+    guard no longer records optional keys for it; and the Parameters section of
+    docs/spec/kde-settings.md now points at the values module instead of a
+    [kde_settings] table. The guard that every task_data directory belongs to a task
+    now takes the task names from the catalog instead of the TOML files, because a
+    section that moved to the values package keeps no TOML file.
+    Two mistakes of this stride are worth remembering: a delete of a block through
+    an edit that spanned a call boundary glued two lines together in tests/support.py
+    (found by ruff, fixed at once), and an edit meant to rewrite a loop deleted two
+    of its lines (found by the section tests, restored). Both came from writing an
+    oldString from memory instead of from a fresh read.

@@ -2,30 +2,27 @@
 
 All external resources (subprocess, the session bus, package state) are
 mocked via monkeypatch; the tests only touch temporary fixtures. The fake
-run_command inspects the command shape and answers per key.
+run_command inspects the command shape and answers per key. The home of the
+desktop user and every value of the section are module values, so one
+autouse fixture points them at the temporary tree of the test.
 """
 
 from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_config, make_context
+from support import make_context
 
-from pyntara.config import KConfigRecord
-from pyntara.config.kde_settings import (
-    KCONFIG_BOOL_TYPE,
-    KCONFIG_STRING_TYPE,
-    KCONFIG_TYPES,
-    KdeSettingsConfig,
-)
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import kglobalaccel_names
+from pyntara.values import common as common_values
+from pyntara.values import kde_settings as values
+from pyntara.values.kde_settings import KconfigRecord
 
 # The templates of the task live in the clone the tests run from, so a test
 # that pre-writes the files the task expects reads the shipped template.
@@ -34,47 +31,61 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # The shared python3-dbus client that frees a combination from whatever
 # action holds it and gives it to a configured action; both the script
 # hotkeys and the configured shortcut records are applied through it.
-_SHARED_CLIENT = (
-    _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
-)
+_SHARED_CLIENT = _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
 
 # Shortcut records as the config carries them: the description field is not
 # read, the absent word and an empty field mean no combination, and a record
 # of another file is a plain KConfig value.
 _SHORTCUT_RECORDS = (
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="Walk Through Windows",
         value="Alt+Tab,none,Walk Through Windows",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="MinimizeAll",
         value="Meta+D,meta+u,Minimize all windows",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kglobalshortcutsrc",
         group=("plasmashell",),
         key="manage activities",
         value="none,none,Show Activity Switcher",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
-    KConfigRecord(
+    KconfigRecord(
         file="kwinrc",
         group=("TabBox",),
         key="LayoutName",
         value="thumbnail_grid",
-        type=KCONFIG_STRING_TYPE,
         delete=False,
     ),
 )
+
+
+@pytest.fixture(autouse=True)
+def _point_the_values_at_the_temporary_tree(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Give every test of this file its own target tree and the shipped values.
+
+    The home of the desktop user and the values of the section are module
+    values, so the fixture points the home at the temporary directory of the
+    test and registers every value for restoration: a value a test points at
+    its own fixture comes back after that test.
+    """
+
+    monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "i")
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
+    for name in values.READ_VALUE_NAMES:
+        monkeypatch.setattr(values, name, getattr(values, name))
+    for name in common_values.READ_VALUE_NAMES:
+        monkeypatch.setattr(common_values, name, getattr(common_values, name))
 
 
 def _ctx(
@@ -85,36 +96,36 @@ def _ctx(
     virtual_keyboard_enabled: bool = True,
     system_look_and_feel_dir: Path | None = None,
     repo_root: Path | None = None,
-    kconfig: tuple[KConfigRecord, ...] = (),
+    kconfig: tuple[KconfigRecord, ...] = (),
+    automatic_look_and_feel: int = 0,
 ):
-    """Context with the target user home rooted in tmp_path.
+    """Context with the target user home and the values rooted in tmp_path.
 
     kcminputrc, when given, is written into the user config directory so
     the touchpad discovery reads it. system_look_and_feel_dir is the system
     theme directory of the test; the default one does not exist, so the
     theme cursor overrides skip the copy unless a test points it at its own
-    fixture.
+    fixture. automatic_look_and_feel is off unless a test asks for the
+    native day and night switch, so a task test applies the dark theme
+    directly and the switch has its own tests.
     """
 
     if kcminputrc is not None:
         config_dir = tmp_path / ".config"
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "kcminputrc").write_text(kcminputrc, encoding="utf-8")
+    values.VIRTUAL_KEYBOARD_ENABLED = virtual_keyboard_enabled
+    values.AUTOMATIC_LOOK_AND_FEEL = automatic_look_and_feel
+    values.SYSTEM_LOOK_AND_FEEL_DIR = (
+        system_look_and_feel_dir or tmp_path / "no-system-themes"
+    )
+    values.KCONFIG_RECORDS = kconfig
     return make_context(
         task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
         repo_root=repo_root if repo_root is not None else _REPO_ROOT,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_virtual_keyboard_enabled=virtual_keyboard_enabled,
-            kde_settings_system_look_and_feel_dir=(
-                system_look_and_feel_dir or tmp_path / "no-system-themes"
-            ),
-            kde_settings_kconfig=kconfig,
-        ),
     )
 
 
@@ -194,13 +205,13 @@ def _assign_reply(
     return _FakeProc(0, json.dumps({"results": results}))
 
 
-def _granted_script_hotkeys(cfg: KdeSettingsConfig) -> dict[str, list[str]]:
+def _granted_script_hotkeys() -> dict[str, list[str]]:
     """The client state of a machine whose script hotkeys are granted."""
 
     return {
         action: [hotkey]
         for action, hotkey in zip(
-            cfg.kwin_script_actions, cfg.kwin_script_hotkeys
+            values.KWIN_SCRIPT_ACTIONS, values.KWIN_SCRIPT_HOTKEYS
         )
     }
 
@@ -290,9 +301,7 @@ def _install_fakes(
                 if _is_assign_call(inner):
                     after = assign_after
                     if assign_after_sequence:
-                        position = min(
-                            attempt[0], len(assign_after_sequence) - 1
-                        )
+                        position = min(attempt[0], len(assign_after_sequence) - 1)
                         after = assign_after_sequence[position]
                         attempt[0] += 1
                     return _assign_reply(
@@ -317,9 +326,7 @@ def _install_fakes(
     def fake_installed(_engine: object, package: str, timeout: float) -> bool:
         return installed
 
-    def fake_install(
-        _engine: object, package: str, timeout: float
-    ) -> tuple[bool, str]:
+    def fake_install(_engine: object, package: str, timeout: float) -> tuple[bool, str]:
         if fail_install:
             return False, "cannot install"
         installs.append(package)
@@ -332,11 +339,11 @@ def _install_fakes(
         task_module,
         "session_environment",
         (
-            lambda username, **kwargs: {
-                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"
-            }
-            if bus_pid
-            else {}
+            lambda username, **kwargs: (
+                {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+                if bus_pid
+                else {}
+            )
         ),
     )
     # The system theme directory of the default test config does not exist,
@@ -351,15 +358,11 @@ def test_first_run_applies_both_themes(
     # No current values: the global theme and the color scheme are both
     # applied, the global theme first.
     ctx = _ctx(tmp_path)
-    themes, schemes, order, installs, _, _, _ = _install_fakes(
-        monkeypatch
-    )
+    themes, schemes, order, installs, _, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert any(
-        "org.kubuntudark.desktop" in command for command in themes
-    )
+    assert any("org.kubuntudark.desktop" in command for command in themes)
     assert any("BreezeDark" in command for command in schemes)
     assert order == ["lookandfeel", "colorscheme"]
     assert installs == []
@@ -386,11 +389,11 @@ def test_skip_when_already_configured(
         "window-grow-shrinkEnabled": "true",
         "window-restore-trackerEnabled": "true",
     }
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _preconfigure_user_files(tmp_path)
     themes, schemes, order, _, writes, reloads, _ = _install_fakes(
         monkeypatch,
         currents=currents,
-        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
+        assign_state=_granted_script_hotkeys(),
     )
     result = task_module.task(ctx)
     assert result.success is True
@@ -411,9 +414,7 @@ def test_force_applies_even_when_configured(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _, _, _, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    themes, schemes, order, _, _, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -431,9 +432,7 @@ def test_only_color_scheme_differs(
         "LookAndFeelPackage": "org.kubuntudark.desktop",
         "ColorScheme": "BreezeLight",
     }
-    themes, schemes, order, _, _, _, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    themes, schemes, order, _, _, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -442,18 +441,14 @@ def test_only_color_scheme_differs(
     assert order == ["colorscheme"]
 
 
-def test_only_theme_differs(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_only_theme_differs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # The color scheme already matches, only the global theme differs.
     ctx = _ctx(tmp_path)
     currents = {
         "LookAndFeelPackage": "org.kde.breeze.desktop",
         "ColorScheme": "BreezeDark",
     }
-    themes, schemes, order, _, _, _, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    themes, schemes, order, _, _, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -470,12 +465,7 @@ def test_missing_packages_are_installed(
     _, _, _, installs, _, _, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
-    assert installs == [
-        "plasma-workspace",
-        "libkf6config-bin",
-        "kubuntu-settings-desktop",
-        "python3-dbus",
-    ]
+    assert installs == list(values.PACKAGES)
 
 
 def test_package_install_failure_is_a_warning_and_settings_still_apply(
@@ -552,7 +542,7 @@ def test_apply_env_carries_live_session_display(
             "DISPLAY": ":0",
         },
     )
-    env = task_module._apply_env(ctx.config.kde_settings, ctx.config.engine)
+    env = task_module._apply_env(ctx.config.engine)
     assert env is not None
     assert env["HOME"] == str(tmp_path)
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/1000/bus"
@@ -569,15 +559,15 @@ def test_apply_env_without_session_has_no_bus(
     monkeypatch.setattr(
         task_module, "session_environment", lambda username, **kwargs: {}
     )
-    assert task_module._apply_env(ctx.config.kde_settings, ctx.config.engine) is None
+    assert task_module._apply_env(ctx.config.engine) is None
 
 
-def test_written_user_file_mode_comes_from_the_config(
+def test_written_user_file_mode_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The chmod of a written user file carries the mode the caller passes,
-    # which is the configured value at every call site, so a stricter or
-    # looser mode is answered in the config.
+    # which is the value of the section at every call site, so a stricter or
+    # looser mode is answered in the values.
     chmods: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -586,9 +576,8 @@ def test_written_user_file_mode_comes_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    cfg = replace(make_config().kde_settings, home_dir=str(tmp_path))
     written = task_module._write_user_file(
-        cfg, "notes.txt", "content", mode=0o640, timeout=5, force=True
+        "notes.txt", "content", mode=0o640, timeout=5, force=True
     )
     assert written is True
     assert chmods == [["chmod", "0640", str(tmp_path / "notes.txt")]]
@@ -628,8 +617,7 @@ def test_all_config_writes_failing_task_still_succeeds(
     assert result.warnings
     assert not [command for command in writes if "LookAndFeelPackage" in command]
     assert (
-        result.message
-        == "KDE appearance and input settings configured with warnings"
+        result.message == "KDE appearance and input settings configured with warnings"
     )
 
 
@@ -658,23 +646,24 @@ cursorSize=72
 
 def test_touchpad_groups_finds_touchpad_sections() -> None:
     # Only the libinput groups whose device name ends with Touchpad match.
-    cfg = make_config().kde_settings
     assert task_module._touchpad_groups(
-        TOUCHPAD_RC, cfg.touchpad_group_root, cfg.touchpad_device_word
+        TOUCHPAD_RC,
+        values.TOUCHPAD_GROUP_ROOT,
+        values.TOUCHPAD_DEVICE_WORD,
     ) == [("Libinput", "2362", "597", "SYNA3602:00 093A:0255 Touchpad")]
     assert (
         task_module._touchpad_groups(
             "[Mouse]\ncursorSize=72\n",
-            cfg.touchpad_group_root,
-            cfg.touchpad_device_word,
+            values.TOUCHPAD_GROUP_ROOT,
+            values.TOUCHPAD_DEVICE_WORD,
         )
         == []
     )
 
 
-def test_the_touchpad_group_words_come_from_the_config() -> None:
-    # The root group and the word a device name ends with are config
-    # values: another pair of them is the group the task collects.
+def test_the_touchpad_group_words_come_from_the_values() -> None:
+    # The root group and the word a device name ends with are values of the
+    # section: another pair of them is the group the task collects.
     text = "[MyRoot][1][2][name MyPad]\nClickMethod=2\n"
     assert task_module._touchpad_groups(text, "MyRoot", "MyPad") == [
         ("MyRoot", "1", "2", "name MyPad")
@@ -701,9 +690,7 @@ def test_numlock_skips_when_matching(
 ) -> None:
     # NumLock already at the "off" value skips the write.
     ctx = _ctx(tmp_path)
-    _, _, _, _, writes, _, _ = _install_fakes(
-        monkeypatch, currents={"NumLock": "1"}
-    )
+    _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents={"NumLock": "1"})
     task_module.task(ctx)
     assert not [command for command in writes if "NumLock" in command]
 
@@ -719,8 +706,10 @@ def test_touchpad_writes_to_each_found(
     click_writes = [command for command in writes if "ClickMethod" in command]
     assert click_writes
     assert "Libinput" in " ".join(click_writes[0])
-    # clickfinger maps to 1.
-    assert click_writes[0][-1] == "1"
+    # The configured click method maps to the value the file stores.
+    assert (
+        click_writes[0][-1] == values.CLICK_METHOD_VALUES[values.TOUCHPAD_CLICK_METHOD]
+    )
 
 
 def test_touchpad_missing_skips(
@@ -788,10 +777,8 @@ def test_virtual_keyboard_disabled_idempotent_when_absent(
         "window-grow-shrinkEnabled": "true",
         "window-restore-trackerEnabled": "true",
     }
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
-    _, _, _, _, writes, reloads, _ = _install_fakes(
-        monkeypatch, currents=currents
-    )
+    _preconfigure_user_files(tmp_path)
+    _, _, _, _, writes, reloads, _ = _install_fakes(monkeypatch, currents=currents)
     task_module.task(ctx)
     assert not [command for command in writes if "InputMethod" in command]
     assert reloads == []
@@ -802,31 +789,17 @@ def test_automatic_look_and_feel_skips_theme_and_enables_switch(
 ) -> None:
     # With the native day and night switch on, the task applies no fixed
     # theme; it writes the AutomaticLookAndFeel keys instead.
-    ctx = make_context(
-        install_mode="desktop",
-        force_tasks=frozenset(),
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_automatic_look_and_feel=True,
-            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
-        ),
-    )
+    ctx = _ctx(tmp_path, automatic_look_and_feel=1)
     themes, schemes, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert themes == []
     assert schemes == []
-    auto_writes = [
-        command for command in writes if "AutomaticLookAndFeel" in command
-    ]
+    auto_writes = [command for command in writes if "AutomaticLookAndFeel" in command]
     assert auto_writes
     assert "--type" in auto_writes[0] and "bool" in auto_writes[0]
     interval_writes = [
-        command
-        for command in writes
-        if "AutomaticLookAndFeelIdleInterval" in command
+        command for command in writes if "AutomaticLookAndFeelIdleInterval" in command
     ]
     assert interval_writes
     assert "99" in interval_writes[0]
@@ -839,24 +812,12 @@ def test_live_session_notifies_watched_files_only(
     # With a live desktop session the kwinrc and kdeglobals writes carry
     # the --notify flag so the running kwin applies them live; writes to
     # files nobody watches stay without it.
-    ctx = make_context(
-        install_mode="desktop",
-        force_tasks=frozenset(),
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_automatic_look_and_feel=True,
-            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
-        ),
-    )
+    ctx = _ctx(tmp_path, automatic_look_and_feel=1)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     watched = [
-        command
-        for command in writes
-        if "kwinrc" in command or "kdeglobals" in command
+        command for command in writes if "kwinrc" in command or "kdeglobals" in command
     ]
     others = [
         command
@@ -874,17 +835,7 @@ def test_no_session_omits_notify_flag(
 ) -> None:
     # Without a desktop session there is no bus to notify, so the writes
     # carry no --notify flag and apply at the next login as before.
-    ctx = make_context(
-        install_mode="desktop",
-        force_tasks=frozenset(),
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_automatic_look_and_feel=True,
-            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
-        ),
-    )
+    ctx = _ctx(tmp_path, automatic_look_and_feel=1)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
@@ -943,7 +894,7 @@ def test_cursor_theme_applied_after_kconfig_records(
     # over any theme default the records or the day and night switch
     # write.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kcminputrc", ("Mouse",), "cursorTheme", "breeze_cursors", "string", False
         ),
     )
@@ -976,20 +927,16 @@ def test_theme_cursor_overrides_copies_themes_with_cursors(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
+    _ctx(tmp_path, system_look_and_feel_dir=system)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is True
     user_dir = tmp_path / ".local/share/plasma/look-and-feel"
     dark_defaults = user_dir / "org.kubuntudark.desktop/contents/defaults"
     light_defaults = user_dir / "org.kubuntulight.desktop/contents/defaults"
     assert dark_defaults.is_file()
     assert light_defaults.is_file()
-    defaults_writes = [
-        command for command in writes if "defaults" in " ".join(command)
-    ]
+    defaults_writes = [command for command in writes if "defaults" in " ".join(command)]
     assert any("Oxygen_Yellow" in command for command in defaults_writes)
     assert any("Oxygen_Blue" in command for command in defaults_writes)
 
@@ -998,11 +945,9 @@ def test_theme_cursor_overrides_skip_missing_system_themes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A missing system theme is not an error; the copy is skipped.
-    ctx = _ctx(tmp_path)
+    _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is False
 
 
@@ -1013,7 +958,7 @@ def test_theme_cursor_overrides_idempotent(
     system = tmp_path / "system-look-and-feel"
     _make_system_theme(system, "org.kubuntudark.desktop")
     _make_system_theme(system, "org.kubuntulight.desktop")
-    ctx = _ctx(tmp_path, system_look_and_feel_dir=system)
+    _ctx(tmp_path, system_look_and_feel_dir=system)
     values: dict[tuple[str, str], str] = {}
     writes: list[list[str]] = []
 
@@ -1035,14 +980,10 @@ def test_theme_cursor_overrides_idempotent(
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    changed = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed is True
     assert writes
-    changed2 = task_module._apply_theme_cursor_overrides(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_theme_cursor_overrides(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1081,18 +1022,13 @@ def test_apply_user_dirs_writes_configured_dirs(
         'XDG_DESKTOP_DIR="$HOME/Desktop"\nXDG_MUSIC_DIR="$HOME/Music"\n',
         encoding="utf-8",
     )
-    ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_user_dirs(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed is True
     text = (config_dir / "user-dirs.dirs").read_text(encoding="utf-8")
-    assert 'XDG_MUSIC_DIR="$HOME/Downloads"' in text
+    assert f'XDG_MUSIC_DIR="{values.USER_DIRS["XDG_MUSIC_DIR"]}"' in text
     assert 'XDG_DESKTOP_DIR="$HOME/Desktop"' in text
-    changed2 = task_module._apply_user_dirs(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_user_dirs(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1105,18 +1041,13 @@ def test_apply_konsole_profile_renders_template(
     asset.write_text(
         "Directory={home_dir}/Downloads/\nName=Pyntara\n", encoding="utf-8"
     )
-    ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, asset, timeout=5, force=False
-    )
+    changed = task_module._apply_konsole_profile(asset, timeout=5, force=False)
     assert changed is True
     target = tmp_path / ".local/share/konsole/Pyntara.profile"
     expected = f"Directory={tmp_path}/Downloads/\nName=Pyntara\n"
     assert target.read_text(encoding="utf-8") == expected
-    changed2 = task_module._apply_konsole_profile(
-        ctx.config.kde_settings, asset, timeout=5, force=False
-    )
+    changed2 = task_module._apply_konsole_profile(asset, timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1172,11 +1103,11 @@ def _script_fakes(
         task_module,
         "session_environment",
         (
-            lambda username, timeout: {
-                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"
-            }
-            if session
-            else {}
+            lambda username, timeout: (
+                {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
+                if session
+                else {}
+            )
         ),
     )
     return writes, releases
@@ -1185,9 +1116,8 @@ def _script_fakes(
 def _write_script_templates(root: Path) -> None:
     """Write minimal KWin script templates under the given root."""
 
-    cfg = make_config().kde_settings
-    for script in cfg.kwin_scripts:
-        for rel_file in cfg.kwin_script_files:
+    for script in values.KWIN_SCRIPTS:
+        for rel_file in values.KWIN_SCRIPT_FILES:
             target = root / script / rel_file
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(rel_file, encoding="utf-8")
@@ -1200,14 +1130,12 @@ def test_apply_kwin_scripts_installs_and_enables(
     # scripts are enabled in kwinrc [Plugins]; a second pass is a no-op.
     template_root = tmp_path / "kwin"
     _write_script_templates(template_root)
-    ctx = _ctx(tmp_path)
+    _ctx(tmp_path)
     writes, _ = _script_fakes(monkeypatch)
-    changed = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, template_root, timeout=5, force=False
-    )
+    changed = task_module._apply_kwin_scripts(template_root, timeout=5, force=False)
     assert changed is True
-    for script in ctx.config.kde_settings.kwin_scripts:
-        for rel_file in ctx.config.kde_settings.kwin_script_files:
+    for script in values.KWIN_SCRIPTS:
+        for rel_file in values.KWIN_SCRIPT_FILES:
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             assert target.read_text(encoding="utf-8") == rel_file
     enabled = [
@@ -1215,11 +1143,9 @@ def test_apply_kwin_scripts_installs_and_enables(
         for command in writes
         if "kwriteconfig6" in command and "kwinrc" in command
     ]
-    for script in ctx.config.kde_settings.kwin_scripts:
+    for script in values.KWIN_SCRIPTS:
         assert f"{script}Enabled" in enabled
-    changed2 = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, template_root, timeout=5, force=False
-    )
+    changed2 = task_module._apply_kwin_scripts(template_root, timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1227,10 +1153,9 @@ def test_apply_kwin_scripts_missing_templates_skips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No templates: the step changes nothing and is not an error.
-    ctx = _ctx(tmp_path)
     writes, _ = _script_fakes(monkeypatch)
     changed = task_module._apply_kwin_scripts(
-        ctx.config.kde_settings, tmp_path / "missing", timeout=5, force=False
+        tmp_path / "missing", timeout=5, force=False
     )
     assert changed is False
     assert writes == []
@@ -1257,27 +1182,25 @@ def test_kwin_scripts_installed_and_the_records_written_without_a_session(
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
-    for script in ctx.config.kde_settings.kwin_scripts:
-        for rel_file in ctx.config.kde_settings.kwin_script_files:
+    for script in values.KWIN_SCRIPTS:
+        for rel_file in values.KWIN_SCRIPT_FILES:
             target = tmp_path / ".local/share/kwin/scripts" / script / rel_file
             assert target.read_text(encoding="utf-8") == rel_file
     cleared = [
         command
         for command in writes
-        if "Switch One Desktop Up" in command
-        or "Switch One Desktop Down" in command
+        if "Switch One Desktop Up" in command or "Switch One Desktop Down" in command
     ]
     assert len(cleared) == 2
 
 
-def test_script_hotkey_pairs_read_the_configured_actions_and_hotkeys(
+def test_script_hotkey_pairs_read_the_value_actions_and_hotkeys(
     tmp_path: Path,
 ) -> None:
-    # The two lists of the config describe one hotkey per position, and the
+    # The two lists of the section describe one hotkey per position, and the
     # shared client turns a combination into the combined key code the
     # daemon takes, so the task holds no table of hand written codes.
-    cfg = make_config().kde_settings
-    assert task_module._script_hotkey_pairs(cfg) == (
+    assert task_module._script_hotkey_pairs() == (
         ("Grow Window by 5px", "Meta+Ctrl+Up"),
         ("Shrink Window by 5px", "Meta+Ctrl+Down"),
     )
@@ -1292,8 +1215,8 @@ def test_shortcut_record_changes_read_only_the_first_field(
     # the action must not own. The absent word and an empty field mean no
     # combination, and a record of another file stays with the plain
     # KConfig values.
-    cfg = make_config(kde_settings_kconfig=_SHORTCUT_RECORDS).kde_settings
-    assert task_module._shortcut_record_changes(cfg) == (
+    values.KCONFIG_RECORDS = _SHORTCUT_RECORDS
+    assert task_module._shortcut_record_changes() == (
         ("kwin", "kwin", "Walk Through Windows", ("Alt+Tab",)),
         ("kwin", "kwin", "MinimizeAll", ("Meta+D",)),
         ("plasmashell", "plasmashell", "manage activities", ()),
@@ -1314,11 +1237,9 @@ def test_apply_shortcuts_live_runs_the_shared_client(
     # actions, and the state the client reports back decides whether the
     # task changed anything.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
-    cfg = ctx.config.kde_settings
     calls: list[list[str]] = []
     _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        cfg,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1352,14 +1273,14 @@ def test_apply_shortcuts_live_runs_the_shared_client(
             "keys": [],
         },
         {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
+            "component_unique": values.KWIN_COMPONENT_UNIQUE,
+            "component_friendly": values.KWIN_COMPONENT_FRIENDLY,
             "action": "Grow Window by 5px",
             "keys": ["Meta+Ctrl+Up"],
         },
         {
-            "component_unique": cfg.kwin_component_unique,
-            "component_friendly": cfg.kwin_component_friendly,
+            "component_unique": values.KWIN_COMPONENT_UNIQUE,
+            "component_friendly": values.KWIN_COMPONENT_FRIENDLY,
             "action": "Shrink Window by 5px",
             "keys": ["Meta+Ctrl+Down"],
         },
@@ -1385,7 +1306,6 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
         ],
     )
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1394,9 +1314,7 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
     )
     assert changed is True
     assert len(calls) == 2
-    assert pauses == [
-        ctx.config.kde_settings.shortcut_apply_retry_delay_seconds
-    ]
+    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
 
 
 def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
@@ -1419,7 +1337,6 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
         assign_unsupported={"MinimizeAll": ["meta+u"]},
     )
     task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1430,13 +1347,10 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
     assert len(calls) == 1
     assert pauses == []
     assert any(
-        "does not know the action manage activities" in message
-        for message in messages
+        "does not know the action manage activities" in message for message in messages
     )
     assert any("cannot read meta+u" in message for message in messages)
-    written = {
-        command[command.index("--key") + 1]: command[-1] for command in writes
-    }
+    written = {command[command.index("--key") + 1]: command[-1] for command in writes}
     assert set(written) == {"MinimizeAll", "manage activities"}
     assert written["MinimizeAll"] == "Meta+D,none,MinimizeAll"
     assert written["manage activities"] == "none,none,manage activities"
@@ -1460,7 +1374,6 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         assign_after={"MinimizeAll": []},
     )
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1469,12 +1382,10 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         warnings=warnings,
     )
     assert changed is True
-    assert len(calls) == ctx.config.kde_settings.shortcut_apply_attempts
+    assert len(calls) == values.SHORTCUT_APPLY_ATTEMPTS
     assert len(warnings) == 1
     assert "MinimizeAll" in warnings[0]
-    written = {
-        command[command.index("--key") + 1]: command[-1] for command in writes
-    }
+    written = {command[command.index("--key") + 1]: command[-1] for command in writes}
     assert written["MinimizeAll"] == "Meta+D,Meta+D,Minimize all windows"
     assert "Walk Through Windows" not in written
 
@@ -1499,7 +1410,6 @@ def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
     calls: list[list[str]] = []
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        ctx.config.kde_settings,
         client_path=_SHARED_CLIENT,
         timeout=5,
         env=None,
@@ -1509,9 +1419,7 @@ def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
     )
     assert changed is False
     assert calls == []
-    written = {
-        command[command.index("--key") + 1]: command[-1] for command in writes
-    }
+    written = {command[command.index("--key") + 1]: command[-1] for command in writes}
     assert written["Switch One Desktop Up"] == "none,Meta+Ctrl+Up,Switch One Desktop Up"
     assert written["Walk Through Windows"] == "Alt+Tab,none,Walk Through Windows"
 
@@ -1522,17 +1430,14 @@ def test_write_script_hotkey_records_repairs_a_refused_record(
     # A record an earlier run left without an active key wins over the
     # combination the script registers, so the task rewrites it in the
     # shape of a granted hotkey and keeps its description.
-    ctx = _ctx(tmp_path)
     description = "Grow the active window by 5 pixels on each side"
     currents = {"Grow Window by 5px": f",none,{description}"}
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
     changed = task_module._write_script_hotkey_records(
-        ctx.config.kde_settings, timeout=5, force=False, warnings=[]
+        timeout=5, force=False, warnings=[]
     )
     assert changed is True
-    written = [
-        command for command in writes if "Grow Window by 5px" in command
-    ]
+    written = [command for command in writes if "Grow Window by 5px" in command]
     assert written
     assert written[0][-1] == f"Meta+Ctrl+Up,none,{description}"
 
@@ -1542,11 +1447,10 @@ def test_write_script_hotkey_records_leave_an_absent_record_alone(
 ) -> None:
     # An action without a record gets its record from the script when it
     # registers at login, so the task writes nothing and changes nothing.
-    ctx = _ctx(tmp_path)
     matched = {"Grow Window by 5px": "Meta+Ctrl+Up,none,Grow Window by 5px"}
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=matched)
     changed = task_module._write_script_hotkey_records(
-        ctx.config.kde_settings, timeout=5, force=False, warnings=[]
+        timeout=5, force=False, warnings=[]
     )
     assert changed is False
     assert writes == []
@@ -1589,47 +1493,35 @@ XBEL = """\
 """
 
 
-def test_notify_flag_follows_the_configured_file_names() -> None:
-    # Only the files the config names carry a live watcher, so a renamed
-    # file in the config is the file the flag is added for.
-    cfg = make_config().kde_settings
+def test_notify_flag_follows_the_value_file_names() -> None:
+    # Only the files the values name carry a live watcher, so a renamed file
+    # in the values is the file the flag is added for.
     env = {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"}
-    assert task_module._notify_flag(cfg, cfg.kwinrc_file_name, env) == ["--notify"]
-    renamed = replace(cfg, kwinrc_file_name="kwinrc-custom")
-    assert task_module._notify_flag(renamed, "kwinrc", env) == []
-    assert task_module._notify_flag(renamed, "kwinrc-custom", env) == ["--notify"]
+    assert task_module._notify_flag(values.KWINRC_FILE_NAME, env) == ["--notify"]
+    values.KWINRC_FILE_NAME = "kwinrc-custom"
+    assert task_module._notify_flag("kwinrc", env) == []
+    assert task_module._notify_flag("kwinrc-custom", env) == ["--notify"]
 
 
-def _places_cfg() -> KdeSettingsConfig:
-    """Config of the task with the Places namespaces of the shared document."""
-
-    return make_config().kde_settings
-
-
-def test_places_namespace_address_comes_from_the_config() -> None:
-    # Another address in the config is the address the task declares, so
-    # the namespace of the file is a value and not a literal in the code.
-    cfg = replace(
-        _places_cfg(),
-        places_namespaces={"bookmark": "http://example.invalid/bookmarks"},
-    )
-    declared = task_module._declare_missing_prefixes(cfg, "<xbel>")
+def test_places_namespace_address_comes_from_the_values() -> None:
+    # Another address in the values is the address the task declares, so the
+    # namespace of the file is a value and not a literal in the code.
+    values.PLACES_NAMESPACES = {"bookmark": "http://example.invalid/bookmarks"}
+    declared = task_module._declare_missing_prefixes("<xbel>")
     assert 'xmlns:bookmark="http://example.invalid/bookmarks"' in declared
 
 
-def test_places_metadata_owner_comes_from_the_config() -> None:
+def test_places_metadata_owner_comes_from_the_values() -> None:
     # Only a metadata block with the configured owner may be hidden: with
-    # another owner in the config the same file is left unchanged.
-    cfg = replace(
-        _places_cfg(), places_metadata_owner="http://example.invalid/owner"
-    )
-    assert task_module._places_xbel_hidden(cfg, XBEL, {"Home"}) is None
+    # another owner in the values the same file is left unchanged.
+    values.PLACES_METADATA_OWNER = "http://example.invalid/owner"
+    assert task_module._places_xbel_hidden(XBEL, {"Home"}) is None
 
 
 def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
     # Home is matched by its title and hidden, Downloads stays visible,
     # and the machine-specific device separator survives untouched.
-    out = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home
@@ -1640,10 +1532,9 @@ def test_places_xbel_hidden_adds_marker_for_hidden_titles() -> None:
 
 def test_places_xbel_hidden_idempotent() -> None:
     # A second pass over an already hidden file changes nothing.
-    cfg = _places_cfg()
-    out = task_module._places_xbel_hidden(cfg, XBEL, {"Home"})
+    out = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert out is not None
-    assert task_module._places_xbel_hidden(cfg, out, {"Home"}) is None
+    assert task_module._places_xbel_hidden(out, {"Home"}) is None
 
 
 def test_apply_places_hidden_writes_when_changed(
@@ -1654,25 +1545,13 @@ def test_apply_places_hidden_writes_when_changed(
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
     (places_dir / "user-places.xbel").write_text(XBEL, encoding="utf-8")
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is True
     text = (places_dir / "user-places.xbel").read_text(encoding="utf-8")
     assert "IsHidden" in text
-    changed2 = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed2 = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed2 is False
 
 
@@ -1680,24 +1559,14 @@ def test_apply_places_hidden_skips_when_matching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A file that already hides the configured places changes nothing.
-    already = task_module._places_xbel_hidden(_places_cfg(), XBEL, {"Home"})
+    already = task_module._places_xbel_hidden(XBEL, {"Home"})
     assert already is not None
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
     (places_dir / "user-places.xbel").write_text(already, encoding="utf-8")
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1705,19 +1574,9 @@ def test_apply_places_hidden_missing_file_skips(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Without the Places file the hiding is skipped and not an error.
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1729,7 +1588,7 @@ def test_places_xbel_hidden_tolerates_undeclared_bookmark_prefix() -> None:
         'xmlns:bookmark="http://www.freedesktop.org/standards/desktop-bookmarks"',
         'xmlns:ns0="http://www.freedesktop.org/standards/desktop-bookmarks"',
     )
-    out = task_module._places_xbel_hidden(_places_cfg(), malformed, {"Home"})
+    out = task_module._places_xbel_hidden(malformed, {"Home"})
     assert out is not None
     home = out.split("<title>Home</title>")[1].split("</bookmark>")[0]
     assert "<IsHidden>true</IsHidden>" in home
@@ -1743,22 +1602,10 @@ def test_apply_places_hidden_unparseable_file_skips(
     # hiding with a message instead of failing the whole task.
     places_dir = tmp_path / ".local/share"
     places_dir.mkdir(parents=True, exist_ok=True)
-    (places_dir / "user-places.xbel").write_text(
-        "<xbel><bookmark>", encoding="utf-8"
-    )
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_places_hidden=("Home",),
-        ),
-    )
+    (places_dir / "user-places.xbel").write_text("<xbel><bookmark>", encoding="utf-8")
+    values.PLACES_HIDDEN = ("Home",)
     _install_fakes(monkeypatch)
-    changed = task_module._apply_places_hidden(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_places_hidden(timeout=5, force=False)
     assert changed is False
 
 
@@ -1766,15 +1613,8 @@ def test_touchpad_clickareas_writes_two(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The clickareas method maps to the ClickMethod value 2.
-    ctx = make_context(
-        install_mode="desktop",
-        task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_touchpad_click_method="clickareas",
-        ),
-    )
+    values.TOUCHPAD_CLICK_METHOD = "clickareas"
+    ctx = make_context(install_mode="desktop", task_data_root=tmp_path)
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "kcminputrc").write_text(TOUCHPAD_RC, encoding="utf-8")
@@ -1790,11 +1630,8 @@ def test_apply_sddm_writes_system_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The autologin and theme values are written to the system files.
-    ctx = _ctx(tmp_path)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch)
-    changed = task_module._apply_sddm(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_sddm(timeout=5, force=False)
     assert changed is True
     assert len(writes) == 6
     assert "/etc/sddm.conf" in " ".join(writes[0])
@@ -1807,7 +1644,6 @@ def test_apply_sddm_idempotent_when_matching(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Matching system values change nothing.
-    ctx = _ctx(tmp_path)
     currents = {
         "User": "i",
         "Session": "plasma",
@@ -1817,53 +1653,49 @@ def test_apply_sddm_idempotent_when_matching(
         "Font": "Noto Sans,20",
     }
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents=currents)
-    changed = task_module._apply_sddm(
-        ctx.config.kde_settings, timeout=5, force=False
-    )
+    changed = task_module._apply_sddm(timeout=5, force=False)
     assert changed is False
     assert writes == []
 
 
 def _kconfig_ctx(
     tmp_path: Path,
-    records: tuple[KConfigRecord, ...],
+    records: tuple[KconfigRecord, ...],
     *,
     force: bool = False,
 ):
-    """Context whose kconfig list carries the given records."""
+    """Context whose kconfig list carries the given records and whose theme
+    state is the fixed dark theme, so an idempotent run has nothing to do."""
 
+    values.AUTOMATIC_LOOK_AND_FEEL = 0
+    values.SYSTEM_LOOK_AND_FEEL_DIR = tmp_path / "no-system-themes"
+    values.KCONFIG_RECORDS = records
     return make_context(
         task_name="kde_settings",
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
-        config=make_config(
-            task_data_root=tmp_path,
-            kde_settings_home_dir=str(tmp_path),
-            kde_settings_kconfig=records,
-            kde_settings_system_look_and_feel_dir=tmp_path / "no-system-themes",
-        ),
     )
 
 
-def _preconfigure_user_files(tmp_path: Path, cfg) -> None:
+def _preconfigure_user_files(tmp_path: Path) -> None:
     """Write the user-dirs.dirs and the Konsole profile the task expects,
     so an idempotent run sees them as already configured."""
 
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "user-dirs.dirs").write_text(
-        task_module._user_dirs_merged("", cfg.user_dirs), encoding="utf-8"
+        task_module._user_dirs_merged("", values.USER_DIRS), encoding="utf-8"
     )
-    profile = (
-        _REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile"
-    ).read_text(encoding="utf-8")
-    profile = profile.replace("{home_dir}", cfg.home_dir)
+    profile = (_REPO_ROOT / "task_data" / "kde_settings" / "Pyntara.profile").read_text(
+        encoding="utf-8"
+    )
+    profile = profile.replace("{home_dir}", common_values.DESKTOP_HOME_DIR)
     profile_dir = tmp_path / ".local/share/konsole"
     profile_dir.mkdir(parents=True, exist_ok=True)
     (profile_dir / "Pyntara.profile").write_text(profile, encoding="utf-8")
-    for script in cfg.kwin_scripts:
-        for rel_file in cfg.kwin_script_files:
+    for script in values.KWIN_SCRIPTS:
+        for rel_file in values.KWIN_SCRIPT_FILES:
             template = (
                 _REPO_ROOT / "task_data" / "kde_settings" / "kwin" / script / rel_file
             )
@@ -1897,13 +1729,11 @@ def test_kconfig_records_write_differing_values(
     # gets the --type bool flag and the delete record removes a present
     # key.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord(
-            "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
-        ),
-        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+        KconfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
+        KconfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     _, _, _, _, writes, _, _ = _install_fakes(
@@ -1915,9 +1745,7 @@ def test_kconfig_records_write_differing_values(
     layout_writes = [command for command in writes if "LayoutName" in command]
     single_writes = [command for command in writes if "SingleClick" in command]
     delete_writes = [
-        command
-        for command in writes
-        if "StaleKey" in command and "--delete" in command
+        command for command in writes if "StaleKey" in command and "--delete" in command
     ]
     assert layout_writes
     assert "coverswitch" in layout_writes[0]
@@ -1935,17 +1763,16 @@ def test_the_bool_type_word_comes_from_the_config_vocabulary(
     # follows it, so the task and the checks that validate a record
     # against KCONFIG_TYPES cannot drift apart.
     records = (
-        KConfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
+        KconfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, currents={})
-    monkeypatch.setattr(task_module, "KCONFIG_BOOL_TYPE", "flag")
+    monkeypatch.setattr(values, "KCONFIG_BOOL_TYPE", "flag")
     result = task_module.task(ctx)
     assert result.success is True
     single_writes = [command for command in writes if "SingleClick" in command]
     assert single_writes
     assert "--type" not in single_writes[0]
-    assert KCONFIG_BOOL_TYPE in KCONFIG_TYPES
 
 
 def test_kconfig_records_skip_when_matching(
@@ -1954,18 +1781,18 @@ def test_kconfig_records_skip_when_matching(
     # A value record whose key already matches skips the write; a delete
     # record whose key is absent skips the deletion, so nothing changes.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
+        KconfigRecord("kwinrc", ("TabBox",), "StaleKey", "", "string", True),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     currents = dict(FULLY_CONFIGURED, LayoutName="coverswitch")
-    _preconfigure_user_files(tmp_path, ctx.config.kde_settings)
+    _preconfigure_user_files(tmp_path)
     _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch,
         currents=currents,
-        assign_state=_granted_script_hotkeys(ctx.config.kde_settings),
+        assign_state=_granted_script_hotkeys(),
     )
     result = task_module.task(ctx)
     assert result.success is True
@@ -1979,7 +1806,7 @@ def test_kconfig_force_writes_even_when_matching(
 ) -> None:
     # Force mode writes the value regardless of the current state.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
     )
@@ -2022,9 +1849,7 @@ def test_desktop_count_live_removes_extra_desktops(
     # The live count is higher than the configured Number: the task reads
     # the desktop ids through the python3-dbus client shipped as task data
     # and removes the trailing extras.
-    records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
-    )
+    records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),)
     ctx = _kconfig_ctx(tmp_path, records)
     ids_client_path = _write_desktop_ids_client(tmp_path)
     ids_client = ids_client_path.read_text(encoding="utf-8")
@@ -2047,16 +1872,13 @@ def test_desktop_count_live_removes_extra_desktops(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
         system_python=ctx.config.engine.system_python,
     )
     assert error is None
-    removals = [
-        command for command in calls if "removeDesktop" in " ".join(command)
-    ]
+    removals = [command for command in calls if "removeDesktop" in " ".join(command)]
     removed_ids = []
     for command in removals:
         method_index = next(
@@ -2075,18 +1897,13 @@ def test_the_desktop_dbus_names_come_from_the_config(
     # desktop manager are config values of the section: another vocabulary
     # is what the commands carry and what the desktop list client receives,
     # and the shipped names stop appearing.
-    records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),
-    )
+    records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "2", "string", False),)
     ctx = _kconfig_ctx(tmp_path, records)
-    renamed = replace(
-        ctx.config.kde_settings,
-        kwin_bus_name="org.example.KWin",
-        virtual_desktop_manager_object_path="/ExampleDesktopManager",
-        virtual_desktop_manager_interface_name="org.example.DesktopManager",
-        virtual_desktops_property_name="screens",
-        dbus_properties_interface_name="org.example.Properties",
-    )
+    values.KWIN_BUS_NAME = "org.example.KWin"
+    values.VIRTUAL_DESKTOP_MANAGER_OBJECT_PATH = "/ExampleDesktopManager"
+    values.VIRTUAL_DESKTOP_MANAGER_INTERFACE_NAME = "org.example.DesktopManager"
+    values.VIRTUAL_DESKTOPS_PROPERTY_NAME = "screens"
+    values.DBUS_PROPERTIES_INTERFACE_NAME = "org.example.Properties"
     calls: list[list[str]] = []
     client_texts: list[str] = []
 
@@ -2114,11 +1931,8 @@ def test_the_desktop_dbus_names_come_from_the_config(
         / "list_desktop_ids.py"
     )
     client_path = tmp_path / "list_desktop_ids.py"
-    client_path.write_text(
-        shipped_client.read_text(encoding="utf-8"), encoding="utf-8"
-    )
+    client_path.write_text(shipped_client.read_text(encoding="utf-8"), encoding="utf-8")
     error = task_module._apply_desktop_count_live(
-        renamed,
         script_path=client_path,
         timeout=30.0,
         env=env,
@@ -2126,11 +1940,7 @@ def test_the_desktop_dbus_names_come_from_the_config(
     )
     assert error is None
     assert any("org.example.KWin" in part for part in calls[0])
-    assert all(
-        "$kwin_bus_name" not in part
-        for command in calls
-        for part in command
-    )
+    assert all("$kwin_bus_name" not in part for command in calls for part in command)
     assert all(
         "$virtual_desktop_count_property_name" not in part
         for command in calls
@@ -2148,9 +1958,7 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
 ) -> None:
     # The live count is lower than the configured Number: the task creates
     # the missing desktops at the end, so existing ones keep their place.
-    records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),
-    )
+    records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "5", "string", False),)
     ctx = _kconfig_ctx(tmp_path, records)
     calls: list[list[str]] = []
 
@@ -2169,16 +1977,13 @@ def test_desktop_count_live_creates_missing_desktops_at_end(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=_write_desktop_ids_client(tmp_path),
         timeout=30.0,
         env=env,
         system_python=ctx.config.engine.system_python,
     )
     assert error is None
-    creates = [
-        command for command in calls if "createDesktop" in " ".join(command)
-    ]
+    creates = [command for command in calls if "createDesktop" in " ".join(command)]
     positions = []
     for command in creates:
         method_index = next(
@@ -2195,9 +2000,7 @@ def test_desktop_count_live_reports_a_missing_client(
 ) -> None:
     # A missing task data file is reported with its path before anything is
     # removed, so the run never deletes desktops without its id list.
-    records = (
-        KConfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),
-    )
+    records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),)
     ctx = _kconfig_ctx(tmp_path, records)
     missing_client = tmp_path / "missing_desktop_ids.py"
     calls: list[list[str]] = []
@@ -2214,7 +2017,6 @@ def test_desktop_count_live_reports_a_missing_client(
         "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
     }
     error = task_module._apply_desktop_count_live(
-        ctx.config.kde_settings,
         script_path=missing_client,
         timeout=30.0,
         env=env,
@@ -2231,12 +2033,10 @@ def test_kconfig_record_failure_keeps_other_records(
     # One record whose write fails is reported, the remaining records
     # still apply, and the task completes as done with warnings.
     records = (
-        KConfigRecord(
+        KconfigRecord(
             "kwinrc", ("TabBox",), "LayoutName", "coverswitch", "string", False
         ),
-        KConfigRecord(
-            "kdeglobals", ("KDE",), "SingleClick", "true", "bool", False
-        ),
+        KconfigRecord("kdeglobals", ("KDE",), "SingleClick", "true", "bool", False),
     )
     ctx = _kconfig_ctx(tmp_path, records)
     _, _, _, _, writes, _, _ = _install_fakes(
@@ -2270,11 +2070,8 @@ def test_sddm_one_key_failure_keeps_other_keys(
         raise AssertionError(f"unexpected command: {command}")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    ctx = _ctx(tmp_path)
     warnings: list[str] = []
-    changed = task_module._apply_sddm(
-        ctx.config.kde_settings, timeout=5, force=False, warnings=warnings
-    )
+    changed = task_module._apply_sddm(timeout=5, force=False, warnings=warnings)
     assert changed is True
     assert any("CursorSize" in warning for warning in warnings)
     assert any("User" in command for command in writes)
@@ -2282,49 +2079,54 @@ def test_sddm_one_key_failure_keeps_other_keys(
     assert not any("CursorSize" in command for command in writes)
 
 
-def test_user_command_prefix_comes_from_the_config() -> None:
-    # The wrapper that runs a command as the desktop user is a config value:
-    # another wrapper in the section is the argv the task builds.
-    cfg = replace(
-        make_config().kde_settings,
-        runuser_command=("sudo", "-u", "{username}", "--"),
-    )
-    assert task_module._as_user_command(
-        cfg, ["kwriteconfig6", "--file", "kwinrc"]
-    ) == ["sudo", "-u", cfg.username, "--", "kwriteconfig6", "--file", "kwinrc"]
-
-
-def test_plasma_apply_calls_come_from_the_config() -> None:
-    # The three appearance tools and their flags are config values: another
-    # call in the section is the argv the task runs, with the value it
-    # applies substituted.
-    cfg = make_config().kde_settings
-    assert task_module._appearance_command(
-        replace(cfg, apply_look_and_feel_command=("my-theme", "-a", "{look_and_feel}")),
-        "look_and_feel",
-    ) == ["my-theme", "-a", cfg.look_and_feel]
-    assert task_module._appearance_command(
-        replace(
-            cfg,
-            apply_color_scheme_command=("my-scheme", "--set", "{color_scheme}"),
-        ),
-        "color_scheme",
-    ) == ["my-scheme", "--set", cfg.color_scheme]
-    assert task_module._appearance_command(cfg, "cursor_theme") == [
-        "plasma-apply-cursortheme",
-        cfg.cursor_theme,
+def test_user_command_prefix_comes_from_the_values() -> None:
+    # The wrapper that runs a command as the desktop user is a value:
+    # another wrapper in the values is the argv the task builds.
+    values.RUNUSER_COMMAND = ("sudo", "-u", "{username}", "--")
+    assert task_module._as_user_command(["kwriteconfig6", "--file", "kwinrc"]) == [
+        "sudo",
+        "-u",
+        common_values.DESKTOP_USERNAME,
+        "--",
+        "kwriteconfig6",
+        "--file",
+        "kwinrc",
     ]
 
 
-def test_kconfig_calls_come_from_the_config() -> None:
-    # access are config values: another set of commands and selectors is
-    # what the task builds, for the user session and for the system files.
-    cfg = replace(
-        make_config().kde_settings,
-        kreadconfig_command=("my-reader", "--config", "{file_name}"),
-        config_group_flag=("--section", "{group}"),
-        config_key_flag=("--entry", "{key}"),
+def test_plasma_apply_calls_come_from_the_values() -> None:
+    # The three appearance tools and their flags are values: another call in
+    # the values is the argv the task runs, with the value it applies
+    # substituted.
+    values.APPLY_LOOK_AND_FEEL_COMMAND = ("my-theme", "-a", "{look_and_feel}")
+    assert task_module._appearance_command("look_and_feel") == [
+        "my-theme",
+        "-a",
+        values.LOOK_AND_FEEL,
+    ]
+    values.APPLY_COLOR_SCHEME_COMMAND = (
+        "my-scheme",
+        "--set",
+        "{color_scheme}",
     )
+    assert task_module._appearance_command("color_scheme") == [
+        "my-scheme",
+        "--set",
+        values.COLOR_SCHEME,
+    ]
+    assert task_module._appearance_command("cursor_theme") == [
+        "plasma-apply-cursortheme",
+        values.CURSOR_THEME,
+    ]
+
+
+def test_kconfig_calls_come_from_the_values() -> None:
+    # The two base calls and the three selectors are values: another set of
+    # them is what the task builds, for the user session and for the system
+    # files.
+    values.KREADCONFIG_COMMAND = ("my-reader", "--config", "{file_name}")
+    values.CONFIG_GROUP_FLAG = ("--section", "{group}")
+    values.CONFIG_KEY_FLAG = ("--entry", "{key}")
     expected = [
         "my-reader",
         "--config",
@@ -2338,31 +2140,33 @@ def test_kconfig_calls_come_from_the_config() -> None:
     ]
     assert (
         task_module._kconfig_command(
-            cfg, cfg.kreadconfig_command, "kwinrc", ("Group", "Sub"), "Key"
+            values.KREADCONFIG_COMMAND, "kwinrc", ("Group", "Sub"), "Key"
         )
         == expected
     )
-    written = replace(
-        cfg, kwriteconfig_command=("my-writer", "--config", "{file_name}")
-    )
+    values.KWRITECONFIG_COMMAND = ("my-writer", "--config", "{file_name}")
     assert task_module._kconfig_command(
-        written, written.kwriteconfig_command, "kdeglobals", ("Group",), "Key"
-    ) == ["my-writer", "--config", "kdeglobals", "--section", "Group", "--entry", "Key"]
+        values.KWRITECONFIG_COMMAND, "kdeglobals", ("Group",), "Key"
+    ) == [
+        "my-writer",
+        "--config",
+        "kdeglobals",
+        "--section",
+        "Group",
+        "--entry",
+        "Key",
+    ]
 
 
-def test_file_operations_come_from_the_config(
+def test_file_operations_come_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The maker of the parent directory, the owner writer and the mode
-    # writer are config values: another program in the section is the argv
-    # the task runs around a user config file.
-    cfg = replace(
-        make_config().kde_settings,
-        home_dir=str(tmp_path),
-        mkdir_command=("mymkdir", "--parents", "{path}"),
-        chown_command=("mychown", "--owner", "{owner}", "{path}"),
-        chmod_command=("mychmod", "--mode", "{file_mode}", "{path}"),
-    )
+    # writer are values: another program in the values is the argv the task
+    # runs around a user config file.
+    values.MKDIR_COMMAND = ("mymkdir", "--parents", "{path}")
+    values.CHOWN_COMMAND = ("mychown", "--owner", "{owner}", "{path}")
+    values.CHMOD_COMMAND = ("mychmod", "--mode", "{file_mode}", "{path}")
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -2371,7 +2175,6 @@ def test_file_operations_come_from_the_config(
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
     assert task_module._write_user_file(
-        cfg,
         ".config/kxkbrc",
         "body\n",
         mode=0o600,
@@ -2383,25 +2186,31 @@ def test_file_operations_come_from_the_config(
     assert seen[1] == [
         "mychown",
         "--owner",
-        f"{cfg.username}:{cfg.username}",
+        (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ]
     assert seen[2] == ["mychmod", "--mode", f"{0o600:04o}", str(target)]
 
 
-def test_recursive_owner_command_comes_from_the_config(
+def test_recursive_owner_command_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The owner writer of a copied theme tree is a config value: another
-    # program in the section is the argv the task runs on the copy.
-    cfg = replace(
-        make_config().kde_settings,
-        home_dir=str(tmp_path),
-        system_look_and_feel_dir=tmp_path / "system",
-        chown_recursive_command=("mychown", "--recursive", "{owner}", "{path}"),
+    # The owner writer of a copied theme tree is a value: another program in
+    # the values is the argv the task runs on the copy.
+    system = tmp_path / "system"
+    values.SYSTEM_LOOK_AND_FEEL_DIR = system
+    values.CHOWN_RECURSIVE_COMMAND = (
+        "mychown",
+        "--recursive",
+        "{owner}",
+        "{path}",
     )
-    (cfg.system_look_and_feel_dir / cfg.look_and_feel).mkdir(parents=True)
-    target = Path(cfg.home_dir) / cfg.user_look_and_feel_dir / cfg.look_and_feel
+    (system / values.LOOK_AND_FEEL).mkdir(parents=True)
+    target = (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_LOOK_AND_FEEL_DIR
+        / values.LOOK_AND_FEEL
+    )
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -2409,12 +2218,10 @@ def test_recursive_owner_command_comes_from_the_config(
         return _FakeProc(0, "")
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    task_module._apply_theme_cursor_overrides(
-        cfg, timeout=30.0, force=True, warnings=[]
-    )
+    task_module._apply_theme_cursor_overrides(timeout=30.0, force=True, warnings=[])
     assert [
         "mychown",
         "--recursive",
-        f"{cfg.username}:{cfg.username}",
+        (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ] in seen

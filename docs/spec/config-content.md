@@ -120,7 +120,7 @@ names, of tagged names such as geosite:category-ads-all and
 ext-ip:geoip_RU.dat:ru-blocked.  
 List of records, each with its own fields: the vault structure, kconfig records,
 ssh directives, collector modules, the task catalog.  
-Mapping of a name to a value: kde_settings.user_dirs.
+Mapping of a name to a value: kde_settings.USER_DIRS.
 
 ## File permissions
 

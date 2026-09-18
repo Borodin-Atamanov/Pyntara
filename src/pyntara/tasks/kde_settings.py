@@ -39,12 +39,7 @@ from string import Template
 from typing import TypedDict
 from xml.etree import ElementTree
 
-from pyntara.config import (
-    KCONFIG_BOOL_TYPE,
-    EngineConfig,
-    KConfigRecord,
-    KdeSettingsConfig,
-)
+from pyntara.config import EngineConfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -58,6 +53,9 @@ from pyntara.utils import (
     task_data_dir,
     trim_whitespace,
 )
+from pyntara.values import common as common_values
+from pyntara.values import kde_settings as values
+from pyntara.values import missing_value_names
 
 # Module-level path constants are monkeypatched by the tests, which run
 # against temporary fixtures instead of the real system (developer guide).
@@ -72,27 +70,28 @@ from pyntara.utils import (
 # reads the ids through python3-dbus.
 
 
-def _as_user_command(cfg: KdeSettingsConfig, command: list[str]) -> list[str]:
+def _as_user_command(command: list[str]) -> list[str]:
     """Prefix a command with the configured wrapper of the target user.
 
-    The wrapper is a config value of the section, so a machine whose
-    desktop user is reached another way is a config change.
+    The wrapper is a value of the section, so a machine whose desktop user
+    is reached another way is a values change.
     """
 
     return [
-        *substituted_command(cfg.runuser_command, {"username": cfg.username}),
+        *substituted_command(
+            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
+        ),
         *command,
     ]
 
 
-def _home_env(cfg: KdeSettingsConfig) -> dict[str, str]:
+def _home_env() -> dict[str, str]:
     """Environment that points the KDE tools at the target user home."""
 
-    return {"HOME": cfg.home_dir}
+    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _kconfig_command(
-    cfg: KdeSettingsConfig,
     base_command: tuple[str, ...],
     file_name: str,
     group_segments: tuple[str, ...],
@@ -100,23 +99,22 @@ def _kconfig_command(
 ) -> list[str]:
     """One KConfig call: the configured base, the groups and the key.
 
-    The base call carries the file name and every selector is a config
-    value, so another KConfig version or another tool is a config change.
-    The reader, the writer and the delete share this builder, so the three
-    calls can never drift apart.
+    The base call carries the file name and every selector is a value of
+    the section, so another KConfig version or another tool is a values
+    change. The reader, the writer and the delete share this builder, so
+    the three calls can never drift apart.
     """
 
     command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
-            substituted_command(cfg.config_group_flag, {"group": segment})
+            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(cfg.config_key_flag, {"key": key}))
+    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
 def _kreadconfig(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -125,11 +123,11 @@ def _kreadconfig(
     """Current value of one KConfig key, or an empty string when unset."""
 
     command = _kconfig_command(
-        cfg, cfg.kreadconfig_command, file_name, group_segments, key
+        values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(
-        _as_user_command(cfg, command),
-        extra_env=_home_env(cfg),
+        _as_user_command(command),
+        extra_env=_home_env(),
         check=False,
         capture=True,
         timeout=timeout,
@@ -137,9 +135,7 @@ def _kreadconfig(
     return trim_whitespace(result.stdout)
 
 
-def _notify_flag(
-    cfg: KdeSettingsConfig, file_name: str, env: dict[str, str] | None
-) -> list[str]:
+def _notify_flag(file_name: str, env: dict[str, str] | None) -> list[str]:
     """The kwriteconfig6 --notify flag when the write reaches a live owner.
 
     The flag makes kwriteconfig6 emit the KConfig change DBus signal that
@@ -152,13 +148,12 @@ def _notify_flag(
 
     if env is None:
         return []
-    if file_name not in (cfg.kwinrc_file_name, cfg.kdeglobals_file_name):
+    if file_name not in (values.KWINRC_FILE_NAME, values.KDEGLOBALS_FILE_NAME):
         return []
-    return list(cfg.config_notify_flag)
+    return list(values.CONFIG_NOTIFY_FLAG)
 
 
 def _kwriteconfig(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -176,22 +171,21 @@ def _kwriteconfig(
     """
 
     command = _kconfig_command(
-        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     if bool_value:
-        command.extend(cfg.config_bool_type_flag)
+        command.extend(values.CONFIG_BOOL_TYPE_FLAG)
     command.append(value)
-    command.extend(_notify_flag(cfg, file_name, env))
-    write_env = env if env is not None else _home_env(cfg)
+    command.extend(_notify_flag(file_name, env))
+    write_env = env if env is not None else _home_env()
     run_command(
-        _as_user_command(cfg, command),
+        _as_user_command(command),
         extra_env=write_env,
         timeout=timeout,
     )
 
 
 def _delete_kconfig_key(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -202,20 +196,19 @@ def _delete_kconfig_key(
     """Delete one KConfig key with kwriteconfig6 as the target user."""
 
     command = _kconfig_command(
-        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
-    command.extend(cfg.config_delete_flag)
-    command.extend(_notify_flag(cfg, file_name, env))
-    write_env = env if env is not None else _home_env(cfg)
+    command.extend(values.CONFIG_DELETE_FLAG)
+    command.extend(_notify_flag(file_name, env))
+    write_env = env if env is not None else _home_env()
     run_command(
-        _as_user_command(cfg, command),
+        _as_user_command(command),
         extra_env=write_env,
         timeout=timeout,
     )
 
 
 def _sync_config_value(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -232,11 +225,10 @@ def _sync_config_value(
     flag for files kwin watches.
     """
 
-    current = _kreadconfig(cfg, file_name, group_segments, key, timeout)
+    current = _kreadconfig(file_name, group_segments, key, timeout)
     if not force and current == target:
         return False
     _kwriteconfig(
-        cfg,
         file_name,
         group_segments,
         key,
@@ -249,9 +241,7 @@ def _sync_config_value(
     return True
 
 
-def _apply_env(
-    cfg: KdeSettingsConfig, engine: EngineConfig
-) -> dict[str, str] | None:
+def _apply_env(engine: EngineConfig) -> dict[str, str] | None:
     """Environment that lets the plasma-apply tools reach the live session.
 
     The session variables are read from the session manager of the desktop
@@ -271,30 +261,30 @@ def _apply_env(
     )
     if not session:
         return None
-    env = _home_env(cfg)
+    env = _home_env()
     env.update(session)
     return env
 
 
-def _appearance_command(cfg: KdeSettingsConfig, value_name: str) -> list[str]:
+def _appearance_command(value_name: str) -> list[str]:
     """The configured plasma-apply call with the value it applies.
 
     The three appearance tools, the flags they take and the value they
-    apply all come from the config, so another tool or another flag is a
-    config change. value_name selects which of the three calls is rendered
-    and names the placeholder the value is substituted for.
+    apply all come from the values of the section, so another tool or
+    another flag is a values change. value_name selects which of the three
+    calls is rendered and names the placeholder the value is substituted
+    for.
     """
 
     base, value = {
-        "look_and_feel": (cfg.apply_look_and_feel_command, cfg.look_and_feel),
-        "color_scheme": (cfg.apply_color_scheme_command, cfg.color_scheme),
-        "cursor_theme": (cfg.apply_cursor_theme_command, cfg.cursor_theme),
+        "look_and_feel": (values.APPLY_LOOK_AND_FEEL_COMMAND, values.LOOK_AND_FEEL),
+        "color_scheme": (values.APPLY_COLOR_SCHEME_COMMAND, values.COLOR_SCHEME),
+        "cursor_theme": (values.APPLY_CURSOR_THEME_COMMAND, values.CURSOR_THEME),
     }[value_name]
     return substituted_command(base, {value_name: value})
 
 
 def _run_appearance_tool_best_effort(
-    cfg: KdeSettingsConfig,
     *,
     command: list[str],
     applied_message: str,
@@ -316,10 +306,12 @@ def _run_appearance_tool_best_effort(
         _log(f"no desktop session, {applied_message} applies at the next login")
         return
     try:
-        run_command(_as_user_command(cfg, command), extra_env=env, timeout=timeout)
+        run_command(_as_user_command(command), extra_env=env, timeout=timeout)
         _log(applied_message)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        _log(f"cannot apply {applied_message} live, it is set for the next login: {exc}")
+        _log(
+            f"cannot apply {applied_message} live, it is set for the next login: {exc}"
+        )
 
 
 def _guard_write(
@@ -350,7 +342,6 @@ def _guard_write(
 
 
 def _apply_look_and_feel(
-    cfg: KdeSettingsConfig,
     *,
     env: dict[str, str] | None,
     timeout: float,
@@ -365,25 +356,26 @@ def _apply_look_and_feel(
     """
 
     current = _kreadconfig(
-        cfg, cfg.kdeglobals_file_name, cfg.kde_group, cfg.look_and_feel_package_key, timeout
+        values.KDEGLOBALS_FILE_NAME,
+        values.KDE_GROUP,
+        values.LOOK_AND_FEEL_PACKAGE_KEY,
+        timeout,
     )
-    if not force and current == cfg.look_and_feel:
+    if not force and current == values.LOOK_AND_FEEL:
         return False
     _sync_config_value(
-        cfg,
-        cfg.kdeglobals_file_name,
-        cfg.kde_group,
-        cfg.look_and_feel_package_key,
-        cfg.look_and_feel,
+        values.KDEGLOBALS_FILE_NAME,
+        values.KDE_GROUP,
+        values.LOOK_AND_FEEL_PACKAGE_KEY,
+        values.LOOK_AND_FEEL,
         timeout=timeout,
         force=force,
         bool_value=False,
         env=env,
     )
     _run_appearance_tool_best_effort(
-        cfg,
-        command=_appearance_command(cfg, "look_and_feel"),
-        applied_message=f"applied global theme: {cfg.look_and_feel}",
+        command=_appearance_command("look_and_feel"),
+        applied_message=f"applied global theme: {values.LOOK_AND_FEEL}",
         timeout=timeout,
         env=env,
     )
@@ -391,7 +383,6 @@ def _apply_look_and_feel(
 
 
 def _apply_color_scheme(
-    cfg: KdeSettingsConfig,
     *,
     env: dict[str, str] | None,
     timeout: float,
@@ -406,25 +397,26 @@ def _apply_color_scheme(
     """
 
     current = _kreadconfig(
-        cfg, cfg.kdeglobals_file_name, cfg.general_group, cfg.color_scheme_key, timeout
+        values.KDEGLOBALS_FILE_NAME,
+        values.GENERAL_GROUP,
+        values.COLOR_SCHEME_KEY,
+        timeout,
     )
-    if not force and current == cfg.color_scheme:
+    if not force and current == values.COLOR_SCHEME:
         return False
     _sync_config_value(
-        cfg,
-        cfg.kdeglobals_file_name,
-        cfg.general_group,
-        cfg.color_scheme_key,
-        cfg.color_scheme,
+        values.KDEGLOBALS_FILE_NAME,
+        values.GENERAL_GROUP,
+        values.COLOR_SCHEME_KEY,
+        values.COLOR_SCHEME,
         timeout=timeout,
         force=force,
         bool_value=False,
         env=env,
     )
     _run_appearance_tool_best_effort(
-        cfg,
-        command=_appearance_command(cfg, "color_scheme"),
-        applied_message=f"applied color scheme: {cfg.color_scheme}",
+        command=_appearance_command("color_scheme"),
+        applied_message=f"applied color scheme: {values.COLOR_SCHEME}",
         timeout=timeout,
         env=env,
     )
@@ -432,7 +424,6 @@ def _apply_color_scheme(
 
 
 def _apply_automatic_look_and_feel(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -446,17 +437,16 @@ def _apply_automatic_look_and_feel(
     not apply a fixed theme itself, so a run never fights the switch.
     """
 
-    if not cfg.automatic_look_and_feel:
+    if not values.AUTOMATIC_LOOK_AND_FEEL:
         return False
     changed = _guard_write(
         warnings,
         "enable the automatic theme switch",
         lambda: _sync_config_value(
-            cfg,
-            cfg.kdeglobals_file_name,
-            cfg.kde_group,
-            cfg.automatic_look_and_feel_key,
-            cfg.kconfig_true_value,
+            values.KDEGLOBALS_FILE_NAME,
+            values.KDE_GROUP,
+            values.AUTOMATIC_LOOK_AND_FEEL_KEY,
+            common_values.KCONFIG_TRUE_VALUE,
             timeout=timeout,
             force=force,
             bool_value=True,
@@ -467,11 +457,10 @@ def _apply_automatic_look_and_feel(
         warnings,
         "set the automatic theme switch idle wait",
         lambda: _sync_config_value(
-            cfg,
-            cfg.kdeglobals_file_name,
-            cfg.kde_group,
-            cfg.automatic_look_and_feel_idle_interval_key,
-            cfg.automatic_theme_switch_idle_interval,
+            values.KDEGLOBALS_FILE_NAME,
+            values.KDE_GROUP,
+            values.AUTOMATIC_LOOK_AND_FEEL_IDLE_INTERVAL_KEY,
+            values.AUTOMATIC_THEME_SWITCH_IDLE_INTERVAL,
             timeout=timeout,
             force=force,
             bool_value=False,
@@ -482,7 +471,6 @@ def _apply_automatic_look_and_feel(
 
 
 def _apply_numlock(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -490,11 +478,10 @@ def _apply_numlock(
     """Write the NumLock startup state; True when changed."""
 
     return _sync_config_value(
-        cfg,
-        cfg.kcminputrc_file_name,
-        cfg.keyboard_group,
-        cfg.numlock_key,
-        cfg.numlock_values[cfg.numlock_on_boot],
+        values.KCMINPUTRC_FILE_NAME,
+        values.KEYBOARD_GROUP,
+        values.NUMLOCK_KEY,
+        values.NUMLOCK_VALUES[values.NUMLOCK_ON_BOOT],
         timeout=timeout,
         force=force,
         bool_value=False,
@@ -510,8 +497,8 @@ def _touchpad_groups(
     numeric libinput ids in a group are machine-specific, so the task
     matches devices by name; a device name that ends with the configured
     word identifies a touchpad on any target hardware. The root group and
-    the word are config values, so another KDE release is answered in the
-    config and not in the code.
+    the word are values of the section, so another KDE release is answered
+    in the values and not in the code.
     """
 
     groups: list[tuple[str, ...]] = []
@@ -530,7 +517,6 @@ def _touchpad_groups(
 
 
 def _apply_touchpad(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -546,16 +532,18 @@ def _apply_touchpad(
     """
 
     kcminputrc = (
-        Path(cfg.home_dir) / cfg.user_config_dir / cfg.kcminputrc_file_name
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_CONFIG_DIR
+        / values.KCMINPUTRC_FILE_NAME
     )
     try:
         groups = _touchpad_groups(
             kcminputrc.read_text(encoding="utf-8"),
-            cfg.touchpad_group_root,
-            cfg.touchpad_device_word,
+            values.TOUCHPAD_GROUP_ROOT,
+            values.TOUCHPAD_DEVICE_WORD,
         )
     except OSError:
-        _log(f"no {cfg.kcminputrc_file_name} found, touchpad settings left as is")
+        _log(f"no {values.KCMINPUTRC_FILE_NAME} found, touchpad settings left as is")
         return False
     if not groups:
         _log("no touchpad found, touchpad settings left as is")
@@ -564,11 +552,10 @@ def _apply_touchpad(
     for group in groups:
         try:
             changed |= _sync_config_value(
-                cfg,
-                cfg.kcminputrc_file_name,
+                values.KCMINPUTRC_FILE_NAME,
                 group,
-                cfg.click_method_key,
-                cfg.click_method_values[cfg.touchpad_click_method],
+                values.CLICK_METHOD_KEY,
+                values.CLICK_METHOD_VALUES[values.TOUCHPAD_CLICK_METHOD],
                 timeout=timeout,
                 force=force,
                 bool_value=False,
@@ -586,7 +573,6 @@ def _apply_touchpad(
 
 
 def _apply_virtual_keyboard(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -604,16 +590,15 @@ def _apply_virtual_keyboard(
     """
 
     changed = False
-    if cfg.virtual_keyboard_enabled:
+    if values.VIRTUAL_KEYBOARD_ENABLED:
         changed |= _guard_write(
             warnings,
             "set the Wayland input method",
             lambda: _sync_config_value(
-                cfg,
-                cfg.kwinrc_file_name,
-                cfg.wayland_group,
-                cfg.input_method_key,
-                cfg.virtual_keyboard_input_method,
+                values.KWINRC_FILE_NAME,
+                values.WAYLAND_GROUP,
+                values.INPUT_METHOD_KEY,
+                values.VIRTUAL_KEYBOARD_INPUT_METHOD,
                 timeout=timeout,
                 force=force,
                 bool_value=False,
@@ -624,11 +609,10 @@ def _apply_virtual_keyboard(
             warnings,
             "set the virtual keyboard locales",
             lambda: _sync_config_value(
-                cfg,
-                cfg.plasma_keyboard_file_name,
-                cfg.virtual_keyboard_group,
-                cfg.input_method_locales_key,
-                ",".join(cfg.virtual_keyboard_locales),
+                values.PLASMA_KEYBOARD_FILE_NAME,
+                values.VIRTUAL_KEYBOARD_GROUP,
+                values.INPUT_METHOD_LOCALES_KEY,
+                ",".join(values.VIRTUAL_KEYBOARD_LOCALES),
                 timeout=timeout,
                 force=force,
                 bool_value=False,
@@ -637,19 +621,17 @@ def _apply_virtual_keyboard(
         )
     else:
         current = _kreadconfig(
-            cfg,
-            cfg.kwinrc_file_name,
-            cfg.wayland_group,
-            cfg.input_method_key,
+            values.KWINRC_FILE_NAME,
+            values.WAYLAND_GROUP,
+            values.INPUT_METHOD_KEY,
             timeout,
         )
 
         def remove_input_method() -> bool:
             _delete_kconfig_key(
-                cfg,
-                cfg.kwinrc_file_name,
-                cfg.wayland_group,
-                cfg.input_method_key,
+                values.KWINRC_FILE_NAME,
+                values.WAYLAND_GROUP,
+                values.INPUT_METHOD_KEY,
                 timeout=timeout,
                 env=env,
             )
@@ -664,7 +646,6 @@ def _apply_virtual_keyboard(
 
 
 def _apply_cursor_theme(
-    cfg: KdeSettingsConfig,
     *,
     env: dict[str, str] | None,
     timeout: float,
@@ -682,25 +663,26 @@ def _apply_cursor_theme(
     """
 
     current = _kreadconfig(
-        cfg, cfg.kcminputrc_file_name, cfg.mouse_group, cfg.cursor_theme_key, timeout
+        values.KCMINPUTRC_FILE_NAME,
+        values.MOUSE_GROUP,
+        values.CURSOR_THEME_KEY,
+        timeout,
     )
-    if not force and current == cfg.cursor_theme:
+    if not force and current == values.CURSOR_THEME:
         return False
     _sync_config_value(
-        cfg,
-        cfg.kcminputrc_file_name,
-        cfg.mouse_group,
-        cfg.cursor_theme_key,
-        cfg.cursor_theme,
+        values.KCMINPUTRC_FILE_NAME,
+        values.MOUSE_GROUP,
+        values.CURSOR_THEME_KEY,
+        values.CURSOR_THEME,
         timeout=timeout,
         force=force,
         bool_value=False,
         env=env,
     )
     _run_appearance_tool_best_effort(
-        cfg,
-        command=_appearance_command(cfg, "cursor_theme"),
-        applied_message=f"applied cursor theme: {cfg.cursor_theme}",
+        command=_appearance_command("cursor_theme"),
+        applied_message=f"applied cursor theme: {values.CURSOR_THEME}",
         timeout=timeout,
         env=env,
     )
@@ -708,7 +690,6 @@ def _apply_cursor_theme(
 
 
 def _apply_theme_cursor_overrides(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -729,22 +710,29 @@ def _apply_theme_cursor_overrides(
 
     changed = False
     for look_and_feel, cursor_theme in (
-        (cfg.look_and_feel, cfg.cursor_theme),
-        (cfg.look_and_feel_light, cfg.cursor_theme_light),
+        (values.LOOK_AND_FEEL, values.CURSOR_THEME),
+        (values.LOOK_AND_FEEL_LIGHT, values.CURSOR_THEME_LIGHT),
     ):
         try:
-            source = cfg.system_look_and_feel_dir / look_and_feel
+            source = values.SYSTEM_LOOK_AND_FEEL_DIR / look_and_feel
             if not source.is_dir():
                 _log(f"no system theme {look_and_feel}, cursor override skipped")
                 continue
-            target = Path(cfg.home_dir) / cfg.user_look_and_feel_dir / look_and_feel
+            target = (
+                Path(common_values.DESKTOP_HOME_DIR)
+                / values.USER_LOOK_AND_FEEL_DIR
+                / look_and_feel
+            )
             if not target.is_dir():
                 shutil.copytree(source, target)
                 run_command(
                     substituted_command(
-                        cfg.chown_recursive_command,
+                        values.CHOWN_RECURSIVE_COMMAND,
                         {
-                            "owner": f"{cfg.username}:{cfg.username}",
+                            "owner": (
+                                f"{common_values.DESKTOP_USERNAME}:"
+                                f"{common_values.DESKTOP_USERNAME}"
+                            ),
                             "path": str(target),
                         },
                     ),
@@ -755,10 +743,9 @@ def _apply_theme_cursor_overrides(
                     "directory"
                 )
             changed |= _sync_config_value(
-                cfg,
-                str(target / cfg.theme_defaults_dir),
-                (cfg.kcminputrc_file_name, *cfg.mouse_group),
-                cfg.cursor_theme_key,
+                str(target / values.THEME_DEFAULTS_DIR),
+                (values.KCMINPUTRC_FILE_NAME, *values.MOUSE_GROUP),
+                values.CURSOR_THEME_KEY,
                 cursor_theme,
                 timeout=timeout,
                 force=force,
@@ -777,7 +764,6 @@ def _apply_theme_cursor_overrides(
 
 
 def _apply_kconfig_records(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -795,22 +781,19 @@ def _apply_kconfig_records(
     """
 
     changed = False
-    for record in cfg.kconfig:
+    for record in values.KCONFIG_RECORDS:
         try:
-            if _is_shortcut_record(cfg, record):
+            if _is_shortcut_record(record):
                 # The running daemon owns the shortcut state and writes
                 # the shortcut file from its memory, so these records are
                 # applied to the daemon in their own step and never
                 # compared as file text.
                 continue
             if record.delete:
-                current = _kreadconfig(
-                    cfg, record.file, record.group, record.key, timeout
-                )
+                current = _kreadconfig(record.file, record.group, record.key, timeout)
                 if not force and not current:
                     continue
                 _delete_kconfig_key(
-                    cfg,
                     record.file,
                     record.group,
                     record.key,
@@ -821,14 +804,13 @@ def _apply_kconfig_records(
                 changed = True
                 continue
             changed |= _sync_config_value(
-                cfg,
                 record.file,
                 record.group,
                 record.key,
                 record.value,
                 timeout=timeout,
                 force=force,
-                bool_value=record.type == KCONFIG_BOOL_TYPE,
+                bool_value=record.type == values.KCONFIG_BOOL_TYPE,
                 env=env,
             )
         except (
@@ -843,7 +825,7 @@ def _apply_kconfig_records(
     return changed
 
 
-def _is_shortcut_record(cfg: KdeSettingsConfig, record: KConfigRecord) -> bool:
+def _is_shortcut_record(record: values.KconfigRecord) -> bool:
     """True when a record names the keyboard combination of one action.
 
     The shortcut file carries one record per action of a component, in
@@ -853,15 +835,13 @@ def _is_shortcut_record(cfg: KdeSettingsConfig, record: KConfigRecord) -> bool:
     """
 
     return (
-        record.file == cfg.global_shortcuts_file_name
+        record.file == common_values.SHORTCUTS_FILE_NAME
         and not record.delete
         and "," in record.value
     )
 
 
-def _shortcut_record_changes(
-    cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+def _shortcut_record_changes() -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     """The configured combinations, by component, action and combination.
 
     A shortcut record names one action and the combination it must own.
@@ -879,8 +859,8 @@ def _shortcut_record_changes(
     """
 
     changes: list[tuple[str, str, str, tuple[str, ...]]] = []
-    for record in cfg.kconfig:
-        if not _is_shortcut_record(cfg, record):
+    for record in values.KCONFIG_RECORDS:
+        if not _is_shortcut_record(record):
             continue
         if not record.group:
             _log(
@@ -890,12 +870,10 @@ def _shortcut_record_changes(
             continue
         keys: list[str] = []
         text = trim_whitespace(record.value.split(",", 1)[0])
-        if text and text != cfg.shortcut_absent_value:
+        if text and text != values.SHORTCUT_ABSENT_VALUE:
             keys.append(text)
         component_unique = record.group[0]
-        changes.append(
-            (component_unique, component_unique, record.key, tuple(keys))
-        )
+        changes.append((component_unique, component_unique, record.key, tuple(keys)))
     return tuple(changes)
 
 
@@ -968,9 +946,7 @@ def _a_repeat_can_confirm(reports: list[_ShortcutReport]) -> bool:
     )
 
 
-def _shortcut_changes(
-    cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
+def _shortcut_changes() -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     """Every combination the task must give to an action.
 
     The configured records come first, then the combination of each KWin
@@ -980,22 +956,20 @@ def _shortcut_changes(
     and are reported the same way.
     """
 
-    changes = list(_shortcut_record_changes(cfg))
+    changes = list(_shortcut_record_changes())
     changes.extend(
         (
-            cfg.kwin_component_unique,
-            cfg.kwin_component_friendly,
+            values.KWIN_COMPONENT_UNIQUE,
+            values.KWIN_COMPONENT_FRIENDLY,
             action,
             (hotkey,),
         )
-        for action, hotkey in _script_hotkey_pairs(cfg)
+        for action, hotkey in _script_hotkey_pairs()
     )
     return tuple(changes)
 
 
-def _shortcut_record_value(
-    cfg: KdeSettingsConfig, current: str, keys: tuple[str, ...], action: str
-) -> str:
+def _shortcut_record_value(current: str, keys: tuple[str, ...], action: str) -> str:
     """The shortcut file value of one action: its key, then what follows.
 
     The first field is the combination the action owns; the fields after it
@@ -1005,9 +979,9 @@ def _shortcut_record_value(
     word as its default combination.
     """
 
-    first = ",".join(keys) if keys else cfg.shortcut_absent_value
+    first = ",".join(keys) if keys else values.SHORTCUT_ABSENT_VALUE
     if not current:
-        return f"{first},{cfg.shortcut_absent_value},{action}"
+        return f"{first},{values.SHORTCUT_ABSENT_VALUE},{action}"
     _head, separator, rest = current.partition(",")
     if not separator:
         rest = current
@@ -1015,7 +989,6 @@ def _shortcut_record_value(
 
 
 def _write_shortcut_records_to_file(
-    cfg: KdeSettingsConfig,
     changes: tuple[tuple[str, str, str, tuple[str, ...]], ...],
     *,
     timeout: float,
@@ -1049,14 +1022,13 @@ def _write_shortcut_records_to_file(
         record_group = (component_unique,)
         try:
             current = _kreadconfig(
-                cfg, cfg.global_shortcuts_file_name, record_group, action, timeout
+                common_values.SHORTCUTS_FILE_NAME, record_group, action, timeout
             )
             _kwriteconfig(
-                cfg,
-                cfg.global_shortcuts_file_name,
+                common_values.SHORTCUTS_FILE_NAME,
                 record_group,
                 action,
-                _shortcut_record_value(cfg, current, keys, action),
+                _shortcut_record_value(current, keys, action),
                 timeout=timeout,
                 bool_value=False,
             )
@@ -1074,7 +1046,11 @@ def _write_shortcut_records_to_file(
                 warnings.append(warning)
     if not owned_keys:
         return
-    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.global_shortcuts_file_name
+    path = (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_CONFIG_DIR
+        / common_values.SHORTCUTS_FILE_NAME
+    )
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -1095,11 +1071,10 @@ def _write_shortcut_records_to_file(
             continue
         try:
             _kwriteconfig(
-                cfg,
-                cfg.global_shortcuts_file_name,
+                common_values.SHORTCUTS_FILE_NAME,
                 section,
                 key,
-                f"{cfg.shortcut_absent_value},{rest}",
+                f"{values.SHORTCUT_ABSENT_VALUE},{rest}",
                 timeout=timeout,
                 bool_value=False,
             )
@@ -1116,7 +1091,6 @@ def _write_shortcut_records_to_file(
 
 
 def _apply_shortcuts_live(
-    cfg: KdeSettingsConfig,
     *,
     client_path: Path,
     timeout: float,
@@ -1142,7 +1116,7 @@ def _apply_shortcuts_live(
     session did not.
     """
 
-    changes = _shortcut_changes(cfg)
+    changes = _shortcut_changes()
     if not changes:
         return False
 
@@ -1153,15 +1127,11 @@ def _apply_shortcuts_live(
         _log(warning)
         if warnings is not None:
             warnings.append(warning)
-        _write_shortcut_records_to_file(
-            cfg, remaining, timeout=timeout, warnings=warnings
-        )
+        _write_shortcut_records_to_file(remaining, timeout=timeout, warnings=warnings)
 
     if env is None:
         _log("no desktop session, the shortcuts apply at the next login")
-        _write_shortcut_records_to_file(
-            cfg, changes, timeout=timeout, warnings=warnings
-        )
+        _write_shortcut_records_to_file(changes, timeout=timeout, warnings=warnings)
         return False
     try:
         client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
@@ -1173,23 +1143,20 @@ def _apply_shortcuts_live(
         )
         return False
     command = _as_user_command(
-        cfg,
         [
             *substituted_command(
-                cfg.python_script_command, {"python": system_python}
+                values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
             ),
             client_text,
             _shortcut_apply_request(changes),
         ],
     )
     reports: list[_ShortcutReport] = []
-    for attempt in range(1, cfg.shortcut_apply_attempts + 1):
+    for attempt in range(1, values.SHORTCUT_APPLY_ATTEMPTS + 1):
         if attempt > 1:
-            time.sleep(cfg.shortcut_apply_retry_delay_seconds)
+            time.sleep(values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS)
         try:
-            result = run_command(
-                command, extra_env=env, timeout=timeout, capture=True
-            )
+            result = run_command(command, extra_env=env, timeout=timeout, capture=True)
         except subprocess.CalledProcessError as exc:
             detail = trim_whitespace(exc.stderr or "")
             suffix = f": {detail}" if detail else ""
@@ -1218,9 +1185,7 @@ def _apply_shortcuts_live(
             )
             return False
         if attempt == 1:
-            for (_component, _friendly, action, _keys), report in zip(
-                changes, reports
-            ):
+            for (_component, _friendly, action, _keys), report in zip(changes, reports):
                 if report.get("missing"):
                     _log(
                         f"the daemon does not know the action {action},"
@@ -1235,9 +1200,7 @@ def _apply_shortcuts_live(
             break
         if not _a_repeat_can_confirm(reports):
             break
-    changed = any(
-        report.get("before") != report.get("after") for report in reports
-    )
+    changed = any(report.get("before") != report.get("after") for report in reports)
     unconfirmed = tuple(
         change
         for change, report in zip(changes, reports)
@@ -1292,7 +1255,6 @@ def _user_dirs_merged(current: str, user_dirs: dict[str, str]) -> str:
 
 
 def _write_user_file(
-    cfg: KdeSettingsConfig,
     rel_path: str,
     content: str,
     *,
@@ -1308,7 +1270,7 @@ def _write_user_file(
     file needs. A file that already holds the content is skipped.
     """
 
-    target = Path(cfg.home_dir) / rel_path
+    target = Path(common_values.DESKTOP_HOME_DIR) / rel_path
     if not force and target.is_file():
         try:
             if target.read_text(encoding="utf-8") == content:
@@ -1317,12 +1279,9 @@ def _write_user_file(
             pass
     run_command(
         _as_user_command(
-            cfg,
-            substituted_command(
-                cfg.mkdir_command, {"path": str(target.parent)}
-            ),
+            substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
         ),
-        extra_env=_home_env(cfg),
+        extra_env=_home_env(),
         timeout=timeout,
     )
     # The user mkdir above owns the directory; this direct creation is a
@@ -1331,9 +1290,11 @@ def _write_user_file(
     target.write_text(content, encoding="utf-8")
     run_command(
         substituted_command(
-            cfg.chown_command,
+            values.CHOWN_COMMAND,
             {
-                "owner": f"{cfg.username}:{cfg.username}",
+                "owner": (
+                    f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"
+                ),
                 "path": str(target),
             },
         ),
@@ -1341,7 +1302,7 @@ def _write_user_file(
     )
     run_command(
         substituted_command(
-            cfg.chmod_command,
+            values.CHMOD_COMMAND,
             {"file_mode": f"{mode:04o}", "path": str(target)},
         ),
         timeout=timeout,
@@ -1351,7 +1312,6 @@ def _write_user_file(
 
 
 def _apply_kwin_scripts(
-    cfg: KdeSettingsConfig,
     scripts_template_root: Path,
     *,
     timeout: float,
@@ -1371,11 +1331,11 @@ def _apply_kwin_scripts(
     """
 
     changed = False
-    for script in cfg.kwin_scripts:
+    for script in values.KWIN_SCRIPTS:
         try:
             templates = {
                 rel_file: scripts_template_root / script / rel_file
-                for rel_file in cfg.kwin_script_files
+                for rel_file in values.KWIN_SCRIPT_FILES
             }
             if any(not template.is_file() for template in templates.values()):
                 _log(f"no kwin script template for {script}, {script} left as is")
@@ -1383,19 +1343,17 @@ def _apply_kwin_scripts(
             for rel_file, template in templates.items():
                 content = template.read_text(encoding="utf-8")
                 changed |= _write_user_file(
-                    cfg,
-                    str(cfg.user_kwin_scripts_dir / script / rel_file),
+                    str(Path(values.USER_KWIN_SCRIPTS_DIR) / script / rel_file),
                     content,
-                    mode=cfg.script_file_mode,
+                    mode=values.SCRIPT_FILE_MODE,
                     timeout=timeout,
                     force=force,
                 )
             changed |= _sync_config_value(
-                cfg,
-                cfg.kwinrc_file_name,
-                cfg.plugins_group,
+                values.KWINRC_FILE_NAME,
+                values.PLUGINS_GROUP,
                 f"{script}Enabled",
-                cfg.kconfig_true_value,
+                common_values.KCONFIG_TRUE_VALUE,
                 timeout=timeout,
                 force=force,
                 bool_value=True,
@@ -1413,9 +1371,7 @@ def _apply_kwin_scripts(
     return changed
 
 
-def _script_hotkey_pairs(
-    cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str], ...]:
+def _script_hotkey_pairs() -> tuple[tuple[str, str], ...]:
     """The script hotkeys as their action and combination.
 
     The configured action list and hotkey list describe one hotkey per
@@ -1423,11 +1379,12 @@ def _script_hotkey_pairs(
     key code the daemon takes, so the two lists are all the task needs.
     """
 
-    return tuple(zip(cfg.kwin_script_actions or (), cfg.kwin_script_hotkeys or ()))
+    return tuple(
+        zip(values.KWIN_SCRIPT_ACTIONS or (), values.KWIN_SCRIPT_HOTKEYS or ())
+    )
 
 
 def _write_script_hotkey_records(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -1447,11 +1404,11 @@ def _write_script_hotkey_records(
     """
 
     changed = False
-    for action, hotkey in _script_hotkey_pairs(cfg):
-        group = (cfg.kwin_component_unique,)
+    for action, hotkey in _script_hotkey_pairs():
+        group = (values.KWIN_COMPONENT_UNIQUE,)
         try:
             current = _kreadconfig(
-                cfg, cfg.global_shortcuts_file_name, group, action, timeout
+                common_values.SHORTCUTS_FILE_NAME, group, action, timeout
             )
         except (
             subprocess.CalledProcessError,
@@ -1472,8 +1429,7 @@ def _write_script_hotkey_records(
             continue
         try:
             _kwriteconfig(
-                cfg,
-                cfg.global_shortcuts_file_name,
+                common_values.SHORTCUTS_FILE_NAME,
                 group,
                 action,
                 target,
@@ -1495,15 +1451,13 @@ def _write_script_hotkey_records(
     return changed
 
 
-def _places_prefix_addresses(
-    cfg: KdeSettingsConfig,
-) -> tuple[tuple[str, str], ...]:
+def _places_prefix_addresses() -> tuple[tuple[str, str], ...]:
     """The Places prefixes with the namespace address of each one."""
 
-    return tuple(cfg.places_namespaces.items())
+    return tuple(values.PLACES_NAMESPACES.items())
 
 
-def _declare_missing_prefixes(cfg: KdeSettingsConfig, current: str) -> str:
+def _declare_missing_prefixes(current: str) -> str:
     """current with the undeclared Places prefix declarations added.
 
     The prefixes the task deals with are declared on the root xbel tag
@@ -1515,7 +1469,7 @@ def _declare_missing_prefixes(cfg: KdeSettingsConfig, current: str) -> str:
 
     missing = [
         f'xmlns:{prefix}="{uri}"'
-        for prefix, uri in _places_prefix_addresses(cfg)
+        for prefix, uri in _places_prefix_addresses()
         if f"xmlns:{prefix}=" not in current
     ]
     if not missing:
@@ -1530,9 +1484,7 @@ def _declare_missing_prefixes(cfg: KdeSettingsConfig, current: str) -> str:
     return current[:tag_end] + injection + current[tag_end:]
 
 
-def _places_xbel_hidden(
-    cfg: KdeSettingsConfig, current: str, hidden: set[str]
-) -> str | None:
+def _places_xbel_hidden(current: str, hidden: set[str]) -> str | None:
     """current with IsHidden=true for the hidden places; None when unchanged.
 
     The Dolphin Places panel file user-places.xbel marks a hidden system
@@ -1543,42 +1495,40 @@ def _places_xbel_hidden(
     never rewrites the file over formatting differences alone.
     """
 
-    for prefix, namespace in _places_prefix_addresses(cfg):
+    for prefix, namespace in _places_prefix_addresses():
         ElementTree.register_namespace(prefix, namespace)
     try:
         root = ElementTree.fromstring(current)
     except ElementTree.ParseError:
-        root = ElementTree.fromstring(_declare_missing_prefixes(cfg, current))
+        root = ElementTree.fromstring(_declare_missing_prefixes(current))
     changed = False
-    for bookmark in root.findall(cfg.places_bookmark_tag):
-        if bookmark.findtext(cfg.places_title_tag) not in hidden:
+    for bookmark in root.findall(values.PLACES_BOOKMARK_TAG):
+        if bookmark.findtext(values.PLACES_TITLE_TAG) not in hidden:
             continue
-        for metadata in bookmark.findall(cfg.places_metadata_path):
+        for metadata in bookmark.findall(values.PLACES_METADATA_PATH):
             if (
-                metadata.get(cfg.places_metadata_owner_attribute)
-                != cfg.places_metadata_owner
+                metadata.get(values.PLACES_METADATA_OWNER_ATTRIBUTE)
+                != values.PLACES_METADATA_OWNER
             ):
                 continue
-            marker = metadata.find(cfg.places_hidden_element)
+            marker = metadata.find(values.PLACES_HIDDEN_ELEMENT)
             if marker is None:
                 ElementTree.SubElement(
-                    metadata, cfg.places_hidden_element
-                ).text = cfg.places_hidden_value
+                    metadata, values.PLACES_HIDDEN_ELEMENT
+                ).text = values.PLACES_HIDDEN_VALUE
                 changed = True
-            elif marker.text != cfg.places_hidden_value:
-                marker.text = cfg.places_hidden_value
+            elif marker.text != values.PLACES_HIDDEN_VALUE:
+                marker.text = values.PLACES_HIDDEN_VALUE
                 changed = True
     if not changed:
         return None
     header = (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        f"<!DOCTYPE {cfg.places_root_tag}>\n"
+        f'<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE {values.PLACES_ROOT_TAG}>\n'
     )
     return header + ElementTree.tostring(root, encoding="unicode")
 
 
 def _apply_places_hidden(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -1594,54 +1544,54 @@ def _apply_places_hidden(
     login, and the next run applies the hiding.
     """
 
-    if not cfg.places_hidden:
+    if not values.PLACES_HIDDEN:
         return False
-    path = Path(cfg.home_dir) / cfg.user_places_file
+    path = Path(common_values.DESKTOP_HOME_DIR) / values.USER_PLACES_FILE
     try:
         current = path.read_text(encoding="utf-8")
     except OSError:
         _log("no user-places.xbel found, Places hiding applies after first login")
         return False
     try:
-        content = _places_xbel_hidden(cfg, current, set(cfg.places_hidden))
+        content = _places_xbel_hidden(current, set(values.PLACES_HIDDEN))
     except ElementTree.ParseError as exc:
-        _log(f"cannot parse {cfg.user_places_file}: {exc}, Places hiding skipped")
+        _log(f"cannot parse {values.USER_PLACES_FILE}: {exc}, Places hiding skipped")
         return False
     if content is None:
         return False
     return _write_user_file(
-        cfg,
-        str(cfg.user_places_file),
+        str(values.USER_PLACES_FILE),
         content,
-        mode=cfg.default_file_mode,
+        mode=values.DEFAULT_FILE_MODE,
         timeout=timeout,
         force=force,
     )
 
 
 def _apply_user_dirs(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
 ) -> bool:
     """Write the configured XDG user directories; True when changed."""
 
-    path = Path(cfg.home_dir) / cfg.user_config_dir / cfg.user_dirs_file
+    path = (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_CONFIG_DIR
+        / values.USER_DIRS_FILE
+    )
     current = path.read_text(encoding="utf-8") if path.is_file() else ""
-    content = _user_dirs_merged(current, cfg.user_dirs)
+    content = _user_dirs_merged(current, values.USER_DIRS)
     return _write_user_file(
-        cfg,
-        f"{cfg.user_config_dir}/{cfg.user_dirs_file}",
+        f"{values.USER_CONFIG_DIR}/{values.USER_DIRS_FILE}",
         content,
-        mode=cfg.default_file_mode,
+        mode=values.DEFAULT_FILE_MODE,
         timeout=timeout,
         force=force,
     )
 
 
 def _apply_konsole_profile(
-    cfg: KdeSettingsConfig,
     template_path: Path,
     *,
     timeout: float,
@@ -1658,19 +1608,17 @@ def _apply_konsole_profile(
     except OSError:
         _log("no konsole profile template, profile left as is")
         return False
-    content = template.replace("{home_dir}", cfg.home_dir)
+    content = template.replace("{home_dir}", common_values.DESKTOP_HOME_DIR)
     return _write_user_file(
-        cfg,
-        str(cfg.konsole_profile_path),
+        str(values.KONSOLE_PROFILE_PATH),
         content,
-        mode=cfg.default_file_mode,
+        mode=values.DEFAULT_FILE_MODE,
         timeout=timeout,
         force=force,
     )
 
 
 def _system_kreadconfig(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1679,14 +1627,13 @@ def _system_kreadconfig(
     """Current value of one system KConfig key, read as the root process."""
 
     command = _kconfig_command(
-        cfg, cfg.kreadconfig_command, file_name, group_segments, key
+        values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(command, check=False, capture=True, timeout=timeout)
     return trim_whitespace(result.stdout)
 
 
 def _system_kwriteconfig(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1697,14 +1644,13 @@ def _system_kwriteconfig(
     """Write one system KConfig key as the root process."""
 
     command = _kconfig_command(
-        cfg, cfg.kwriteconfig_command, file_name, group_segments, key
+        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     command.append(value)
     run_command(command, timeout=timeout)
 
 
 def _sync_system_value(
-    cfg: KdeSettingsConfig,
     file_name: str,
     group_segments: tuple[str, ...],
     key: str,
@@ -1715,18 +1661,15 @@ def _sync_system_value(
 ) -> bool:
     """Write a system KConfig key when it differs; True when written."""
 
-    current = _system_kreadconfig(cfg, file_name, group_segments, key, timeout)
+    current = _system_kreadconfig(file_name, group_segments, key, timeout)
     if not force and current == target:
         return False
-    _system_kwriteconfig(
-        cfg, file_name, group_segments, key, target, timeout=timeout
-    )
+    _system_kwriteconfig(file_name, group_segments, key, target, timeout=timeout)
     _log(f"set {file_name} {key}: {target}")
     return True
 
 
 def _apply_sddm(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     force: bool,
@@ -1742,13 +1685,12 @@ def _apply_sddm(
 
     changed = False
     for key, value in (
-        ("User", cfg.sddm_autologin_user),
-        ("Session", cfg.sddm_autologin_session),
+        ("User", values.SDDM_AUTOLOGIN_USER),
+        ("Session", values.SDDM_AUTOLOGIN_SESSION),
     ):
         try:
             changed |= _sync_system_value(
-                cfg,
-                str(cfg.sddm_conf_file),
+                str(values.SDDM_CONF_FILE),
                 ("Autologin",),
                 key,
                 value,
@@ -1765,15 +1707,14 @@ def _apply_sddm(
             if warnings is not None:
                 warnings.append(warning)
     for key, value in (
-        ("Current", cfg.sddm_theme),
-        ("CursorSize", cfg.sddm_theme_cursor_size),
-        ("CursorTheme", cfg.sddm_theme_cursor_theme),
-        ("Font", cfg.sddm_theme_font),
+        ("Current", values.SDDM_THEME),
+        ("CursorSize", values.SDDM_THEME_CURSOR_SIZE),
+        ("CursorTheme", values.SDDM_THEME_CURSOR_THEME),
+        ("Font", values.SDDM_THEME_FONT),
     ):
         try:
             changed |= _sync_system_value(
-                cfg,
-                str(cfg.sddm_theme_conf_file),
+                str(values.SDDM_THEME_CONF_FILE),
                 ("Theme",),
                 key,
                 value,
@@ -1793,7 +1734,6 @@ def _apply_sddm(
 
 
 def _reload_kwin(
-    cfg: KdeSettingsConfig,
     *,
     timeout: float,
     env: dict[str, str] | None,
@@ -1809,7 +1749,7 @@ def _reload_kwin(
         return None
     try:
         run_command(
-            _as_user_command(cfg, list(cfg.kwin_reload_command)),
+            _as_user_command(list(values.KWIN_RELOAD_COMMAND)),
             extra_env=env,
             timeout=timeout,
         )
@@ -1819,7 +1759,7 @@ def _reload_kwin(
     return None
 
 
-def _desktop_dbus_names(cfg: KdeSettingsConfig) -> dict[str, str]:
+def _desktop_dbus_names() -> dict[str, str]:
     """The DBus vocabulary of the KWin desktop interface, by placeholder.
 
     The commands of the section and the desktop list client of task_data/
@@ -1829,30 +1769,29 @@ def _desktop_dbus_names(cfg: KdeSettingsConfig) -> dict[str, str]:
     """
 
     return {
-        "kwin_bus_name": cfg.kwin_bus_name,
+        "kwin_bus_name": values.KWIN_BUS_NAME,
         "virtual_desktop_manager_object_path": (
-            cfg.virtual_desktop_manager_object_path
+            values.VIRTUAL_DESKTOP_MANAGER_OBJECT_PATH
         ),
         "virtual_desktop_manager_interface_name": (
-            cfg.virtual_desktop_manager_interface_name
+            values.VIRTUAL_DESKTOP_MANAGER_INTERFACE_NAME
         ),
-        "virtual_desktops_property_name": cfg.virtual_desktops_property_name,
+        "virtual_desktops_property_name": values.VIRTUAL_DESKTOPS_PROPERTY_NAME,
         "virtual_desktop_count_property_name": (
-            cfg.virtual_desktop_count_property_name
+            values.VIRTUAL_DESKTOP_COUNT_PROPERTY_NAME
         ),
-        "dbus_properties_interface_name": cfg.dbus_properties_interface_name,
+        "dbus_properties_interface_name": values.DBUS_PROPERTIES_INTERFACE_NAME,
     }
 
 
-def _desktop_list_client_text(cfg: KdeSettingsConfig, script_path: Path) -> str:
+def _desktop_list_client_text(script_path: Path) -> str:
     """The desktop list client with the DBus names of the section filled in."""
 
     template = Template(script_path.read_text(encoding="utf-8"))
-    return template.substitute(**_desktop_dbus_names(cfg))
+    return template.substitute(**_desktop_dbus_names())
 
 
 def _apply_desktop_count_live(
-    cfg: KdeSettingsConfig,
     *,
     script_path: Path,
     timeout: float,
@@ -1872,11 +1811,11 @@ def _apply_desktop_count_live(
     if env is None:
         return None
     target = None
-    for record in cfg.kconfig:
+    for record in values.KCONFIG_RECORDS:
         if (
-            record.file == cfg.kwinrc_file_name
-            and record.group == cfg.desktops_group
-            and record.key == cfg.desktop_count_key
+            record.file == values.KWINRC_FILE_NAME
+            and record.group == values.DESKTOPS_GROUP
+            and record.key == values.DESKTOP_COUNT_KEY
         ):
             target = int(record.value)
             break
@@ -1885,9 +1824,8 @@ def _apply_desktop_count_live(
     try:
         result = run_command(
             _as_user_command(
-                cfg,
                 substituted_command(
-                    cfg.kwin_desktop_count_command, _desktop_dbus_names(cfg)
+                    values.KWIN_DESKTOP_COUNT_COMMAND, _desktop_dbus_names()
                 ),
             ),
             extra_env=env,
@@ -1895,7 +1833,11 @@ def _apply_desktop_count_live(
             capture=True,
         )
         current = int(trim_whitespace(result.stdout))
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError) as exc:
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ) as exc:
         return f"cannot read desktop count: {exc}"
     if current == target:
         return None
@@ -1904,11 +1846,10 @@ def _apply_desktop_count_live(
             try:
                 run_command(
                     _as_user_command(
-                        cfg,
                         substituted_command(
-                            cfg.kwin_desktop_create_command,
+                            values.KWIN_DESKTOP_CREATE_COMMAND,
                             {
-                                **_desktop_dbus_names(cfg),
+                                **_desktop_dbus_names(),
                                 "position": str(position),
                                 "desktop_name": "",
                             },
@@ -1922,15 +1863,14 @@ def _apply_desktop_count_live(
         _log(f"created {target - current} desktops, live count now {target}")
     else:
         try:
-            ids_client = _desktop_list_client_text(cfg, script_path)
+            ids_client = _desktop_list_client_text(script_path)
         except OSError as exc:
             return f"cannot read the desktop list client {script_path}: {exc}"
         ids_result = run_command(
             _as_user_command(
-                cfg,
                 [
                     *substituted_command(
-                        cfg.python_script_command, {"python": system_python}
+                        values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
                     ),
                     ids_client,
                 ],
@@ -1940,15 +1880,14 @@ def _apply_desktop_count_live(
             capture=True,
         )
         ids = trim_whitespace(ids_result.stdout).splitlines()
-        for desktop_id in ids[-current + target:]:
+        for desktop_id in ids[-current + target :]:
             try:
                 run_command(
                     _as_user_command(
-                        cfg,
                         substituted_command(
-                            cfg.kwin_desktop_remove_command,
+                            values.KWIN_DESKTOP_REMOVE_COMMAND,
                             {
-                                **_desktop_dbus_names(cfg),
+                                **_desktop_dbus_names(),
                                 "desktop_id": desktop_id,
                             },
                         ),
@@ -2020,7 +1959,20 @@ def task(ctx: Context) -> TaskResult:
     settings still apply.
     """
 
-    cfg = ctx.config.kde_settings
+    absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
+        common_values, common_values.READ_VALUE_NAMES
+    )
+    if absent:
+        # A value that is not declared costs the task and never the run: the
+        # names are reported in plain words and the runner carries on with the
+        # remaining tasks. The guard stands above every read.
+        return TaskResult(
+            success=True,
+            message=("the kde_settings values are not declared, nothing was changed"),
+            warnings=(
+                "the kde_settings values are not declared: " + ", ".join(absent),
+            ),
+        )
     engine = ctx.config.engine
     timeout = engine.command_timeout_seconds
     force = ctx.task_name in ctx.force_tasks
@@ -2028,7 +1980,7 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
     packages_failed = False
 
-    for package in cfg.packages:
+    for package in values.PACKAGES:
         if package_is_installed(engine, package, timeout):
             continue
         _log(f"installing {package}")
@@ -2053,13 +2005,17 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             _as_user_command(
-                cfg,
                 substituted_command(
-                    cfg.mkdir_command,
-                    {"path": str(Path(cfg.home_dir) / cfg.user_config_dir)},
+                    values.MKDIR_COMMAND,
+                    {
+                        "path": str(
+                            Path(common_values.DESKTOP_HOME_DIR)
+                            / values.USER_CONFIG_DIR
+                        )
+                    },
                 ),
             ),
-            extra_env=_home_env(cfg),
+            extra_env=_home_env(),
             timeout=timeout,
         )
     except (
@@ -2068,18 +2024,17 @@ def task(ctx: Context) -> TaskResult:
         OSError,
     ) as exc:
         warnings.append(f"cannot create the user config directory: {exc}")
-    apply_env = _apply_env(cfg, ctx.config.engine)
+    apply_env = _apply_env(ctx.config.engine)
     if apply_env is None:
         _log("no desktop session found, settings apply after login")
 
     settings_changed = False
     virtual_keyboard_changed = False
     kwin_scripts_changed = False
-    if cfg.automatic_look_and_feel:
+    if values.AUTOMATIC_LOOK_AND_FEEL:
         settings_changed |= step(
             "enable the automatic theme switch",
             lambda: _apply_automatic_look_and_feel(
-                cfg,
                 timeout=timeout,
                 force=force,
                 env=apply_env,
@@ -2089,30 +2044,23 @@ def task(ctx: Context) -> TaskResult:
     else:
         settings_changed |= step(
             "apply the global theme",
-            lambda: _apply_look_and_feel(
-                cfg, env=apply_env, timeout=timeout, force=force
-            ),
+            lambda: _apply_look_and_feel(env=apply_env, timeout=timeout, force=force),
         )
         settings_changed |= step(
             "apply the color scheme",
-            lambda: _apply_color_scheme(
-                cfg, env=apply_env, timeout=timeout, force=force
-            ),
+            lambda: _apply_color_scheme(env=apply_env, timeout=timeout, force=force),
         )
     settings_changed |= step(
         "set the NumLock state",
-        lambda: _apply_numlock(cfg, timeout=timeout, force=force),
+        lambda: _apply_numlock(timeout=timeout, force=force),
     )
     settings_changed |= step(
         "set the touchpad click method",
-        lambda: _apply_touchpad(
-            cfg, timeout=timeout, force=force, warnings=warnings
-        ),
+        lambda: _apply_touchpad(timeout=timeout, force=force, warnings=warnings),
     )
     virtual_keyboard_changed = step(
         "set the Wayland virtual keyboard",
         lambda: _apply_virtual_keyboard(
-            cfg,
             timeout=timeout,
             force=force,
             env=apply_env,
@@ -2123,20 +2071,18 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "apply the configured kconfig values",
         lambda: _apply_kconfig_records(
-            cfg, timeout=timeout, force=force, env=apply_env, warnings=warnings
+            timeout=timeout, force=force, env=apply_env, warnings=warnings
         ),
     )
     settings_changed |= step(
         "write the theme cursor overrides",
         lambda: _apply_theme_cursor_overrides(
-            cfg, timeout=timeout, force=force, warnings=warnings
+            timeout=timeout, force=force, warnings=warnings
         ),
     )
     settings_changed |= step(
         "apply the cursor theme",
-        lambda: _apply_cursor_theme(
-            cfg, env=apply_env, timeout=timeout, force=force
-        ),
+        lambda: _apply_cursor_theme(env=apply_env, timeout=timeout, force=force),
     )
     # The combinations are applied after the scripts are enabled: enabling
     # applies live and makes kwin register the combinations of the scripts at
@@ -2146,9 +2092,7 @@ def task(ctx: Context) -> TaskResult:
     kwin_scripts_changed = step(
         "install and enable the kwin scripts",
         lambda: _apply_kwin_scripts(
-            cfg,
-            task_data_dir(ctx.repo_root, ctx.task_name)
-            / cfg.kwin_scripts_dir_name,
+            task_data_dir(ctx.repo_root, ctx.task_name) / values.KWIN_SCRIPTS_DIR_NAME,
             timeout=timeout,
             force=force,
             env=apply_env,
@@ -2159,12 +2103,9 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "apply the configured shortcuts",
         lambda: _apply_shortcuts_live(
-            cfg,
             client_path=(
-                task_data_dir(
-                    ctx.repo_root, cfg.kglobalaccel_client_section_name
-                )
-                / cfg.kglobalaccel_client_file_name
+                task_data_dir(ctx.repo_root, values.KGLOBALACCEL_CLIENT_SECTION_NAME)
+                / values.KGLOBALACCEL_CLIENT_FILE_NAME
             ),
             timeout=timeout,
             env=apply_env,
@@ -2176,49 +2117,46 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "write the kwin script hotkey records",
         lambda: _write_script_hotkey_records(
-            cfg, timeout=timeout, force=force, warnings=warnings
+            timeout=timeout, force=force, warnings=warnings
         ),
     )
     settings_changed |= step(
         "write the XDG user directories",
-        lambda: _apply_user_dirs(cfg, timeout=timeout, force=force),
+        lambda: _apply_user_dirs(timeout=timeout, force=force),
     )
     settings_changed |= step(
         "write the Konsole profile",
         lambda: _apply_konsole_profile(
-            cfg,
             task_data_dir(ctx.repo_root, ctx.task_name)
-            / cfg.konsole_profile_file_name,
+            / values.KONSOLE_PROFILE_FILE_NAME,
             timeout=timeout,
             force=force,
         ),
     )
     settings_changed |= step(
         "hide the configured Dolphin places",
-        lambda: _apply_places_hidden(cfg, timeout=timeout, force=force),
+        lambda: _apply_places_hidden(timeout=timeout, force=force),
     )
     settings_changed |= step(
         "write the SDDM settings",
-        lambda: _apply_sddm(
-            cfg, timeout=timeout, force=force, warnings=warnings
-        ),
+        lambda: _apply_sddm(timeout=timeout, force=force, warnings=warnings),
     )
     changed |= settings_changed
 
-    kwinrc_changed = any(
-        record.file == cfg.kwinrc_file_name for record in cfg.kconfig
-    ) and settings_changed
+    kwinrc_changed = (
+        any(record.file == values.KWINRC_FILE_NAME for record in values.KCONFIG_RECORDS)
+        and settings_changed
+    )
     if virtual_keyboard_changed or kwinrc_changed or kwin_scripts_changed:
-        reload_error = _reload_kwin(cfg, timeout=timeout, env=apply_env)
+        reload_error = _reload_kwin(timeout=timeout, env=apply_env)
         if reload_error is not None:
             _log(reload_error)
             warnings.append(reload_error)
 
     desktop_error = _apply_desktop_count_live(
-        cfg,
         script_path=(
             task_data_dir(ctx.repo_root, ctx.task_name)
-            / cfg.desktop_ids_script_file_name
+            / values.DESKTOP_IDS_SCRIPT_FILE_NAME
         ),
         timeout=timeout,
         env=apply_env,

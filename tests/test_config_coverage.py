@@ -44,7 +44,6 @@ REPOSITORY_CONFIG_DIR = Path(__file__).resolve().parents[1] / "config"
 # it would otherwise write. A new key with the same property must be
 # recorded here, so an accidental omission cannot pass unnoticed.
 OPTIONAL_SECTION_KEYS: dict[str, frozenset[str]] = {
-    "kde_settings": frozenset({"kconfig", "places_hidden"}),
     "ssh_client_setup": frozenset({"directives"}),
     "vault_structure": frozenset({"groups"}),
 }

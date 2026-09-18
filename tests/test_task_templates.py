@@ -31,6 +31,8 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
+from pyntara.values import tasks as tasks_values
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CONFIG_DIR = REPO_ROOT / "config"
 TASK_DATA_DIR = REPO_ROOT / "task_data"
@@ -98,14 +100,16 @@ def test_every_task_data_path_exists_in_the_clone() -> None:
     assert not missing, f"paths named by the config and missing: {missing}"
 
 
-def test_every_task_data_directory_belongs_to_a_config_section() -> None:
+def test_every_task_data_directory_belongs_to_a_task() -> None:
     # The directory of a task is named after its catalog entry, which is the
-    # name of its config section and of its module (task-model contract), so
-    # a stray directory is either a renamed task or a leftover of one.
-    sections = {section for section, _data in _sections()}
+    # name of its module and of its values module (task-model contract), so a
+    # stray directory is either a renamed task or a leftover of one. The names
+    # come from the catalog and not from config/, because a section that moved
+    # to the values package keeps no TOML file.
+    names = {spec.name for spec in tasks_values.CATALOG}
     orphans = sorted(
         directory.name
         for directory in TASK_DATA_DIR.iterdir()
-        if directory.is_dir() and directory.name not in sections
+        if directory.is_dir() and directory.name not in names
     )
-    assert not orphans, f"task_data directories without a config section: {orphans}"
+    assert not orphans, f"task_data directories without a task: {orphans}"

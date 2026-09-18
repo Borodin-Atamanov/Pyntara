@@ -20,7 +20,6 @@ from config_helpers import base_config
 from pyntara.config import (
     CollectorModuleConfig,
     Config,
-    KConfigRecord,
     RustdeskOptionConfig,
     SshDirective,
     load_config,
@@ -84,9 +83,7 @@ def augtool_fake_run(command: list[str], input_: str | None) -> FakeProc:
         elif line.startswith("rm "):
             path = line.split(" ", 1)[1]
             for node in [
-                node
-                for node in tree
-                if node == path or node.startswith(path + "/")
+                node for node in tree if node == path or node.startswith(path + "/")
             ]:
                 del tree[node]
             out_lines.append(f"rm : {path}")
@@ -132,7 +129,7 @@ def augtool_fake_run(command: list[str], input_: str | None) -> FakeProc:
                 file_path.parent.mkdir(parents=True, exist_ok=True)
                 content: list[str] = []
                 for node, value in tree.items():
-                    suffix = node[len(base):].lstrip("/")
+                    suffix = node[len(base) :].lstrip("/")
                     if "/" in suffix:
                         continue
                     label = suffix.split("[", 1)[0]
@@ -147,7 +144,9 @@ def augtool_fake_run(command: list[str], input_: str | None) -> FakeProc:
                     if children:
                         content.append(f"{label} {value}")
                         for child, child_value in children:
-                            child_label = child[len(node):].lstrip("/").split("[", 1)[0]
+                            child_label = (
+                                child[len(node) :].lstrip("/").split("[", 1)[0]
+                            )
                             content.append(f"\t{child_label} {child_value}")
                     else:
                         content.append(f"{label} {value}")
@@ -234,22 +233,16 @@ def make_config(
     cli_tools_packages: tuple[str, ...] = ("mc", "htop"),
     cli_tools_threshold: int = 70,
     cli_tools_retries: int = 3,
-
     imagemagick_setup_packages: tuple[str, ...] = ("imagemagick",),
     imagemagick_setup_policy_path: Path = Path("/etc/ImageMagick-7/policy.xml"),
     imagemagick_setup_policy_template_file_name: str = "policy.xml",
     imagemagick_setup_policy_backup_file_suffix: str = ".bak",
-
     ffmpeg_setup_packages: tuple[str, ...] = ("ffmpeg",),
-    ffmpeg_setup_wayrecord_bin_path: Path = Path(
-        "/usr/local/bin/pyntara-wayrecord"
-    ),
+    ffmpeg_setup_wayrecord_bin_path: Path = Path("/usr/local/bin/pyntara-wayrecord"),
     ffmpeg_setup_wayrecord_desktop_path: Path = Path(
         "/usr/share/applications/pyntara-wayrecord.desktop"
     ),
-
     playwright_setup_home_dir: str = "/home/i",
-
     sotavpn_setup_username: str = "i",
     sotavpn_setup_home_dir: str = "/home/i",
     add_extra_repos_components: tuple[str, ...] = (
@@ -268,9 +261,7 @@ def make_config(
     add_extra_repos_components_field_name: str = "components:",
     add_extra_repos_legacy_sources_file: Path = Path("/etc/apt/sources.list"),
     add_extra_repos_sources_list_d: Path = Path("/etc/apt/sources.list.d"),
-    add_extra_repos_keep_debs_file: Path = Path(
-        "/etc/apt/apt.conf.d/99keep-debs.conf"
-    ),
+    add_extra_repos_keep_debs_file: Path = Path("/etc/apt/apt.conf.d/99keep-debs.conf"),
     hostname_file: Path = Path("/etc/hostname"),
     hostname_random_bytes: int = 4,
     hostname_set_hostname_command: tuple[str, ...] = (
@@ -282,21 +273,6 @@ def make_config(
     kde_keyboard_setup_config_dir: str = "/home/i/.config",
     kde_keyboard_setup_layout_switch_shortcuts: dict[str, str] | None = None,
     kde_keyboard_setup_mkdir_command: tuple[str, ...] | None = None,
-    kde_settings_packages: tuple[str, ...] = (
-        "plasma-workspace",
-        "libkf6config-bin",
-        "kubuntu-settings-desktop",
-        "python3-dbus",
-    ),
-    kde_settings_home_dir: str = "/home/i",
-    kde_settings_system_look_and_feel_dir: Path = Path(
-        "/usr/share/plasma/look-and-feel"
-    ),
-    kde_settings_automatic_look_and_feel: bool = False,
-    kde_settings_touchpad_click_method: str = "clickfinger",
-    kde_settings_virtual_keyboard_enabled: bool = True,
-    kde_settings_kconfig: tuple[KConfigRecord, ...] = (),
-    kde_settings_places_hidden: tuple[str, ...] = (),
     swapfile_path: Path = Path("/swapfile"),
     swapfile_meminfo_total_key: str = "MemTotal:",
     swapfile_ram_multiplier: float = 2.0,
@@ -325,7 +301,6 @@ def make_config(
         "enable",
         "{service_unit_name}",
     ),
-
     zram_reset_busy_attempts: int = 5,
     zram_meminfo_total_key: str = "MemTotal:",
     zram_module_name: str = "zram",
@@ -474,9 +449,9 @@ def make_config(
         "-G",
         "example.com",
     ),
-    ssh_client_directives: tuple[SshDirective, ...] = (SshDirective(
-        name="AddressFamily", value="any"
-    ),),
+    ssh_client_directives: tuple[SshDirective, ...] = (
+        SshDirective(name="AddressFamily", value="any"),
+    ),
     system_metrics_backoff_base_seconds: int = 2,
     system_metrics_backoff_multiplier: int = 2,
     system_metrics_backoff_max_seconds: int = 14400,
@@ -507,18 +482,14 @@ def make_config(
     system_metrics_collector_service_unit_name: str = (
         "system_metrics_collector.service"
     ),
-    system_metrics_collector_timer_unit_name: str = (
-        "system_metrics_collector.timer"
-    ),
+    system_metrics_collector_timer_unit_name: str = ("system_metrics_collector.timer"),
     system_metrics_collector_start_command: tuple[str, ...] = (
         "systemctl",
         "start",
         "--no-block",
         "{service_unit_name}",
     ),
-    system_metrics_collector_journal_identifier: str = (
-        "system_metrics_collector"
-    ),
+    system_metrics_collector_journal_identifier: str = ("system_metrics_collector"),
     system_metrics_collector_lock_file_path: Path = Path(
         "/run/pyntara/system_metrics_collector.lock"
     ),
@@ -598,14 +569,12 @@ def make_config(
             policy_template_file_name=imagemagick_setup_policy_template_file_name,
             policy_backup_file_suffix=imagemagick_setup_policy_backup_file_suffix,
         ),
-
         ffmpeg_setup=replace(
             base.ffmpeg_setup,
             packages=ffmpeg_setup_packages,
             wayrecord_bin_path=ffmpeg_setup_wayrecord_bin_path,
             wayrecord_desktop_path=ffmpeg_setup_wayrecord_desktop_path,
         ),
-
         add_extra_repos=replace(
             base.add_extra_repos,
             components=add_extra_repos_components,
@@ -638,17 +607,6 @@ def make_config(
                 if kde_keyboard_setup_mkdir_command is not None
                 else base.kde_keyboard_setup.mkdir_command
             ),
-        ),
-        kde_settings=replace(
-            base.kde_settings,
-            packages=kde_settings_packages,
-            home_dir=kde_settings_home_dir,
-            system_look_and_feel_dir=kde_settings_system_look_and_feel_dir,
-            automatic_look_and_feel=kde_settings_automatic_look_and_feel,
-            touchpad_click_method=kde_settings_touchpad_click_method,
-            virtual_keyboard_enabled=kde_settings_virtual_keyboard_enabled,
-            places_hidden=kde_settings_places_hidden,
-            kconfig=kde_settings_kconfig,
         ),
         swapfile_service_install=replace(
             base.swapfile_service_install,
@@ -691,9 +649,7 @@ def make_config(
             tunnel_keys_path=i2pd_tunnel_keys_path,
             address_file_path=i2pd_address_file_path,
             address_check_attempts=i2pd_address_check_attempts,
-            address_check_retry_delay_seconds=(
-                i2pd_address_check_retry_delay_seconds
-            ),
+            address_check_retry_delay_seconds=(i2pd_address_check_retry_delay_seconds),
             config_template_file_name=i2pd_config_template_file_name,
             tunnels_template_file_name=i2pd_tunnels_template_file_name,
             codename_asset_name_template=i2pd_codename_asset_name_template,
@@ -729,9 +685,7 @@ def make_config(
             self_signed_cert_fullchain=(
                 three_x_ui_self_signed_cert_dir / "fullchain.pem"
             ),
-            self_signed_cert_privkey=(
-                three_x_ui_self_signed_cert_dir / "privkey.pem"
-            ),
+            self_signed_cert_privkey=(three_x_ui_self_signed_cert_dir / "privkey.pem"),
             probe_timeout_seconds=three_x_ui_probe_timeout_seconds,
             panel_api_timeout_seconds=three_x_ui_panel_api_timeout_seconds,
             proxy_check_attempts=three_x_ui_proxy_check_attempts,
@@ -932,7 +886,9 @@ def make_context(
         repo_root=repo_root,
         task_data_root=task_data_root,
         skip_apt_update=skip_apt_update,
-        config=config if config is not None else make_config(task_data_root=task_data_root),
+        config=config
+        if config is not None
+        else make_config(task_data_root=task_data_root),
         task_name=task_name,
     )
 

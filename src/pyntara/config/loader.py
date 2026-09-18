@@ -30,7 +30,6 @@ from .hostname import HostnameConfig
 from .i2pd_service_setup import I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
-from .kde_settings import KdeSettingsConfig
 from .nextdns_setup_system_wide import NextdnsSetupSystemWideConfig
 from .playwright_setup import PlaywrightSetupConfig
 from .port_forwarding_setup import PortForwardingSetupConfig
@@ -69,7 +68,6 @@ class Config:
     ffmpeg_setup: FfmpegSetupConfig
     imagemagick_setup: ImagemagickSetupConfig
     kde_keyboard_setup: KdeKeyboardSetupConfig
-    kde_settings: KdeSettingsConfig
     swapfile_service_install: SwapfileServiceInstallConfig
     zswap_service: ZswapServiceConfig
     zram_service: ZramServiceConfig

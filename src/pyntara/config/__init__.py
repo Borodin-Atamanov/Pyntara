@@ -31,13 +31,6 @@ from .hostname import HostnameConfig
 from .i2pd_service_setup import I2PD_ADDRESS_CONFIG_KEYS, I2pdServiceSetupConfig
 from .imagemagick_setup import ImagemagickSetupConfig
 from .kde_keyboard_setup import KdeKeyboardSetupConfig
-from .kde_settings import (
-    KCONFIG_BOOL_TYPE,
-    KCONFIG_STRING_TYPE,
-    KCONFIG_TYPES,
-    KConfigRecord,
-    KdeSettingsConfig,
-)
 from .loader import (
     Config,
     absent_config_keys,
@@ -98,9 +91,6 @@ __all__ = [
     "COUNTRY_REPORT_CONFIG_KEYS",
     "I2PD_ADDRESS_CONFIG_KEYS",
     "INGEST_CONFIG_KEYS",
-    "KCONFIG_BOOL_TYPE",
-    "KCONFIG_STRING_TYPE",
-    "KCONFIG_TYPES",
     "MODES",
     "PUBLIC_ADDRESS_CONFIG_KEYS",
     "SEND_ORDERS",
@@ -121,9 +111,7 @@ __all__ = [
     "HostnameConfig",
     "I2pdServiceSetupConfig",
     "ImagemagickSetupConfig",
-    "KConfigRecord",
     "KdeKeyboardSetupConfig",
-    "KdeSettingsConfig",
     "LocalVaultSetupConfig",
     "NextdnsSetupSystemWideConfig",
     "PlaywrightSetupConfig",
