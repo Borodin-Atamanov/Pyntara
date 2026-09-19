@@ -191,15 +191,18 @@ inst_log_appends_lines_instead_of_overwriting() {
 }
 
 inst_log_file_defaults_inside_log_dir() {
-    # Without PYNTARA_LOG_FILE the log file must live inside LOG_DIR.
+    # Without PYNTARA_LOG_FILE the log file must live inside LOG_DIR and be
+    # named after the run, with the same declared timestamp format the launcher
+    # declares, so the two halves compute one name.
     local tmp
     tmp="$(mktemp -d)"
     local output
     output="$(PYNTARA_LOG_DIR="$tmp/log" bash -c 'source "$1"; echo "$LOG_FILE"' _ "$INSTALLER" 2>&1)"
-    assert_equals "$tmp/log/install.log" "$output" "LOG_FILE defaults into LOG_DIR" || {
+    if [[ ! "$output" =~ ^"$tmp"/log/install-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}\.log$ ]]; then
+        echo "LOG_FILE is not a dated file inside LOG_DIR: [$output]" >&2
         rm -rf "$tmp"
         return 1
-    }
+    fi
     rm -rf "$tmp"
 }
 
@@ -401,13 +404,12 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         fetch_source() { echo fetch_source >> "$flags_file"; }
         setup_python() { echo setup_python >> "$flags_file"; }
         prompt_vault_password() { echo prompt_vault_password >> "$flags_file"; }
-        prompt_install_mode() { echo prompt_install_mode >> "$flags_file"; }
         run_pyntara() { echo "run_pyntara $*" >> "$flags_file"; }
         source "$1"
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nprompt_install_mode\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -1541,100 +1543,21 @@ inst_prompt_vault_password_missing_default_password_aborts() {
     rm -rf "$tmp"
 }
 
-inst_detect_default_mode_uses_override() {
-    # PYNTARA_DEFAULT_INSTALL_MODE must win over every other signal.
-    local output
-    output="$(PYNTARA_DEFAULT_INSTALL_MODE=minimal bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
-    assert_equals "minimal" "$output" "override wins" || return 1
-}
-
-inst_detect_default_mode_desktop_when_session_vars() {
-    # A desktop session variable means desktop.
-    local output
-    output="$(XDG_CURRENT_DESKTOP=KDE bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
-    assert_equals "desktop" "$output" "XDG_CURRENT_DESKTOP wins" || return 1
-}
-
-inst_detect_default_mode_server_when_no_session() {
-    # No session variables and no desktop process: server. pgrep is mocked to
-    # report no match.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin"
-    cat > "$bin/pgrep" <<'EOF'
-#!/usr/bin/env bash
-exit 1
-EOF
-    chmod +x "$bin/pgrep"
-    local output
-    output="$(env -u XDG_CURRENT_DESKTOP -u DESKTOP_SESSION PATH="$bin:$PATH" bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
-    assert_equals "server" "$output" "headless means server" || {
-        rm -rf "$tmp"
+inst_leaves_the_install_mode_to_the_engine() {
+    # The install mode is resolved in one place, the engine, which knows the
+    # declared modes and reads the machine itself. A detection here was a copy
+    # of that logic and drifted from it, so the installer only passes the
+    # environment on.
+    local content
+    content="$(cat "$INSTALLER")"
+    if [[ "$content" == *"detect_default_mode"* ]]; then
+        echo "the installer still carries a mode detector" >&2
         return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_detect_default_mode_desktop_when_process() {
-    # A desktop process means desktop even without session variables.
-    local tmp
-    tmp="$(mktemp -d)"
-    local bin="$tmp/bin"
-    mkdir -p "$bin"
-    cat > "$bin/pgrep" <<'EOF'
-#!/usr/bin/env bash
-# Match plasmashell, reject everything else.
-case "$*" in
-    *plasmashell*) exit 0 ;;
-    *) exit 1 ;;
-esac
-EOF
-    chmod +x "$bin/pgrep"
-    local output
-    output="$(env -u XDG_CURRENT_DESKTOP -u DESKTOP_SESSION PATH="$bin:$PATH" bash -c 'source "$1"; detect_default_mode' _ "$INSTALLER" 2>&1)"
-    assert_equals "desktop" "$output" "desktop process means desktop" || {
-        rm -rf "$tmp"
+    fi
+    if [[ "$content" == *"PYNTARA_DEFAULT_INSTALL_MODE"* ]]; then
+        echo "the installer still carries a second detection override" >&2
         return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_prompt_install_mode_uses_environment() {
-    # PYNTARA_INSTALL_MODE skips the screen and is logged.
-    local tmp
-    tmp="$(mktemp -d)"
-    local logfile="$tmp/install.log"
-    local output
-    output="$(PYNTARA_INSTALL_MODE=minimal PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prompt_install_mode; echo "MODE=$PYNTARA_INSTALL_MODE"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "MODE=minimal" "env mode kept" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    assert_contains "$output" "Install mode from environment: minimal" "env mode logged" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
-}
-
-inst_prompt_install_mode_exports_selected_mode() {
-    # Without an env override the detected default is exported without any
-    # interactive screen. PYNTARA_DEFAULT_INSTALL_MODE fixes the detection.
-    local tmp
-    tmp="$(mktemp -d)"
-    local logfile="$tmp/install.log"
-    local output
-    output="$(PYNTARA_DEFAULT_INSTALL_MODE=server PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prompt_install_mode; echo "MODE=$PYNTARA_INSTALL_MODE"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "MODE=server" "default mode exported" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    assert_contains "$output" "Install mode (default): server" "default mode logged" || {
-        rm -rf "$tmp"
-        return 1
-    }
-    rm -rf "$tmp"
+    fi
 }
 
 inst_prompt_vault_password_uses_environment_with_source() {
@@ -1878,12 +1801,7 @@ run_test inst_show_countdown_prints_message_and_countdown
 run_test inst_log_status_prints_without_consuming_input
 run_test inst_prompt_vault_password_no_env_falls_back_to_default
 run_test inst_prompt_vault_password_missing_default_password_aborts
-run_test inst_detect_default_mode_uses_override
-run_test inst_detect_default_mode_desktop_when_session_vars
-run_test inst_detect_default_mode_server_when_no_session
-run_test inst_detect_default_mode_desktop_when_process
-run_test inst_prompt_install_mode_uses_environment
-run_test inst_prompt_install_mode_exports_selected_mode
+run_test inst_leaves_the_install_mode_to_the_engine
 run_test inst_prompt_vault_password_uses_environment_with_source
 run_test inst_prompt_vault_password_uses_environment_autodetect_production
 run_test inst_prompt_vault_password_uses_environment_autodetect_default

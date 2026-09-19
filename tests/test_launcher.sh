@@ -147,26 +147,32 @@ test_launcher_never_names_the_production_password_file() {
 }
 
 test_launcher_hands_its_password_to_the_installer() {
+    # The launcher only exports the value of its own line: the installer
+    # resolves the vault that password opens, so the decision lives in one
+    # place and is not repeated here.
     source_launcher
     use_test_log "$(mktemp -d)"
-    resolve_vault_password >/dev/null
-    assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "the password of the file reaches the installer, which resolves the vault it opens" || return 1
+    local passed
+    passed="$(export_run_parameters; printenv PYNTARA_VAULT_PASSWORD)"
+    assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$passed" "the password of the file reaches the installer" || return 1
 }
 
-test_launcher_reports_a_missing_password() {
+test_launcher_passes_no_password_when_its_line_is_empty() {
     source_launcher
     use_test_log "$(mktemp -d)"
     unset PYNTARA_VAULT_PASSWORD
-    resolve_vault_password >/dev/null
-    assert_unset PYNTARA_VAULT_PASSWORD "an empty launcher passes no password, so the installer warns and waits" || return 1
+    local passed
+    passed="$(export_run_parameters; printenv PYNTARA_VAULT_PASSWORD || true)"
+    assert_equals "" "$passed" "an empty line exports nothing, so the installer warns and waits" || return 1
 }
 
 test_launcher_replaced_password_is_passed_through() {
     source_launcher
     use_test_log "$(mktemp -d)"
     PYNTARA_VAULT_PASSWORD="a-replaced-password"
-    resolve_vault_password >/dev/null
-    assert_equals "a-replaced-password" "$PYNTARA_VAULT_PASSWORD" "a replaced password reaches the installer, which resolves the vault it opens" || return 1
+    local passed
+    passed="$(export_run_parameters; printenv PYNTARA_VAULT_PASSWORD)"
+    assert_equals "a-replaced-password" "$passed" "a replaced password reaches the installer" || return 1
 }
 
 test_launcher_clears_the_inherited_environment() {
@@ -192,7 +198,6 @@ test_launcher_installer_receives_only_the_file_values() {
     source_launcher
     use_test_log "$tmp"
     INSTALLER_PATH="$stub"
-    resolve_vault_password >/dev/null
     export_run_parameters
     run_installer >/dev/null
     local child_environment
@@ -277,9 +282,17 @@ test_launcher_logs_a_timestamped_line() {
     fi
 }
 
-test_launcher_log_path_matches_the_installer_default() {
+test_launcher_log_file_is_named_after_the_run() {
+    # One log per run: the name carries the date in the declared timestamp
+    # format, and the launcher and the installer declare that one format, so
+    # the installer computes the same shape when it runs without the launcher.
     source_launcher
-    assert_equals "/var/log/pyntara/install.log" "$PYNTARA_LOG_FILE" "the launcher and the installer share one log path" || return 1
+    [[ "$(basename "$PYNTARA_LOG_FILE")" =~ ^install-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}-[0-9]{2}\.log$ ]] || {
+        echo "the log file name carries no run date: [$PYNTARA_LOG_FILE]" >&2
+        return 1
+    }
+    assert_equals "$PYNTARA_LOG_DIR/$(basename "$PYNTARA_LOG_FILE")" "$PYNTARA_LOG_FILE" "the log file sits in the installer log directory" || return 1
+    assert_equals "$(grep -m1 '^LOG_TIMESTAMP_FORMAT=' "$LAUNCHER")" "$(grep -m1 '^LOG_TIMESTAMP_FORMAT=' "$REPO_ROOT/inst.sh")" "the launcher and the installer declare one timestamp format" || return 1
 }
 
 test_launcher_download_path_is_shared_memory() {
@@ -311,7 +324,7 @@ run_test test_launcher_ships_the_default_vault_password
 run_test test_launcher_holds_no_second_copy_of_the_password
 run_test test_launcher_never_names_the_production_password_file
 run_test test_launcher_hands_its_password_to_the_installer
-run_test test_launcher_reports_a_missing_password
+run_test test_launcher_passes_no_password_when_its_line_is_empty
 run_test test_launcher_replaced_password_is_passed_through
 run_test test_launcher_clears_the_inherited_environment
 run_test test_launcher_installer_receives_only_the_file_values
@@ -319,7 +332,7 @@ run_test test_launcher_download_follows_the_branch
 run_test test_launcher_reports_a_failed_download
 run_test test_launcher_returns_the_installer_exit_code
 run_test test_launcher_logs_a_timestamped_line
-run_test test_launcher_log_path_matches_the_installer_default
+run_test test_launcher_log_file_is_named_after_the_run
 run_test test_launcher_download_path_is_shared_memory
 run_test test_launcher_refuses_an_unprivileged_start
 

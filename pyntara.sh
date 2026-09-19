@@ -22,10 +22,13 @@ PYNTARA_REPO_BRANCH="main"
 INSTALLER_URL_BASE="https://raw.githubusercontent.com/Borodin-Atamanov/Pyntara"
 INSTALLER_PATH="/dev/shm/pyntara-inst.sh"
 
-# One log for the whole run: the launcher and the installer append to the same
-# file, and both halves report to the journal under the same identifier.
+# One log for the whole run, named after the run: both halves write the same
+# file and report to the journal under the same identifier. The timestamp
+# format is the declared DATETIME_FORMAT of the engine values, kept identical
+# in inst.sh, so the installer computes the same name when it runs alone.
+LOG_TIMESTAMP_FORMAT="%Y-%m-%d-%H-%M-%S"
 PYNTARA_LOG_DIR="/var/log/pyntara"
-PYNTARA_LOG_FILE="$PYNTARA_LOG_DIR/install.log"
+PYNTARA_LOG_FILE="$PYNTARA_LOG_DIR/install-$(date +"$LOG_TIMESTAMP_FORMAT").log"
 PYNTARA_JOURNAL_IDENTIFIER="pyntara-install"
 
 # Vault password of the run. The value below is the published password of the
@@ -42,10 +45,15 @@ PYNTARA_VAULT_PASSWORD="test-password-123"
 
 # Install mode and task selection. An omitted value is resolved by the engine:
 # the mode is auto-detected, the task set is the default set of the mode.
-# Uncomment a line to fix the value for this run.
+# The two blocks below are generated from the catalog by
+# python -m pyntara.launcher_modes, which is the only writer of them: one
+# commented line per declared mode, so a mode is selected by uncommenting its
+# line, and the whole catalog in catalog order for a narrowed run.
+# PYNTARA_INSTALL_MODE="minimal"
+# PYNTARA_INSTALL_MODE="server"
 # PYNTARA_INSTALL_MODE="desktop"
-# The whole catalog in catalog order (src/pyntara/values/tasks.py).
-# PYNTARA_TASKS="add_extra_repos hostname swapfile_service_install zram_service zswap_service local_vault_setup system_metrics_setup ssh_daemon_setup ssh_client_setup port_forwarding_setup kde_keyboard_setup kde_settings vocalinux_setup nextdns_setup_system_wide dnsproxy_setup i2pd_service_setup yggdrasil_service_setup tor_setup three_x_ui_xray_setup sotavpn_setup rustdesk_setup imagemagick_setup ffmpeg_setup upnp_forwarding_setup system_metrics_initial_collect chrome_setup playwright_setup cli_tools_lite_setup cli_tools_heavy_setup telegram_setup scrcpy_setup commit_final_system_metrics"
+# PYNTARA_INSTALL_MODE="fast_desktop"
+# PYNTARA_TASKS="add_extra_repos hostname swapfile_service_install zram_service zswap_service local_vault_setup system_metrics_setup ssh_daemon_setup ssh_client_setup port_forwarding_setup kde_keyboard_setup kde_settings keyring_setup vocalinux_setup nextdns_setup_system_wide dnsproxy_setup i2pd_service_setup yggdrasil_service_setup tor_setup three_x_ui_xray_setup sotavpn_setup rustdesk_setup imagemagick_setup ffmpeg_setup upnp_forwarding_setup system_metrics_initial_collect chrome_setup playwright_setup cli_tools_lite_setup cli_tools_heavy_setup telegram_setup scrcpy_setup commit_final_system_metrics"
 # PYNTARA_FORCE_TASKS=""
 # PYNTARA_SKIP_APT_UPDATE=1
 
@@ -58,7 +66,7 @@ launcher_log() {
     # empty identifier disables journal forwarding, matching the installer.
     local message="$1"
     local timestamp
-    timestamp="$(date +%Y-%m-%d-%H-%M-%S)"
+    timestamp="$(date +"$LOG_TIMESTAMP_FORMAT")"
     echo "[$timestamp] $message" | tee -a "$PYNTARA_LOG_FILE"
     if [[ -n "$PYNTARA_JOURNAL_IDENTIFIER" ]] && command -v systemd-cat >/dev/null 2>&1; then
         printf '%s\n' "$message" | systemd-cat --identifier "$PYNTARA_JOURNAL_IDENTIFIER" || true
@@ -111,21 +119,6 @@ download_installer() {
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
-if ! declare -f resolve_vault_password &>/dev/null; then
-resolve_vault_password() {
-    # The password of the file is handed to the installer, which resolves the
-    # vault it opens: production when it opens production.vault, default when
-    # it matches default.password, and the same warning and wait when it opens
-    # neither. No password in the file means the same as an unmatched one.
-    if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
-        launcher_log "No vault password in the launcher, the installer warns and falls back to the default vault"
-        return 0
-    fi
-    launcher_log "Vault password set in the launcher, the installer resolves the vault it opens"
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f export_run_parameters &>/dev/null; then
 export_run_parameters() {
     # Only the values of this file reach the installer. A name left commented
@@ -164,7 +157,6 @@ main() {
     prepare_log_dir
     launcher_log "Pyntara launcher started, repository $PYNTARA_REPO_URL branch $PYNTARA_REPO_BRANCH"
     download_installer
-    resolve_vault_password
     export_run_parameters
     run_installer "$@"
 }

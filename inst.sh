@@ -42,8 +42,12 @@ fi
 
 # Implementation: phase 1.3 (logging)
 # Single log file for the whole installer run, bootstrap contract, Logging.
-# Overridable via environment so tests never touch real system paths.
-LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install.log}"
+# Overridable via environment so tests never touch real system paths. The
+# default is named after the run with the declared DATETIME_FORMAT of the
+# engine values, kept identical in pyntara.sh, and the launcher exports a value
+# of the same shape, so both halves write one file.
+LOG_TIMESTAMP_FORMAT="%Y-%m-%d-%H-%M-%S"
+LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install-$(date +"$LOG_TIMESTAMP_FORMAT").log}"
 
 # Journal identifier for own installer messages, fixed by the bootstrap
 # contract (bootstrap contract, Logging). An empty value disables journal
@@ -63,7 +67,7 @@ log() {
     # because the journal stamps its own time.
     local message="$1"
     local timestamp
-    timestamp="$(date +%Y-%m-%d-%H-%M-%S)"
+    timestamp="$(date +"$LOG_TIMESTAMP_FORMAT")"
     echo "[$timestamp] $message" | tee -a "$LOG_FILE"
     if [[ -n "$JOURNAL_IDENTIFIER" ]] && command -v systemd-cat >/dev/null 2>&1; then
         printf '%s\n' "$message" | systemd-cat --identifier "$JOURNAL_IDENTIFIER" || true
@@ -450,53 +454,6 @@ prompt_vault_password() {
 }
 fi
 
-# Implementation: phase 4.2 (install mode selection)
-
-# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
-if ! declare -f detect_default_mode &>/dev/null; then
-detect_default_mode() {
-    # Choose the default install mode without asking the user, install-modes
-    # spec: desktop when a desktop session is present, otherwise server.
-    # PYNTARA_DEFAULT_INSTALL_MODE overrides detection for tests and for
-    # unattended runs where no session information is available.
-    if [[ -n "${PYNTARA_DEFAULT_INSTALL_MODE:-}" ]]; then
-        echo "$PYNTARA_DEFAULT_INSTALL_MODE"
-        return 0
-    fi
-    # A desktop session sets one of these variables; their absence means a
-    # server or a bare login shell.
-    if [[ -n "${XDG_CURRENT_DESKTOP:-}" || -n "${DESKTOP_SESSION:-}" ]]; then
-        echo "desktop"
-        return 0
-    fi
-    # No session variables: a running desktop process still means desktop.
-    # pgrep runs even when the caller has no tty, and exit code 1 means no
-    # process matched, so desktop is only chosen when a match exists.
-    if pgrep -x kwin_wayland &>/dev/null || pgrep -x kwin_x11 &>/dev/null || pgrep -x plasmashell &>/dev/null || pgrep -x gnome-shell &>/dev/null; then
-        echo "desktop"
-        return 0
-    fi
-    echo "server"
-}
-fi
-
-# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
-if ! declare -f prompt_install_mode &>/dev/null; then
-prompt_install_mode() {
-    # Decide the install mode and export it for the Python engine.
-    # PYNTARA_INSTALL_MODE fixes the mode; otherwise the system default is
-    # detected. No screen is shown.
-    if [[ -n "${PYNTARA_INSTALL_MODE:-}" ]]; then
-        log_status "Install mode from environment: $PYNTARA_INSTALL_MODE"
-        return 0
-    fi
-    local mode
-    mode="$(detect_default_mode)"
-    export PYNTARA_INSTALL_MODE="$mode"
-    log_status "Install mode (default): $mode"
-}
-fi
-
 # Guard so the test harness can inject a mock main via source (bootstrap contract, Testability).
 if ! declare -f main &>/dev/null; then
 main() {
@@ -517,10 +474,10 @@ main() {
         log "Vault setup failed, aborting"
         exit 1
     fi
-    # Phase 4.2: the install mode is fixed after the vault is open. The
-    # engine resolves the task set itself: the mode defaults or
-    # PYNTARA_TASKS with dependencies.
-    prompt_install_mode
+    # Phase 4.2: the install mode is not the installer's business any more.
+    # The engine resolves it from PYNTARA_INSTALL_MODE or the machine itself
+    # and resolves the task set (mode defaults or PYNTARA_TASKS with
+    # dependencies), so the mode is detected in one place and not two.
     run_pyntara "$@"
     log "Bootstrap finished, pyntara installer version $PYNTARA_VERSION"
 }
