@@ -74,7 +74,7 @@ If the task belongs to a default install mode, verify that the mode lists it in 
 
 ## Adding an install mode
 
-Add the name to MODES in src/pyntara/values/tasks.py and list it in the modes of the records it selects. That is the whole change: the engine validates and resolves every mode from the catalog, a record that belongs to every mode carries modes=MODES and follows a new name without an edit, and the tests name the modes they check one by one, so a mode added later is never a failure in them.
+Add the name to MODES in src/pyntara/values/tasks.py and list it in the modes of the records it selects. That is the whole change: the engine validates and resolves every mode from the catalog, a record that belongs to every mode carries modes=MODES and follows a new name without an edit, and the tests name the modes they check one by one, so a mode added later is never a failure in them. Then run python -m pyntara.launcher_modes --root . so the commented mode lines of the launcher file follow the catalog; the same command with --check fails when that file drifted, and tests/test_launcher_modes.py runs it against the shipped file.
 
 ## Task best practices
 

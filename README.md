@@ -53,10 +53,12 @@ outside, without the long heavy installs. A written name is read without case an
 with a hyphen and an underscore counting as one separator, so fast-desktop selects
 fast_desktop; a name that declares no mode shows a notice that names the declared
 modes, the run applies the auto-detected mode and reports that substitution as a
-warning of the run. Commented out; when omitted, the mode is auto-detected from the
-system (desktop or server).
+warning of the run. The commented mode lines are written by
+python -m pyntara.launcher_modes, so uncommenting one is the whole choice. Commented
+out; when omitted, the engine detects the mode from the system (desktop or server).
 
-PYNTARA_TASKS — space-separated task names, the whole catalog sits in a commented line.
+PYNTARA_TASKS — space-separated task names, the whole catalog sits in a commented line written
+by python -m pyntara.launcher_modes.
 When omitted, the default task set of the chosen mode is used; dependencies are resolved
 inside the engine, so a listed task always runs with what it needs.
 
@@ -72,10 +74,10 @@ add_extra_repos and the package install tasks run before package operations. The
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
-PYNTARA_LOG_DIR, PYNTARA_LOG_FILE, PYNTARA_JOURNAL_IDENTIFIER — one log for the whole run.
-The launcher and the installer append to the same file under /var/log/pyntara, and both
-report to the system journal under the identifier pyntara-install, which the engine mirrors
-under its own identifier. The launcher logs the download phase, which no later layer sees.
+PYNTARA_LOG_DIR, PYNTARA_LOG_FILE, PYNTARA_JOURNAL_IDENTIFIER — one log per run carries both
+the launcher and the installer, and both report to the system journal under one identifier,
+which the engine mirrors under its own. The launcher logs the download phase, which no later
+layer sees.
 
 Optional: PYNTARA_VAULT_SOURCE — production or default. The launcher leaves it unset, so the
 source is auto-detected from the password as described above.

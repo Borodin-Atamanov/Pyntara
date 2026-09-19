@@ -24,6 +24,8 @@ When PYNTARA_INSTALL_MODE is omitted, the mode is auto-detected from the system:
 on desktop systems, desktop mode is used  
 on server systems, server mode is used
 
+The detection runs in the engine alone, which reads the machine and reports the mode it applied. The installer passes the environment on and holds no copy of that logic, so the mode is decided in one place.
+
 An unknown PYNTARA_INSTALL_MODE value shows the resilience notice, which names the declared modes, and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#resilience-rule)). The run reports that substitution as a warning of its own and fails its exit code, because the applied task set can be much larger than the one that was asked for.
 
 ## Task selection

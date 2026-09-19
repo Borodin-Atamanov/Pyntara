@@ -13,7 +13,7 @@ Startup check: script must be running as root. If not, exit with an error.
 pyntara.sh is the user-facing entry point of a machine: it downloads inst.sh from the raw branch of the repository into /dev/shm and runs it as root. It carries no version line, so it is not a version carrier.
 Run parameters live in the file and only in the file. The launcher clears every PYNTARA_ name inherited from the caller before it sets its own values, so an exported variable never reaches the installer; a name left commented out stays unset and the installer or the engine resolves its own default.
 The vault password is the PYNTARA_VAULT_PASSWORD line, and it is the only password line of the file: the launcher hands its value to the installer and never decides the vault itself, so the second copy a comparison would need does not exist there (a replaced copy once silenced the production password, 2026-09-19). The shipped value is the published password of default.vault, and it is the shape of the line a user replaces with the production password. The installer decides: production when the password opens production.vault, default when it matches default.password, and the same warning and wait when it opens neither. The launcher never sets PYNTARA_VAULT_SOURCE and never reads the terminal, so the run has no interactive input. The production password is never a value in the repository, never an argument and never a log line.
-One log for the whole run: the launcher exports PYNTARA_LOG_DIR, PYNTARA_LOG_FILE and PYNTARA_JOURNAL_IDENTIFIER, appends its own download phase to the same file the installer writes and reports under the same journal identifier, so the two halves cannot drift apart. PYNTARA_REPO_URL and PYNTARA_REPO_BRANCH are exported too, and the branch selects both the downloaded installer and the checkout the installer clones.
+One log per run carries both halves: the launcher appends its download phase to the same log the installer writes and reports under the same journal identifier, so the two halves cannot drift apart. PYNTARA_REPO_URL and PYNTARA_REPO_BRANCH are exported too, and the branch selects both the downloaded installer and the checkout the installer clones. The install modes and the whole task catalog appear in the file as commented lines, which python -m pyntara.launcher_modes writes from the catalog; that helper is the only writer of them.
 
 ## Package installation: apt update before install
 
@@ -83,7 +83,7 @@ The installer never shows interactive screens. All user interaction happens thro
 
 Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no vault, the default vault is used after a countdown notice).  
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).  
-Install mode: PYNTARA_INSTALL_MODE (optional, auto-detected when omitted).  
+Install mode: PYNTARA_INSTALL_MODE (optional; when omitted the engine detects desktop or server from the machine and reports it, so the detection lives in one place).  
 Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).  
 Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that the package install tasks run before the first install).
 
