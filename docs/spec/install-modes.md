@@ -6,6 +6,11 @@ to. The vocabulary is open: the names in use are minimal, server, desktop and
 fast_desktop, and a mode added later is a new name in the catalog together with
 the records that belong to it, never a change to this document.
 
+A mode is selected by a value written by hand, so a written name is read without
+case and with a hyphen and an underscore counting as one separator: fast-desktop,
+Fast_Desktop and fast_desktop all name the same mode, and the run carries the
+declared spelling.
+
 fast_desktop is the quick set: a working system that is reachable from outside,
 without the long heavy installs. It is selected like any other mode, through
 PYNTARA_INSTALL_MODE, and it is never auto-detected, because a bare machine
@@ -19,7 +24,7 @@ When PYNTARA_INSTALL_MODE is omitted, the mode is auto-detected from the system:
 on desktop systems, desktop mode is used  
 on server systems, server mode is used
 
-An unknown PYNTARA_INSTALL_MODE value shows the resilience notice and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#resilience-rule)).
+An unknown PYNTARA_INSTALL_MODE value shows the resilience notice, which names the declared modes, and falls back to the auto-detected mode ([Resilience rule](../simplified-architecture.md#resilience-rule)). The run reports that substitution as a warning of its own and fails its exit code, because the applied task set can be much larger than the one that was asked for.
 
 ## Task selection
 

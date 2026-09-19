@@ -36,7 +36,9 @@ a log. The installer runs non-interactively and never asks the user anything: th
 source is auto-detected from the password, production when it opens production.vault and
 default when it matches default.password. While the line keeps the shipped value, and also
 when a password opens no vault, the installer shows a short countdown notice and falls back
-to the default vault.
+to the default vault; the installer writes a WARNING line for that fallback into the run log
+and the run reports it as a warning of its own, so a run that took the secrets of the machine
+from the repository test vault never passes silently.
 
 Parameters of the file:
 
@@ -47,8 +49,12 @@ from a main run by one value.
 PYNTARA_INSTALL_MODE — one of the mode names declared in the task catalog
 (src/pyntara/values/tasks.py). The names in use are minimal, server, desktop and
 fast_desktop, where fast_desktop is the quick set: a working system reachable from
-outside, without the long heavy installs. Commented out; when omitted, the mode is
-auto-detected from the system (desktop or server).
+outside, without the long heavy installs. A written name is read without case and
+with a hyphen and an underscore counting as one separator, so fast-desktop selects
+fast_desktop; a name that declares no mode shows a notice that names the declared
+modes, the run applies the auto-detected mode and reports that substitution as a
+warning of the run. Commented out; when omitted, the mode is auto-detected from the
+system (desktop or server).
 
 PYNTARA_TASKS — space-separated task names, the whole catalog sits in a commented line.
 When omitted, the default task set of the chosen mode is used; dependencies are resolved
