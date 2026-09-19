@@ -1,4 +1,9 @@
-"""Unit tests for the cli_tools task.
+"""Unit tests for the cli_tools_lite_setup task.
+
+The install path itself is shared: pyntara.package_set asks dpkg which packages
+of the list are missing, installs exactly those and reports the installed
+share. This suite exercises that path through this task, and the heavy section
+reuses it with its own list.
 
 All external resources (dpkg-query, apt-get) are mocked via monkeypatch;
 the tests never touch the real system (docs/guides/developer-guide.md).
@@ -15,8 +20,8 @@ from support import make_context
 
 from pyntara import task_catalog
 from pyntara.context import Context
-from pyntara.tasks import cli_tools
-from pyntara.values import cli_tools as cli_tools_values
+from pyntara.tasks import cli_tools_lite_setup
+from pyntara.values import cli_tools_lite_setup as lite_values
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
@@ -44,8 +49,8 @@ def _point_the_values_at_the_test_set(
     the same names itself.
     """
 
-    monkeypatch.setattr(cli_tools_values, "PACKAGES", TEST_PACKAGES)
-    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 70)
+    monkeypatch.setattr(lite_values, "PACKAGES", TEST_PACKAGES)
+    monkeypatch.setattr(lite_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 70)
 
 
 def _ctx() -> Context:
@@ -75,22 +80,22 @@ def _install_fake(
     return calls
 
 
-def test_cli_tools_is_in_every_mode_default_set() -> None:
+def test_cli_tools_lite_setup_is_in_every_mode_default_set() -> None:
     for mode in tasks_values.MODES:
-        assert "cli_tools" in task_catalog.default_tasks(mode, REAL_TASKS)
+        assert "cli_tools_lite_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
 
 
-def test_cli_tools_depends_on_add_extra_repos() -> None:
-    # cli_tools needs universe and multiverse enabled before its packages
+def test_cli_tools_lite_setup_depends_on_add_extra_repos() -> None:
+    # cli_tools_lite_setup needs universe and multiverse enabled before its packages
     # can resolve, so add_extra_repos is a hard dependency.
-    task_def = task_catalog.by_name("cli_tools", REAL_TASKS)
+    task_def = task_catalog.by_name("cli_tools_lite_setup", REAL_TASKS)
     assert task_def is not None
     assert task_def.depends == ("add_extra_repos",)
 
 
 def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.message == "already installed"
@@ -100,7 +105,7 @@ def test_all_installed_skips_apt(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     # Only mc is missing; apt must install exactly that package.
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "4/4" in (result.message or "")
@@ -118,7 +123,7 @@ def test_share_follows_the_configured_percent_scale(
     _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
     monkeypatch.setattr(engine_values, "PERCENT_SCALE", 200)
     ctx = _ctx()
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert "200%" in (result.message or "")
 
@@ -137,7 +142,7 @@ def test_config_files_leftover_counts_as_not_installed(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.changed is True
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
@@ -159,7 +164,7 @@ def test_apt_failure_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
         raise subprocess.CalledProcessError(100, command)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.warnings
@@ -187,7 +192,7 @@ def test_apt_hang_reports_the_timeout_as_a_warning(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
@@ -213,7 +218,7 @@ def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> No
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     updates = [call for call in calls if call[0] == "apt-get" and call[1] == "update"]
@@ -225,9 +230,9 @@ def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> No
 def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
     # Force mode reruns the task but does not change the outcome when the
     # target state is already reached.
-    ctx = make_context(force_tasks=frozenset({"cli_tools"}))
+    ctx = make_context(force_tasks=frozenset({"cli_tools_lite_setup"}))
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES))
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert not any(call[0] == "apt-get" for call in calls)
@@ -254,7 +259,7 @@ def test_missing_package_does_not_block_others(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
@@ -272,7 +277,7 @@ def test_all_packages_missing_is_a_warning(
         raise subprocess.CalledProcessError(100, command)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
     assert result.warnings
@@ -302,7 +307,7 @@ def test_update_failure_still_installs_from_cache(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "installed" in (result.message or "")
@@ -327,7 +332,7 @@ def test_retries_transient_install_failure(monkeypatch: pytest.MonkeyPatch) -> N
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "4/4" in (result.message or "")
@@ -359,7 +364,7 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert any("hollywood" in warning for warning in result.warnings)
     hollywood_installs = [
@@ -373,7 +378,7 @@ def test_gives_up_after_configured_retries(monkeypatch: pytest.MonkeyPatch) -> N
 def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     # retries=0 means a single attempt per package: a failing package is
     # attempted once and reported without a retry.
-    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
+    monkeypatch.setattr(lite_values, "PACKAGES", ("mc",))
     monkeypatch.setattr(common_values, "PACKAGE_INSTALL_RETRIES", 0)
     ctx = make_context()
     calls: list[list[str]] = []
@@ -387,7 +392,7 @@ def test_no_retries_when_configured_zero(monkeypatch: pytest.MonkeyPatch) -> Non
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     installs = [call for call in calls if call[0] == "apt-get" and call[1] == "install"]
     assert len(installs) == 1
@@ -401,7 +406,7 @@ def test_skip_apt_update_skips_index_refresh(
     # installs run, so a test run never waits for apt-get update.
     ctx = make_context(skip_apt_update=True)
     calls = _install_fake(monkeypatch, installed=set(TEST_PACKAGES) - {"mc"})
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
@@ -416,7 +421,7 @@ def test_skip_apt_update_still_retries_installs(
 ) -> None:
     # With the refresh skipped, a transient install failure still succeeds
     # on a retry without any apt-get update call.
-    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
+    monkeypatch.setattr(lite_values, "PACKAGES", ("mc",))
     ctx = make_context(skip_apt_update=True)
     calls: list[list[str]] = []
     mc_attempts = 0
@@ -433,7 +438,7 @@ def test_skip_apt_update_still_retries_installs(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert "1/1" in (result.message or "")
     assert not any(call[0] == "apt-get" and call[1] == "update" for call in calls)
@@ -461,7 +466,7 @@ def test_single_failure_within_threshold_is_not_fatal(
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
     assert "3/4" in (result.message or "")
@@ -483,7 +488,7 @@ def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(_ctx())
+    result = cli_tools_lite_setup.task(_ctx())
     assert result.success is True
     assert any("htop" in warning for warning in result.warnings)
     assert any("hollywood" in warning for warning in result.warnings)
@@ -492,8 +497,8 @@ def test_below_threshold_is_a_warning(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
     # One of two packages installs: exactly 50 percent, at the 50 percent
     # threshold, so the task succeeds (failure only below the threshold).
-    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc", "htop"))
-    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50)
+    monkeypatch.setattr(lite_values, "PACKAGES", ("mc", "htop"))
+    monkeypatch.setattr(lite_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 50)
     ctx = make_context()
     calls: list[list[str]] = []
 
@@ -510,15 +515,15 @@ def test_exactly_at_threshold_succeeds(monkeypatch: pytest.MonkeyPatch) -> None:
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert "1/2" in (result.message or "")
 
 
 def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     # A zero threshold means the task never fails on missing packages.
-    monkeypatch.setattr(cli_tools_values, "PACKAGES", ("mc",))
-    monkeypatch.setattr(cli_tools_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 0)
+    monkeypatch.setattr(lite_values, "PACKAGES", ("mc",))
+    monkeypatch.setattr(lite_values, "PACKAGE_SUCCESS_THRESHOLD_PERCENT", 0)
     ctx = make_context()
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -529,7 +534,7 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
-    result = cli_tools.task(ctx)
+    result = cli_tools_lite_setup.task(ctx)
     assert result.success is True
     assert "0/1" in (result.message or "")
     assert any("mc" in warning for warning in result.warnings)

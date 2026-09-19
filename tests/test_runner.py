@@ -26,10 +26,10 @@ def test_run_tasks_reports_missing_implementation(
     # The example name is an implemented task so the test stays meaningful
     # if future catalog entries change.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
+    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     assert len(results) == 1
     name, result = results[0]
-    assert name == "cli_tools"
+    assert name == "cli_tools_lite_setup"
     assert result.success is False
     assert result.skipped is True
     assert "not implemented" in (result.message or "")
@@ -40,8 +40,8 @@ def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) 
         return lambda ctx: TaskResult(success=True, message="ok")
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
-    assert results == [("cli_tools", TaskResult(success=True, message="ok"))]
+    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    assert results == [("cli_tools_lite_setup", TaskResult(success=True, message="ok"))]
 
 
 def test_run_tasks_hands_each_task_its_own_name(
@@ -59,8 +59,8 @@ def test_run_tasks_hands_each_task_its_own_name(
         return fake_task
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    task_runner.run_tasks(_ctx(), ["cli_tools", "hostname"])
-    assert seen == ["cli_tools", "hostname"]
+    task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup", "hostname"])
+    assert seen == ["cli_tools_lite_setup", "hostname"]
 
 
 def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +70,7 @@ def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> N
         raise RuntimeError("boom")
 
     monkeypatch.setattr(task_runner, "load_task", lambda name: boom)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
+    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert result.warnings == ("boom",)
@@ -83,7 +83,7 @@ def test_run_tasks_reports_import_failures(monkeypatch: pytest.MonkeyPatch) -> N
         raise RuntimeError("import exploded")
 
     monkeypatch.setattr(task_runner, "load_task", broken)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
+    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert any("import failed" in warning for warning in result.warnings)
@@ -98,7 +98,7 @@ def test_run_tasks_converts_task_failure_to_warning(
         return lambda ctx: TaskResult(success=False, error="cannot apply hotkey")
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools"])
+    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert result.warnings == ("cannot apply hotkey",)
@@ -126,9 +126,9 @@ def test_run_tasks_reports_task_duration(
         return lambda ctx: TaskResult(success=True, message="ok")
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    task_runner.run_tasks(_ctx(), ["cli_tools"])
+    task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     captured = capsys.readouterr().out
-    assert re.search(r"\[done\] cli_tools in \d+\.\d{3}s: ok", captured)
+    assert re.search(r"\[done\] cli_tools_lite_setup in \d+\.\d{3}s: ok", captured)
 
 
 def test_task_modules_report_findings_in_warnings() -> None:

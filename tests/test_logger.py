@@ -242,8 +242,8 @@ def test_log_result_line_mirrors_outcome(journal_available: bool) -> None:
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("result")
     _use_identifier(identifier)
-    logger.log_result_line("cli_tools", TaskResult(success=True, message="all good"))
-    assert _wait_for(identifier, "[done] cli_tools: all good")
+    logger.log_result_line("cli_tools_lite_setup", TaskResult(success=True, message="all good"))
+    assert _wait_for(identifier, "[done] cli_tools_lite_setup: all good")
 
 
 def test_log_event_mirrors_status_line(journal_available: bool) -> None:
@@ -315,10 +315,10 @@ def test_log_result_line_to_journal_false_skips_journal(
         pytest.skip("systemd journal is not available")
     identifier = _new_identifier("quiet-result")
     _use_identifier(identifier)
-    logger.log_result_line("cli_tools", TaskResult(success=True, message="visible"))
-    assert _wait_for(identifier, "[done] cli_tools: visible")
+    logger.log_result_line("cli_tools_lite_setup", TaskResult(success=True, message="visible"))
+    assert _wait_for(identifier, "[done] cli_tools_lite_setup: visible")
     logger.log_result_line(
-        "cli_tools", TaskResult(success=True, message="hidden"), to_journal=False
+        "cli_tools_lite_setup", TaskResult(success=True, message="hidden"), to_journal=False
     )
     journal = _journal_with_marker(identifier, "result path finished")
     assert "hidden" not in journal
@@ -356,7 +356,7 @@ def test_log_result_line_prints_warnings(
     identifier = _new_identifier("warn-result")
     _use_identifier(identifier)
     logger.log_result_line(
-        "cli_tools",
+        "cli_tools_lite_setup",
         TaskResult(
             success=True,
             message="done",
@@ -364,23 +364,23 @@ def test_log_result_line_prints_warnings(
         ),
     )
     captured = capsys.readouterr()
-    assert "[done] cli_tools: done" in captured.out
-    assert "[warn] cli_tools: cannot apply hotkey" in captured.out
-    assert "[warn] cli_tools: no session" in captured.out
-    assert _wait_for(identifier, "[warn] cli_tools: cannot apply hotkey")
+    assert "[done] cli_tools_lite_setup: done" in captured.out
+    assert "[warn] cli_tools_lite_setup: cannot apply hotkey" in captured.out
+    assert "[warn] cli_tools_lite_setup: no session" in captured.out
+    assert _wait_for(identifier, "[warn] cli_tools_lite_setup: cannot apply hotkey")
 
 
 def test_log_result_line_shows_duration(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     logger.log_result_line(
-        "cli_tools",
+        "cli_tools_lite_setup",
         TaskResult(success=True, message="installed"),
         duration_seconds=12.345,
         to_journal=False,
     )
     captured = capsys.readouterr()
-    assert "[done] cli_tools in 12.345s: installed" in captured.out
+    assert "[done] cli_tools_lite_setup in 12.345s: installed" in captured.out
 
 
 def test_log_result_line_skip_never_invents_not_implemented(
@@ -392,18 +392,18 @@ def test_log_result_line_skip_never_invents_not_implemented(
     # message keeps its detail. to_journal=False keeps the test free of the
     # system journal.
     logger.log_result_line(
-        "cli_tools", TaskResult(success=False, skipped=True), to_journal=False
+        "cli_tools_lite_setup", TaskResult(success=False, skipped=True), to_journal=False
     )
     captured = capsys.readouterr()
-    assert "[skip] cli_tools" in captured.out
+    assert "[skip] cli_tools_lite_setup" in captured.out
     assert "not implemented" not in captured.out
     logger.log_result_line(
-        "cli_tools",
+        "cli_tools_lite_setup",
         TaskResult(success=False, skipped=True, message="skipped for a reason"),
         to_journal=False,
     )
     captured = capsys.readouterr()
-    assert "[skip] cli_tools: skipped for a reason" in captured.out
+    assert "[skip] cli_tools_lite_setup: skipped for a reason" in captured.out
 
 
 def test_log_event_to_journal_false_skips_journal(

@@ -173,7 +173,7 @@ def test_ffmpeg_setup_is_in_every_mode_default_set() -> None:
 
 def test_ffmpeg_setup_depends_on_add_extra_repos() -> None:
     # ffmpeg lives in universe, so add_extra_repos is a hard dependency,
-    # the same as imagemagick_setup and cli_tools.
+    # the same as imagemagick_setup and cli_tools_lite_setup.
     task_def = task_catalog.by_name("ffmpeg_setup", REAL_TASKS)
     assert task_def is not None
     assert task_def.depends == ("add_extra_repos",)

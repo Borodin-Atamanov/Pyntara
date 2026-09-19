@@ -60,12 +60,12 @@ def test_add_extra_repos_is_first_in_every_mode() -> None:
         assert defaults[0] == "add_extra_repos"
 
 
-def test_resolve_cli_tools_pulls_add_extra_repos() -> None:
-    # Selecting cli_tools alone must enable add_extra_repos first, because
+def test_resolve_cli_tools_lite_setup_pulls_add_extra_repos() -> None:
+    # Selecting cli_tools_lite_setup alone must enable add_extra_repos first, because
     # its packages live in universe and multiverse.
-    assert task_catalog.resolve(["cli_tools"], TASKS) == [
+    assert task_catalog.resolve(["cli_tools_lite_setup"], TASKS) == [
         "add_extra_repos",
-        "cli_tools",
+        "cli_tools_lite_setup",
     ]
 
 
@@ -98,26 +98,26 @@ def test_resolve_ignores_unknown_names() -> None:
 
 
 def test_unknown_tasks_reports_unknown_names() -> None:
-    assert task_catalog.unknown_tasks(["nope", "cli_tools"], TASKS) == ["nope"]
+    assert task_catalog.unknown_tasks(["nope", "cli_tools_lite_setup"], TASKS) == ["nope"]
 
 
 def test_by_name_matches_case_insensitively() -> None:
-    assert task_catalog.by_name("CLI_TOOLS", TASKS) is not None
-    assert task_catalog.by_name("Cli_Tools", TASKS) is not None
+    assert task_catalog.by_name("CLI_TOOLS_LITE_SETUP", TASKS) is not None
+    assert task_catalog.by_name("Cli_Tools_Lite_Setup", TASKS) is not None
     assert task_catalog.by_name("nope", TASKS) is None
 
 
 def test_unknown_tasks_matches_case_insensitively() -> None:
     # An unknown name is still reported, a known name in another case is not.
-    assert task_catalog.unknown_tasks(["NOPE", "CLI_TOOLS"], TASKS) == ["NOPE"]
+    assert task_catalog.unknown_tasks(["NOPE", "CLI_TOOLS_LITE_SETUP"], TASKS) == ["NOPE"]
 
 
 def test_resolve_matches_selection_case_insensitively() -> None:
     # Selection names are matched case-insensitively; the result carries the
     # canonical catalog names.
-    assert task_catalog.resolve(["CLI_TOOLS"], TASKS) == [
+    assert task_catalog.resolve(["CLI_TOOLS_LITE_SETUP"], TASKS) == [
         "add_extra_repos",
-        "cli_tools",
+        "cli_tools_lite_setup",
     ]
     assert task_catalog.resolve(["C", "A"], SYNTHETIC_TASKS) == ["a", "b", "c"]
 

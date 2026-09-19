@@ -47,11 +47,10 @@ from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     download_command,
     dpkg_architecture,
-    install_packages,
-    package_is_installed,
     release_asset_architecture,
     run_command,
     substituted_command,
@@ -452,36 +451,22 @@ def _deploy_release(
     )
 
 
-def _install_from_apt(
-    ctx: Context, timeout: float, warnings: list[str]
-) -> tuple[bool, str]:
+def _install_from_apt(ctx: Context, warnings: list[str]) -> tuple[bool, str]:
     """Install the fallback packages; return (installed something, note)."""
 
-    missing = [
-        package
-        for package in values.FALLBACK_PACKAGES
-        if not package_is_installed(
-            package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
-        )
-    ]
+    missing, installed, failures, apt_warnings = install_missing_packages(
+        ctx, values.FALLBACK_PACKAGES
+    )
     if not missing:
         return False, "the Ubuntu archive client is installed already"
-    _log(f"installing from the Ubuntu archive: {', '.join(missing)}")
-    installed, failures, apt_warnings = install_packages(
-        missing,
-        install_timeout=timeout,
-        update_timeout=timeout,
-        retries=common_values.PACKAGE_INSTALL_RETRIES,
-        skip_update=ctx.skip_apt_update,
-    )
     warnings.extend(apt_warnings)
     if failures:
-        detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
+        detail = failure_detail(failures)
         return False, f"the Ubuntu archive packages did not install: {detail}"
     return True, f"installed from the Ubuntu archive: {', '.join(installed)}"
 
 
-def _ensure_udev_rules(ctx: Context, timeout: float, warnings: list[str]) -> bool:
+def _ensure_udev_rules(ctx: Context, warnings: list[str]) -> bool:
     """Install the Android USB rules when they are missing; True when changed.
 
     The release archive carries no udev rules, so both sources need this
@@ -489,22 +474,14 @@ def _ensure_udev_rules(ctx: Context, timeout: float, warnings: list[str]) -> boo
     reported with what will not work instead of stopping the task.
     """
 
-    if package_is_installed(
-        values.UDEV_RULES_PACKAGE_NAME,
-        common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
-    ):
-        return False
-    _log(f"installing {values.UDEV_RULES_PACKAGE_NAME} for Android USB access")
-    installed, failures, apt_warnings = install_packages(
-        [values.UDEV_RULES_PACKAGE_NAME],
-        install_timeout=timeout,
-        update_timeout=timeout,
-        retries=common_values.PACKAGE_INSTALL_RETRIES,
-        skip_update=ctx.skip_apt_update,
+    missing, installed, failures, apt_warnings = install_missing_packages(
+        ctx, [values.UDEV_RULES_PACKAGE_NAME]
     )
+    if not missing:
+        return False
     warnings.extend(apt_warnings)
     if failures:
-        detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
+        detail = failure_detail(failures)
         warnings.append(
             f"cannot install {values.UDEV_RULES_PACKAGE_NAME}: {detail}; a device "
             "connected over the cable may stay unreachable for the desktop user"
@@ -657,7 +634,7 @@ def task(ctx: Context) -> TaskResult:
             messages.append(f"keeping the installed scrcpy {installed}")
         else:
             _log(f"the GitHub release is unavailable: {release_error}")
-            apt_changed, apt_note = _install_from_apt(ctx, timeout, warnings)
+            apt_changed, apt_note = _install_from_apt(ctx, warnings)
             changed = changed or apt_changed
             messages.append(apt_note)
             apt_binary = Path(values.APT_BINARY_PATH)
@@ -673,7 +650,7 @@ def task(ctx: Context) -> TaskResult:
             else:
                 messages.append("the Ubuntu archive client answers")
 
-    if _ensure_udev_rules(ctx, timeout, warnings):
+    if _ensure_udev_rules(ctx, warnings):
         changed = True
         messages.append(f"installed {values.UDEV_RULES_PACKAGE_NAME}")
 

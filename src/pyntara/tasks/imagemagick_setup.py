@@ -21,11 +21,10 @@ nothing is changed.
 from __future__ import annotations
 
 from pyntara.context import Context
-from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import install_packages, package_is_installed, task_data_dir
+from pyntara.package_set import failure_detail, install_missing_packages
+from pyntara.utils import task_data_dir
 from pyntara.values import common as common_values
-from pyntara.values import engine as engine_values
 from pyntara.values import imagemagick_setup as imagemagick_values
 from pyntara.values import missing_value_names
 
@@ -91,30 +90,14 @@ def task(ctx: Context) -> TaskResult:
             message="the imagemagick values are not declared, nothing was changed",
             warnings=("the imagemagick values are not declared: " + ", ".join(absent),),
         )
-    install_timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
-
-    installed_packages: list[str] = []
-    warnings: list[str] = []
-    missing = [
-        package
-        for package in imagemagick_values.PACKAGES
-        if not package_is_installed(package, status_timeout)
-    ]
-    if missing:
-        _log(f"installing: {', '.join(missing)}")
-        installed, failures, install_warnings = install_packages(
-            missing,
-            install_timeout=install_timeout,
-            update_timeout=install_timeout,
-            retries=common_values.PACKAGE_INSTALL_RETRIES,
-            skip_update=ctx.skip_apt_update,
-        )
-        installed_packages = installed
-        warnings.extend(install_warnings)
-        if failures:
-            failed_names = "; ".join(f"{name}: {reason}" for name, reason in failures)
-            warnings.append(f"failed to install: {failed_names}")
+    _, installed_packages, failures, warnings = install_missing_packages(
+        ctx, imagemagick_values.PACKAGES
+    )
+    if failures:
+        # A package that could not be installed is reported with its reason
+        # while the policy deploy still runs: the policy is the part of the
+        # machine this task owns.
+        warnings.append(f"failed to install: {failure_detail(failures)}")
     policy_changed, policy_error = _deploy_policy(ctx)
     if policy_error:
         # The deployed policy is the part of the machine the task owns, so

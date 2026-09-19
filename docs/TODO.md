@@ -44,7 +44,8 @@ The pattern, set by the hostname pilot and now the only one in the tree:
    per-section helper that takes monkeypatch and the fixture paths when the
    helper already takes them (ffmpeg_setup), and inside a small autouse fixture
    of the test module when the helper takes no arguments and many call sites
-   use it (cli_tools): the fixture keeps those call sites unchanged, and a test
+   use it (cli_tools_lite_setup): the fixture keeps those call sites unchanged,
+   and a test
    that needs another set or another threshold patches the same names itself.
 8. While a section is being migrated its TOML section and its config tests stay
    in place; only the task, its tests and the new rules move. Stage C removes
@@ -80,7 +81,8 @@ sections (tor_setup, upnp_forwarding_setup, yggdrasil_service_setup): it was
 read off a truncated command output, the defect is reported, and the probe above
 is the correction.
 
-1. cli_tools, done, 4 / 120 / 3
+1. cli_tools_lite_setup, done, 4 / 120 / 3, the section was later split by
+   weight into cli_tools_lite_setup and cli_tools_heavy_setup
 2. imagemagick_setup, done, 6 / 142 / 1
 3. playwright_setup, done, 12 / 216 / 1
 4. ffmpeg_setup, done, 11 / 224 / 1
@@ -801,7 +803,7 @@ compliance audit of the same day. Every figure below was measured on this
 machine in this turn, and the probe is named with the figure.
 
 100. Where the remainder stands. Seventeen sections are migrated and merged into
-    main: cli_tools, imagemagick_setup, playwright_setup, ffmpeg_setup,
+    main: cli_tools_lite_setup, imagemagick_setup, playwright_setup, ffmpeg_setup,
     hostname, add_extra_repos, nextdns_setup_system_wide, zswap_service,
     ssh_client_setup, local_vault_setup with vault_structure, telegram_setup,
     scrcpy_setup, swapfile_service_install, kde_keyboard_setup, rustdesk_setup,
@@ -1374,7 +1376,7 @@ machine in this turn, and the probe is named with the figure.
     mentions, rustdesk 18, i2pd 16, ssh_daemon 15, dnsproxy 14,
     system_metrics 11, tor 10, then port_forwarding, kde_settings, zram,
     vocalinux, telegram, scrcpy, three_x_ui, swapfile, ssh_client, sotavpn,
-    chrome, kde_keyboard, cli_tools, zswap, upnp_forwarding,
+    chrome, kde_keyboard, cli_tools_lite_setup, zswap, upnp_forwarding,
     system_metrics_initial_collect, playwright, imagemagick, ffmpeg); thirty
     seven test files touch it; the stand has nine engine_* parameters in
     tests/support.py plus a replace block, 458 lines of tests/test_config_engine.py
@@ -1399,7 +1401,7 @@ machine in this turn, and the probe is named with the figure.
 143. Stage 3 progress of the same day, after the plan point: nineteen of the
     twenty six task modules read the declared values now, in four strides
     (imagemagick, playwright, ffmpeg, system_metrics_initial_collect,
-    upnp_forwarding_setup, zswap; cli_tools, kde_keyboard_setup,
+    upnp_forwarding_setup, zswap; cli_tools_lite_setup, kde_keyboard_setup,
     ssh_client_setup, swapfile_service_install; zram_service, vocalinux_setup,
     telegram_setup, scrcpy_setup; port_forwarding_setup, kde_settings,
     chrome_setup, sotavpn_setup, three_x_ui_xray_setup). Every one of them lost
@@ -1503,7 +1505,7 @@ machine in this turn, and the probe is named with the figure.
     failed, was skipped or warned, and no line of the run reports a missing
     value. Sixteen tasks reported their target state already reached (zram,
     zswap, swapfile, ssh daemon and client, kde keyboard, i2pd, yggdrasil, tor,
-    three_x_ui_xray, cli_tools, playwright, telegram, scrcpy, nextdns), which is
+    three_x_ui_xray, cli_tools_lite_setup, playwright, telegram, scrcpy, nextdns), which is
     the idempotency contract working on a configured machine, and the tasks that
     do work reported it in full: system_metrics_setup deployed the service and
     its venv, port_forwarding_setup and upnp_forwarding_setup deployed their

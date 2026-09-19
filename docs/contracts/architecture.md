@@ -41,7 +41,7 @@ Environment variables are the inst.sh interface for per-run selection and secret
 PYNTARA_INSTALL_MODE - minimal, server or desktop. When unset, the mode is auto-detected (desktop when a desktop session or process is present, otherwise server). An unknown value shows the resilience notice and falls back to the auto-detected mode.  
 PYNTARA_TASKS - space-separated task names. When unset, the mode defaults are used. Unknown names are reported and ignored.  
 PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored. The keyword that forces every task of the resolved run set is force_all_keyword of the engine values module, compared without case; task names are case-insensitive as well.  
-PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that cli_tools and add_extra_repos run before package operations. The answers that mean true are the environment_flag_true_values list of the engine values module, compared without case, so a machine that spells its answers differently is answered in the config and not in the code. Omit it in real runs so the index stays fresh; set it for test or offline runs.  
+PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that the package install tasks and add_extra_repos run before package operations. The answers that mean true are the environment_flag_true_values list of the engine values module, compared without case, so a machine that spells its answers differently is answered in the config and not in the code. Omit it in real runs so the index stays fresh; set it for test or offline runs.  
 PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
 
 Approved exceptions (recorded user approvals):
@@ -58,7 +58,7 @@ vault_source
 force_tasks (frozenset of task names)  
 task_data_root (Path)  
 repo_root (Path; the clone root a task resolves its data against)  
-skip_apt_update (bool; True skips the apt index refresh in cli_tools and add_extra_repos)  
+skip_apt_update (bool; True skips the apt index refresh in the package install tasks and add_extra_repos)  
 task_name (str; the catalog name of the task being run, filled by the runner)  
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.

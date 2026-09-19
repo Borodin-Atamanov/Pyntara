@@ -34,6 +34,8 @@ from value_checks import (
 )
 
 import pyntara
+from pyntara.values import cli_tools_heavy_setup as cli_tools_heavy_values
+from pyntara.values import cli_tools_lite_setup as cli_tools_lite_values
 from pyntara.values import engine as engine_values
 from pyntara.values import i2pd_service_setup as i2pd_values
 from pyntara.values import port_forwarding_setup as port_forwarding_values
@@ -45,7 +47,8 @@ from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 VALUES_MODULE_NAMES: tuple[str, ...] = (
     "add_extra_repos",
     "chrome_setup",
-    "cli_tools",
+    "cli_tools_heavy_setup",
+    "cli_tools_lite_setup",
     "common",
     "dnsproxy_setup",
     "engine",
@@ -89,7 +92,7 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 # of texts for the generic pass, while a virtual package name in it would make
 # the task reinstall that package on every run without ever reaching its goal.
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
-    ("cli_tools", "PACKAGES", check_real_package_names),
+    ("cli_tools_heavy_setup", "PACKAGES", check_real_package_names),
     ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("common", "LAUNCHER_FILE_MODE", check_file_mode),
     ("ffmpeg_setup", "WAYRECORD_FILE_MODE", check_file_mode),
@@ -383,11 +386,13 @@ def test_the_real_package_rule_refuses_a_virtual_package_name() -> None:
     # A virtual name in the list is invisible to dpkg-query, so the package
     # would be installed on every run and never reach the installed state.
     with pytest.raises(ValueRuleError):
-        check_real_package_names(("mc", "exiftool"), "cli_tools.PACKAGES")
+        check_real_package_names(
+            ("mc", "exiftool"), "cli_tools_heavy_setup.PACKAGES"
+        )
     with pytest.raises(ValueRuleError):
-        check_real_package_names(("mc",), "cli_tools.PACKAGES")
+        check_real_package_names(("mc",), "cli_tools_heavy_setup.PACKAGES")
     assert check_real_package_names(
-        ("mc", "libimage-exiftool-perl"), "cli_tools.PACKAGES"
+        ("mc", "libimage-exiftool-perl"), "cli_tools_heavy_setup.PACKAGES"
     ) == ("mc", "libimage-exiftool-perl")
 
 
@@ -432,6 +437,18 @@ def test_the_declared_byte_factors_agree() -> None:
     # mebibyte that is not 1024 kibibytes would size every swapfile and every
     # zram device from a number no kernel uses.
     assert engine_values.BYTES_PER_MIB == engine_values.BYTES_PER_KIB**2
+
+
+def test_the_two_cli_package_lists_hold_the_toolset_once() -> None:
+    # One console toolset is split into two sections, so a package in both
+    # lists would be installed twice per run and a package that vanished from
+    # both would silently stop being installed. The two counts are the measured
+    # partition of the toolset, so a change is a deliberate act: a package
+    # moved between the sections or left the set.
+    lite = cli_tools_lite_values.PACKAGES
+    heavy = cli_tools_heavy_values.PACKAGES
+    assert not set(lite) & set(heavy)
+    assert (len(lite), len(heavy)) == (55, 23)
 
 
 def test_the_parallel_marker_is_part_of_the_parallel_write_out() -> None:

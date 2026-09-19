@@ -216,8 +216,16 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop",),
     ),
     TaskSpec(
-        "cli_tools",
-        "Install curated console utilities: file managers, system and media tools.",
+        "cli_tools_lite_setup",
+        "Install the everyday console utilities: shell, file, storage, "
+        "security, network and archive tools.",
+        ("add_extra_repos",),
+        ("minimal", "server", "desktop"),
+    ),
+    TaskSpec(
+        "cli_tools_heavy_setup",
+        "Install the media and document tools: images, audio, video, PDF, "
+        "ebooks and OCR.",
         ("add_extra_repos",),
         ("minimal", "server", "desktop"),
     ),

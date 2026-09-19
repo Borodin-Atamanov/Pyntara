@@ -18,6 +18,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
+from pyntara import package_set
 from pyntara.tasks import vocalinux_setup as task_module
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
@@ -198,8 +199,8 @@ def _install_fakes(
         return packages, [], []
 
     monkeypatch.setattr(task_module, "run_command", fake_run)
-    monkeypatch.setattr(task_module, "package_is_installed", fake_installed)
-    monkeypatch.setattr(task_module, "install_packages", fake_install)
+    monkeypatch.setattr(package_set, "package_is_installed", fake_installed)
+    monkeypatch.setattr(package_set, "install_packages", fake_install)
     monkeypatch.setattr(task_module, "dpkg_architecture", lambda _timeout: "amd64")
     return fakes
 

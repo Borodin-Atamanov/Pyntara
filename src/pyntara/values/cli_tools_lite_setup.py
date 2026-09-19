@@ -1,12 +1,19 @@
-"""Values of the cli_tools task.
+"""Values of the cli_tools_lite_setup task.
 
-The console utility set installed from the Ubuntu archive. The task checks the
-real system state with dpkg-query and installs only what is missing, so
-repeated runs change nothing. The apt index is refreshed once before the first
-install unless the run skips it. The task succeeds when at least
-PACKAGE_SUCCESS_THRESHOLD_PERCENT of the set is installed after the run: a
-single failing package is not fatal by itself, and every package that could not
-be installed is named as a warning of the completed task with its own reason.
+The everyday console utility set installed from the Ubuntu archive: shell
+completion, file and storage tools, security, terminal multiplexers, file
+managers, archivers, system information, resource monitors, network and disk
+tools. The set is deliberately free of the media and document tools, which are
+the list of cli_tools_heavy_setup: a media toolchain takes minutes and must not
+hold back the tools the machine needs early in the run.
+
+The task checks the real system state with dpkg-query and installs only what is
+missing, so repeated runs change nothing. The apt index is refreshed once
+before the first install unless the run skips it. The task succeeds when at
+least PACKAGE_SUCCESS_THRESHOLD_PERCENT of the set is installed after the run:
+a single failing package is not fatal by itself, and every package that could
+not be installed is named as a warning of the completed task with its own
+reason.
 """
 
 from __future__ import annotations
@@ -16,9 +23,9 @@ from __future__ import annotations
 # detectable as incomplete either way.
 PACKAGE_SUCCESS_THRESHOLD_PERCENT: int = 70
 
-# The console utilities. A name here must be the real package, because
-# dpkg-query cannot see a virtual name: a virtual name would look missing
-# forever and be reinstalled on every run.
+# The everyday console utilities. A name here must be the real package,
+# because dpkg-query cannot see a virtual name: a virtual name would look
+# missing forever and be reinstalled on every run.
 PACKAGES: tuple[str, ...] = (
     # shell completion
     "bash-completion",  # programmable completion for the bash shell
@@ -78,32 +85,7 @@ PACKAGES: tuple[str, ...] = (
     # disk and file tools
     "exfat-fuse",  # read and write exFAT filesystems through FUSE
     "fdupes",  # find and remove duplicate files
-    # media tools
-    "mediainfo",  # technical details of media files, codecs and streams
-    "libimage-exiftool-perl",  # exiftool; the real package behind the virtual name
-    "mkvtoolnix",  # mkvmerge and mkvextract, MKV muxing and extraction
-    "webp",  # cwebp and img2webp, WebP encoder and animation
-    "libheif-examples",  # heif-enc and heif-convert, HEIC and HEIF encoding
-    "eyed3",  # eyeD3, mp3 tag editor
-    "jpegoptim",  # optimize the jpeg file size
-    "pngquant",  # lossy PNG compressor with palette reduction and dithering
-    "jhead",  # jpeg EXIF header tool with autorotate
-    "libjpeg-turbo-progs",  # jpegtran, lossless jpeg operations
-    "exiftran",  # lossless jpeg rotation by EXIF
-    "tesseract-ocr",  # OCR engine
-    "tesseract-ocr-eng",  # English language data for tesseract
-    "tesseract-ocr-rus",  # Russian language data for tesseract
-    "tesseract-ocr-spa",  # Spanish language data for tesseract
-    "mat2",  # strip metadata from files
-    # pdf and documents
-    "poppler-utils",  # pdfunite, pdfseparate, pdfattach, pdfinfo, pdftotext, pdftoppm
-    "texlive-extra-utils",  # pdfcrop, crop pdf margins
-    "pdftk-java",  # pdftk, pdf manipulation and metadata
-    "qpdf",  # pdf encryption, cleaning and normalization
-    "ghostscript",  # gs, postscript and pdf interpreter
-    "pandoc",  # document format converter
     "lynx",  # text mode web browser, html to text
-    "calibre",  # ebook-convert, ebook format conversion
     # automation and configuration
     "expect",  # automate interactive terminal programs
     "augeas-tools",  # command-line tools for the Augeas configuration editor

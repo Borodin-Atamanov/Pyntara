@@ -58,7 +58,7 @@ default). Task names and that keyword are compared without case. Invalid names a
 reported with a countdown notice and ignored.
 
 PYNTARA_SKIP_APT_UPDATE — 1, true or yes skips the apt index refresh that inst.sh,
-add_extra_repos and cli_tools run before package operations. The answers that mean true are
+add_extra_repos and the package install tasks run before package operations. The answers that mean true are
 `environment_flag_true_values` of the engine values module (1, true and yes by default), compared
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.

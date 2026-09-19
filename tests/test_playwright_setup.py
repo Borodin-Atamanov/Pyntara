@@ -242,12 +242,10 @@ def test_missing_runtime_packages_stop_the_task_with_a_warning(
         return [], [("nodejs", "no candidate")], []
 
     monkeypatch.setattr(
-        "pyntara.tasks.playwright_setup.package_is_installed",
+        "pyntara.package_set.package_is_installed",
         lambda package, timeout: False,
     )
-    monkeypatch.setattr(
-        "pyntara.tasks.playwright_setup.install_packages", failing_install
-    )
+    monkeypatch.setattr("pyntara.package_set.install_packages", failing_install)
     result = playwright_setup.task(_ctx(monkeypatch, tmp_path))
     assert result.success is True
     assert result.changed is False

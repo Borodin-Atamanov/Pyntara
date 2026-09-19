@@ -26,12 +26,8 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import (
-    install_packages,
-    package_is_installed,
-    run_command,
-    substituted_command,
-)
+from pyntara.package_set import failure_detail, install_missing_packages
+from pyntara.utils import run_command, substituted_command
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
@@ -121,36 +117,28 @@ def task(ctx: Context) -> TaskResult:
             warnings=("the playwright values are not declared: " + ", ".join(absent),),
         )
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     changed = False
     messages: list[str] = []
     warnings: list[str] = []
 
-    missing = [
-        package
-        for package in playwright_values.PACKAGES
-        if not package_is_installed(package, status_timeout)
-    ]
-    if missing:
-        _log("installing the playwright runtime packages")
-        installed, failures, apt_warnings = install_packages(
-            missing,
-            install_timeout=timeout,
-            update_timeout=timeout,
-            retries=common_values.PACKAGE_INSTALL_RETRIES,
-            skip_update=ctx.skip_apt_update,
+    _, installed, failures, apt_warnings = install_missing_packages(
+        ctx, playwright_values.PACKAGES
+    )
+    warnings.extend(apt_warnings)
+    if failures:
+        # The runtime packages are installed by this task itself, so a failure
+        # stops the further steps that need them and is reported with the
+        # reason apt gave.
+        detail = failure_detail(failures)
+        warnings.append(f"cannot install nodejs and npm: {detail}")
+        return TaskResult(
+            success=True,
+            changed=changed,
+            message=f"playwright-cli not installed: {detail}",
+            warnings=tuple(warnings),
         )
-        warnings.extend(apt_warnings)
-        if failures:
-            detail = "; ".join(f"{name}: {reason}" for name, reason in failures)
-            warnings.append(f"cannot install nodejs and npm: {detail}")
-            return TaskResult(
-                success=True,
-                changed=changed,
-                message=f"playwright-cli not installed: {detail}",
-                warnings=tuple(warnings),
-            )
+    if installed:
         changed = True
         messages.append(f"installed {' and '.join(installed)}")
 

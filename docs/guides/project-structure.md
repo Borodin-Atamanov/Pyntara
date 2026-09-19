@@ -98,7 +98,8 @@ Every section has exactly one module in src/pyntara/values/, and a reader import
 engine -> src/pyntara/values/engine.py -> READ_VALUE_NAMES -> every module that reads a value
 common -> src/pyntara/values/common.py -> READ_VALUE_NAMES -> the tasks that read a machine-wide path or account
 tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py
-cli_tools -> src/pyntara/values/cli_tools.py -> READ_VALUE_NAMES -> the task
+cli_tools_lite_setup -> src/pyntara/values/cli_tools_lite_setup.py -> READ_VALUE_NAMES -> the task
+cli_tools_heavy_setup -> src/pyntara/values/cli_tools_heavy_setup.py -> READ_VALUE_NAMES -> the task
 chrome_setup -> src/pyntara/values/chrome_setup.py -> READ_VALUE_NAMES -> the task
 add_extra_repos -> src/pyntara/values/add_extra_repos.py -> READ_VALUE_NAMES -> the task
 hostname -> src/pyntara/values/hostname.py -> READ_VALUE_NAMES -> the task

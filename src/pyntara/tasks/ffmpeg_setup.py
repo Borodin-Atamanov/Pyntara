@@ -29,14 +29,9 @@ from pathlib import Path
 from string import Template
 
 from pyntara.context import Context
-from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import (
-    install_packages,
-    package_is_installed,
-    run_command,
-    task_data_dir,
-)
+from pyntara.package_set import failure_detail, install_missing_packages
+from pyntara.utils import run_command, task_data_dir
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import ffmpeg_setup as ffmpeg_values
@@ -157,29 +152,14 @@ def task(ctx: Context) -> TaskResult:
             warnings=("the ffmpeg values are not declared: " + ", ".join(absent),),
         )
     install_timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    status_timeout = common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
-
-    installed_packages: list[str] = []
-    warnings: list[str] = []
-    missing = [
-        package
-        for package in ffmpeg_values.PACKAGES
-        if not package_is_installed(package, status_timeout)
-    ]
-    if missing:
-        _log(f"installing: {', '.join(missing)}")
-        installed, failures, install_warnings = install_packages(
-            missing,
-            install_timeout=install_timeout,
-            update_timeout=install_timeout,
-            retries=common_values.PACKAGE_INSTALL_RETRIES,
-            skip_update=ctx.skip_apt_update,
-        )
-        installed_packages = installed
-        warnings.extend(install_warnings)
-        if failures:
-            failed_names = "; ".join(f"{name}: {reason}" for name, reason in failures)
-            warnings.append(f"failed to install: {failed_names}")
+    _, installed_packages, failures, warnings = install_missing_packages(
+        ctx, ffmpeg_values.PACKAGES
+    )
+    if failures:
+        # A package that could not be installed is reported with its reason
+        # while the build and the desktop entry still run: without the packages
+        # the engine build fails on its own and says so.
+        warnings.append(f"failed to install: {failure_detail(failures)}")
     source_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     engine_changed, engine_error = _build_wayrecord(source_dir, install_timeout)
     if engine_error:

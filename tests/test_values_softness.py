@@ -24,7 +24,8 @@ from pyntara.context import Context
 MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("add_extra_repos", "add_extra_repos"),
     ("chrome_setup", "chrome_setup"),
-    ("cli_tools", "cli_tools"),
+    ("cli_tools_heavy_setup", "cli_tools_heavy_setup"),
+    ("cli_tools_lite_setup", "cli_tools_lite_setup"),
     ("dnsproxy_setup", "dnsproxy_setup"),
     ("ffmpeg_setup", "ffmpeg_setup"),
     ("hostname", "hostname"),

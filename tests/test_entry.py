@@ -328,14 +328,14 @@ def test_run_reports_skipped_summary(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
 
     def fake_load(name: str) -> object:
-        if name == "cli_tools":
+        if name == "cli_tools_lite_setup":
             return lambda ctx: TaskResult(success=True, changed=True)
         return None
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "[done] cli_tools" in result.output
+    assert "[done] cli_tools_lite_setup" in result.output
     assert "[skip] add_extra_repos" in result.output
     expected = len(_default_run_set("minimal"))
     assert f"Finished 1 of {expected} tasks, skipped {expected - 1}" in result.output
@@ -375,14 +375,14 @@ def test_run_journals_the_declared_identifier_without_a_config_file(
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     # PYNTARA_TASKS selects tasks; dependencies are resolved inside the engine.
-    # cli_tools pulls add_extra_repos in first.
+    # cli_tools_lite_setup pulls add_extra_repos in first.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
-    monkeypatch.setenv("PYNTARA_TASKS", "cli_tools")
+    monkeypatch.setenv("PYNTARA_TASKS", "cli_tools_lite_setup")
     # The task module is mocked away so no real dpkg or apt command runs.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert "Tasks: add_extra_repos cli_tools" in result.output
+    assert "Tasks: add_extra_repos cli_tools_lite_setup" in result.output
 
 
 def test_run_default_run_set_resolves_dependencies(
@@ -425,12 +425,12 @@ def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Forcing a task that would never run is a notice, not a stop: the run
-    # continues without the invalid entry. cli_tools is a known task that is
+    # continues without the invalid entry. cli_tools_lite_setup is a known task that is
     # not part of the narrowed run set.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
     monkeypatch.setenv("PYNTARA_TASKS", "add_extra_repos")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "cli_tools")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "cli_tools_lite_setup")
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -438,7 +438,7 @@ def test_run_warns_and_continues_on_force_tasks_outside_run_set(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "invalid task names in PYNTARA_FORCE_TASKS: cli_tools" in result.output
+    assert "invalid task names in PYNTARA_FORCE_TASKS: cli_tools_lite_setup" in result.output
     assert "Force:" not in result.output
 
 
@@ -448,7 +448,7 @@ def test_run_reports_force_tasks_in_the_run_set(
     # A valid force list is reported and does not change the task set.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "add_extra_repos cli_tools")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "add_extra_repos cli_tools_lite_setup")
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -456,7 +456,7 @@ def test_run_reports_force_tasks_in_the_run_set(
     monkeypatch.setattr(task_runner, "load_task", lambda name: ok_task)
     result = runner.invoke(app, [])
     assert result.exit_code == 0
-    assert "Force: add_extra_repos cli_tools" in result.output
+    assert "Force: add_extra_repos cli_tools_lite_setup" in result.output
 
 
 def test_run_force_all_reports_the_full_run_set(
@@ -567,7 +567,7 @@ def test_run_force_tasks_match_case_insensitively(
     # so the task's own lowercase check still matches.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
-    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "CLI_TOOLS")
+    monkeypatch.setenv("PYNTARA_FORCE_TASKS", "CLI_TOOLS_LITE_SETUP")
 
     def ok_task(ctx: object) -> TaskResult:
         return TaskResult(success=True)
@@ -576,7 +576,7 @@ def test_run_force_tasks_match_case_insensitively(
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "invalid task names" not in result.output
-    assert "Force: cli_tools" in result.output
+    assert "Force: cli_tools_lite_setup" in result.output
 
 
 def test_run_tasks_match_case_insensitively(
@@ -586,10 +586,10 @@ def test_run_tasks_match_case_insensitively(
     # carries the canonical catalog names.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
-    monkeypatch.setenv("PYNTARA_TASKS", "CLI_TOOLS")
+    monkeypatch.setenv("PYNTARA_TASKS", "CLI_TOOLS_LITE_SETUP")
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert "Tasks: add_extra_repos cli_tools" in result.output
+    assert "Tasks: add_extra_repos cli_tools_lite_setup" in result.output
 
 
 def _captured_force_tasks(

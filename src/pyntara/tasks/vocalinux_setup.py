@@ -32,11 +32,10 @@ from string import Template
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     download_command,
     dpkg_architecture,
-    install_packages,
-    package_is_installed,
     release_asset_architecture,
     run_command,
     substituted_command,
@@ -477,32 +476,14 @@ def _enable_user_service(*, timeout: float) -> tuple[bool, str | None]:
 def _install_packages(ctx: Context) -> tuple[bool, bool]:
     """Install the missing app packages; return (all_ok, any_installed).
 
-    The shared helper refreshes the apt index once unless the run asked to
-    skip it, then installs each missing package individually with retries.
+    The shared install path refreshes the apt index once unless the run asked
+    to skip it, then installs each missing package individually with retries.
     A package that still fails is an error: without the injection tools the
     app cannot type on Wayland.
     """
 
-    timeout = engine_values.COMMAND_TIMEOUT_SECONDS
-    missing = [
-        package
-        for package in values.PACKAGES
-        if not package_is_installed(
-            package, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
-        )
-    ]
-    if not missing:
-        return True, False
-    _log(f"installing: {', '.join(missing)}")
-    installed, failures, _ = install_packages(
-        missing,
-        install_timeout=timeout,
-        update_timeout=timeout,
-        retries=common_values.PACKAGE_INSTALL_RETRIES,
-        skip_update=ctx.skip_apt_update,
-    )
-    ok = not failures
-    return ok, bool(installed)
+    _, installed, failures, _ = install_missing_packages(ctx, values.PACKAGES)
+    return not failures, bool(installed)
 
 
 def task(ctx: Context) -> TaskResult:
