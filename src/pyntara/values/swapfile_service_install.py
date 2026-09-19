@@ -1,9 +1,11 @@
 """Values of the swapfile_service_install task.
 
-The section sizes and installs the swap file of the machine: the size is
-min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction), and the
-commands that allocate, activate and format the file are values here as well
-(docs/spec/swap-and-memory.md).
+The section deploys one program and the boot service that runs it. The program
+creates the swap file at the size min(RAM * ram_multiplier + ram_extra_mb,
+free_disk * disk_fraction), formats it, activates it, and refuses storage that
+keeps its data in memory, so the size formula and the commands of the swap
+itself live in the program alone and the task carries only what it must pass and
+where to put things (docs/spec/users-and-host.md).
 
 The name of the /proc/meminfo line that carries the installed RAM is read from
 the shared module, because the zram_service section reads the same line.
@@ -32,37 +34,29 @@ SWAPFILE_MODE: int = 0o600
 # mebibytes; a swapfile within the tolerance is not recreated.
 SIZE_TOLERANCE_MB: int = 1
 
-# Name of the systemd oneshot service unit that activates the swap at boot.
+# Size of the file the program tries the storage with, in kibibytes. The probe
+# is created next to the swap file and removed again, so storage that keeps its
+# data in memory costs a few kibibytes instead of the size of the swap file.
+PROBE_SIZE_KB: int = 512
+
+# The kernel file the installed memory is read from, handed to the program.
+MEMINFO_PATH: Path = Path("/proc/meminfo")
+
+# The program of the section: the file of the clone under task_data, the path it
+# is deployed to and the mode that makes it executable. The name carries the
+# project, because the deployed directory holds the commands of several
+# sections.
+PROGRAM_FILE_NAME: str = "configure_swapfile.py"
+PROGRAM_DEPLOY_PATH: Path = Path("/usr/local/bin/pyntara-swapfile")
+PROGRAM_FILE_MODE: int = 0o755
+
+# Name of the systemd oneshot service unit that runs the program at boot.
 SERVICE_UNIT_NAME: str = "swapfile.service"
 
 # Name of the unit template under task_data/swapfile_service_install/ of the
-# clone; the run renders it with the swapfile path.
+# clone; the run renders it with the command line of the program and the
+# swapfile path.
 UNIT_TEMPLATE_FILE_NAME: str = "swapfile.service"
-
-# Command that lists the active swap devices; the swapfile path found in its
-# output is the active swap.
-SWAP_SHOW_COMMAND: tuple[str, ...] = ("swapon", "--show", "--noheadings")
-
-# Commands that activate and deactivate the swapfile; {swapfile_path} is the
-# configured swap file.
-SWAP_ON_COMMAND: tuple[str, ...] = ("swapon", "{swapfile_path}")
-SWAP_OFF_COMMAND: tuple[str, ...] = ("swapoff", "{swapfile_path}")
-
-# Command that allocates the swapfile at the computed size; {size_mb} is the
-# target size in mebibytes.
-CREATE_COMMAND: tuple[str, ...] = (
-    "fallocate",
-    "-l",
-    "{size_mb}M",
-    "{swapfile_path}",
-)
-
-# Command that applies the configured file mode; {file_mode} is the mode of the
-# section in the octal form chmod expects.
-CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{swapfile_path}")
-
-# Command that writes the swap signature into the file.
-FORMAT_COMMAND: tuple[str, ...] = ("mkswap", "{swapfile_path}")
 
 # systemctl calls of the task, each carrying the unit name as its placeholder.
 SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
@@ -81,14 +75,13 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DISK_FRACTION",
     "SWAPFILE_MODE",
     "SIZE_TOLERANCE_MB",
+    "PROBE_SIZE_KB",
+    "MEMINFO_PATH",
+    "PROGRAM_FILE_NAME",
+    "PROGRAM_DEPLOY_PATH",
+    "PROGRAM_FILE_MODE",
     "SERVICE_UNIT_NAME",
     "UNIT_TEMPLATE_FILE_NAME",
-    "SWAP_SHOW_COMMAND",
-    "SWAP_ON_COMMAND",
-    "SWAP_OFF_COMMAND",
-    "CREATE_COMMAND",
-    "CHMOD_COMMAND",
-    "FORMAT_COMMAND",
     "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
     "SYSTEMCTL_ENABLE_COMMAND",
 )
