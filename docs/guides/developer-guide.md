@@ -72,6 +72,10 @@ If the task needs runtime data files, create a task_data/<name>/ directory.
 Write tests in tests/test_<name>.py: at minimum one success scenario and one realistic error scenario. Use shared factories from tests/support.py (make_context, FakeProc). Mock external resources via monkeypatch ([Testing rules](#testing-rules)).  
 If the task belongs to a default install mode, verify that the mode lists it in the catalog (src/pyntara/values/tasks.py) and that the dependency chain is complete.
 
+## Adding an install mode
+
+Add the name to MODES in src/pyntara/values/tasks.py and list it in the modes of the records it selects. That is the whole change: the engine validates and resolves every mode from the catalog, a record that belongs to every mode carries modes=MODES and follows a new name without an edit, and the tests name the modes they check one by one, so a mode added later is never a failure in them.
+
 ## Task best practices
 
 These rules come from the kde_keyboard_setup hotkey work, where writing a config file alone did not make a setting work. They apply to any task that configures a running service or a desktop session.

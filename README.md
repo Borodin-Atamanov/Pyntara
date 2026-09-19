@@ -44,7 +44,10 @@ PYNTARA_REPO_URL, PYNTARA_REPO_BRANCH — repository and branch of the run. The 
 both the downloaded installer and the checkout the installer clones, so a branch run differs
 from a main run by one value.
 
-PYNTARA_INSTALL_MODE — minimal, server or desktop. Commented out; when omitted, the mode is
+PYNTARA_INSTALL_MODE — one of the mode names declared in the task catalog
+(src/pyntara/values/tasks.py). The names in use are minimal, server, desktop and
+fast_desktop, where fast_desktop is the quick set: a working system reachable from
+outside, without the long heavy installs. Commented out; when omitted, the mode is
 auto-detected from the system (desktop or server).
 
 PYNTARA_TASKS — space-separated task names, the whole catalog sits in a commented line.

@@ -1,9 +1,15 @@
 # Installation modes and task selection
 
-The system offers 3 installation options:
-minimal  
-server  
-desktop
+The mode names are declared once, in the task catalog (the MODES value of
+src/pyntara/values/tasks.py), and every catalog record names the modes it belongs
+to. The vocabulary is open: the names in use are minimal, server, desktop and
+fast_desktop, and a mode added later is a new name in the catalog together with
+the records that belong to it, never a change to this document.
+
+fast_desktop is the quick set: a working system that is reachable from outside,
+without the long heavy installs. It is selected like any other mode, through
+PYNTARA_INSTALL_MODE, and it is never auto-detected, because a bare machine
+carries no signal that asks for speed.
 
 ## Mode selection
 
