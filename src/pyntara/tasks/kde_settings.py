@@ -932,16 +932,18 @@ def _report_is_confirmed(report: _ShortcutReport) -> bool:
 def _a_repeat_can_confirm(reports: list[_ShortcutReport]) -> bool:
     """True when asking again can still reach the configured state.
 
-    Only a plain difference can be decided differently by a second attempt,
-    because the daemon resolves a conflict against the first one; an action
-    it does not know and a combination the client cannot read stay
-    unreachable, so the attempts stop instead of waiting for them.
+    A plain difference can be decided differently by a second attempt,
+    because the daemon resolves a conflict against the first one, and an
+    action the daemon does not know can appear between two attempts: kwin
+    registers the actions of an enabled script when it re-reads its
+    configuration, and that registration can reach the daemon after the
+    first call. A combination the client cannot read stays unreachable, so
+    the attempts stop instead of waiting for it.
     """
 
     return any(
-        not report.get("missing")
-        and not report.get("unsupported")
-        and report.get("after") != report.get("requested")
+        not report.get("unsupported")
+        and (report.get("missing") or report.get("after") != report.get("requested"))
         for report in reports
     )
 
@@ -1186,11 +1188,6 @@ def _apply_shortcuts_live(
             return False
         if attempt == 1:
             for (_component, _friendly, action, _keys), report in zip(changes, reports):
-                if report.get("missing"):
-                    _log(
-                        f"the daemon does not know the action {action},"
-                        " its shortcut is written for the next login"
-                    )
                 for text in report.get("unsupported"):
                     _log(
                         f"the client cannot read {text} of {action},"
@@ -2099,6 +2096,20 @@ def task(ctx: Context) -> TaskResult:
         ),
     )
     settings_changed |= kwin_scripts_changed
+    # kwin registers the actions of a script it just enabled only when it
+    # re-reads its configuration, and the daemon can take the combinations of
+    # those actions only once they exist, so the reload happens here, before
+    # the combinations are applied; it applies the kwinrc and virtual keyboard
+    # records written above as well.
+    kwinrc_changed = (
+        any(record.file == values.KWINRC_FILE_NAME for record in values.KCONFIG_RECORDS)
+        and settings_changed
+    )
+    if virtual_keyboard_changed or kwinrc_changed or kwin_scripts_changed:
+        reload_error = _reload_kwin(timeout=timeout, env=apply_env)
+        if reload_error is not None:
+            _log(reload_error)
+            warnings.append(reload_error)
     settings_changed |= step(
         "apply the configured shortcuts",
         lambda: _apply_shortcuts_live(
@@ -2141,16 +2152,6 @@ def task(ctx: Context) -> TaskResult:
         lambda: _apply_sddm(timeout=timeout, force=force, warnings=warnings),
     )
     changed |= settings_changed
-
-    kwinrc_changed = (
-        any(record.file == values.KWINRC_FILE_NAME for record in values.KCONFIG_RECORDS)
-        and settings_changed
-    )
-    if virtual_keyboard_changed or kwinrc_changed or kwin_scripts_changed:
-        reload_error = _reload_kwin(timeout=timeout, env=apply_env)
-        if reload_error is not None:
-            _log(reload_error)
-            warnings.append(reload_error)
 
     desktop_error = _apply_desktop_count_live(
         script_path=(

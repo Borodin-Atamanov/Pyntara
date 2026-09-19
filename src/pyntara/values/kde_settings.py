@@ -291,9 +291,12 @@ SHORTCUT_ABSENT_VALUE: str = "none"
 # combination from whatever action holds it and gives it to the configured
 # action. A combination the daemon does not report back is asked for again,
 # because the state right after the first attempt can still belong to another
-# action. An action the daemon does not know and a combination the client cannot
-# read are reported at once, without waiting, and every combination the daemon
-# still does not hold is written into the file as the fallback of the next login.
+# action. An action the daemon does not know is asked for again, because kwin
+# registers the actions of an enabled script when it re-reads its configuration
+# and that registration can reach the daemon after the first call; a combination
+# the client cannot read is reported at once, without waiting; and every
+# combination the daemon still does not hold is written into the file as the
+# fallback of the next login.
 SHORTCUT_APPLY_ATTEMPTS: int = 5
 SHORTCUT_APPLY_RETRY_DELAY_SECONDS: float = 3.0
 

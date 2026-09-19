@@ -8,12 +8,14 @@ switch option at the next session start, and the indicator display style
 (the country flag) into the keyboard layout applet of the Plasma panel.
 kwriteconfig6 runs as the configured user through runuser, so the config
 files stay owned by that user. When a value changed, the task reloads the
-kwin configuration and restarts the Plasma panel; the layout list applies
-at once, the switch option at the next login. The task is idempotent: it
-compares every value with kreadconfig6 and writes only what differs.
-Missing packages (the kwriteconfig6 provider and the DBus client) are
-installed first. A desktop session that cannot be found disables the
-reload: the settings then apply after the next login.
+kwin configuration, which applies the kwinrc values of a running session;
+the layout values behave differently: kwin builds its keymap from kxkbrc
+when it starts and offers no live reload of the layout list or of the
+switch option, so both take effect at the next start of the session. The
+task is idempotent: it compares every value with kreadconfig6 and writes
+only what differs. Missing packages (the kwriteconfig6 provider and the
+DBus client) are installed first. A desktop session that cannot be found
+disables the reload: the settings then apply after the next login.
 
 Optional per-layout hotkeys (layout_switch_shortcuts) are written to
 kglobalshortcutsrc the same way; when a desktop session is running, the
@@ -427,7 +429,7 @@ def task(ctx: Context) -> TaskResult:
     style already match the configuration and the packages are installed;
     the task then returns changed=False. Otherwise it installs missing
     packages, writes the differing values as the target user and reloads
-    kwin and the Plasma panel so the settings apply immediately. A step
+    kwin so a running session reads the kwinrc values. A step
     that cannot be performed is reported as a warning and the remaining
     independent steps still run, because a recoverable failure must never
     stop the provisioning.
@@ -614,18 +616,6 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(reload_error)
         _log("the layout switch option takes effect at the next login")
 
-    if applet_changed:
-        try:
-            run_command(
-                substituted_command(
-                    values.PANEL_RESTART_COMMAND,
-                    {"username": common_values.DESKTOP_USERNAME},
-                ),
-                timeout=timeout,
-            )
-            _log("restarted Plasma panel")
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"cannot restart panel: {exc}")
 
     if warnings:
         message = (

@@ -233,6 +233,7 @@ def _install_fakes(
     assign_after: dict[str, list[str]] | None = None,
     assign_after_sequence: list[dict[str, list[str]]] | None = None,
     assign_missing: frozenset[str] | None = None,
+    assign_missing_sequence: list[frozenset[str]] | None = None,
     assign_unsupported: dict[str, list[str]] | None = None,
 ):
     """Replace run_command, the session environment and package state.
@@ -246,8 +247,10 @@ def _install_fakes(
     assign_after overrides the state the client reports back;
     assign_after_sequence answers one state per call, which a test uses to
     let the first attempt fail and a later one take. assign_missing names
-    actions the daemon does not know and assign_unsupported names
-    combinations the client cannot read.
+    actions the daemon does not know, assign_missing_sequence answers one
+    set of unknown actions per call, which a test uses to let the daemon
+    learn an action that kwin registers while the task waits, and
+    assign_unsupported names combinations the client cannot read.
     """
 
     attempt = [0]
@@ -300,17 +303,24 @@ def _install_fakes(
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 if _is_assign_call(inner):
+                    index = attempt[0]
+                    attempt[0] += 1
                     after = assign_after
                     if assign_after_sequence:
-                        position = min(attempt[0], len(assign_after_sequence) - 1)
-                        after = assign_after_sequence[position]
-                        attempt[0] += 1
+                        after = assign_after_sequence[
+                            min(index, len(assign_after_sequence) - 1)
+                        ]
+                    missing = assign_missing
+                    if assign_missing_sequence:
+                        missing = assign_missing_sequence[
+                            min(index, len(assign_missing_sequence) - 1)
+                        ]
                     return _assign_reply(
                         inner,
                         assign_calls,
                         assign_state,
                         after,
-                        assign_missing,
+                        missing,
                         assign_unsupported,
                     )
                 return _FakeProc(0, "")
@@ -1318,13 +1328,47 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
     assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
 
 
-def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
+def test_apply_shortcuts_live_asks_again_for_an_action_the_daemon_learns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An action the daemon does not know and a combination the client
-    # cannot read stay unreachable whatever the number of attempts, so the
-    # task reports them at once, waits for nothing and writes the whole
-    # intended state into the shortcut file for the next login.
+    # kwin registers the actions of a script it just enabled when it
+    # re-reads its configuration, so the daemon can report those actions as
+    # unknown on the first call and know them on the next one; the task then
+    # grants the combination instead of writing it for the next login.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    pauses: list[float] = []
+    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch,
+        assign_calls=calls,
+        assign_missing_sequence=[
+            frozenset({"Grow Window by 5px", "Shrink Window by 5px"}),
+            frozenset(),
+        ],
+    )
+    changed = task_module._apply_shortcuts_live(
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env=_shortcut_env(ctx),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
+        warnings=[],
+    )
+    assert changed is True
+    assert len(calls) == 2
+    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
+    written = {command[command.index("--key") + 1] for command in writes}
+    assert "Grow Window by 5px" not in written
+    assert "Shrink Window by 5px" not in written
+
+
+def test_apply_shortcuts_live_stops_at_once_for_a_combination_it_cannot_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A combination the client cannot read stays unreachable whatever the
+    # number of attempts, so that change is reported at once, without
+    # waiting, and its record is written for the next login.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
     calls: list[list[str]] = []
     messages: list[str] = []
@@ -1334,7 +1378,6 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
     _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch,
         assign_calls=calls,
-        assign_missing=frozenset({"manage activities"}),
         assign_unsupported={"MinimizeAll": ["meta+u"]},
     )
     task_module._apply_shortcuts_live(
@@ -1347,13 +1390,44 @@ def test_apply_shortcuts_live_stops_when_a_repeat_cannot_help(
     )
     assert len(calls) == 1
     assert pauses == []
-    assert any(
-        "does not know the action manage activities" in message for message in messages
-    )
     assert any("cannot read meta+u" in message for message in messages)
     written = {command[command.index("--key") + 1]: command[-1] for command in writes}
-    assert set(written) == {"MinimizeAll", "manage activities"}
+    assert set(written) == {"MinimizeAll"}
     assert written["MinimizeAll"] == "Meta+D,none,MinimizeAll"
+
+
+def test_apply_shortcuts_live_writes_an_action_the_daemon_never_learns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action the daemon does not know after every attempt cannot be
+    # reached by waiting, so the task reports it and writes its record for
+    # the next login, where the action exists after kwin starts.
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    calls: list[list[str]] = []
+    warnings: list[str] = []
+    pauses: list[float] = []
+    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
+    _, _, _, _, writes, _, _ = _install_fakes(
+        monkeypatch,
+        assign_calls=calls,
+        assign_missing=frozenset({"manage activities"}),
+    )
+    task_module._apply_shortcuts_live(
+        client_path=_SHARED_CLIENT,
+        timeout=5,
+        env=_shortcut_env(ctx),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
+        warnings=warnings,
+    )
+    assert len(calls) == values.SHORTCUT_APPLY_ATTEMPTS
+    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS] * (
+        values.SHORTCUT_APPLY_ATTEMPTS - 1
+    )
+    assert len(warnings) == 1
+    assert "manage activities" in warnings[0]
+    written = {command[command.index("--key") + 1]: command[-1] for command in writes}
+    assert set(written) == {"manage activities"}
     assert written["manage activities"] == "none,none,manage activities"
 
 

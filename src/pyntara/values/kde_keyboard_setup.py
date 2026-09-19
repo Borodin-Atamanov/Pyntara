@@ -73,17 +73,6 @@ KWIN_RELOAD_COMMAND: tuple[str, ...] = (
     "org.kde.KWin.reconfigure",
 )
 
-# Command that restarts the Plasma panel so the indicator re-reads its
-# configuration; {username} is the account of the machine.
-PANEL_RESTART_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "--user",
-    "--machine",
-    "{username}@.host",
-    "restart",
-    "plasma-plasmashell.service",
-)
-
 # Per-layout hotkeys are managed by the kde_settings task through its kconfig
 # records, not here. Empty by default: no hotkeys.
 LAYOUT_SWITCH_SHORTCUTS: dict[str, str] = {}
@@ -163,7 +152,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "USE_LAYOUT_SWITCHING",
     "INDICATOR_DISPLAY_STYLE",
     "KWIN_RELOAD_COMMAND",
-    "PANEL_RESTART_COMMAND",
     "LAYOUT_SWITCH_SHORTCUTS",
     "KXKBRC_GROUP",
     "APPLET_CONFIGURATION_GROUP",

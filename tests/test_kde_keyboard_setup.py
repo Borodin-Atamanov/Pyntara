@@ -101,7 +101,6 @@ def _install_fakes(
     currents = currents or {}
     writes: list[list[str]] = []
     reloads: list[list[str]] = []
-    restarts: list[list[str]] = []
     installs: list[str] = []
     live_applies: list[list[str]] = []
 
@@ -145,9 +144,6 @@ def _install_fakes(
                 return _FakeProc(0, json.dumps({"results": results}))
         if command[0] == "pgrep":
             return _FakeProc(0, f"{bus_pid}\n" if bus_pid else "")
-        if command[0] == "systemctl":
-            restarts.append(list(command))
-            return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
     def fake_installed(package: str, timeout: float) -> bool:
@@ -171,16 +167,16 @@ def _install_fakes(
             )
         ),
     )
-    return writes, reloads, restarts, installs, live_applies
+    return writes, reloads, installs, live_applies
 
 
 def test_first_run_writes_and_reloads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No current values: every kxkbrc key and the display style are
-    # written, then kwin is reloaded and the panel restarted.
+    # written, then kwin is reloaded so the running session reads them.
     ctx = _ctx(tmp_path)
-    writes, reloads, restarts, installs, _ = _install_fakes(monkeypatch)
+    writes, reloads, installs, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -200,7 +196,6 @@ def test_first_run_writes_and_reloads(
         "displayStyle" in command and "Flag" in command for command in display_writes
     )
     assert reloads
-    assert restarts
     assert installs == []
 
 
@@ -211,7 +206,7 @@ def test_writes_complete_kxkbrc_layout_group(
     # option at the next session start; a minimal group leaves a fresh
     # session on the default single layout.
     ctx = _ctx(tmp_path)
-    writes, _, _, _, _ = _install_fakes(monkeypatch)
+    writes, _, _, _ = _install_fakes(monkeypatch)
     task_module.task(ctx)
     layout_writes = [
         command for command in writes if "--file" in command and "kxkbrc" in command
@@ -237,7 +232,7 @@ def test_writes_complete_kxkbrc_layout_group(
 def test_skip_when_already_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Every value already matches: no writes, no reloads, no panel restart.
+    # Every value already matches: no writes and no reload.
     ctx = _ctx(tmp_path)
     currents = {
         "LayoutList": "us,ru,es",
@@ -249,13 +244,12 @@ def test_skip_when_already_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _, _ = _install_fakes(monkeypatch, currents=currents)
+    writes, reloads, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is False
     assert writes == []
     assert reloads == []
-    assert restarts == []
 
 
 def test_force_rewrites_even_when_configured(
@@ -274,13 +268,12 @@ def test_force_rewrites_even_when_configured(
         "Use": "true",
         "displayStyle": "Flag",
     }
-    writes, reloads, restarts, _, _ = _install_fakes(monkeypatch, currents=currents)
+    writes, reloads, _, _ = _install_fakes(monkeypatch, currents=currents)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert writes
     assert reloads
-    assert restarts
 
 
 def test_missing_packages_are_installed(
@@ -288,7 +281,7 @@ def test_missing_packages_are_installed(
 ) -> None:
     # A missing package is installed before the config writes.
     ctx = _ctx(tmp_path)
-    _, _, _, installs, _ = _install_fakes(monkeypatch, installed=False)
+    _, _, installs, _ = _install_fakes(monkeypatch, installed=False)
     result = task_module.task(ctx)
     assert result.success is True
     assert installs == [
@@ -305,7 +298,7 @@ def test_package_install_failure_is_warning(
     # A failed package install is a warning; without the kwriteconfig6
     # provider the config writes are skipped and the task still completes.
     ctx = _ctx(tmp_path)
-    writes, _, _, _, _ = _install_fakes(monkeypatch, installed=False, fail_install=True)
+    writes, _, _, _ = _install_fakes(monkeypatch, installed=False, fail_install=True)
     result = task_module.task(ctx)
     assert result.success is True
     assert any("cannot install" in warning for warning in result.warnings)
@@ -317,7 +310,7 @@ def test_no_desktop_session_skips_reload(
 ) -> None:
     # Without a kwin_wayland process the reload is skipped, not fatal.
     ctx = _ctx(tmp_path)
-    writes, reloads, _, _, _ = _install_fakes(monkeypatch, bus_pid="")
+    writes, reloads, _, _ = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -328,15 +321,13 @@ def test_no_desktop_session_skips_reload(
 def test_applet_missing_leaves_indicator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Without the keyboard layout applet the indicator is left as is, no
-    # panel restart.
+    # Without the keyboard layout applet the indicator is left as is.
     ctx = _ctx(tmp_path, appletsrc="[Containments][2]\nplugin=org.kde.plasma.panel\n")
-    writes, _, restarts, _, _ = _install_fakes(monkeypatch)
+    writes, _, _, _ = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     display_writes = [command for command in writes if "appletsrc" in " ".join(command)]
     assert display_writes == []
-    assert restarts == []
 
 
 def test_write_failure_is_warning(
@@ -421,7 +412,7 @@ def test_no_session_writes_hotkey_file(
     # and the live apply is skipped.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    writes, _, _, _, live_applies = _install_fakes(monkeypatch, bus_pid="")
+    writes, _, _, live_applies = _install_fakes(monkeypatch, bus_pid="")
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -453,7 +444,7 @@ def test_no_session_hotkey_already_set_skips_write(
         "displayStyle": "Flag",
         SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
     }
-    writes, reloads, restarts, _, live_applies = _install_fakes(
+    writes, reloads, _, live_applies = _install_fakes(
         monkeypatch, bus_pid="", currents=currents
     )
     result = task_module.task(ctx)
@@ -461,7 +452,6 @@ def test_no_session_hotkey_already_set_skips_write(
     assert result.changed is False
     assert writes == []
     assert reloads == []
-    assert restarts == []
     assert live_applies == []
 
 
@@ -472,7 +462,7 @@ def test_session_applies_hotkey_live(
     # python3 client runs as the user with the correct payload.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert result.changed is True
@@ -506,7 +496,7 @@ def test_session_hotkey_already_applied_is_idempotent(
         "displayStyle": "Flag",
         SPANISH_ACTION: f"Meta+Q,none,{SPANISH_ACTION}",
     }
-    writes, reloads, restarts, _, live_applies = _install_fakes(
+    writes, reloads, _, live_applies = _install_fakes(
         monkeypatch,
         currents=currents,
         hotkey_state={SPANISH_ACTION: [HOTKEYS[SPANISH_ACTION]]},
@@ -516,7 +506,6 @@ def test_session_hotkey_already_applied_is_idempotent(
     assert result.changed is False
     assert writes == []
     assert reloads == []
-    assert restarts == []
     assert len(live_applies) == 1
 
 
@@ -535,7 +524,7 @@ def test_live_apply_runs_the_script_the_values_name(
     monkeypatch.setattr(
         engine_values, "KGLOBALACCEL_INTERFACE_NAME", "org.example.GlobalAccel"
     )
-    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     script_path = (
@@ -563,7 +552,7 @@ def test_live_apply_prefix_comes_from_the_values(
     monkeypatch.setattr(
         values, "PYTHON_SCRIPT_COMMAND", (system_python, "--apply", "{python}")
     )
-    _, _, _, _, live_applies = _install_fakes(monkeypatch)
+    _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert live_applies
@@ -594,15 +583,14 @@ def test_session_hotkey_apply_failure_is_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # A failing live apply is a warning and the task still completes, so
-    # the reload and the panel restart are not skipped.
+    # the reload is not skipped.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
-    _, reloads, restarts, _, _ = _install_fakes(monkeypatch, fail_live_apply=True)
+    _, reloads, _, _ = _install_fakes(monkeypatch, fail_live_apply=True)
     result = task_module.task(ctx)
     assert result.success is True
     assert any("cannot apply layout hotkeys" in warning for warning in result.warnings)
     assert reloads
-    assert restarts
 
 
 def test_session_hotkey_apply_failure_reports_client_stderr(
@@ -629,7 +617,7 @@ def test_unsupported_shortcut_is_written_not_applied_live(
     # to the config file.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", {SPANISH_ACTION: "F5"})
     ctx = _ctx(tmp_path)
-    writes, _, _, _, live_applies = _install_fakes(monkeypatch)
+    writes, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert live_applies == []
