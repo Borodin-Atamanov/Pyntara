@@ -15,10 +15,10 @@ import os
 import re
 from pathlib import Path
 
+from pyntara.context import Context
+from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     apply_owner,
-    install_packages,
-    package_is_installed,
     run_command,
 )
 from pyntara.values import engine as engine_values
@@ -295,34 +295,19 @@ def include_covers_dropin(
     return False
 
 
-def ensure_augtool(
-    package_name: str,
-    *,
-    status_timeout: float,
-    install_timeout: float,
-    retries: int,
-    skip_update: bool,
-) -> str | None:
+def ensure_augtool(ctx: Context, package_name: str) -> str | None:
     """Error text when augtool cannot be ensured; None when ready.
 
-    augtool comes from package_name, which the caller task installs
-    itself, so the task never waits for another task to provide the
-    tool. A package already in the installed state is left alone, so a
-    configured system is not touched and a rerun stays quiet. The
-    install goes through the shared apt helpers: the index is refreshed
-    once unless skip_update is set, and a failed install is reported
-    back to the caller.
+    augtool comes from package_name, which the caller task installs itself, so
+    the task never waits for another task to provide the tool. The install goes
+    through the shared install path of pyntara.package_set: a package already in
+    the installed state is left alone, the apt index is refreshed once unless
+    the run asked to skip it, and the retry policy is the one every other
+    package install of the run uses. A failed install is returned as the error
+    text of the caller.
     """
 
-    if package_is_installed(package_name, status_timeout):
-        return None
-    _, failures, _ = install_packages(
-        [package_name],
-        install_timeout=install_timeout,
-        update_timeout=install_timeout,
-        retries=retries,
-        skip_update=skip_update,
-    )
+    _, _, failures, _ = install_missing_packages(ctx, [package_name])
     if failures:
         return f"cannot install {package_name}: {failures[0][1]}"
     return None

@@ -407,13 +407,7 @@ def task(ctx: Context) -> TaskResult:
             f"{values.SSHD_CONFIG_DROPIN_PATH.parent}"
         )
 
-    augtool_error = ensure_augtool(
-        values.AUGEAS_TOOLS_PACKAGE_NAME,
-        status_timeout=values.PACKAGE_STATUS_TIMEOUT_SECONDS,
-        install_timeout=timeout,
-        retries=values.INSTALL_RETRIES,
-        skip_update=ctx.skip_apt_update,
-    )
+    augtool_error = ensure_augtool(ctx, values.AUGEAS_TOOLS_PACKAGE_NAME)
     if augtool_error is not None:
         # Without augeas the drop-in cannot be written at all, so this
         # step alone is skipped and the rest of the task still runs.

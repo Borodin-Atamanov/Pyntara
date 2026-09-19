@@ -132,13 +132,7 @@ def task(ctx: Context) -> TaskResult:
             "after the directive is added"
         )
 
-    augtool_error = ensure_augtool(
-        values.AUGEAS_TOOLS_PACKAGE_NAME,
-        status_timeout=common_values.PACKAGE_STATUS_TIMEOUT_SECONDS,
-        install_timeout=timeout,
-        retries=common_values.PACKAGE_INSTALL_RETRIES,
-        skip_update=ctx.skip_apt_update,
-    )
+    augtool_error = ensure_augtool(ctx, values.AUGEAS_TOOLS_PACKAGE_NAME)
     if augtool_error is not None:
         warnings.append(augtool_error)
         return TaskResult(
