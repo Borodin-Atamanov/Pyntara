@@ -126,8 +126,17 @@ test_launcher_ships_the_default_vault_password() {
     local expected
     expected="$(head -n 1 "$DEFAULT_PASSWORD_FILE")"
     source_launcher
-    assert_equals "$expected" "$PYNTARA_VAULT_PASSWORD_DEFAULT" "the shipped value is the published default vault password" || return 1
-    assert_equals "$expected" "$PYNTARA_VAULT_PASSWORD" "the run starts from the default vault password" || return 1
+    assert_equals "$expected" "$PYNTARA_VAULT_PASSWORD" "the run starts from the published default vault password" || return 1
+}
+
+test_launcher_holds_no_second_copy_of_the_password() {
+    # A second copy is what let a wrongly replaced line fall back to the
+    # default vault without a word (2026-09-19). The launcher holds one
+    # password line and hands its value to the installer, which resolves the
+    # vault that password opens.
+    local content
+    content="$(cat "$LAUNCHER")"
+    assert_not_contains "$content" "PYNTARA_VAULT_PASSWORD_DEFAULT" "one password line only" || return 1
 }
 
 test_launcher_never_names_the_production_password_file() {
@@ -137,11 +146,19 @@ test_launcher_never_names_the_production_password_file() {
     assert_not_contains "$content" "secrets/production" "a production secret file is never referenced by the launcher" || return 1
 }
 
-test_launcher_unchanged_password_passes_nothing() {
+test_launcher_hands_its_password_to_the_installer() {
     source_launcher
     use_test_log "$(mktemp -d)"
     resolve_vault_password >/dev/null
-    assert_unset PYNTARA_VAULT_PASSWORD "an unchanged default password is not handed to the installer, so it warns and waits" || return 1
+    assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "the password of the file reaches the installer, which resolves the vault it opens" || return 1
+}
+
+test_launcher_reports_a_missing_password() {
+    source_launcher
+    use_test_log "$(mktemp -d)"
+    unset PYNTARA_VAULT_PASSWORD
+    resolve_vault_password >/dev/null
+    assert_unset PYNTARA_VAULT_PASSWORD "an empty launcher passes no password, so the installer warns and waits" || return 1
 }
 
 test_launcher_replaced_password_is_passed_through() {
@@ -161,7 +178,7 @@ test_launcher_clears_the_inherited_environment() {
     assert_unset PYNTARA_TASKS "an inherited task list never reaches the installer" || return 1
     assert_unset PYNTARA_INSTALL_MODE "an inherited install mode never reaches the installer" || return 1
     assert_equals "main" "$PYNTARA_REPO_BRANCH" "the branch of the run comes from the file" || return 1
-    assert_equals "$PYNTARA_VAULT_PASSWORD_DEFAULT" "$PYNTARA_VAULT_PASSWORD" "an inherited password is replaced by the value of the file" || return 1
+    assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "an inherited password is replaced by the value of the file" || return 1
 }
 
 test_launcher_installer_receives_only_the_file_values() {
@@ -183,7 +200,7 @@ test_launcher_installer_receives_only_the_file_values() {
     assert_contains "$child_environment" "PYNTARA_REPO_BRANCH=main" "the installer reads the branch of the file" || return 1
     assert_contains "$child_environment" "PYNTARA_LOG_FILE=$PYNTARA_LOG_FILE" "both halves agree on one log file" || return 1
     assert_not_contains "$child_environment" "PYNTARA_TASKS=" "an inherited task list never reaches the installer" || return 1
-    assert_not_contains "$child_environment" "PYNTARA_VAULT_PASSWORD=" "an unchanged default password is not exported" || return 1
+    assert_contains "$child_environment" "PYNTARA_VAULT_PASSWORD=$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "the password of the file reaches the installer" || return 1
 }
 
 test_launcher_download_follows_the_branch() {
@@ -291,8 +308,10 @@ run_test test_launcher_takes_no_interactive_input
 run_test test_launcher_keeps_the_password_out_of_a_trace
 run_test test_launcher_carries_no_version_line
 run_test test_launcher_ships_the_default_vault_password
+run_test test_launcher_holds_no_second_copy_of_the_password
 run_test test_launcher_never_names_the_production_password_file
-run_test test_launcher_unchanged_password_passes_nothing
+run_test test_launcher_hands_its_password_to_the_installer
+run_test test_launcher_reports_a_missing_password
 run_test test_launcher_replaced_password_is_passed_through
 run_test test_launcher_clears_the_inherited_environment
 run_test test_launcher_installer_receives_only_the_file_values

@@ -1499,6 +1499,10 @@ EOF
         rm -rf "$tmp"
         return 1
     }
+    assert_contains "$output" "WARNING: the run takes the secrets of this machine from the default vault" "the fallback is a warning of the log, whatever reason led to it" || {
+        rm -rf "$tmp"
+        return 1
+    }
     if [[ -s "$uv_calls" ]]; then
         echo "uv must not run when falling back to default vault" >&2
         rm -rf "$tmp"

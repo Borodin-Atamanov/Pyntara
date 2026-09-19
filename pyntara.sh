@@ -29,13 +29,16 @@ PYNTARA_LOG_FILE="$PYNTARA_LOG_DIR/install.log"
 PYNTARA_JOURNAL_IDENTIFIER="pyntara-install"
 
 # Vault password of the run. The value below is the published password of the
-# default vault; it is also the shape of the line to replace with the password
-# of the production vault, which is never committed and never written to a log.
-# While the value is unchanged the installer runs without a password, so it
-# warns, waits and falls back to the default vault; a password that opens no
-# vault takes the same path, and one that opens production.vault is used.
-PYNTARA_VAULT_PASSWORD_DEFAULT="test-password-123"
-PYNTARA_VAULT_PASSWORD="$PYNTARA_VAULT_PASSWORD_DEFAULT"
+# default vault, and this is the only line to replace with the password of the
+# production vault, which is never committed and never written to a log. The
+# launcher hands the value to the installer and never decides the vault itself:
+# the installer resolves the vault the password opens, production when it opens
+# production.vault and default when it matches the published password or opens
+# no vault, and a run that ends up on the default vault reports a warning of
+# its own. A decision here would need a second copy of the published password,
+# and a user who replaced the wrong line of that pair lost the password
+# silently (2026-09-19).
+PYNTARA_VAULT_PASSWORD="test-password-123"
 
 # Install mode and task selection. An omitted value is resolved by the engine:
 # the mode is auto-detected, the task set is the default set of the mode.
@@ -110,15 +113,12 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f resolve_vault_password &>/dev/null; then
 resolve_vault_password() {
-    # A password equal to the published default leaves the installer without
-    # one, so the run warns, waits and falls back to the default vault, exactly
-    # as a run started without a password does. Any other value is handed to
-    # the installer, which resolves the vault it opens: production when it
-    # opens production.vault, default when it matches default.password, and the
-    # same warning and wait when it matches neither.
-    if [[ "$PYNTARA_VAULT_PASSWORD" == "$PYNTARA_VAULT_PASSWORD_DEFAULT" ]]; then
-        unset PYNTARA_VAULT_PASSWORD
-        launcher_log "Vault password unchanged, the installer warns and falls back to the default vault"
+    # The password of the file is handed to the installer, which resolves the
+    # vault it opens: production when it opens production.vault, default when
+    # it matches default.password, and the same warning and wait when it opens
+    # neither. No password in the file means the same as an unmatched one.
+    if [[ -z "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
+        launcher_log "No vault password in the launcher, the installer warns and falls back to the default vault"
         return 0
     fi
     launcher_log "Vault password set in the launcher, the installer resolves the vault it opens"

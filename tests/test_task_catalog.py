@@ -142,6 +142,25 @@ def test_validate_mode_rejects_unknown_mode() -> None:
         task_catalog.validate_mode("fancy")
 
 
+def test_a_written_mode_name_is_read_without_case_and_separator() -> None:
+    # A mode is written by hand, so the letter case and the choice between a
+    # hyphen and an underscore name the same mode as the declared spelling.
+    for written in ("fast_desktop", "fast-desktop", "Fast-Desktop", "FAST_DESKTOP"):
+        assert task_catalog.canonical_mode_name(written) == "fast_desktop"
+
+
+def test_a_written_mode_name_that_names_no_mode_has_no_answer() -> None:
+    for written in ("fancy", "fast desktop", "", "fast_desktops"):
+        assert task_catalog.canonical_mode_name(written) is None
+
+
+def test_validate_mode_reads_a_written_spelling_as_the_run_does() -> None:
+    # The guard and the run read a written name the same way: a guard that
+    # accepted fewer spellings than the run would refuse a mode the run applies.
+    for written in ("fast-desktop", "Fast_Desktop", "SERVER"):
+        task_catalog.validate_mode(written)
+
+
 def test_catalog_names_are_unique() -> None:
     names = [task.name for task in TASKS]
     assert len(names) == len(set(names))

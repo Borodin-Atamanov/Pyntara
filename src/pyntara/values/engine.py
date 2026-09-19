@@ -476,6 +476,13 @@ DEFAULT_ROUTE_COMMAND: tuple[str, ...] = ("ip", "-4", "route", "show", "default"
 # that follows it.
 DEFAULT_ROUTE_SOURCE_KEY: str = "src"
 
+# The source a run takes its secrets from, as inst.sh exports it in
+# PYNTARA_VAULT_SOURCE. The other source is the production vault of the
+# machine; this one is read by the engine, which warns whenever a run ends up
+# with it, because the runtime secrets of the machine are then rebuilt from
+# the repository test vault.
+DEFAULT_VAULT_SOURCE_NAME: str = "default"
+
 # The augeas driver the shared helper pyntara.augeas runs, and the node prefix
 # of the file it edits: every node of the augtool program is the prefix
 # followed by the absolute path of the edited file.
@@ -613,6 +620,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DATETIME_FORMAT",
     "DEFAULT_ROUTE_COMMAND",
     "DEFAULT_ROUTE_SOURCE_KEY",
+    "DEFAULT_VAULT_SOURCE_NAME",
     "DESKTOP_DETECT_PROCESSES",
     "DESKTOP_USER_ENV_NAME",
     "DESKTOP_USER_QUERY_TIMEOUT_SECONDS",

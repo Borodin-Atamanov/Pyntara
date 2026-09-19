@@ -162,11 +162,13 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     assert "Install mode: server" in result.output
 
 
-def test_run_falls_back_to_detected_mode_on_unknown_mode(
+def test_run_warns_and_fails_when_the_mode_names_no_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # An install mode not in the configuration shows the resilience notice
-    # and falls back to the auto-detected mode: the run continues.
+    # A written mode that names no declared mode shows the resilience notice,
+    # which names the declared modes, and the run continues on the
+    # auto-detected mode; the substitution is a warning of the run, so a mode
+    # that became another mode never passes as the one that was asked for.
     _clear_env(monkeypatch)
     monkeypatch.setenv("PYNTARA_INSTALL_MODE", "fancy")
     monkeypatch.setattr(
@@ -177,12 +179,56 @@ def test_run_falls_back_to_detected_mode_on_unknown_mode(
     # command runs inside the unit test.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert result.exit_code == 0  # unimplemented tasks are skipped, not failures
+    assert result.exit_code == 1
+    assert "names no declared mode, applied mode 'server'" in result.output
     assert (
-        "Install mode 'fancy' was set through environment variables but not "
-        "found in the configuration, applied mode 'server'"
-    ) in result.output
+        "The declared modes are: minimal, server, desktop, fast_desktop"
+        in result.output
+    )
     assert "Install mode: server" in result.output
+    assert "[warn] run: install mode 'fancy' names no declared mode" in result.output
+
+
+def test_run_applies_a_mode_name_written_with_another_separator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A person writes the mode into the file by hand, so a hyphen instead of
+    # the underscore of the catalog must select the mode and not drop the run
+    # onto the auto-detected one.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "Fast-Desktop")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "Install mode 'Fast-Desktop' applied as 'fast_desktop'" in result.output
+    assert "Install mode: fast_desktop" in result.output
+
+
+def test_run_warns_and_fails_when_the_default_vault_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Whatever reason led the installer to the default vault, the run reports
+    # it: on a machine that is already configured the runtime secrets are rebuilt
+    # from the repository test vault.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
+    monkeypatch.setenv("PYNTARA_VAULT_SOURCE", "default")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 1
+    assert "[warn] run: the run takes its secrets from the default vault" in result.output
+
+
+def test_run_stays_silent_for_the_production_vault(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
+    monkeypatch.setenv("PYNTARA_VAULT_SOURCE", "production")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert "[warn] run:" not in result.output
 
 
 def test_detect_default_mode_uses_desktop_session(

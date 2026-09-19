@@ -395,6 +395,12 @@ fallback_to_default_vault() {
     password="$(head -n 1 "$DEFAULT_VAULT_PASSWORD_FILE")"
     export PYNTARA_VAULT_PASSWORD="$password"
     export PYNTARA_VAULT_SOURCE="default"
+    # Every reason that leads here (no password, a password that opens no
+    # vault, a launcher that passed none) has the same effect on a machine
+    # that is already configured: its runtime secrets are rebuilt from the
+    # repository test vault. The line is written for all of them, so the
+    # fallback is never a detail of the log.
+    log "WARNING: the run takes the secrets of this machine from the default vault $DEFAULT_VAULT, which is the repository test vault; provide the production vault password in PYNTARA_VAULT_PASSWORD to avoid this"
     # A status line, not a confirmation: nothing follows that needs an
     # explicit Enter, so log_status does not block on read.
     log_status "Using default vault $DEFAULT_VAULT with password from $DEFAULT_VAULT_PASSWORD_FILE"

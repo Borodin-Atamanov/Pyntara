@@ -11,10 +11,36 @@ from __future__ import annotations
 from pyntara.values.tasks import MODES, TaskSpec
 
 
-def validate_mode(mode: str) -> None:
-    """Raise ValueError when the mode is not a known install mode."""
+def _folded_mode_name(written: str) -> str:
+    """A mode name reduced to the form two spellings of it share.
 
-    if mode not in MODES:
+    A mode is selected by a value a person writes by hand, and the letter
+    case and the choice between a hyphen and an underscore are not meant to
+    send the run to another mode, so names are compared on this form while
+    the declared spelling is what a run applies.
+    """
+
+    return written.strip().casefold().replace("-", "_")
+
+
+def canonical_mode_name(written: str) -> str | None:
+    """The declared mode name a written name means, or None.
+
+    The declared spelling is the answer, so the rest of the run carries one
+    of the names MODES declares, whatever spelling the caller wrote.
+    """
+
+    folded = _folded_mode_name(written)
+    for mode in MODES:
+        if _folded_mode_name(mode) == folded:
+            return mode
+    return None
+
+
+def validate_mode(mode: str) -> None:
+    """Raise ValueError when the written name names no declared mode."""
+
+    if canonical_mode_name(mode) is None:
         raise ValueError(
             f"unknown install mode {mode!r}, expected one of: {', '.join(MODES)}"
         )

@@ -376,31 +376,63 @@ def detect_default_mode() -> str:
     return "server"
 
 
-def _resolve_mode() -> str:
+def _resolve_mode() -> tuple[str, str | None]:
     """Resolve the install mode from PYNTARA_INSTALL_MODE or auto-detection.
 
     A missing variable is not an error: the mode is auto-detected and
-    reported. A value not in the configuration shows the resilience notice
-    and falls back to the auto-detected mode: the run continues whenever it
-    can (general resilience rule).
+    reported. A written name that names no declared mode shows the resilience
+    notice, which names the declared modes, and the run continues with the
+    auto-detected mode, which may be a much larger task set than the one the
+    user asked for; that substitution is reported as a warning of the run, so
+    a mode that became another mode is never invisible.
+
+    The answer is the applied mode and the warning of a substitution, or None
+    when the written name named a declared mode.
     """
 
-    mode = _env("PYNTARA_INSTALL_MODE")
-    if mode is None:
+    written = _env("PYNTARA_INSTALL_MODE")
+    if written is None:
         detected = detect_default_mode()
         log_event(f"Install mode not set, using detected default: {detected}")
-        return detected
-    if mode in tasks_values.MODES:
-        return mode
+        return detected, None
+    mode = task_catalog.canonical_mode_name(written)
+    if mode is not None:
+        if mode != written:
+            log_event(f"Install mode '{written}' applied as '{mode}'")
+        return mode, None
     detected = detect_default_mode()
     _warn_and_continue(
-        f"Install mode '{mode}' was set through environment variables but not "
-        f"found in the configuration, applied mode '{detected}'. If this does "
-        "not suit you, interrupt the program and redefine the mode through "
-        "environment variables. Execution continues in",
+        f"Install mode '{written}' was set through environment variables but "
+        f"names no declared mode, applied mode '{detected}'. The declared "
+        f"modes are: {', '.join(tasks_values.MODES)}. If this does not suit "
+        "you, interrupt the program and redefine the mode through environment "
+        "variables. Execution continues in",
         engine_values.NOTICE_TIMEOUT,
     )
-    return detected
+    return detected, (
+        f"install mode '{written}' names no declared mode, "
+        f"the run applied '{detected}'"
+    )
+
+
+def _default_vault_warning(vault_source: str | None) -> str | None:
+    """The warning of a run whose secrets come from the default vault.
+
+    inst.sh resolves the source and answers the default one for more than one
+    reason: no password was provided, a password opened no vault, or a
+    launcher never passed one. Every reason has the same effect on a machine
+    that is already configured, its runtime secrets are rebuilt from the
+    repository test vault, so the warning is raised here, where the reason no
+    longer matters, and it is raised whatever that reason was.
+    """
+
+    if vault_source != engine_values.DEFAULT_VAULT_SOURCE_NAME:
+        return None
+    return (
+        "the run takes its secrets from the default vault, so the runtime "
+        "secrets of this machine are rebuilt from the repository test vault; "
+        "set the production vault password for a configured machine"
+    )
 
 
 def _resolve_task_names(
@@ -513,11 +545,16 @@ def run() -> None:
             to_stderr=True,
         )
         raise typer.Exit(1)
-    mode = _resolve_mode()
+    mode, mode_warning = _resolve_mode()
     names = _resolve_task_names(
         mode, engine_values.NOTICE_TIMEOUT, tasks_values.CATALOG
     )
     ctx = _run_context(mode, names)
+    run_warnings = [
+        warning
+        for warning in (mode_warning, _default_vault_warning(ctx.vault_source))
+        if warning
+    ]
     log_event(f"Install mode: {mode}")
     log_event(f"Tasks: {' '.join(names)}")
     if ctx.force_tasks:
@@ -534,6 +571,8 @@ def run() -> None:
     skipped = [name for name, result in results if result.skipped]
     for name, result in results:
         log_result_line(name, result, to_journal=False)
+    for warning in run_warnings:
+        log_event(f"[warn] run: {warning}", to_stderr=True)
     if failed:
         log_event(f"Failed {len(failed)} of {len(results)} tasks: {' '.join(failed)}")
         raise typer.Exit(1)
@@ -548,8 +587,10 @@ def run() -> None:
             f"Finished {len(results) - len(skipped)} of {len(results)} tasks, "
             f"skipped {len(skipped)}"
         )
-        return
-    log_event(f"All {len(results)} tasks finished")
+    else:
+        log_event(f"All {len(results)} tasks finished")
+    if run_warnings:
+        raise typer.Exit(1)
 
 
 def main() -> None:
