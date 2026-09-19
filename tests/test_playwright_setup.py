@@ -111,6 +111,11 @@ def test_playwright_setup_is_in_desktop_default_set() -> None:
     assert "playwright_setup" in task_catalog.default_tasks("desktop", REAL_TASKS)
     assert "playwright_setup" not in task_catalog.default_tasks("minimal", REAL_TASKS)
     assert "playwright_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
+    # The tool drives the Chrome of the desktop set, which the quick set
+    # leaves out, so the quick set leaves the tool out too.
+    assert "playwright_setup" not in task_catalog.default_tasks(
+        "fast_desktop", REAL_TASKS
+    )
 
 
 def test_playwright_setup_depends_on_browser_and_universe() -> None:

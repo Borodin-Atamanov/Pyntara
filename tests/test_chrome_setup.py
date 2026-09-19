@@ -337,6 +337,8 @@ def test_chrome_setup_is_in_desktop_default_set() -> None:
     assert "chrome_setup" in task_catalog.default_tasks("desktop", REAL_TASKS)
     assert "chrome_setup" not in task_catalog.default_tasks("minimal", REAL_TASKS)
     assert "chrome_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
+    # The browser install is a long one, so the quick set leaves it out.
+    assert "chrome_setup" not in task_catalog.default_tasks("fast_desktop", REAL_TASKS)
 
 
 def test_chrome_setup_depends_on_the_xray_task() -> None:

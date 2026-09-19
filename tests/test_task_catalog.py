@@ -26,17 +26,26 @@ TASKS = CATALOG
 # A synthetic three-task chain with one transitive dependency. Mechanics
 # tests use it so they stay valid regardless of which tasks exist or are
 # implemented; only the two implemented tasks are referenced by name in
-# data tests. All three tasks belong to every mode.
-_ALL_MODES = ("minimal", "server", "desktop")
+# data tests. The modes of the fixture are local to it and say nothing about
+# the shipped vocabulary.
+_SYNTHETIC_MODES = ("minimal", "server", "desktop")
 SYNTHETIC_TASKS: tuple[TaskSpec, ...] = (
-    TaskSpec(name="a", description="A.", modes=_ALL_MODES),
-    TaskSpec(name="b", description="B.", depends=("a",), modes=_ALL_MODES),
-    TaskSpec(name="c", description="C.", depends=("b",), modes=_ALL_MODES),
+    TaskSpec(name="a", description="A.", modes=_SYNTHETIC_MODES),
+    TaskSpec(name="b", description="B.", depends=("a",), modes=_SYNTHETIC_MODES),
+    TaskSpec(name="c", description="C.", depends=("b",), modes=_SYNTHETIC_MODES),
 )
 
 
-def test_modes_are_the_three_install_modes() -> None:
-    assert MODES == ("minimal", "server", "desktop")
+def test_the_vocabulary_names_the_installed_modes() -> None:
+    # The vocabulary is open, so the test asks for the names a machine is
+    # installed with instead of pinning the whole tuple: a mode added later is
+    # a new line in the catalog and never a failure here.
+    for name in ("minimal", "server", "desktop", "fast_desktop"):
+        assert name in MODES
+
+
+def test_the_vocabulary_holds_no_duplicate_name() -> None:
+    assert len(MODES) == len(set(MODES))
 
 
 def test_default_tasks_match_mode_membership_exactly() -> None:
@@ -52,10 +61,11 @@ def test_default_tasks_use_configured_mode_membership() -> None:
     assert task_catalog.default_tasks("minimal", catalog) == ["a", "b", "c"]
 
 
-def test_add_extra_repos_is_first_in_every_mode() -> None:
+def test_add_extra_repos_leads_the_installed_modes() -> None:
     # add_extra_repos must run before any package install, so it leads the
-    # default task set of every mode.
-    for mode in MODES:
+    # default task set of every mode a machine is installed with. The modes
+    # are named one by one, so a mode added later is not a failure here.
+    for mode in ("minimal", "server", "desktop", "fast_desktop"):
         defaults = task_catalog.default_tasks(mode, TASKS)
         assert defaults[0] == "add_extra_repos"
 

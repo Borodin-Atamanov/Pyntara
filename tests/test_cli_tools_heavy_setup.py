@@ -74,9 +74,14 @@ def _install_fake(
     return calls
 
 
-def test_cli_tools_heavy_setup_is_in_every_mode_default_set() -> None:
-    for mode in tasks_values.MODES:
+def test_cli_tools_heavy_setup_stays_out_of_the_quick_mode() -> None:
+    # The media and document toolset is the long install the quick set exists
+    # to avoid, so fast_desktop leaves it out while the other modes keep it.
+    for mode in ("minimal", "server", "desktop"):
         assert "cli_tools_heavy_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
+    assert "cli_tools_heavy_setup" not in task_catalog.default_tasks(
+        "fast_desktop", REAL_TASKS
+    )
 
 
 def test_cli_tools_heavy_setup_depends_on_add_extra_repos() -> None:

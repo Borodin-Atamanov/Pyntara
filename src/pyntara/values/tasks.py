@@ -31,8 +31,17 @@ class TaskSpec:
 
 
 # The install modes: production reads the vocabulary to accept or refuse a mode,
-# and every catalog record names the modes it belongs to.
-MODES: tuple[str, ...] = ("minimal", "server", "desktop")
+# and every catalog record names the modes it belongs to. A record that belongs
+# to every mode writes modes=MODES, so a mode added to this vocabulary later
+# reaches those tasks without an edit in them; a record that belongs to some
+# modes names them, and the engine resolves the dependencies of every selected
+# task on its own.
+#
+# fast_desktop is the quick set: a working system that is reachable from outside
+# without the long heavy installs. It is never auto-detected, because a bare
+# machine carries no signal that asks for speed, so it is selected through
+# PYNTARA_INSTALL_MODE alone.
+MODES: tuple[str, ...] = ("minimal", "server", "desktop", "fast_desktop")
 
 # The task catalog, in the order the run resolves it.
 CATALOG: tuple[TaskSpec, ...] = (
@@ -40,74 +49,74 @@ CATALOG: tuple[TaskSpec, ...] = (
         "add_extra_repos",
         "Enable extra Ubuntu archive components: universe, restricted, multiverse.",
         (),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "hostname",
         "Generate and persist random hostname.",
         (),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "swapfile_service_install",
         "Calculate and configure swapfile from RAM and free disk space.",
         (),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "zram_service",
         "Configure aggressive ZRAM by CPU and RAM.",
         ("swapfile_service_install",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "zswap_service",
         "Configure aggressive zswap compressed swap cache with zstd.",
         ("swapfile_service_install",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "local_vault_setup",
         "Setup local vault for secrets storage",
         ("zram_service",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "system_metrics_setup",
         "Deploy and run the System Metrics service with periodic vault checks.",
         ("local_vault_setup",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "ssh_daemon_setup",
         "Install and configure SSH service with passwordless login keys.",
         (),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "ssh_client_setup",
         "Configure system-wide SSH client defaults through a drop-in.",
         (),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "port_forwarding_setup",
         "Deploy the Auto Port Forwarding service that keeps reverse ssh tunnels "
         "to the vault port-forwarding servers.",
         ("ssh_daemon_setup", "local_vault_setup", "system_metrics_setup", "hostname"),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "kde_keyboard_setup",
         "Configure KDE keyboard layouts and the layout indicator.",
         (),
-        ("desktop",),
+        ("desktop", "fast_desktop"),
     ),
     TaskSpec(
         "kde_settings",
         "Set the dark color scheme and the dark global theme for KDE.",
         (),
-        ("desktop",),
+        ("desktop", "fast_desktop"),
     ),
     TaskSpec(
         "vocalinux_setup",
@@ -128,26 +137,26 @@ CATALOG: tuple[TaskSpec, ...] = (
         "Run dnsproxy as the system-wide DNS resolver with NextDNS and fallback "
         "servers.",
         ("local_vault_setup", "hostname", "nextdns_setup_system_wide"),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "i2pd_service_setup",
         "Install and configure the latest i2pd from GitHub releases as a system "
         "service.",
         ("add_extra_repos",),
-        ("server", "desktop"),
+        ("server", "desktop", "fast_desktop"),
     ),
     TaskSpec(
         "yggdrasil_service_setup",
         "Install the latest yggdrasil from GitHub releases as a system service.",
         (),
-        ("server", "desktop"),
+        ("server", "desktop", "fast_desktop"),
     ),
     TaskSpec(
         "tor_setup",
         "Install Tor and publish the SSH service as an onion service.",
         ("add_extra_repos",),
-        ("server", "desktop"),
+        ("server", "desktop", "fast_desktop"),
     ),
     TaskSpec(
         "three_x_ui_xray_setup",
@@ -156,7 +165,7 @@ CATALOG: tuple[TaskSpec, ...] = (
         "local proxy inbound plus the routing policy that sends each connection "
         "to the right outbound.",
         ("yggdrasil_service_setup", "tor_setup", "i2pd_service_setup"),
-        ("server", "desktop"),
+        ("server", "desktop", "fast_desktop"),
     ),
     TaskSpec(
         "sotavpn_setup",
@@ -165,14 +174,14 @@ CATALOG: tuple[TaskSpec, ...] = (
         "local proxy at the least-ping pool of the Sota nodes and the remote "
         "server.",
         ("three_x_ui_xray_setup",),
-        ("server", "desktop"),
+        ("server", "desktop", "fast_desktop"),
     ),
     TaskSpec(
         "rustdesk_setup",
         "Install and configure the RustDesk remote desktop client with a "
         "per-machine password.",
         ("local_vault_setup",),
-        ("desktop",),
+        ("desktop", "fast_desktop"),
     ),
     TaskSpec(
         "imagemagick_setup",
@@ -192,14 +201,14 @@ CATALOG: tuple[TaskSpec, ...] = (
         "Deploy the service and timer that ask the home router through UPnP to "
         "forward the SSH port of this machine.",
         ("ssh_daemon_setup", "system_metrics_setup", "hostname"),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "system_metrics_initial_collect",
         "Run the system metrics collector once to send the network report right "
         "after provisioning.",
         ("system_metrics_setup",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "chrome_setup",
@@ -220,7 +229,7 @@ CATALOG: tuple[TaskSpec, ...] = (
         "Install the everyday console utilities: shell, file, storage, "
         "security, network and archive tools.",
         ("add_extra_repos",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
     TaskSpec(
         "cli_tools_heavy_setup",
@@ -248,7 +257,7 @@ CATALOG: tuple[TaskSpec, ...] = (
         "Commit the runtime vault and the encrypted telemetry PDF into System "
         "Metrics.",
         ("system_metrics_setup",),
-        ("minimal", "server", "desktop"),
+        MODES,
     ),
 )
 

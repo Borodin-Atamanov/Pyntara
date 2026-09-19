@@ -18,10 +18,11 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import package_set
+from pyntara import package_set, task_catalog
 from pyntara.tasks import vocalinux_setup as task_module
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
+from pyntara.values import tasks as tasks_values
 from pyntara.values import vocalinux_setup as values
 
 
@@ -748,3 +749,11 @@ def test_the_running_state_word_comes_from_the_values(
     monkeypatch.setattr(values, "SERVICE_ACTIVE_STATE", "active")
     assert task_module._enable_user_service(timeout=30.0) == (True, None)
     assert len(calls) == 2
+
+
+def test_vocalinux_setup_stays_out_of_the_quick_mode() -> None:
+    # The dictation app downloads a release and a speech model, so the quick
+    # set leaves it out while the desktop mode keeps it.
+    catalog = tasks_values.CATALOG
+    assert "vocalinux_setup" in task_catalog.default_tasks("desktop", catalog)
+    assert "vocalinux_setup" not in task_catalog.default_tasks("fast_desktop", catalog)

@@ -231,6 +231,11 @@ def test_scrcpy_setup_is_in_desktop_default_set() -> None:
     assert "scrcpy_setup" in task_catalog.default_tasks("desktop", REAL_TASKS)
     assert "scrcpy_setup" not in task_catalog.default_tasks("minimal", REAL_TASKS)
     assert "scrcpy_setup" not in task_catalog.default_tasks("server", REAL_TASKS)
+    # Screen mirroring does not serve the goal of the quick set, which is a
+    # machine that answers from outside.
+    assert "scrcpy_setup" not in task_catalog.default_tasks(
+        "fast_desktop", REAL_TASKS
+    )
 
 
 def test_the_shipped_values_name_the_release_repository() -> None:

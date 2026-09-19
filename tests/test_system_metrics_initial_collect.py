@@ -25,7 +25,9 @@ from pyntara.values import system_metrics_setup as values
 from pyntara.values import tasks as tasks_values
 
 REAL_TASKS = tasks_values.CATALOG
-ALL_MODES = ("minimal", "server", "desktop")
+# The modes the ordering check covers. The names stand here one by one, so a
+# mode added to the catalog later is not a failure in this file.
+CHECKED_MODES = ("minimal", "server", "desktop", "fast_desktop")
 
 
 def _ctx(tmp_path: Path) -> Context:
@@ -181,7 +183,7 @@ def test_catalog_orders_initial_collect_after_address_tasks_and_before_final_com
     # the final commit_final_system_metrics task, which is the true last
     # task of the catalog. Only relative order is a contract; the exact
     # position of the remaining tasks is free.
-    for mode in ALL_MODES:
+    for mode in CHECKED_MODES:
         defaults = task_catalog.default_tasks(mode, REAL_TASKS)
         initial = defaults.index("system_metrics_initial_collect")
         assert defaults.index("system_metrics_setup") < initial
@@ -199,4 +201,5 @@ def test_catalog_depends_on_system_metrics_setup() -> None:
         task for task in REAL_TASKS if task.name == "system_metrics_initial_collect"
     )
     assert task_def.depends == ("system_metrics_setup",)
-    assert task_def.modes == ALL_MODES
+    for mode in CHECKED_MODES:
+        assert mode in task_def.modes

@@ -166,9 +166,14 @@ def _command_fake(
     return calls
 
 
-def test_ffmpeg_setup_is_in_every_mode_default_set() -> None:
-    for mode in tasks_values.MODES:
+def test_ffmpeg_setup_stays_out_of_the_quick_mode() -> None:
+    # The codec tree is a long install, so the quick set leaves it out while
+    # the other modes keep it.
+    for mode in ("minimal", "server", "desktop"):
         assert "ffmpeg_setup" in task_catalog.default_tasks(mode, REAL_TASKS)
+    assert "ffmpeg_setup" not in task_catalog.default_tasks(
+        "fast_desktop", REAL_TASKS
+    )
 
 
 def test_ffmpeg_setup_depends_on_add_extra_repos() -> None:
