@@ -71,6 +71,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import ssh_daemon_setup as values
 from pyntara.values.ssh_daemon_setup import SshDirective
@@ -282,7 +283,7 @@ def _ensure_package(
             return False, f"apt index refresh: {exc}"
     ok = False
     error = ""
-    for _ in range(values.INSTALL_RETRIES + 1):
+    for _ in range(common_values.PACKAGE_INSTALL_RETRIES + 1):
         ok, error = install_package_once(values.PACKAGE_NAME, timeout)
         if ok:
             break
@@ -373,7 +374,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     installed = package_is_installed(
-        values.PACKAGE_NAME, values.PACKAGE_STATUS_TIMEOUT_SECONDS
+        values.PACKAGE_NAME, common_values.PACKAGE_STATUS_TIMEOUT_SECONDS
     )
     _log(
         f"checking package {values.PACKAGE_NAME}: "

@@ -35,6 +35,6 @@ AUGEAS_LENS - the augeas lens of the ssh_config syntax
 AUGEAS_CONTAINER - the container node the directives are placed under
 AUGEAS_CONTAINER_VALUE - the pattern that container node carries, so the directives apply to every connection
 AUGEAS_TOOLS_PACKAGE_NAME - the package that provides augtool, installed by the task when missing
-PACKAGE_STATUS_TIMEOUT_SECONDS - seconds the dpkg status query may take
-INSTALL_RETRIES - retry attempts after a failed package install
+package_status_timeout_seconds - seconds the dpkg status query may take, the shared value of pyntara.values.common
+package_install_retries - retry attempts after a failed package install, the shared value of pyntara.values.common
 DIRECTIVES - the ssh_config keywords the task guarantees, each with its value

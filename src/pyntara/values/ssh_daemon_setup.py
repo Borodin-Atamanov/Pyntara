@@ -35,17 +35,14 @@ class SshDirective:
     value: str
 
 
-# Package that provides the SSH server daemon, the package that provides the
-# augtool command line tool used to write the drop-in, and the seconds the dpkg
-# status query may take. The task installs the augeas package itself when the
-# tool is missing, so it never waits for another task to provide it.
+# Package that provides the SSH server daemon and the package that provides
+# the augtool command line tool used to write the drop-in. The task installs
+# the augeas package itself when the tool is missing, so it never waits for
+# another task to provide it. The dpkg status timeout and the install retries
+# are the shared values of pyntara.values.common, so every package install of
+# the run follows one policy.
 PACKAGE_NAME: str = "openssh-server"
 AUGEAS_TOOLS_PACKAGE_NAME: str = "augeas-tools"
-PACKAGE_STATUS_TIMEOUT_SECONDS: int = 30
-
-# Retry attempts after a failed package install; total attempts are retries
-# plus one.
-INSTALL_RETRIES: int = 3
 
 # Systemd units of the daemon. Ubuntu activates the daemon through the socket,
 # and the socket then owns the listen port: the Port directive of sshd_config
@@ -188,8 +185,6 @@ DIRECTIVES: tuple[SshDirective, ...] = (
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_NAME",
     "AUGEAS_TOOLS_PACKAGE_NAME",
-    "PACKAGE_STATUS_TIMEOUT_SECONDS",
-    "INSTALL_RETRIES",
     "SERVICE_UNIT_NAME",
     "SOCKET_UNIT_NAME",
     "START_CHECK_ATTEMPTS",

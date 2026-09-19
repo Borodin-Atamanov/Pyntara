@@ -48,8 +48,8 @@ All parameters live in src/pyntara/values/ssh_daemon_setup.py, and the system co
 
 PACKAGE_NAME - the package that provides the SSH server daemon
 AUGEAS_TOOLS_PACKAGE_NAME - the package that provides augtool, installed by the task when missing
-PACKAGE_STATUS_TIMEOUT_SECONDS - seconds the dpkg status query may take
-INSTALL_RETRIES - retry attempts after a failed package install
+package_status_timeout_seconds - seconds the dpkg status query may take, the shared value of pyntara.values.common
+package_install_retries - retry attempts after a failed package install, the shared value of pyntara.values.common
 SERVICE_UNIT_NAME - the systemd service unit of the daemon
 SOCKET_UNIT_NAME - the systemd socket unit that owns the listen port and is disabled by the task
 START_CHECK_ATTEMPTS - attempts of the readiness loop after a start
