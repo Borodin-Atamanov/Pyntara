@@ -119,6 +119,13 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop", "fast_desktop"),
     ),
     TaskSpec(
+        "keyring_setup",
+        "Give the login keyring an empty master password, so a machine that "
+        "logs in automatically never asks for one.",
+        ("kde_settings",),
+        ("desktop", "fast_desktop"),
+    ),
+    TaskSpec(
         "vocalinux_setup",
         "Install Vocalinux voice dictation from the AppImage release and "
         "configure it for the desktop user.",

@@ -121,6 +121,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/playwright-setup.md](docs/spec/playwright-setup.md) — playwright-cli browser control install for the desktop user, over the chrome_setup CDP listener
 [docs/spec/scrcpy-setup.md](docs/spec/scrcpy-setup.md) — scrcpy Android screen mirroring client from the GitHub release with the Ubuntu archive as the fallback, the version directory with the switched command link, the Android USB rules and the two menu entries  
 [docs/spec/chrome-setup.md](docs/spec/chrome-setup.md) — Google Chrome from the official apt repository, the settings repository applied to the live profile, the desktop entry with the local proxy and the CDP listener, and the boot unit that keeps the profile mirror mounted
+[docs/spec/keyring-setup.md](docs/spec/keyring-setup.md) — the login keyring of a machine that logs in automatically gets an empty master password, so no keyring password dialog appears
 Guides — how to work with the project:
 
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  
