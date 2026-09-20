@@ -5,8 +5,7 @@ Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
 
 Pyntara turns a fresh Kubuntu installation into a fully configured workstation or server
 in one command. It installs packages, configures ZRAM and swap, sets up SSH, DNS and
-anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment, and
-enables encrypted System Metrics reporting. All tasks are idempotent — safe to rerun. A
+anonymity services (dnsproxy, i2pd, yggdrasil, Tor), tunes the desktop environment. All tasks are idempotent — safe to rerun. A
 launcher script downloads the bootstrap installer, and the installer fetches the repository
 and launches the Python provisioning engine.
 
@@ -40,12 +39,6 @@ to the default vault; the installer writes a WARNING line for that fallback into
 and the run reports it as a warning of its own, so a run that took the secrets of the machine
 from the repository test vault never passes silently.
 
-Parameters of the file:
-
-PYNTARA_REPO_URL, PYNTARA_REPO_BRANCH — repository and branch of the run. The branch selects
-both the downloaded installer and the checkout the installer clones, so a branch run differs
-from a main run by one value.
-
 PYNTARA_INSTALL_MODE — one of the mode names declared in the task catalog
 (src/pyntara/values/tasks.py). The names in use are minimal, server, desktop and
 fast_desktop, where fast_desktop is the quick set: a working system reachable from
@@ -74,21 +67,9 @@ add_extra_repos and the package install tasks run before package operations. The
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
-PYNTARA_LOG_DIR, PYNTARA_LOG_FILE, PYNTARA_JOURNAL_IDENTIFIER — one log per run carries both
-the launcher and the installer, and both report to the system journal under one identifier,
-which the engine mirrors under its own. The launcher logs the download phase, which no later
-layer sees.
-
-Optional: PYNTARA_VAULT_SOURCE — production or default. The launcher leaves it unset, so the
-source is auto-detected from the password as described above.
-
 Values live in Python modules under src/pyntara/values/, one module per task, and
 a task reads the values of its own module, so a value is never written in two
-places. There is no second source: the config/ directory and its TOML documents are
-gone, so a machine runs the values the deployed package carries
-([Configuration](docs/contracts/architecture.md#configuration)).
-
-The interactive installer variant does not work and its development is stopped.
+places. 
 
 ## Documentation index
 
