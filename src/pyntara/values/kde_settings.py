@@ -43,6 +43,15 @@ class KconfigRecord:
     delete: bool = False
 
 
+# The placeholders a record may carry where a path belongs to the desktop account:
+# the task fills them with the account of the machine when it reads or writes the
+# record. A record is built when this module is imported, and the engine resolves
+# the desktop account later, after the import, so a literal account in a record
+# would name whichever machine wrote the values instead of the target machine.
+USERNAME_PLACEHOLDER_NAME: str = "username"
+HOME_PLACEHOLDER_NAME: str = "home_dir"
+
+
 # Packages that must be present: the provider of the plasma-apply theme tools,
 # the KConfig reader and writer, the Kubuntu settings that ship the light and
 # dark global themes, the dbus python client, and the Qt bindings that turn a
@@ -385,7 +394,6 @@ CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{path}")
 # repeated runs skip matching values. A record with delete removes the key
 # instead of writing it, and one with the type "bool" writes a flag.
 KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
-    KconfigRecord("kwinrc", ("TabBox",), "LayoutName", "thumbnail_grid"),
     KconfigRecord("kwinrc", ("TabBox",), "ActivitiesMode", "0"),
     KconfigRecord("kwinrc", ("TabBox",), "DesktopMode", "0"),
     KconfigRecord("kwinrc", ("TabBoxAlternative",), "LayoutName", "coverswitch"),
@@ -631,7 +639,7 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "dolphinrc",
         ("General",),
         "HomeUrl",
-        f"{common_values.DESKTOP_HOME_DIR}/Downloads",
+        f"{{{HOME_PLACEHOLDER_NAME}}}/Downloads",
     ),
     KconfigRecord("dolphinrc", ("General",), "AutoExpandFolders", "true", "bool"),
     KconfigRecord("dolphinrc", ("General",), "BrowseThroughArchives", "true", "bool"),
@@ -696,33 +704,33 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
     ),
     KconfigRecord(
         "ktrashrc",
-        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        (f"{{{HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
         "Days",
         "211",
     ),
     KconfigRecord(
         "ktrashrc",
-        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        (f"{{{HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
         "Percent",
         "23",
     ),
     KconfigRecord(
         "ktrashrc",
-        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        (f"{{{HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
         "UseSizeLimit",
         "true",
         "bool",
     ),
     KconfigRecord(
         "ktrashrc",
-        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        (f"{{{HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
         "UseTimeLimit",
         "true",
         "bool",
     ),
     KconfigRecord(
         "ktrashrc",
-        (f"{common_values.DESKTOP_HOME_DIR}/.local/share/Trash",),
+        (f"{{{HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
         "LimitReachedAction",
         "2",
     ),
@@ -1125,6 +1133,8 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
     "KCONFIG_BOOL_TYPE",
+    "USERNAME_PLACEHOLDER_NAME",
+    "HOME_PLACEHOLDER_NAME",
     "COLOR_SCHEME",
     "LOOK_AND_FEEL",
     "LOOK_AND_FEEL_LIGHT",

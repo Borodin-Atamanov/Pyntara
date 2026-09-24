@@ -715,6 +715,24 @@ def ensure_port_free(
     return f"killed unknown process {pid} on port {port}"
 
 
+def substituted_text(text: str, values: Mapping[str, str]) -> str:
+    """The configured value with its named {placeholders} filled in.
+
+    A value that belongs to a file of the desktop is not a command of ours:
+    it may carry braces of its own, so only the placeholders this mapping
+    names are replaced and every other brace stays exactly as the file
+    needs it. A value built when a module is imported cannot carry the
+    account of the machine, because the engine resolves that account later,
+    so such a value carries the placeholder until a task substitutes it. A
+    command is ours end to end and travels through substituted_command,
+    which refuses a placeholder the values do not name.
+    """
+
+    for name, replacement in values.items():
+        text = text.replace(f"{{{name}}}", replacement)
+    return text
+
+
 def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> list[str]:
     """The configured command with its {placeholders} filled in.
 

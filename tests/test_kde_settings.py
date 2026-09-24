@@ -2300,3 +2300,41 @@ def test_recursive_owner_command_comes_from_the_values(
         (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ] in seen
+
+
+def test_substituted_record_fills_the_home_of_the_machine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A record that names a path of the desktop account carries the
+    # placeholder, because the values module builds the record before the
+    # engine resolves the account of the machine, and the task fills the
+    # placeholder into the group and the value when it reads or writes it.
+    home = str(tmp_path / "home")
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", home)
+    record = values.KconfigRecord(
+        "ktrashrc",
+        (f"{{{values.HOME_PLACEHOLDER_NAME}}}/.local/share/Trash",),
+        "Days",
+        "211",
+    )
+    substituted = task_module._substituted_record(record)
+    assert substituted.group == (f"{home}/.local/share/Trash",)
+    assert substituted.value == "211"
+    assert substituted.key == record.key
+    # A record that carries no placeholder is handed back unchanged, so the
+    # comparison of its value stays a plain string comparison.
+    plain = values.KconfigRecord("kwinrc", ("Windows",), "BorderSnapZone", "32")
+    assert task_module._substituted_record(plain) is plain
+
+
+def test_no_configured_record_carries_a_literal_home() -> None:
+    # A literal home in the values names the machine that recorded them, so
+    # a record that names a path of the desktop account carries the
+    # placeholder and the target machine gets its own path.
+    for record in values.KCONFIG_RECORDS:
+        literal_parts = [
+            text
+            for text in (*record.group, record.value)
+            if "/home/" in text and "{" not in text
+        ]
+        assert literal_parts == []

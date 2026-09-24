@@ -1176,3 +1176,16 @@ def test_the_architecture_query_comes_from_the_engine(
     monkeypatch.setattr(utils, "run_command", fake_run)
     assert utils.dpkg_architecture(30.0) == "my-arch"
     assert calls == [["my-dpkg", "--arch"]]
+
+
+def test_substituted_text_fills_named_placeholders_and_keeps_other_braces() -> None:
+    # A value that belongs to a file of the desktop may carry braces of its
+    # own, such as the ${Status} of a dpkg format, so only the named
+    # placeholders are replaced and every other brace stays as it is.
+    text = "{home_dir}/Downloads -f=${Status}"
+    values = {"home_dir": "/home/kubuntu", "username": "kubuntu"}
+    assert (
+        utils.substituted_text(text, values)
+        == "/home/kubuntu/Downloads -f=${Status}"
+    )
+    assert utils.substituted_text("plain", values) == "plain"

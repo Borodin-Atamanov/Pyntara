@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from string import Template
 from typing import TypedDict
@@ -49,6 +50,7 @@ from pyntara.utils import (
     run_command,
     session_environment,
     substituted_command,
+    substituted_text,
     task_data_dir,
     trim_whitespace,
 )
@@ -763,6 +765,39 @@ def _apply_theme_cursor_overrides(
     return changed
 
 
+def _substituted_record(record: values.KconfigRecord) -> values.KconfigRecord:
+    """The record with the account of the machine written into it.
+
+    A record carries the placeholders the values module declares where a
+    path belongs to the desktop account, because that module builds its
+    records when it is imported, which happens before the engine resolves
+    the account of the machine. A record without a placeholder is
+    returned unchanged, so the comparison of an unsubstituted value with
+    the file stays a plain string comparison.
+    """
+
+    mapping = {
+        values.USERNAME_PLACEHOLDER_NAME: common_values.DESKTOP_USERNAME,
+        values.HOME_PLACEHOLDER_NAME: common_values.DESKTOP_HOME_DIR,
+    }
+    group = tuple(substituted_text(part, mapping) for part in record.group)
+    value = substituted_text(record.value, mapping)
+    if group == record.group and value == record.value:
+        return record
+    return replace(record, group=group, value=value)
+
+
+def _substituted_records() -> tuple[values.KconfigRecord, ...]:
+    """Every configured record with the account of the machine written in.
+
+    Every step that reads or writes a record takes it from here, so the
+    substitution of the account happens in one place and a step can never
+    write or compare a placeholder.
+    """
+
+    return tuple(_substituted_record(record) for record in values.KCONFIG_RECORDS)
+
+
 def _apply_kconfig_records(
     *,
     timeout: float,
@@ -781,7 +816,7 @@ def _apply_kconfig_records(
     """
 
     changed = False
-    for record in values.KCONFIG_RECORDS:
+    for record in _substituted_records():
         try:
             if _is_shortcut_record(record):
                 # The running daemon owns the shortcut state and writes
@@ -859,7 +894,7 @@ def _shortcut_record_changes() -> tuple[tuple[str, str, str, tuple[str, ...]], .
     """
 
     changes: list[tuple[str, str, str, tuple[str, ...]]] = []
-    for record in values.KCONFIG_RECORDS:
+    for record in _substituted_records():
         if not _is_shortcut_record(record):
             continue
         if not record.group:
