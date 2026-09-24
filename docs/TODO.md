@@ -53,3 +53,6 @@ because the restart takes minutes on a weak machine. The recipe measured so far
 is in docs/spec/kde-keyboard-setup.md. Needs a live KDE stand: the machine used
 for these measurements is gone.
 
+## Install antivirus antirootkit.
+
+Find the best solutions, choose the best, create task to install it.
