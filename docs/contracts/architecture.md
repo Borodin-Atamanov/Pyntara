@@ -42,6 +42,7 @@ PYNTARA_INSTALL_MODE - one of the mode names declared in the catalog (MODES of s
 PYNTARA_TASKS - space-separated task names. When unset, the mode defaults are used. Unknown names are reported and ignored.  
 PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored. The keyword that forces every task of the resolved run set is force_all_keyword of the engine values module, compared without case; task names are case-insensitive as well.  
 PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that the package install tasks and add_extra_repos run before package operations. The answers that mean true are the environment_flag_true_values list of the engine values module, compared without case, so a machine that spells its answers differently is answered in the config and not in the code. Omit it in real runs so the index stays fresh; set it for test or offline runs.  
+PYNTARA_DELETE_PACKAGES_AFTER_INSTALL - 1, true or yes deletes the packages and the data a task downloaded once they have served their purpose, and an absent variable answers the shipped default (delete_packages_after_install_default of the engine values module, true by default). The value 0 keeps the downloads instead, so a repeated run reuses them and saves network traffic and time, while the deletion frees disk space on a machine short of it. The true answers are the environment_flag_true_values list, compared without case. The decision reaches the apt keep-debs drop-in of add_extra_repos and the download directories of the tasks that cache a package.  
 PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
 
 Approved exceptions (recorded user approvals):
@@ -59,6 +60,7 @@ force_tasks (frozenset of task names)
 task_data_root (Path)  
 repo_root (Path; the clone root a task resolves its data against)  
 skip_apt_update (bool; True skips the apt index refresh in the package install tasks and add_extra_repos)  
+delete_packages_after_install (bool; True deletes the packages and the data a task downloaded once they have served their purpose, so a machine short of disk never fills up; False keeps them for a repeated run)  
 task_name (str; the catalog name of the task being run, filled by the runner)  
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.

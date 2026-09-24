@@ -105,18 +105,20 @@ def _env(name: str) -> str | None:
     return value
 
 
-def _env_flag(name: str) -> bool:
+def _env_flag(name: str, *, default: bool = False) -> bool:
     """Read a boolean environment variable; True for a configured answer.
 
     The accepted answers are the declared ENVIRONMENT_FLAG_TRUE_VALUES,
     compared without case and without surrounding spaces. Any other value,
-    including an unset or empty variable, is False. The explicit value list
-    prevents a stray "0" from silently enabling a flag.
+    including an explicit "0", is False. An unset or empty variable answers
+    the caller default instead, so a flag whose shipped default is True stays
+    true until the environment names a value. The explicit value list prevents
+    a stray "0" from silently enabling a flag.
     """
 
     value = os.environ.get(name)
     if not value:
-        return False
+        return default
     answer = value.strip().casefold()
     return answer in {
         word.casefold() for word in engine_values.ENVIRONMENT_FLAG_TRUE_VALUES
@@ -525,6 +527,10 @@ def _run_context(mode: str, names: list[str]) -> Context:
         repo_root=REPO_ROOT,
         task_data_root=engine_values.TASK_DATA_ROOT,
         skip_apt_update=_env_flag("PYNTARA_SKIP_APT_UPDATE"),
+        delete_packages_after_install=_env_flag(
+            "PYNTARA_DELETE_PACKAGES_AFTER_INSTALL",
+            default=engine_values.DELETE_PACKAGES_AFTER_INSTALL_DEFAULT,
+        ),
     )
 
 

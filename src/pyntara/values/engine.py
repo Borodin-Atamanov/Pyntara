@@ -149,6 +149,13 @@ CURL_PARALLEL_SOURCE_MARKER: str = "@@pyntara-source@@"
 # being explicit is what stops a stray 0 from enabling a flag.
 ENVIRONMENT_FLAG_TRUE_VALUES: tuple[str, ...] = ("1", "true", "yes")
 
+# Shipped default of the deletion of downloaded packages and data after they
+# have served their purpose (PYNTARA_DELETE_PACKAGES_AFTER_INSTALL), used when
+# the environment does not name the variable. True deletes the downloads, which
+# keeps a machine short of disk from filling up; false keeps them, so a
+# repeated run reuses the download and saves network traffic and time.
+DELETE_PACKAGES_AFTER_INSTALL_DEFAULT: bool = True
+
 # Format of the moment the run writes down, used where a timestamp of the run
 # appears: the prefix of a progress line and the moment a collected report
 # states. One value, so the console and the report name the same moment the
@@ -621,6 +628,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DEFAULT_ROUTE_COMMAND",
     "DEFAULT_ROUTE_SOURCE_KEY",
     "DEFAULT_VAULT_SOURCE_NAME",
+    "DELETE_PACKAGES_AFTER_INSTALL_DEFAULT",
     "DESKTOP_DETECT_PROCESSES",
     "DESKTOP_USER_ENV_NAME",
     "DESKTOP_USER_QUERY_TIMEOUT_SECONDS",

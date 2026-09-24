@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import signal
 import subprocess
 import time
@@ -18,6 +19,7 @@ from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import Path
 
 from pyntara import logger
+from pyntara.context import Context
 from pyntara.values import engine as engine_values
 
 
@@ -68,6 +70,27 @@ def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
         return True, ""
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, str(exc)
+
+
+def discard_downloaded_files(ctx: Context, directory: Path) -> None:
+    """Delete the downloaded files of a task once they have served their purpose.
+
+    The run deletes what it downloaded as soon as the download has been used,
+    so a machine short of disk never fills up. A run that asked to keep the
+    downloads (ctx.delete_packages_after_install is false) leaves the directory
+    alone, so a repeated run reuses the files and saves network traffic and
+    time. Only the entries of that one directory are removed, and a missing
+    directory is not an error; an entry that cannot be removed raises OSError,
+    which the caller reports as a warning of its task.
+    """
+
+    if not ctx.delete_packages_after_install or not directory.is_dir():
+        return
+    for entry in sorted(directory.iterdir()):
+        if entry.is_dir() and not entry.is_symlink():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink(missing_ok=True)
 
 
 def refresh_apt_index(timeout: float) -> None:

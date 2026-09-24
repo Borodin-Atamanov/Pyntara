@@ -57,6 +57,12 @@ PYNTARA_VAULT_PASSWORD="test-password-123"
 # PYNTARA_FORCE_TASKS=""
 # PYNTARA_SKIP_APT_UPDATE=1
 
+# Delete the packages and the data a task downloaded once they have served
+# their purpose. The value 1, and an absent variable, delete the downloads, so
+# a machine short of disk never fills up; the value 0 keeps them, so a repeated
+# run reuses the download and saves network traffic and time.
+PYNTARA_DELETE_PACKAGES_AFTER_INSTALL=1
+
 # Guards so the test harness can inject a mock via source (bootstrap contract,
 # Testability).
 if ! declare -f launcher_log &>/dev/null; then
@@ -127,6 +133,7 @@ export_run_parameters() {
     export PYNTARA_REPO_URL PYNTARA_REPO_BRANCH
     export PYNTARA_LOG_DIR PYNTARA_LOG_FILE PYNTARA_JOURNAL_IDENTIFIER
     export PYNTARA_INSTALL_MODE PYNTARA_TASKS PYNTARA_FORCE_TASKS PYNTARA_SKIP_APT_UPDATE
+    export PYNTARA_DELETE_PACKAGES_AFTER_INSTALL
     if [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
         export PYNTARA_VAULT_PASSWORD
     fi

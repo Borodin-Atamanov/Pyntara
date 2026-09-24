@@ -67,6 +67,13 @@ add_extra_repos and the package install tasks run before package operations. The
 without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
+PYNTARA_DELETE_PACKAGES_AFTER_INSTALL — 1, true or yes, and an absent variable, delete
+the packages and the data a task downloaded once they have served their purpose: the
+default mode frees disk space, which matters on a machine short of it. The value 0 keeps
+the downloads instead, so a repeated run reuses them and saves network traffic and time.
+The decision reaches the apt keep-debs drop-in that add_extra_repos writes and the
+download directories of the tasks that cache a package.
+
 Values live in Python modules under src/pyntara/values/, one module per task, and
 a task reads the values of its own module, so a value is never written in two
 places. 

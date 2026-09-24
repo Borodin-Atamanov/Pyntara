@@ -22,6 +22,7 @@ from pyntara.logger import log_progress
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     run_command,
@@ -886,6 +887,7 @@ def task(ctx: Context) -> TaskResult:
     dropin_changed = False
     auto_dns_changed: list[tuple[str, str]] = []
     verify_warning: str | None = None
+    cleanup_warning: str | None = None
     cut_over = False
     try:
         if installed != target_version:
@@ -897,6 +899,10 @@ def task(ctx: Context) -> TaskResult:
             values.BINARY_PATH.parent.mkdir(parents=True, exist_ok=True)
             staged.replace(values.BINARY_PATH)
             apply_owner(values.BINARY_PATH, owner_uid, owner_gid)
+            try:
+                discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
+            except OSError as exc:
+                cleanup_warning = f"cannot remove downloaded files: {exc}"
             changed = True
         discovered = (
             discover_dns_servers(timeout)
@@ -1037,5 +1043,7 @@ def task(ctx: Context) -> TaskResult:
         success=True,
         changed=changed,
         message=f"dnsproxy active with NextDNS profile {profile_id}",
-        warnings=(verify_warning,) if verify_warning else (),
+        warnings=tuple(
+            warning for warning in (verify_warning, cleanup_warning) if warning
+        ),
     )

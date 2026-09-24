@@ -49,6 +49,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     release_asset_architecture,
@@ -622,6 +623,10 @@ def task(ctx: Context) -> TaskResult:
         outcome = _deploy_release(asset_name, asset_url, checksum_url, version, timeout)
         if outcome.installed:
             changed = True
+            try:
+                discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
+            except OSError as exc:
+                warnings.append(f"cannot remove downloaded files: {exc}")
             messages.append(outcome.detail)
         elif not outcome.fall_back:
             warnings.append(f"the release archive was not used: {outcome.detail}")

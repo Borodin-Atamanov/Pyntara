@@ -85,7 +85,8 @@ Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no va
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).  
 Install mode: PYNTARA_INSTALL_MODE (optional; when omitted the engine detects desktop or server from the machine and reports it, so the detection lives in one place).  
 Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).  
-Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that the package install tasks run before the first install).
+Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that the package install tasks run before the first install).  
+Downloaded packages: PYNTARA_DELETE_PACKAGES_AFTER_INSTALL (optional; 1, true or yes, and an absent value, delete the packages and the data a task downloaded once they have served their purpose; 0 keeps them, so a repeated run reuses them and saves network traffic and time).
 
 The dialog-based screens were removed together with their supporting functions (select_tasks, select_install_mode, prompt_password_input) and the task-catalog command. The interactive UI contract was deleted.
 

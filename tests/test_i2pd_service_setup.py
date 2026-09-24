@@ -98,6 +98,7 @@ def _ctx(
     *,
     force: bool = False,
     skip_apt_update: bool = True,
+    delete_packages_after_install: bool = True,
     ssh_port: str | None = "30222",
 ) -> Context:
     """Context with a small safe config; the real file is never touched.
@@ -119,6 +120,7 @@ def _ctx(
         task_data_root=tmp_path,
         repo_root=tmp_path,
         skip_apt_update=skip_apt_update,
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -390,6 +392,20 @@ def test_installs_new_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     )
     # The downloaded file is removed after the successful install.
     assert not (values.DOWNLOAD_DIR / asset).exists()
+
+
+def test_keeps_the_downloaded_package_when_the_run_keeps_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run keeps the downloads: the deb stays in the download directory, so
+    # a repeated run reuses it and saves network traffic and time.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path, delete_packages_after_install=False)
+    _install_fake(monkeypatch, installed_version=None, enabled=False, active=False)
+    result = i2pd_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert (values.DOWNLOAD_DIR / f"i2pd_{TAG}-1resolute1_amd64.deb").is_file()
 
 
 def test_update_reinstalls_and_restarts(

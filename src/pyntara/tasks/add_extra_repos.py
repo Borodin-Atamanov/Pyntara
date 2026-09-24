@@ -10,8 +10,9 @@ filter only matches the official archive domains. The goal is reached when
 every Ubuntu section already lists every configured component; the task
 then skips. Independent of the components work the task also keeps an apt
 drop-in that stops apt and unattended-upgrades from deleting downloaded
-.deb files after a successful install, writing it while
-KEEP_DOWNLOADED_DEBS is 1 and removing it while the value is 0.
+.deb files after a successful install, writing it while the run asked to keep
+the downloads (ctx.delete_packages_after_install is false) and removing it
+while the run deletes them.
 After a real change the apt index is refreshed once, unless
 ctx.skip_apt_update is set (test or offline runs). A failure is reported
 through TaskResult and never stops the run (task-model contract): the
@@ -215,29 +216,29 @@ def _process_file(path: Path) -> _FileRewrite:
     return _process_legacy(text)
 
 
-def _keep_debs_state_note() -> str:
+def _keep_debs_state_note(keep_downloaded_debs: bool) -> str:
     """User note for the keep-debs state applied to the apt drop-in."""
 
-    if values.KEEP_DOWNLOADED_DEBS:
+    if keep_downloaded_debs:
         return "keep downloaded .deb files after install enabled"
     return "keep downloaded .deb files after install disabled"
 
 
-def _ensure_keep_debs_dropin() -> tuple[bool, str | None]:
-    """Bring the apt keep-debs drop-in to the state KEEP_DOWNLOADED_DEBS asks.
+def _ensure_keep_debs_dropin(keep_downloaded_debs: bool) -> tuple[bool, str | None]:
+    """Bring the apt keep-debs drop-in to the state the run asked for.
 
-    While the value is 1 the drop-in must carry KEEP_DEBS_DROPIN_CONTENT,
-    the two option lines that stop apt and unattended-upgrades from
-    deleting downloaded .deb files after a successful install; while it is
-    0 the drop-in must not exist. The current content is read before
-    writing, so an exact match changes nothing (idempotency through
-    read-back). Returns whether the file changed and an error string when
-    the file could not be updated.
+    While keep_downloaded_debs is true the drop-in must carry
+    KEEP_DEBS_DROPIN_CONTENT, the two option lines that stop apt and
+    unattended-upgrades from deleting downloaded .deb files after a successful
+    install; while it is false the drop-in must not exist. The current content
+    is read before writing, so an exact match changes nothing (idempotency
+    through read-back). Returns whether the file changed and an error string
+    when the file could not be updated.
     """
 
     path = values.KEEP_DEBS_FILE
     try:
-        if not values.KEEP_DOWNLOADED_DEBS:
+        if not keep_downloaded_debs:
             if not path.exists():
                 return False, None
             path.unlink()
@@ -280,12 +281,16 @@ def task(ctx: Context) -> TaskResult:
         )
     configured = values.COMPONENTS
     warnings: list[str] = []
+    keep_downloaded_debs = not ctx.delete_packages_after_install
     _log(f"configured components: {' '.join(configured)}")
-    keep_changed, keep_error = _ensure_keep_debs_dropin()
+    keep_changed, keep_error = _ensure_keep_debs_dropin(keep_downloaded_debs)
     if keep_error:
         warnings.append(keep_error)
     if keep_changed:
-        _log(f"updated {values.KEEP_DEBS_FILE}: keep downloaded .deb files")
+        _log(
+            f"updated {values.KEEP_DEBS_FILE}: "
+            f"{_keep_debs_state_note(keep_downloaded_debs)}"
+        )
     files = _collect_source_files()
     if not files:
         warning = "no apt source files found"
@@ -330,7 +335,7 @@ def task(ctx: Context) -> TaskResult:
         _log("target state already reached, skipping")
         message = "already satisfied"
         if keep_changed:
-            message = f"{message}; {_keep_debs_state_note()}"
+            message = f"{message}; {_keep_debs_state_note(keep_downloaded_debs)}"
         if warnings:
             message = f"{message}; warnings: {'; '.join(warnings)}"
         return TaskResult(
@@ -377,7 +382,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"verification passed: {len(verified)} files satisfied")
     message = f"components ensured in Ubuntu archive sections: {', '.join(configured)}"
     if keep_changed:
-        message = f"{message}; {_keep_debs_state_note()}"
+        message = f"{message}; {_keep_debs_state_note(keep_downloaded_debs)}"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
     return TaskResult(

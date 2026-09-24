@@ -152,6 +152,7 @@ def make_context(
     repo_root: Path = REPO_ROOT,
     task_data_root: Path = Path("/tmp"),
     skip_apt_update: bool = False,
+    delete_packages_after_install: bool = True,
     task_name: str = "",
 ) -> Context:
     """Context with the safe defaults the engine fills in a real run.
@@ -174,6 +175,7 @@ def make_context(
         repo_root=repo_root,
         task_data_root=task_data_root,
         skip_apt_update=skip_apt_update,
+        delete_packages_after_install=delete_packages_after_install,
         task_name=task_name,
     )
 

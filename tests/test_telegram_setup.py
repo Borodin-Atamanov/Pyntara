@@ -60,13 +60,24 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
-def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
-    """Context safe for unit tests; the real paths are never touched."""
+def _ctx(
+    tmp_path: Path,
+    *,
+    force: bool = False,
+    delete_packages_after_install: bool = False,
+) -> Context:
+    """Context safe for unit tests; the real paths are never touched.
+
+    The deletion of the downloads is off by default here, because these
+    scenarios are about the install and the launcher entry; the scenario
+    about the cached archive sets the flag itself.
+    """
 
     return make_context(
         install_mode="desktop",
         task_name="telegram_setup",
         force_tasks=frozenset({"telegram_setup"}) if force else frozenset(),
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -221,6 +232,19 @@ def test_install_downloads_and_installs_latest(
         tmp_path / "cache" / (ARCHIVE_NAME + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     ).exists()
     assert any(call[0] == "tar" for call in calls)
+
+
+def test_the_archive_is_removed_when_the_run_deletes_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run deletes the downloads: the archive is removed after a successful
+    # install, so the machine keeps the free space instead of the cached
+    # release.
+    _fake_run_factory(monkeypatch, tmp_path)
+    result = telegram_setup.task(_ctx(tmp_path, delete_packages_after_install=True))
+    assert result.success is True
+    assert result.changed is True
+    assert not (tmp_path / "cache" / ARCHIVE_NAME).exists()
 
 
 def test_already_installed_changes_nothing(

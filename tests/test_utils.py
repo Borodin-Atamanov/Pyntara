@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
+from support import make_context
 
 from pyntara import utils
 from pyntara.utils import (
@@ -542,6 +543,42 @@ class ProquintTests:
         for item in junk:
             result = proquint_decode(item)
             assert result is None or isinstance(result, bytes)
+
+
+def test_discard_downloaded_files_removes_files_and_directories(
+    tmp_path: Path,
+) -> None:
+    # The run deletes the downloads: every entry goes, including an extracted
+    # subdirectory left by an install.
+    cache = tmp_path / "download"
+    (cache / "nested").mkdir(parents=True)
+    (cache / "package.deb").write_bytes(b"bytes")
+    (cache / "nested" / "binary").write_bytes(b"bytes")
+    ctx = make_context(delete_packages_after_install=True)
+    utils.discard_downloaded_files(ctx, cache)
+    assert cache.is_dir()
+    assert list(cache.iterdir()) == []
+
+
+def test_discard_downloaded_files_keeps_the_files_when_the_run_keeps_them(
+    tmp_path: Path,
+) -> None:
+    # The run keeps the downloads: the directory is left as it is, so a
+    # repeated run reuses the files.
+    cache = tmp_path / "download"
+    cache.mkdir()
+    (cache / "package.deb").write_bytes(b"bytes")
+    ctx = make_context(delete_packages_after_install=False)
+    utils.discard_downloaded_files(ctx, cache)
+    assert (cache / "package.deb").is_file()
+
+
+def test_discard_downloaded_files_ignores_a_missing_directory(
+    tmp_path: Path,
+) -> None:
+    # Nothing was downloaded, so there is nothing to remove.
+    ctx = make_context(delete_packages_after_install=True)
+    utils.discard_downloaded_files(ctx, tmp_path / "absent")
 
 
 @pytest.mark.parametrize(

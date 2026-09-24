@@ -69,6 +69,7 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
+    delete_packages_after_install: bool = True,
     retries: int = 3,
     batch_size: int = 100,
     target_count: int = 6,
@@ -142,6 +143,7 @@ def _ctx(
         install_mode="server",
         force_tasks=(frozenset({"yggdrasil_service_setup"}) if force else frozenset()),
         task_data_root=tmp_path,
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -481,6 +483,26 @@ def test_installs_new_release_with_static_peers(
     assert not (
         values.DOWNLOAD_DIR / "yggdrasil-0.5.14-amd64.deb"
     ).exists()
+
+
+def test_keeps_the_downloaded_package_when_the_run_keeps_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run keeps the downloads: the deb stays in the download directory, so
+    # a repeated run reuses it and saves network traffic and time.
+    ctx = _ctx(
+        monkeypatch,
+        tmp_path,
+        static_peers=("tls://1.2.3.4:1234",),
+        delete_packages_after_install=False,
+    )
+    _install_fake(
+        monkeypatch, tmp_path, installed_version=None, enabled=False, active=False
+    )
+    result = yggdrasil_service_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert (values.DOWNLOAD_DIR / "yggdrasil-0.5.14-amd64.deb").is_file()
 
 
 def test_saves_self_address_after_provisioning(

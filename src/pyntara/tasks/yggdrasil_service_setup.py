@@ -74,6 +74,7 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
     backoff_delay,
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     install_package_once,
@@ -195,20 +196,6 @@ def _install_deb(
         if ok:
             break
     return ok, error
-
-
-def _cleanup_downloads(download_dir: Path, name: str) -> None:
-    """Remove the downloaded package.
-
-    The file is a diagnostic for a failed install; after a successful
-    install it is stale and is removed so the download directory never
-    accumulates old versions.
-    """
-
-    try:
-        (download_dir / name).unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _render_config(peers: list[str]) -> str:
@@ -956,7 +943,7 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", changed)
         _log("package installed")
         try:
-            _cleanup_downloads(values.DOWNLOAD_DIR, asset_name)
+            discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
         except OSError as exc:
             warnings.append(f"cannot remove downloaded files: {exc}")
             return done("yggdrasil not configured", True)

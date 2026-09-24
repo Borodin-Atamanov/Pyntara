@@ -26,12 +26,6 @@ UBUNTU_HOSTS: tuple[str, ...] = (
     "old-releases.ubuntu.com",
 )
 
-# Keep downloaded .deb files in the apt cache after install: 1 writes the
-# apt.conf.d drop-in below, which stops apt and unattended-upgrades from
-# deleting downloaded packages after a successful install; 0 removes that
-# drop-in.
-KEEP_DOWNLOADED_DEBS: int = 1
-
 # Names of the two deb822 fields the task reads in a .sources file: the field
 # that carries the archive URIs and the field that lists the enabled
 # components. The comparison is without case, so a distribution that renames a
@@ -65,8 +59,8 @@ SOURCE_URL_SCHEMES: tuple[str, ...] = ("http://", "https://")
 DEB822_SOURCE_SUFFIX: str = ".sources"
 
 # The apt drop-in that stops apt from deleting downloaded .deb files. The task
-# owns this file completely while KEEP_DOWNLOADED_DEBS is 1: it writes the
-# file, and removes it while the value is 0.
+# owns this file completely while the run keeps the downloads: it writes the
+# file, and removes it while the run deletes them.
 KEEP_DEBS_FILE: Path = Path("/etc/apt/apt.conf.d/99keep-debs.conf")
 
 # Body of that drop-in, written exactly as it stands here. A file that already
@@ -85,7 +79,6 @@ KEEP_DEBS_DROPIN_CONTENT: str = (
 READ_VALUE_NAMES: tuple[str, ...] = (
     "COMPONENTS",
     "UBUNTU_HOSTS",
-    "KEEP_DOWNLOADED_DEBS",
     "URIS_FIELD_NAME",
     "COMPONENTS_FIELD_NAME",
     "LEGACY_SOURCES_FILE",

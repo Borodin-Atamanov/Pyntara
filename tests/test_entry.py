@@ -64,6 +64,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PYNTARA_VAULT_SOURCE",
         "PYNTARA_FORCE_TASKS",
         "PYNTARA_SKIP_APT_UPDATE",
+        "PYNTARA_DELETE_PACKAGES_AFTER_INSTALL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -775,6 +776,54 @@ def test_run_skip_apt_update_zero_is_false(
 ) -> None:
     # An explicit 0 must not enable the flag; only 1, true or yes do.
     assert _captured_skip_flag(monkeypatch, "0") is False
+
+
+def _captured_delete_packages_flag(
+    monkeypatch: pytest.MonkeyPatch, value: str | None
+) -> bool | None:
+    """Run the engine with PYNTARA_DELETE_PACKAGES_AFTER_INSTALL set to value
+    and return the flag that reached Context through run_tasks."""
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    if value is None:
+        monkeypatch.delenv("PYNTARA_DELETE_PACKAGES_AFTER_INSTALL", raising=False)
+    else:
+        monkeypatch.setenv("PYNTARA_DELETE_PACKAGES_AFTER_INSTALL", value)
+    captured: dict[str, bool | None] = {"flag": None}
+
+    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+        captured["flag"] = ctx.delete_packages_after_install
+        return []
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    return captured["flag"]
+
+
+def test_run_delete_packages_after_install_true_reaches_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # PYNTARA_DELETE_PACKAGES_AFTER_INSTALL=1 flows from the environment into
+    # Context, so the run deletes the downloads.
+    assert _captured_delete_packages_flag(monkeypatch, "1") is True
+
+
+def test_run_delete_packages_after_install_true_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without the variable the shipped default deletes the downloads, so a
+    # machine short of disk never fills up.
+    assert _captured_delete_packages_flag(monkeypatch, None) is True
+
+
+def test_run_delete_packages_after_install_zero_keeps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An explicit 0 keeps the downloads, so a repeated run reuses them and
+    # saves network traffic and time.
+    assert _captured_delete_packages_flag(monkeypatch, "0") is False
 
 
 def test_run_reports_when_the_task_catalog_is_empty(

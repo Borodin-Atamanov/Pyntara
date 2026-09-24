@@ -45,6 +45,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     install_package_once,
@@ -162,15 +163,6 @@ def _install_deb(
         if ok:
             break
     return ok, error
-
-
-def _cleanup_download(download_dir: Path, name: str) -> None:
-    """Remove the downloaded package after a successful install."""
-
-    try:
-        (download_dir / name).unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _machine_id(timeout: float) -> str | None:
@@ -579,7 +571,10 @@ def task(ctx: Context) -> TaskResult:
                     skip_update=ctx.skip_apt_update,
                 )
                 if ok:
-                    _cleanup_download(values.DOWNLOAD_DIR, name)
+                    try:
+                        discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
+                    except OSError as exc:
+                        warnings.append(f"cannot remove downloaded files: {exc}")
                     _log("rustdesk installed")
                     changed = True
                 else:

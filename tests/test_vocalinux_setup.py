@@ -86,8 +86,14 @@ def _ctx(
     tmp_path: Path,
     *,
     force: bool = False,
+    delete_packages_after_install: bool = False,
 ) -> Any:
-    """Context safe for unit tests; the real paths are never touched."""
+    """Context safe for unit tests; the real paths are never touched.
+
+    The deletion of the downloads is off by default here, because these
+    scenarios are about the deployment; the scenario about the cached
+    AppImage sets the flag itself.
+    """
 
     return make_context(
         task_name="vocalinux_setup",
@@ -95,6 +101,7 @@ def _ctx(
         force_tasks=frozenset({"vocalinux_setup"}) if force else frozenset(),
         repo_root=tmp_path,
         task_data_root=tmp_path,
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -476,6 +483,21 @@ def test_a_forced_rerun_does_not_rewrite_the_installed_image(
     assert result.success is True
     assert result.warnings == ()
     assert (tmp_path / "cache" / ASSET).is_file()
+
+
+def test_the_cached_image_is_removed_when_the_run_deletes_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run deletes the downloads: the cache is cleared after the install."""
+
+    _write_templates(tmp_path, monkeypatch)
+    ctx = _ctx(tmp_path, delete_packages_after_install=True)
+    _install_fakes(monkeypatch)
+
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert not (tmp_path / "cache" / ASSET).exists()
 
 
 def test_a_busy_installed_image_is_reported_with_the_remedy(

@@ -48,6 +48,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     curl_command,
+    discard_downloaded_files,
     download_command,
     run_command,
     substituted_command,
@@ -414,6 +415,10 @@ def task(ctx: Context) -> TaskResult:
             except RuntimeError as exc:
                 warnings.append(str(exc))
             else:
+                try:
+                    discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
+                except OSError as exc:
+                    warnings.append(f"cannot remove downloaded files: {exc}")
                 _cleanup_old_archives(values.DOWNLOAD_DIR, name)
                 messages.append(f"installed Telegram Desktop {name}")
                 changed = True

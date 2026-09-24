@@ -34,6 +34,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     release_asset_architecture,
@@ -548,6 +549,11 @@ def task(ctx: Context) -> TaskResult:
         # Without the AppImage the autostart entry would point at a file
         # that does not exist, so that entry alone is skipped.
         warnings.append(appimage_error)
+    else:
+        try:
+            discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
+        except OSError as exc:
+            warnings.append(f"cannot remove downloaded files: {exc}")
     if appimage_changed:
         changed = True
         messages.append(f"installed Vocalinux {values.VERSION} to {appimage_path}")

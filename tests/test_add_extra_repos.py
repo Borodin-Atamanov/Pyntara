@@ -76,10 +76,24 @@ def _point_the_values_at_temporary_paths(
     )
 
 
-def _ctx(tmp_path: Path, *, skip_apt_update: bool = False) -> Context:
-    """Context safe for unit tests; the real files are never touched."""
+def _ctx(
+    tmp_path: Path,
+    *,
+    skip_apt_update: bool = False,
+    delete_packages_after_install: bool = False,
+) -> Context:
+    """Context safe for unit tests; the real files are never touched.
 
-    return make_context(task_data_root=tmp_path, skip_apt_update=skip_apt_update)
+    The deletion of the downloads is off by default here, because the
+    component scenarios pre-create the keep-debs drop-in and must leave it
+    alone; the scenarios about the drop-in set the flag themselves.
+    """
+
+    return make_context(
+        task_data_root=tmp_path,
+        skip_apt_update=skip_apt_update,
+        delete_packages_after_install=delete_packages_after_install,
+    )
 
 
 def _install_sources(
@@ -454,19 +468,36 @@ def test_keep_debs_dropin_unchanged_when_exact(
     assert result.message == "already satisfied"
 
 
-def test_keep_debs_dropin_removed_when_disabled(
+def test_keep_debs_dropin_removed_when_the_run_deletes_downloads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # KEEP_DOWNLOADED_DEBS is 0: the existing drop-in is removed and the
+    # The run deletes the downloads: the existing drop-in is removed and the
     # result reports the disabled state.
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=True)
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
-    monkeypatch.setattr(values, "KEEP_DOWNLOADED_DEBS", 0)
-    result = add_extra_repos.task(_ctx(tmp_path))
+    result = add_extra_repos.task(
+        _ctx(tmp_path, delete_packages_after_install=True)
+    )
     assert result.success is True
     assert result.changed is True
     assert not keep_debs.exists()
     assert "disabled" in (result.message or "")
+
+
+def test_keep_debs_dropin_absent_when_the_run_deletes_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run deletes the downloads and no drop-in exists: the task reports
+    # the plain already-satisfied state and writes nothing.
+    _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
+    keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=False)
+    result = add_extra_repos.task(
+        _ctx(tmp_path, delete_packages_after_install=True)
+    )
+    assert result.success is True
+    assert result.changed is False
+    assert result.message == "already satisfied"
+    assert not keep_debs.exists()
 
 
 def test_keep_debs_dropin_write_error_is_a_warning(

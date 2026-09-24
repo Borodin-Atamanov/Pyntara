@@ -226,11 +226,14 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(values, "SERVICE_SETTLE_DELAY_SECONDS", 0.0)
 
 
-def _ctx(*, force: bool = False) -> Context:
+def _ctx(
+    *, force: bool = False, delete_packages_after_install: bool = True
+) -> Context:
     return make_context(
         task_name="rustdesk_setup",
         force_tasks=frozenset({"rustdesk_setup"}) if force else frozenset(),
         skip_apt_update=True,
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -299,6 +302,10 @@ def test_installed_latest_is_unchanged(
 def test_installs_missing_release(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # A leftover deb of an earlier run stands in for the download the fake
+    # curl does not write, so the removal after the install is observable.
+    (values.DOWNLOAD_DIR / ASSET_NAME).parent.mkdir(parents=True, exist_ok=True)
+    (values.DOWNLOAD_DIR / ASSET_NAME).write_bytes(b"deb-bytes")
     calls = _fake_run(monkeypatch, installed_version=None)
     _vault(monkeypatch)
     result = rustdesk_setup.task(_ctx())
@@ -306,6 +313,21 @@ def test_installs_missing_release(
     assert result.changed is True
     assert any(call[0] == "apt-get" and call[1] == "install" for call in calls)
     assert not (values.DOWNLOAD_DIR / ASSET_NAME).exists()
+
+
+def test_keeps_the_downloaded_package_when_the_run_keeps_downloads(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The run keeps the downloads: the deb stays in the download directory, so
+    # a repeated run reuses it and saves network traffic and time.
+    (values.DOWNLOAD_DIR / ASSET_NAME).parent.mkdir(parents=True, exist_ok=True)
+    (values.DOWNLOAD_DIR / ASSET_NAME).write_bytes(b"deb-bytes")
+    _fake_run(monkeypatch, installed_version=None)
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(delete_packages_after_install=False))
+    assert result.success is True
+    assert result.changed is True
+    assert (values.DOWNLOAD_DIR / ASSET_NAME).is_file()
 
 
 def test_client_commands_come_from_the_values(

@@ -180,11 +180,22 @@ test_launcher_clears_the_inherited_environment() {
     export PYNTARA_INSTALL_MODE="server"
     export PYNTARA_REPO_BRANCH="branch-from-caller"
     export PYNTARA_VAULT_PASSWORD="password-from-caller"
+    export PYNTARA_DELETE_PACKAGES_AFTER_INSTALL="keep-from-caller"
     source_launcher
     assert_unset PYNTARA_TASKS "an inherited task list never reaches the installer" || return 1
     assert_unset PYNTARA_INSTALL_MODE "an inherited install mode never reaches the installer" || return 1
     assert_equals "main" "$PYNTARA_REPO_BRANCH" "the branch of the run comes from the file" || return 1
     assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "an inherited password is replaced by the value of the file" || return 1
+    assert_equals "1" "$PYNTARA_DELETE_PACKAGES_AFTER_INSTALL" "an inherited delete-packages value is replaced by the value of the file" || return 1
+}
+
+
+test_launcher_exports_the_delete_packages_flag() {
+    source_launcher
+    use_test_log "$(mktemp -d)"
+    local passed
+    passed="$(export_run_parameters; printenv PYNTARA_DELETE_PACKAGES_AFTER_INSTALL)"
+    assert_equals "1" "$passed" "the delete-packages flag of the file reaches the installer" || return 1
 }
 
 test_launcher_installer_receives_only_the_file_values() {
@@ -327,6 +338,7 @@ run_test test_launcher_hands_its_password_to_the_installer
 run_test test_launcher_passes_no_password_when_its_line_is_empty
 run_test test_launcher_replaced_password_is_passed_through
 run_test test_launcher_clears_the_inherited_environment
+run_test test_launcher_exports_the_delete_packages_flag
 run_test test_launcher_installer_receives_only_the_file_values
 run_test test_launcher_download_follows_the_branch
 run_test test_launcher_reports_a_failed_download

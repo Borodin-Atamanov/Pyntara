@@ -71,13 +71,16 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
 
 
-def _ctx(*, force: bool = False) -> Context:
+def _ctx(
+    *, force: bool = False, delete_packages_after_install: bool = True
+) -> Context:
     """Context safe for unit tests; the real paths are never touched."""
 
     return make_context(
         install_mode="desktop",
         task_name="scrcpy_setup",
         force_tasks=frozenset({"scrcpy_setup"}) if force else frozenset(),
+        delete_packages_after_install=delete_packages_after_install,
     )
 
 
@@ -263,6 +266,29 @@ def test_install_from_release_points_the_command_at_the_new_version(
     assert result.message is not None
     assert "GitHub release" in result.message
     assert any(ASSET_URL in " ".join(call) for call in calls)
+
+
+def test_the_cached_archive_is_removed_when_the_run_deletes_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The release is deployed and the run deletes the downloads: the cache
+    # directory is cleared, so the machine keeps the free space.
+    _fake_run_factory(monkeypatch, tmp_path)
+    result = scrcpy_setup.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    assert list((tmp_path / "cache").iterdir()) == []
+
+
+def test_the_cached_archive_is_kept_when_the_run_keeps_downloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The run keeps the downloads: the archive and the checksum file stay in
+    # the cache, so a repeated run reuses them.
+    _fake_run_factory(monkeypatch, tmp_path)
+    result = scrcpy_setup.task(_ctx(delete_packages_after_install=False))
+    assert result.success is True
+    assert (tmp_path / "cache" / ASSET_NAME).is_file()
 
 
 def test_release_download_is_verified_against_the_published_checksum(

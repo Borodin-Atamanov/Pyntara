@@ -62,6 +62,7 @@ from pyntara.models import TaskResult
 from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     apply_owner,
+    discard_downloaded_files,
     download_command,
     dpkg_architecture,
     install_package_once,
@@ -243,20 +244,6 @@ def _install_deb(
         if ok:
             break
     return ok, error
-
-
-def _cleanup_downloads(download_dir: Path, name: str) -> None:
-    """Remove the downloaded package.
-
-    The file is a diagnostic for a failed install; after a successful
-    install it is stale and is removed so the download directory never
-    accumulates old versions.
-    """
-
-    try:
-        (download_dir / name).unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _read_config(config_path: Path) -> str | None:
@@ -566,7 +553,7 @@ def task(ctx: Context) -> TaskResult:
                 _log("package installed")
                 changed = True
                 try:
-                    _cleanup_downloads(values.DOWNLOAD_DIR, asset_name)
+                    discard_downloaded_files(ctx, values.DOWNLOAD_DIR)
                 except OSError as exc:
                     warnings.append(f"cannot remove downloaded files: {exc}")
             else:

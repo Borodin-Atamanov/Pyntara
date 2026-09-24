@@ -28,4 +28,5 @@ class Context:
     repo_root: Path
     task_data_root: Path
     skip_apt_update: bool
+    delete_packages_after_install: bool
     task_name: str = ""
