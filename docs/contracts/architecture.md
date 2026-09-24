@@ -42,7 +42,7 @@ PYNTARA_INSTALL_MODE - one of the mode names declared in the catalog (MODES of s
 PYNTARA_TASKS - space-separated task names. When unset, the mode defaults are used. Unknown names are reported and ignored.  
 PYNTARA_FORCE_TASKS - space-separated task names that must rerun even when the target state is reached. Invalid names are reported and ignored. The keyword that forces every task of the resolved run set is force_all_keyword of the engine values module, compared without case; task names are case-insensitive as well.  
 PYNTARA_SKIP_APT_UPDATE - 1, true or yes skips the apt index refresh that the package install tasks and add_extra_repos run before package operations. The answers that mean true are the environment_flag_true_values list of the engine values module, compared without case, so a machine that spells its answers differently is answered in the config and not in the code. Omit it in real runs so the index stays fresh; set it for test or offline runs.  
-PYNTARA_DELETE_PACKAGES_AFTER_INSTALL - 1, true or yes deletes the packages and the data a task downloaded once they have served their purpose, and an absent variable answers the shipped default (delete_packages_after_install_default of the engine values module, true by default). The value 0 keeps the downloads instead, so a repeated run reuses them and saves network traffic and time, while the deletion frees disk space on a machine short of it. The true answers are the environment_flag_true_values list, compared without case. The decision reaches the apt keep-debs drop-in of add_extra_repos and the download directories of the tasks that cache a package.  
+PYNTARA_DELETE_PACKAGES_AFTER_INSTALL - the deletion of the downloads; its accepted answers are in the bootstrap contract.  
 PYNTARA_VAULT_PASSWORD, PYNTARA_VAULT_SOURCE - KeePass credentials resolved by inst.sh.
 
 Approved exceptions (recorded user approvals):
@@ -60,7 +60,7 @@ force_tasks (frozenset of task names)
 task_data_root (Path)  
 repo_root (Path; the clone root a task resolves its data against)  
 skip_apt_update (bool; True skips the apt index refresh in the package install tasks and add_extra_repos)  
-delete_packages_after_install (bool; True deletes the packages and the data a task downloaded once they have served their purpose, so a machine short of disk never fills up; False keeps them for a repeated run)  
+delete_packages_after_install (bool; the deletion of what a task downloaded once it has served its purpose, read from PYNTARA_DELETE_PACKAGES_AFTER_INSTALL)  
 task_name (str; the catalog name of the task being run, filled by the runner)  
 
 Context is passed explicitly to every task. Implicit reads of the environment inside task modules are forbidden.
@@ -118,6 +118,8 @@ hidden data exchange via ad-hoc globals
 ## Resilience rule
 
 The program must keep working whenever it can and must not crash on recoverable input errors. An invalid environment value shows an error notice naming the problem and the applied fallback, waits a visible countdown (plain numbers, default 7 seconds, engine.NOTICE_TIMEOUT of the values package) so the user can interrupt with Ctrl-C, then continues with the fallback. Only a condition with no possible fallback stops the program, and a value condition is never one: the engine works with the values it has and every task reports the values it missed.
+
+The run releases what it downloaded as it goes and never fills the machine it configures, because a full filesystem on the target machine is one nobody there can repair. A run that deletes the downloads frees the package download cache after every task, and the apt drop-in of add_extra_repos tells apt and unattended-upgrades to delete each package they downloaded once it is installed; a task that cached a package deletes its own download directory. Before every task the free space of engine.DISK_FREE_SPACE_PATH is compared with engine.DISK_RESERVE_BYTES: below the reserve the run stops before that task, leaves the remaining tasks unstarted and reports the reason as a warning of the run. A package install that fails for that reason ends its package list with that one sentence instead of repeating it, and a package database left in the middle of an operation is finished with dpkg --configure -a before the installs, reported when it cannot be finished.
 
 ## Guardrails
 

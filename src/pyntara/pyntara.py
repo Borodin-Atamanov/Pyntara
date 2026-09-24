@@ -565,7 +565,9 @@ def run() -> None:
     log_event(f"Tasks: {' '.join(names)}")
     if ctx.force_tasks:
         log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
-    results = run_tasks(ctx, names)
+    results, stop_reason = run_tasks(ctx, names)
+    if stop_reason is not None:
+        run_warnings.append(stop_reason)
     failed = [
         name for name, result in results if not result.success and not result.skipped
     ]

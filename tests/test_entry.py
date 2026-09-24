@@ -650,9 +650,11 @@ def _captured_force_tasks(
     monkeypatch.setenv("PYNTARA_FORCE_TASKS", value)
     captured: dict[str, frozenset[str]] = {"force_tasks": frozenset()}
 
-    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
         captured["force_tasks"] = ctx.force_tasks
-        return []
+        return [], None
 
     monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
     result = runner.invoke(app, [])
@@ -707,6 +709,29 @@ def test_run_reports_warnings_and_exits_one(
     )
 
 
+def test_run_reports_a_stop_of_the_runner_and_exits_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The runner stops when the machine has no room for the next task. The
+    # reason is a warning of the run, so a run that stopped early never passes
+    # as a successful configuration.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
+        return [], (
+            "the run stopped before hostname: free space 4 MB is below the "
+            "reserve 10 MB"
+        )
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 1
+    assert "stopped before hostname" in result.output
+
+
 def _captured_skip_flag(
     monkeypatch: pytest.MonkeyPatch, value: str | None
 ) -> bool | None:
@@ -721,9 +746,11 @@ def _captured_skip_flag(
         monkeypatch.setenv("PYNTARA_SKIP_APT_UPDATE", value)
     captured: dict[str, bool | None] = {"flag": None}
 
-    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
         captured["flag"] = ctx.skip_apt_update
-        return []
+        return [], None
 
     monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
     result = runner.invoke(app, [])
@@ -756,9 +783,11 @@ def test_the_true_answers_of_the_flag_come_from_the_values(
     monkeypatch.setattr(engine_values, "ENVIRONMENT_FLAG_TRUE_VALUES", ("aye", "si"))
     captured: dict[str, bool | None] = {"flag": None}
 
-    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
         captured["flag"] = ctx.skip_apt_update
-        return []
+        return [], None
 
     monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
     result = runner.invoke(app, [])
@@ -792,9 +821,11 @@ def _captured_delete_packages_flag(
         monkeypatch.setenv("PYNTARA_DELETE_PACKAGES_AFTER_INSTALL", value)
     captured: dict[str, bool | None] = {"flag": None}
 
-    def fake_run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
         captured["flag"] = ctx.delete_packages_after_install
-        return []
+        return [], None
 
     monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
     result = runner.invoke(app, [])

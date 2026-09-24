@@ -224,31 +224,39 @@ def _keep_debs_state_note(keep_downloaded_debs: bool) -> str:
     return "keep downloaded .deb files after install disabled"
 
 
+def _keep_debs_dropin_content(keep_downloaded_debs: bool) -> str:
+    """The body of the drop-in for the mode of the run.
+
+    One body serves both modes: the same two option names carry the answer of
+    the run, true while it keeps the downloaded packages and false while it
+    deletes them. The file is therefore never absent, so nothing on the machine
+    depends on the default of apt.
+    """
+
+    return values.KEEP_DEBS_DROPIN_TEMPLATE.format(
+        value="true" if keep_downloaded_debs else "false"
+    )
+
+
 def _ensure_keep_debs_dropin(keep_downloaded_debs: bool) -> tuple[bool, str | None]:
     """Bring the apt keep-debs drop-in to the state the run asked for.
 
-    While keep_downloaded_debs is true the drop-in must carry
-    KEEP_DEBS_DROPIN_CONTENT, the two option lines that stop apt and
-    unattended-upgrades from deleting downloaded .deb files after a successful
-    install; while it is false the drop-in must not exist. The current content
+    The drop-in carries the same two option names in both modes and answers
+    them with the value of this run: true while the run keeps the downloaded
+    packages, false while it deletes them. Writing that answer explicitly is
+    what makes apt free the packages it downloads instead of falling back to
+    its own default, which is to keep every one of them. The current content
     is read before writing, so an exact match changes nothing (idempotency
     through read-back). Returns whether the file changed and an error string
     when the file could not be updated.
     """
 
     path = values.KEEP_DEBS_FILE
+    content = _keep_debs_dropin_content(keep_downloaded_debs)
     try:
-        if not keep_downloaded_debs:
-            if not path.exists():
-                return False, None
-            path.unlink()
-            return True, None
-        if (
-            path.exists()
-            and path.read_text(encoding="utf-8") == values.KEEP_DEBS_DROPIN_CONTENT
-        ):
+        if path.exists() and path.read_text(encoding="utf-8") == content:
             return False, None
-        path.write_text(values.KEEP_DEBS_DROPIN_CONTENT, encoding="utf-8")
+        path.write_text(content, encoding="utf-8")
     except OSError as exc:
         return False, f"cannot update {path}: {exc}"
     return True, None

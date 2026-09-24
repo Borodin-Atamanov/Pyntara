@@ -18,8 +18,9 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from pyntara.context import Context
-from pyntara.logger import log_result_line, log_task_start
+from pyntara.logger import log_progress, log_result_line, log_task_start
 from pyntara.models import TaskResult
+from pyntara.utils import disk_shortage_message, free_package_download_cache
 from pyntara.values import engine as engine_values
 
 
@@ -66,7 +67,9 @@ def _warn_result(result: TaskResult) -> TaskResult:
     )
 
 
-def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
+def run_tasks(
+    ctx: Context, names: list[str]
+) -> tuple[list[tuple[str, TaskResult]], str | None]:
     """Run each task in order, continuing after failures.
 
     Each task is announced with an empty line and a green banner line, then a
@@ -80,10 +83,25 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
     around the task call without the start delay. The entry point prints
     the final summary, so each outcome appears twice: next to the task and
     in the summary.
+
+    Two steps of the run live here, because this is the only place that sees
+    every task. While the run economizes space, the package download cache is
+    freed right after each task, so what the run downloaded never piles up.
+    Before each task the free space is compared to the declared reserve, so a
+    machine that is nearly full is named and the run stops there: the remaining
+    tasks stay unstarted instead of filling a filesystem that nobody on the
+    target machine can repair. Such a stop is returned beside the results and
+    the entry point reports it as a warning of the run.
     """
 
     results: list[tuple[str, TaskResult]] = []
-    for name in names:
+    for index, name in enumerate(names):
+        shortage = disk_shortage_message()
+        if shortage is not None:
+            return results, (
+                f"the run stopped before {name}: {shortage}; "
+                f"{len(names) - index} of {len(names)} tasks were not started"
+            )
         log_task_start(name)
         try:
             task = load_task(name)
@@ -93,6 +111,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             )
             log_result_line(name, result)
             results.append((name, result))
+            _free_download_cache(ctx)
             continue
         if task is None:
             result = TaskResult(
@@ -102,6 +121,7 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
             )
             log_result_line(name, result)
             results.append((name, result))
+            _free_download_cache(ctx)
             continue
         time.sleep(engine_values.TASK_START_DELAY_SECONDS)
         start = time.monotonic()
@@ -113,4 +133,20 @@ def run_tasks(ctx: Context, names: list[str]) -> list[tuple[str, TaskResult]]:
         result = _warn_result(result)
         log_result_line(name, result, duration_seconds=duration_seconds)
         results.append((name, result))
-    return results
+        _free_download_cache(ctx)
+    return results, None
+
+
+def _free_download_cache(ctx: Context) -> None:
+    """Free the package download cache after a task, while the run economizes.
+
+    The step belongs to the run rather than to a single task, because the
+    cache also carries what an external installer downloaded for itself. A
+    cleanup that cannot run is reported and never stops the run.
+    """
+
+    if not ctx.delete_packages_after_install:
+        return
+    problem = free_package_download_cache(engine_values.COMMAND_TIMEOUT_SECONDS)
+    if problem is not None:
+        log_progress(problem)

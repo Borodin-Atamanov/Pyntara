@@ -58,19 +58,20 @@ SOURCE_URL_SCHEMES: tuple[str, ...] = ("http://", "https://")
 # such a file field by field instead of line by line.
 DEB822_SOURCE_SUFFIX: str = ".sources"
 
-# The apt drop-in that stops apt from deleting downloaded .deb files. The task
-# owns this file completely while the run keeps the downloads: it writes the
-# file, and removes it while the run deletes them.
+# The apt drop-in that tells apt and unattended-upgrades what to do with the
+# packages they download. The task owns this file completely: it writes this
+# body with the answer of the run filled in, so the machine carries an explicit
+# answer instead of falling back to the default of apt, which is to keep every
+# downloaded package. The option names stand here once.
 KEEP_DEBS_FILE: Path = Path("/etc/apt/apt.conf.d/99keep-debs.conf")
 
-# Body of that drop-in, written exactly as it stands here. A file that already
-# matches is left alone, so the task does not rewrite a machine that carries
-# the same body.
-KEEP_DEBS_DROPIN_CONTENT: str = (
+# Body of that drop-in, written exactly as it stands here with {value} replaced
+# by the answer of the run. A file that already matches is left alone, so the
+# task does not rewrite a machine that carries the same body.
+KEEP_DEBS_DROPIN_TEMPLATE: str = (
     "# Written by pyntara add_extra_repos\n"
-    "# Keep downloaded .deb files after install for offline reinstall.\n"
-    'APT::Keep-Downloaded-Packages "true";\n'
-    'Unattended-Upgrade::Keep-Debs-After-Install "true";\n'
+    'APT::Keep-Downloaded-Packages "{value}";\n'
+    'Unattended-Upgrade::Keep-Debs-After-Install "{value}";\n'
 )
 
 # The names the task reads. The list lives next to the values it names, the
@@ -88,5 +89,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SOURCE_URL_SCHEMES",
     "DEB822_SOURCE_SUFFIX",
     "KEEP_DEBS_FILE",
-    "KEEP_DEBS_DROPIN_CONTENT",
+    "KEEP_DEBS_DROPIN_TEMPLATE",
 )

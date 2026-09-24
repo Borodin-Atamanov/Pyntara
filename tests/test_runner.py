@@ -26,7 +26,8 @@ def test_run_tasks_reports_missing_implementation(
     # The example name is an implemented task so the test stays meaningful
     # if future catalog entries change.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    results, stop_reason = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    assert stop_reason is None
     assert len(results) == 1
     name, result = results[0]
     assert name == "cli_tools_lite_setup"
@@ -40,7 +41,7 @@ def test_run_tasks_calls_task_and_keeps_result(monkeypatch: pytest.MonkeyPatch) 
         return lambda ctx: TaskResult(success=True, message="ok")
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    results, _ = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     assert results == [("cli_tools_lite_setup", TaskResult(success=True, message="ok"))]
 
 
@@ -62,7 +63,6 @@ def test_run_tasks_hands_each_task_its_own_name(
     task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup", "hostname"])
     assert seen == ["cli_tools_lite_setup", "hostname"]
 
-
 def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
     # A raising task becomes a completed result with the reason in warnings,
     # so a broken task never stops the run.
@@ -70,7 +70,7 @@ def test_run_tasks_catches_task_exceptions(monkeypatch: pytest.MonkeyPatch) -> N
         raise RuntimeError("boom")
 
     monkeypatch.setattr(task_runner, "load_task", lambda name: boom)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    results, _ = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert result.warnings == ("boom",)
@@ -83,7 +83,7 @@ def test_run_tasks_reports_import_failures(monkeypatch: pytest.MonkeyPatch) -> N
         raise RuntimeError("import exploded")
 
     monkeypatch.setattr(task_runner, "load_task", broken)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    results, _ = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert any("import failed" in warning for warning in result.warnings)
@@ -98,7 +98,7 @@ def test_run_tasks_converts_task_failure_to_warning(
         return lambda ctx: TaskResult(success=False, error="cannot apply hotkey")
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    results = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    results, _ = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     result = results[0][1]
     assert result.success is True
     assert result.warnings == ("cannot apply hotkey",)
@@ -112,7 +112,7 @@ def test_run_tasks_continues_after_failure(monkeypatch: pytest.MonkeyPatch) -> N
         return lambda ctx: TaskResult(success=True)
 
     monkeypatch.setattr(task_runner, "load_task", fake_load)
-    results = task_runner.run_tasks(_ctx(), ["a", "b"])
+    results, _ = task_runner.run_tasks(_ctx(), ["a", "b"])
     assert len(results) == 2
     assert results[0][1].success is False
     assert results[0][1].skipped is True
@@ -129,6 +129,130 @@ def test_run_tasks_reports_task_duration(
     task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
     captured = capsys.readouterr().out
     assert re.search(r"\[done\] cli_tools_lite_setup in \d+\.\d{3}s: ok", captured)
+
+
+def test_run_tasks_frees_the_package_cache_in_economy_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # What the run downloaded is deleted as it goes: the package download cache
+    # is freed after every task, so nothing piles up between two tasks.
+    calls: list[float] = []
+
+    def fake_cleanup(timeout: float) -> str | None:
+        calls.append(timeout)
+        return None
+
+    def fake_load(name: str) -> object:
+        return lambda ctx: TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "free_package_download_cache", fake_cleanup)
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    _, stop_reason = task_runner.run_tasks(_ctx(), ["a", "b"])
+    assert stop_reason is None
+    assert len(calls) == 2
+
+
+def test_run_tasks_keeps_the_package_cache_when_the_run_keeps_downloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A run that asked to keep the downloads runs no cleanup at all, so a
+    # repeated run reuses what the machine already has.
+    calls: list[float] = []
+
+    def fake_cleanup(timeout: float) -> str | None:
+        calls.append(timeout)
+        return None
+
+    def fake_load(name: str) -> object:
+        return lambda ctx: TaskResult(success=True)
+
+    monkeypatch.setattr(task_runner, "free_package_download_cache", fake_cleanup)
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    task_runner.run_tasks(
+        make_context(delete_packages_after_install=False), ["cli_tools_lite_setup"]
+    )
+    assert calls == []
+
+
+def test_run_tasks_reports_a_failed_cache_cleanup_and_continues(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A cleanup that cannot run is reported and changes nothing: the run
+    # continues with the remaining tasks.
+    def fake_load(name: str) -> object:
+        return lambda ctx: TaskResult(success=True)
+
+    monkeypatch.setattr(
+        task_runner,
+        "free_package_download_cache",
+        lambda _timeout: "the package download cache was not freed: boom",
+    )
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    results, stop_reason = task_runner.run_tasks(_ctx(), ["cli_tools_lite_setup"])
+    assert stop_reason is None
+    assert len(results) == 1
+    assert "the package download cache was not freed: boom" in capsys.readouterr().out
+
+
+def test_run_tasks_stops_before_a_task_without_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reserve is a stop, not a warning: the remaining tasks stay unstarted
+    # and the reason names the task and how many tasks were not run, so a
+    # machine that is nearly full is never filled by the run itself.
+    seen: list[str] = []
+
+    def fake_load(name: str) -> object:
+        def fake_task(ctx: Context) -> TaskResult:
+            seen.append(name)
+            return TaskResult(success=True)
+
+        return fake_task
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    monkeypatch.setattr(
+        task_runner,
+        "disk_shortage_message",
+        lambda: "free space 4 MB is below the reserve 10 MB",
+    )
+    results, stop_reason = task_runner.run_tasks(_ctx(), ["a", "b"])
+    assert seen == []
+    assert results == []
+    assert stop_reason is not None
+    assert "before a" in stop_reason
+    assert "2 of 2 tasks were not started" in stop_reason
+
+
+def test_run_tasks_stops_after_the_last_task_that_fits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The free space is asked before every task, so the tasks that still fit run
+    # and only the first task without room stays unstarted.
+    seen: list[str] = []
+    answers: list[str | None] = [
+        None,
+        "free space 4 MB is below the reserve 10 MB",
+    ]
+
+    def fake_load(name: str) -> object:
+        def fake_task(ctx: Context) -> TaskResult:
+            seen.append(name)
+            return TaskResult(success=True)
+
+        return fake_task
+
+    monkeypatch.setattr(task_runner, "load_task", fake_load)
+    monkeypatch.setattr(
+        task_runner,
+        "disk_shortage_message",
+        lambda: answers.pop(0) if answers else None,
+    )
+    results, stop_reason = task_runner.run_tasks(_ctx(), ["a", "b", "c"])
+    assert seen == ["a"]
+    assert [name for name, _ in results] == ["a"]
+    assert stop_reason is not None
+    assert "before b" in stop_reason
+    assert "2 of 3 tasks were not started" in stop_reason
 
 
 def test_task_modules_report_findings_in_warnings() -> None:

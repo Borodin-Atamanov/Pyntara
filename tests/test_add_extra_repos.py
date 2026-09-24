@@ -46,15 +46,28 @@ Components: main
 Signed-By: /usr/share/keyrings/google-chrome.gpg
 """
 
-# Another drop-in body the proof test puts into the values module; the task
-# must write exactly that body, never a value of its own.
+# The two drop-in bodies the task must write, spelled out here: a test that
+# compared the file with the shipped text alone would follow a wrong value.
+KEEP_DEBS_TRUE_BODY = (
+    "# Written by pyntara add_extra_repos\n"
+    'APT::Keep-Downloaded-Packages "true";\n'
+    'Unattended-Upgrade::Keep-Debs-After-Install "true";\n'
+)
+KEEP_DEBS_FALSE_BODY = (
+    "# Written by pyntara add_extra_repos\n"
+    'APT::Keep-Downloaded-Packages "false";\n'
+    'Unattended-Upgrade::Keep-Debs-After-Install "false";\n'
+)
+
+# Another drop-in template the proof test puts into the values module; the task
+# must write exactly what that template renders, never a value of its own.
 OTHER_KEEP_DEBS_BODY = 'APT::Keep-Downloaded-Packages "true";\n'
 
 
-def _shipped_keep_debs_body() -> str:
-    """The keep-debs body the values module carries."""
+def _keep_debs_body(keep_downloaded_debs: bool) -> str:
+    """The drop-in body the task must write for one mode."""
 
-    return values.KEEP_DEBS_DROPIN_CONTENT
+    return KEEP_DEBS_TRUE_BODY if keep_downloaded_debs else KEEP_DEBS_FALSE_BODY
 
 
 @pytest.fixture(autouse=True)
@@ -132,7 +145,7 @@ def _install_keep_debs(
     path = tmp_path / "apt.conf.d" / "99keep-debs.conf"
     path.parent.mkdir(parents=True, exist_ok=True)
     if create:
-        path.write_text(_shipped_keep_debs_body(), encoding="utf-8")
+        path.write_text(_keep_debs_body(True), encoding="utf-8")
     elif path.exists():
         path.unlink()
     return path
@@ -426,7 +439,7 @@ def test_keep_debs_dropin_created_even_when_sources_satisfied(
     assert result.changed is True
     assert "already satisfied" in (result.message or "")
     assert "enabled" in (result.message or "")
-    assert keep_debs.read_text(encoding="utf-8") == _shipped_keep_debs_body()
+    assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(True)
 
 
 def test_keep_debs_dropin_normalized_when_stale(
@@ -440,7 +453,7 @@ def test_keep_debs_dropin_normalized_when_stale(
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
-    assert keep_debs.read_text(encoding="utf-8") == _shipped_keep_debs_body()
+    assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(True)
 
 
 def test_keep_debs_body_comes_from_the_values(
@@ -450,7 +463,9 @@ def test_keep_debs_body_comes_from_the_values(
     # drop-in content is a value and nothing else in the task holds it.
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=False)
-    monkeypatch.setattr(values, "KEEP_DEBS_DROPIN_CONTENT", OTHER_KEEP_DEBS_BODY)
+    monkeypatch.setattr(
+        values, "KEEP_DEBS_DROPIN_TEMPLATE", OTHER_KEEP_DEBS_BODY
+    )
     result = add_extra_repos.task(_ctx(tmp_path))
     assert result.success is True
     assert keep_debs.read_text(encoding="utf-8") == OTHER_KEEP_DEBS_BODY
@@ -468,11 +483,12 @@ def test_keep_debs_dropin_unchanged_when_exact(
     assert result.message == "already satisfied"
 
 
-def test_keep_debs_dropin_removed_when_the_run_deletes_downloads(
+def test_keep_debs_dropin_switched_to_delete_when_the_run_deletes_downloads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The run deletes the downloads: the existing drop-in is removed and the
-    # result reports the disabled state.
+    # The run deletes the downloads: the existing drop-in is rewritten with the
+    # answer of this run, so apt stops keeping the packages it downloaded, and
+    # the result reports the disabled state.
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=True)
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
     result = add_extra_repos.task(
@@ -480,24 +496,25 @@ def test_keep_debs_dropin_removed_when_the_run_deletes_downloads(
     )
     assert result.success is True
     assert result.changed is True
-    assert not keep_debs.exists()
+    assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(False)
     assert "disabled" in (result.message or "")
 
 
-def test_keep_debs_dropin_absent_when_the_run_deletes_downloads(
+def test_keep_debs_dropin_written_when_the_run_deletes_downloads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The run deletes the downloads and no drop-in exists: the task reports
-    # the plain already-satisfied state and writes nothing.
+    # The run deletes the downloads and no drop-in exists: the task writes the
+    # answer of this run, because an absent file leaves apt on its own default,
+    # which is to keep every downloaded package.
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=False)
     result = add_extra_repos.task(
         _ctx(tmp_path, delete_packages_after_install=True)
     )
     assert result.success is True
-    assert result.changed is False
-    assert result.message == "already satisfied"
-    assert not keep_debs.exists()
+    assert result.changed is True
+    assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(False)
+    assert "disabled" in (result.message or "")
 
 
 def test_keep_debs_dropin_write_error_is_a_warning(

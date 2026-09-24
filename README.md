@@ -68,15 +68,12 @@ without case. Use it for test or offline runs;
 omit it in real provisioning so packages resolve from a fresh index.
 
 PYNTARA_DELETE_PACKAGES_AFTER_INSTALL — 1, true or yes, and an absent variable, delete
-the packages and the data a task downloaded once they have served their purpose: the
-default mode frees disk space, which matters on a machine short of it. The value 0 keeps
-the downloads instead, so a repeated run reuses them and saves network traffic and time.
-The decision reaches the apt keep-debs drop-in that add_extra_repos writes and the
-download directories of the tasks that cache a package.
-
-Values live in Python modules under src/pyntara/values/, one module per task, and
-a task reads the values of its own module, so a value is never written in two
-places. 
+what a task downloaded once it has served its purpose; 0 keeps it instead, so a repeated
+run reuses it and saves network traffic and time. The run then releases the downloads as
+it goes and stops before a task when the machine has no room left, which it reports as a
+warning of the run ([docs/contracts/architecture.md](docs/contracts/architecture.md),
+Resilience rule; the accepted answers of the variable are in
+[docs/contracts/bootstrap.md](docs/contracts/bootstrap.md)).
 
 ## Documentation index
 

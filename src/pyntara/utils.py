@@ -109,6 +109,87 @@ def refresh_apt_index(timeout: float) -> None:
     )
 
 
+def disk_shortage_message() -> str | None:
+    """The sentence that reports a machine without room for the next task.
+
+    One place decides what "short of disk" means for the run: the free space
+    of the measured filesystem below the declared reserve. The runner asks
+    before every task, and the package install asks after a failed install, so
+    both get the same answer in the same words, and the sentence exists once. A
+    filesystem that cannot be measured is reported and changes nothing: a run
+    that cannot read the space continues as it did before.
+    """
+
+    try:
+        free = shutil.disk_usage(engine_values.DISK_FREE_SPACE_PATH).free
+    except OSError as exc:
+        logger.log_progress(f"cannot read the free space: {exc}")
+        return None
+    reserve = engine_values.DISK_RESERVE_BYTES
+    if free >= reserve:
+        return None
+    return (
+        f"free space {free // engine_values.BYTES_PER_MIB} MB is below the "
+        f"reserve {reserve // engine_values.BYTES_PER_MIB} MB"
+    )
+
+
+def free_package_download_cache(timeout: float) -> str | None:
+    """Empty the download cache of the package manager; return a report or None.
+
+    apt keeps the packages it downloaded while its own option is unset, and the
+    package of an install that failed stays in the cache for good. A run that
+    economizes space calls this after every task, so the cache never holds more
+    than the downloads of one task. A cleanup that cannot run is reported and
+    never stops the run: the machine is then left as it was.
+    """
+
+    try:
+        run_command(list(engine_values.APT_CLEAN_COMMAND), timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"the package download cache was not freed: {exc}"
+    return None
+
+
+def repair_interrupted_package_database(timeout: float) -> str | None:
+    """Finish a package operation dpkg left half done; return a problem or None.
+
+    dpkg answers with the packages it did not configure, and the tool it names
+    for the repair is dpkg --configure -a. The run repairs the database before
+    an install, because every later install fails on that state alone and the
+    user of the target machine has nothing else to repair it with. The cleanup
+    step stays silent when there is nothing to finish, and it reports a repair
+    it could not perform so the log names the package that stayed unfinished.
+    """
+
+    try:
+        audit = run_command(
+            list(engine_values.DPKG_AUDIT_COMMAND),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+        if not trim_whitespace(audit.stdout):
+            return None
+        logger.log_progress("the package database is interrupted, finishing it")
+        repair = run_command(
+            list(engine_values.DPKG_CONFIGURE_PENDING_COMMAND),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"the package database could not be checked: {exc}"
+    if repair.returncode != 0:
+        detail = trim_whitespace(repair.stderr) or trim_whitespace(repair.stdout)
+        return (
+            "the interrupted package database could not be repaired: "
+            f"{detail or repair.returncode}"
+        )
+    logger.log_progress("the package database is finished")
+    return None
+
+
 def install_packages(
     packages: list[str],
     *,
@@ -125,11 +206,20 @@ def install_packages(
     skip_update=True disables the refresh for test or offline runs. Each
     package gets one initial attempt plus `retries` retries; a package that
     still fails is recorded and never blocks the others.
+
+    An interrupted package database is finished first, because a later install
+    fails on that state alone. A machine without room is a different case: the
+    reason belongs to the whole list, so the first failure caused by the free
+    space below the reserve ends the list with one sentence instead of repeating
+    the same answer for every remaining package.
     """
 
     installed: list[str] = []
     failures: list[tuple[str, str]] = []
     warnings: list[str] = []
+    repair_problem = repair_interrupted_package_database(install_timeout)
+    if repair_problem is not None:
+        warnings.append(repair_problem)
     if not skip_update:
         try:
             refresh_apt_index(update_timeout)
@@ -138,14 +228,21 @@ def install_packages(
     for package in packages:
         ok = False
         error = ""
+        shortage: str | None = None
         for _ in range(retries + 1):
             ok, error = install_package_once(package, install_timeout)
             if ok:
                 break
+            shortage = disk_shortage_message()
+            if shortage is not None:
+                break
         if ok:
             installed.append(package)
-        else:
-            failures.append((package, error))
+            continue
+        failures.append((package, error))
+        if shortage is not None:
+            warnings.append(shortage)
+            break
     return installed, failures, warnings
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from collections import namedtuple
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,15 @@ from pyntara.values import engine as engine_values
 # Two URLs for the parallel query tests: the shape of the addresses does
 # not matter there, only that both transfers run in one call.
 URLS = ("https://api4.ipify.org", "https://ipv6.ipify.org")
+
+# The three numbers shutil.disk_usage answers with, so a test states the free
+# space it wants in front of the helper instead of reading the filesystem of
+# the machine that runs the suite.
+_DiskUsage = namedtuple("_DiskUsage", "total used free")
+
+# The shortage sentence the tests put in front of the run where the real helper
+# reads the filesystem of the host.
+SHORTAGE = "free space 4 MB is below the reserve 10 MB"
 
 
 class _FakePopen:
@@ -227,8 +237,8 @@ def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None
 def test_install_packages_refreshes_once_and_installs_each_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # One refresh for the whole list, one install per package, and no
-    # refresh when the run asked to skip it.
+    # One check of the package database, one refresh for the whole list, one
+    # install per package, and no refresh when the run asked to skip it.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
@@ -244,8 +254,9 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
         skip_update=False,
     )
     assert (installed, failures, warnings) == (["mc", "nc"], [], [])
-    assert calls[0] == ["apt-get", "update"]
-    assert calls[1:] == [
+    assert calls[0] == ["dpkg", "--audit"]
+    assert calls[1] == ["apt-get", "update"]
+    assert calls[2:] == [
         ["apt-get", "install", "-y", "mc"],
         ["apt-get", "install", "-y", "nc"],
     ]
@@ -258,7 +269,185 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
         retries=0,
         skip_update=True,
     )
-    assert calls == [["apt-get", "install", "-y", "mc"]]
+    assert calls == [["dpkg", "--audit"], ["apt-get", "install", "-y", "mc"]]
+
+
+def test_disk_shortage_message_is_none_when_there_is_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Room above the reserve keeps a run going: the message is nothing at all.
+    monkeypatch.setattr(
+        utils.shutil,
+        "disk_usage",
+        lambda _path: _DiskUsage(
+            total=0, used=0, free=engine_values.DISK_RESERVE_BYTES
+        ),
+    )
+    assert utils.disk_shortage_message() is None
+
+
+def test_disk_shortage_message_reports_a_machine_without_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Below the reserve the helper answers the one sentence the run reports,
+    # and both the free space and the reserve are named in it.
+    monkeypatch.setattr(
+        utils.shutil,
+        "disk_usage",
+        lambda _path: _DiskUsage(
+            total=0, used=0, free=4 * engine_values.BYTES_PER_MIB
+        ),
+    )
+    assert utils.disk_shortage_message() == SHORTAGE
+
+
+def test_disk_shortage_message_reports_a_filesystem_it_cannot_read(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A filesystem that cannot be measured is reported and changes nothing: a
+    # run that cannot read the space continues as it did before.
+    def boom(_path: object) -> object:
+        raise OSError("no such device")
+
+    monkeypatch.setattr(utils.shutil, "disk_usage", boom)
+    assert utils.disk_shortage_message() is None
+    assert "cannot read the free space" in capsys.readouterr().out
+
+
+def test_free_package_download_cache_runs_the_declared_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The cleanup runs the configured argv, so a derivative that cleans
+    # another way edits only the values.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.free_package_download_cache(30.0) is None
+    assert calls == [["apt-get", "clean"]]
+    monkeypatch.setattr(engine_values, "APT_CLEAN_COMMAND", ("myclean",))
+    assert utils.free_package_download_cache(30.0) is None
+    assert calls[-1] == ["myclean"]
+
+
+def test_free_package_download_cache_reports_a_failed_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A cleanup that cannot run is reported as text and never raises, so the
+    # run it belongs to continues.
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    problem = utils.free_package_download_cache(30.0)
+    assert problem is not None
+    assert "was not freed" in problem
+
+
+def test_repair_of_the_package_database_stays_silent_without_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # dpkg reports nothing unfinished, so only the check runs and the run
+    # hears nothing about it.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.repair_interrupted_package_database(30.0) is None
+    assert calls == [["dpkg", "--audit"]]
+
+
+def test_repair_of_the_package_database_finishes_a_pending_operation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # dpkg reports an unfinished package, so the declared repair command runs
+    # and the run continues with a consistent database.
+    answers = ["dpkg: error: 1 package is not configured\n", ""]
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0, answers.pop(0) if answers else "")
+
+    monkeypatch.setattr(engine_values, "DPKG_CONFIGURE_PENDING_COMMAND", ("finish",))
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.repair_interrupted_package_database(30.0) is None
+    assert calls == [["dpkg", "--audit"], ["finish"]]
+
+
+def test_repair_of_the_package_database_reports_a_failed_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A repair that cannot run is reported with the answer of dpkg, so the log
+    # names the package that stayed unfinished.
+    def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
+        if command == list(engine_values.DPKG_AUDIT_COMMAND):
+            return _FakeProc(0, "1 package is not configured\n")
+        return _FakeProc(1, "", "dpkg: unrecoverable fatal error\n")
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    problem = utils.repair_interrupted_package_database(30.0)
+    assert problem is not None
+    assert "could not be repaired" in problem
+    assert "unrecoverable" in problem
+
+
+def test_install_packages_stops_the_list_when_the_disk_is_short(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reason belongs to the whole list: a machine without room fails every
+    # remaining package the same way, so the list ends after the first failure
+    # with one sentence instead of repeating the answer for every package.
+    installations: list[str] = []
+
+    def fake_install(package: str, timeout: float) -> tuple[bool, str]:
+        installations.append(package)
+        return False, "E: you don't have enough free space"
+
+    monkeypatch.setattr(utils, "repair_interrupted_package_database", lambda _t: None)
+    monkeypatch.setattr(utils, "install_package_once", fake_install)
+    monkeypatch.setattr(utils, "disk_shortage_message", lambda: SHORTAGE)
+    installed, failures, warnings = utils.install_packages(
+        ["mc", "nc"],
+        install_timeout=30.0,
+        update_timeout=30.0,
+        retries=3,
+        skip_update=True,
+    )
+    assert installed == []
+    assert [name for name, _ in failures] == ["mc"]
+    assert warnings == [SHORTAGE]
+    assert installations == ["mc"]
+
+
+def test_install_packages_reports_a_package_database_it_cannot_repair(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A database that could not be repaired is reported among the warnings of
+    # the task while the packages themselves still install.
+    monkeypatch.setattr(
+        utils,
+        "repair_interrupted_package_database",
+        lambda _timeout: "the interrupted package database could not be repaired: x",
+    )
+    monkeypatch.setattr(
+        utils, "install_package_once", lambda package, timeout: (True, "")
+    )
+    installed, failures, warnings = utils.install_packages(
+        ["mc"],
+        install_timeout=30.0,
+        update_timeout=30.0,
+        retries=0,
+        skip_update=True,
+    )
+    assert (installed, failures) == (["mc"], [])
+    assert any("could not be repaired" in warning for warning in warnings)
 
 
 def test_run_command_merges_extra_env(monkeypatch: pytest.MonkeyPatch) -> None:

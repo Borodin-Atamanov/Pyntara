@@ -149,11 +149,9 @@ CURL_PARALLEL_SOURCE_MARKER: str = "@@pyntara-source@@"
 # being explicit is what stops a stray 0 from enabling a flag.
 ENVIRONMENT_FLAG_TRUE_VALUES: tuple[str, ...] = ("1", "true", "yes")
 
-# Shipped default of the deletion of downloaded packages and data after they
-# have served their purpose (PYNTARA_DELETE_PACKAGES_AFTER_INSTALL), used when
-# the environment does not name the variable. True deletes the downloads, which
-# keeps a machine short of disk from filling up; false keeps them, so a
-# repeated run reuses the download and saves network traffic and time.
+# Shipped answer of PYNTARA_DELETE_PACKAGES_AFTER_INSTALL, used when the
+# environment does not name the variable: true deletes what a task downloaded
+# once it has served its purpose, false keeps it for a repeated run.
 DELETE_PACKAGES_AFTER_INSTALL_DEFAULT: bool = True
 
 # Format of the moment the run writes down, used where a timestamp of the run
@@ -295,6 +293,14 @@ PERCENT_SCALE: int = 100
 BYTES_PER_KIB: int = 1024
 BYTES_PER_MIB: int = 1048576
 NANOSECONDS_PER_SECOND: int = 1000000000
+
+# Free space a run keeps in hand before it starts a task, and the path it
+# measures. The reserve is small on purpose: the space itself comes back from
+# the cleanup that runs after every task, so this value only stops a run that
+# has nothing left to give, instead of filling a filesystem that nobody on the
+# target machine can repair.
+DISK_FREE_SPACE_PATH: Path = Path("/")
+DISK_RESERVE_BYTES: int = 10 * BYTES_PER_MIB
 
 # Syslog priority of a serious failure, 0 to 7, and of task progress actions,
 # 0 to 7. Debug level keeps the journal detailed; errors stay at
@@ -546,6 +552,13 @@ PACKAGE_STATUS_QUERY_COMMAND: tuple[str, ...] = (
     "{package}",
 )
 
+# The two dpkg calls that answer whether the package database is in the middle
+# of an operation and that finish it. A run that finds the database interrupted
+# repairs it, because the machine has no other tool to do that, and a machine
+# handed back half configured is a machine the user cannot finish.
+DPKG_AUDIT_COMMAND: tuple[str, ...] = ("dpkg", "--audit")
+DPKG_CONFIGURE_PENDING_COMMAND: tuple[str, ...] = ("dpkg", "--configure", "-a")
+
 # The apt calls of the package helpers: the index refresh and the install of
 # one package. The environment is the variable apt needs to never ask a
 # question on the target machine, where nobody watches the terminal.
@@ -554,6 +567,12 @@ APT_INSTALL_COMMAND: tuple[str, ...] = ("apt-get", "install", "-y", "{package}")
 APT_NONINTERACTIVE_ENVIRONMENT: dict[str, str] = {
     "DEBIAN_FRONTEND": "noninteractive",
 }
+
+# The apt call that empties the package download cache. A run that economizes
+# space calls it after every task, because apt keeps the packages it downloaded
+# while its own option is unset, and the package of a failed install stays in
+# the cache for good.
+APT_CLEAN_COMMAND: tuple[str, ...] = ("apt-get", "clean")
 
 # The service state queries of the shared helpers: the two systemctl calls and
 # the outputs that count as enabled or running. A derivative that spells a
@@ -592,6 +611,7 @@ PORT_KILL_POLL_SECONDS: float = 0.2
 
 # The names the readers read. The list lives next to the values it names.
 READ_VALUE_NAMES: tuple[str, ...] = (
+    "APT_CLEAN_COMMAND",
     "APT_INSTALL_COMMAND",
     "APT_NONINTERACTIVE_ENVIRONMENT",
     "APT_UPDATE_COMMAND",
@@ -633,7 +653,11 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DESKTOP_USER_ENV_NAME",
     "DESKTOP_USER_QUERY_TIMEOUT_SECONDS",
     "DIRECTLY_CONNECTED_NETWORKS_COMMAND",
+    "DISK_FREE_SPACE_PATH",
+    "DISK_RESERVE_BYTES",
     "DPKG_ARCHITECTURE_COMMAND",
+    "DPKG_AUDIT_COMMAND",
+    "DPKG_CONFIGURE_PENDING_COMMAND",
     "ENVIRONMENT_FLAG_TRUE_VALUES",
     "ERROR_PRIORITY",
     "FORCE_ALL_KEYWORD",

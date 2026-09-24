@@ -105,7 +105,7 @@ def test_a_values_module_that_cannot_import_costs_only_its_task(
 
     monkeypatch.setattr(task_runner.importlib, "import_module", fake_import)
 
-    results = task_runner.run_tasks(_ctx(), ["hostname", NOT_WRITTEN_TASK_NAME])
+    results, _ = task_runner.run_tasks(_ctx(), ["hostname", NOT_WRITTEN_TASK_NAME])
 
     assert questions_asked == [
         "pyntara.tasks.hostname",

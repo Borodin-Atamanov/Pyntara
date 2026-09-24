@@ -48,8 +48,10 @@ from pyntara import (
     metrics_collect,
     metrics_ingest,
     port_forwarding,
+    task_runner,
     upnp_forwarding,
 )
+from pyntara.values import engine as engine_values
 
 logger.configure_journal(None)
 
@@ -78,10 +80,28 @@ def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(module, "configure_journal", lambda _identifier: None)
 
 
-# A test replaces the subprocess of the module under test with a recorded fake
-# and never runs systemctl for real: a real call acts on the machine of the
-# developer, restarts a unit that is deployed there and, without root, opens
-# the polkit password dialog of the desktop session, which waits for an answer
+@pytest.fixture(autouse=True)
+def _the_run_never_touches_the_host_packages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the space steps of a run away from the machine that runs the suite.
+
+    The runner frees the package download cache after every task while the run
+    economizes space, and it compares the free space to the reserve before every
+    task. A unit test must do neither: the first would empty the package cache
+    of the host, and the second would make the outcome of a test depend on the
+    free space of the host. The pending-configure command is pointed at a
+    harmless program for the same reason, so no test can configure packages of
+    the host even when its dpkg reports unfinished work. A test that exercises
+    one of these steps replaces the same name itself, which wins because it is
+    applied later.
+    """
+
+    monkeypatch.setattr(
+        task_runner, "free_package_download_cache", lambda _timeout: None
+    )
+    monkeypatch.setattr(task_runner, "disk_shortage_message", lambda: None)
+    monkeypatch.setattr(engine_values, "DPKG_CONFIGURE_PENDING_COMMAND", ("true",))
 # no test can give. He who runs systemctl in a test is a test that says so;
 # the fake it installs wins over this guard, and the test that forgot is
 # failed here.
