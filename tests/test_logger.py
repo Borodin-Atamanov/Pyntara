@@ -79,10 +79,14 @@ def _reset_journal_proc() -> Iterator[None]:
 
     The configured journal and the declared values a test replaced are
     dropped as well, so the identifier or the level of one test never
-    routes or colours the messages of the next one.
+    routes or colours the messages of the next one. The gate of the moment
+    is opened for the same reason: a test that wants a line without a
+    moment closes it itself, and the speed of the machine never decides
+    what a test observes.
     """
 
     _close_journal_proc()
+    logger._last_stamp_time = 0.0
     yield
     _close_journal_proc()
     logger.configure_journal(None)
@@ -324,25 +328,86 @@ def test_log_result_line_to_journal_false_skips_journal(
     assert "hidden" not in journal
 
 
-def test_the_progress_timestamp_format_is_the_declared_one(
+def test_the_line_moment_format_is_the_declared_one(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # The format of the moment a progress line carries is a declared value:
-    # another format is another prefix, and a logger nobody configured writes
-    # no timestamp at all. The journal tool is hidden, so the test proves the
+    # The format of the moment a line carries is a declared value: another
+    # format is another prefix, and a logger nobody configured writes no
+    # moment at all. The journal tool is hidden, so the test proves the
     # console shape without touching the system journal.
     monkeypatch.setattr(engine_values, "DATETIME_FORMAT", "%H:%M")
     monkeypatch.setattr(logger.shutil, "which", lambda name: None)
     logger.configure_journal("format-probe")
-    logger._last_log_time = 0.0
+    logger._last_stamp_time = 0.0
     logger.log_progress("with the declared format")
     prefix = capsys.readouterr().out.split(" ", 1)[0]
     assert len(prefix) == 5
     assert prefix[2] == ":"
     logger.configure_journal(None)
-    logger._last_log_time = 0.0
+    logger._last_stamp_time = 0.0
     logger.log_progress("without a configuration")
     assert capsys.readouterr().out.startswith("test_logger: ")
+
+
+def test_every_line_kind_takes_the_moment_after_a_pause(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The moment belongs to every own line of a run, not only to a progress
+    # line: the banner, the tracking pair of a command, a result line and a
+    # status line all open with it. A line that follows within the same
+    # second stays without it, so a burst reads compactly. The clock is
+    # replaced, so the gate is decided by the test and never by the speed of
+    # the machine or by the real time of the day.
+    monkeypatch.setattr(engine_values, "DATETIME_FORMAT", "MOMENT")
+    monkeypatch.setattr(logger.shutil, "which", lambda name: None)
+    logger.configure_journal("moment-probe")
+    clock = [100.0]
+    monkeypatch.setattr(logger.time, "monotonic", lambda: clock[0])
+    logger._last_stamp_time = 0.0
+
+    logger.log_task_start("sample_task")
+    logger.log_event("status line")
+    clock[0] = 101.5
+    logger.log_run_start("echo hi")
+    logger.log_run_end("echo hi", 0, 0.5)
+    clock[0] = 103.0
+    logger.log_result_line("sample_task", TaskResult(success=True, message="ok"))
+
+    lines = capsys.readouterr().out.splitlines()
+    moment = "MOMENT "
+    assert lines[0] == ""
+    # The banner is printed in color, so its text sits inside the escape
+    # codes of typer.secho and the moment is checked by containment.
+    assert f"{moment} sample_task " in lines[1]
+    assert lines[2] == "status line"
+    # The moment opens the line, then comes the indent of the tracking pair,
+    # then the /run line of the same command within the same second.
+    assert lines[3] == f"{moment}  run : echo hi"
+    assert lines[4] == "  /run: 0 0.500s echo hi"
+    assert lines[5] == f"{moment}[done] sample_task: ok"
+
+
+def test_the_journal_copy_never_carries_the_moment(
+    journal_available: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The journal stamps its own time, so the copy it receives carries no
+    # moment. The declared format is replaced by a word that strftime
+    # returns unchanged, so the word is a marker: it must appear on the
+    # console line and must never appear among the journal lines.
+    if not journal_available:
+        pytest.skip("systemd journal is not available")
+    monkeypatch.setattr(engine_values, "DATETIME_FORMAT", "MOMENT")
+    identifier = _new_identifier("no-moment")
+    _use_identifier(identifier)
+    logger._last_stamp_time = 0.0
+    logger.log_result_line(
+        "cli_tools_lite_setup", TaskResult(success=True, message="all good")
+    )
+    assert capsys.readouterr().out.startswith("MOMENT ")
+    assert _wait_for(identifier, "[done] cli_tools_lite_setup: all good")
+    assert "MOMENT" not in _read_journal(identifier)
 
 
 def test_log_result_line_prints_warnings(

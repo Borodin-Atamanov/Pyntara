@@ -1,12 +1,15 @@
 """Central logging helpers for the engine.
 
 Every own message of the engine flows through this module: task progress
-lines, task banners, result lines and status events. Each helper writes to
-the console exactly like the code it replaces (project rules, Task progress output)
-and duplicates the message into the system journal through systemd-cat.
-The journal receives plain text without the console timestamp, because the
-journal stamps its own time, and without ANSI color codes. Subprocess
-output streams straight from run_command and never passes through here.
+lines, task banners, result lines, status events and the tracking lines of
+a command. One helper renders and sends them all, so every line of a run is
+shaped the same way: the moment, when more than a second passed since the
+previous line that carried one, then the text of the line. A helper builds
+its own text and hands it over, so the console shape and the journal copy
+cannot drift apart between line kinds. The journal receives plain text
+without the console moment, because the journal stamps its own time, and
+without ANSI color codes. Subprocess output streams straight from
+run_command and never passes through here.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from typing import TextIO
 
 import typer
 
@@ -55,11 +59,11 @@ def configure_journal(identifier: str | None) -> None:
 
 
 def _timestamp_format() -> str:
-    """The datetime format of a progress line, or an empty string.
+    """The datetime format of an own line, or an empty string.
 
     The logger writes before the run values are known and inside components
     that are no part of the engine, so a logger nobody configured writes a
-    progress line without a moment, which is the shape a test run wants.
+    line without a moment, which is the shape a test run wants.
     """
 
     return "" if _journal_identifier is None else engine_values.DATETIME_FORMAT
@@ -95,10 +99,32 @@ def _rendered_command(command: tuple[str, ...], values: dict[str, str]) -> list[
     return substituted_command(command, values)
 
 
-# Monotonic time of the previous progress line; presentation state only.
-# Shared across tasks, so a timestamp is printed at most once per second
-# for the whole run and bursts of lines stay compact.
-_last_log_time = 0.0
+# Monotonic time of the previous line that carried a moment; presentation
+# state only. Shared across tasks and line kinds, so a moment is printed at
+# most once per second for the whole run and bursts of lines stay compact.
+_last_stamp_time = 0.0
+
+
+def _moment_prefix(text: str) -> str:
+    """The moment that opens a line, or an empty string.
+
+    The moment is written when more than one second has passed since the
+    previous line that carried one, so a burst of lines stays compact and a
+    pause is visible at the line that follows it. An empty text is a
+    separator: it carries nothing and never takes the moment, so the blank
+    line before a banner leaves the moment to the banner. A logger nobody
+    configured writes no moment, which is the shape a test run wants.
+    """
+
+    global _last_stamp_time
+    timestamp_format = _timestamp_format()
+    if not timestamp_format or not text:
+        return ""
+    now = time.monotonic()
+    if now - _last_stamp_time < 1.0:
+        return ""
+    _last_stamp_time = now
+    return datetime.now().astimezone().strftime(timestamp_format) + " "
 
 
 def _write_to_shared_journal(text: str, command: list[str]) -> None:
@@ -223,17 +249,50 @@ def _send_to_journal(message: str, priority: int | None = None) -> None:
     _write_to_priority_journal(_ANSI_RE.sub("", message) + "\n", level, identifier)
 
 
+def _emit_line(
+    text: str,
+    *,
+    indent: str = "",
+    journal_text: str | None = None,
+    to_journal: bool = True,
+    priority: int | None = None,
+    stream: TextIO | None = None,
+    banner: bool = False,
+) -> None:
+    """Write one own line of the engine to the console and the journal.
+
+    This is the one place that renders an own line, so every line of a run
+    is built the same way: the moment when more than a second passed since
+    the previous line that carried one, the indent of the line kind, then
+    the text. The moment opens the line, so a reader finds the time of every
+    line kind in the same column. The journal receives the plain text
+    without the moment, because the journal stamps its own time, and without
+    the indent and the ANSI codes of a banner. A banner prints in color, any
+    other line prints to the given stream, the standard output by default.
+    journal_text replaces the text for the journal when a line reads
+    differently there, which is how a colored banner becomes the plain
+    `starting task` line. to_journal=False prints to the console only.
+    """
+
+    line = f"{_moment_prefix(text)}{indent}{text}"
+    if banner:
+        typer.secho(line, bold=True, color=True)
+    else:
+        print(line, file=stream, flush=True)
+    if to_journal:
+        plain_text = text if journal_text is None else journal_text
+        _send_to_journal(plain_text, priority=priority)
+
+
 def log_progress(message: str, *, priority: int | None = None) -> None:
     """Print one progress line of the calling task, flushed to stdout.
 
     The task name in the prefix comes from the calling module: one task
     module per catalog task (task-model contract), so the name can never
-    diverge from the catalog. A timestamp in the declared datetime format is
-    prepended only when more than one second has passed since the previous
-    progress line, so bursts of lines stay compact; a logger nobody
-    configured writes no timestamp. The journal receives the message without
-    the timestamp at the given syslog priority, informational by default;
-    tasks pass the declared progress and error priorities instead.
+    diverge from the catalog. The moment of the line and the mirroring into
+    the journal belong to _emit_line, which every own line of the run
+    shares: the journal receives the module name and the message without
+    the moment, at the given syslog priority, informational by default.
     """
 
     frame = inspect.currentframe()
@@ -241,29 +300,25 @@ def log_progress(message: str, *, priority: int | None = None) -> None:
     caller = frame.f_back
     assert caller is not None
     task_name = str(caller.f_globals["__name__"]).rsplit(".", 1)[-1]
-    global _last_log_time
-    now = time.monotonic()
-    timestamp_format = _timestamp_format()
-    if timestamp_format and now - _last_log_time >= 1.0:
-        timestamp = datetime.now().astimezone().strftime(timestamp_format)
-        prefix = f"{timestamp} {task_name}:"
-        _last_log_time = now
-    else:
-        prefix = f"{task_name}:"
-    print(f"{prefix} {message}", flush=True)
-    _send_to_journal(f"{task_name}: {message}", priority=priority)
+    _emit_line(f"{task_name}: {message}", priority=priority)
 
 
 def log_task_start(name: str, *, priority: int | None = None) -> None:
     """Announce a task: empty line, colored banner, journal line.
 
-    The console banner keeps its colors; the journal gets plain text at
-    the given syslog priority, the declared progress level by default.
+    The console banner keeps its colors; the journal gets the plain
+    `starting task` text at the given syslog priority, the declared progress
+    level by default. The empty separator line is printed without a journal
+    copy and never takes the moment, so the moment opens the banner.
     """
 
-    print()
-    typer.secho(f" {name} ", bold=True, color=True)
-    _send_to_journal(f"starting task: {name}", priority=priority)
+    _emit_line("", to_journal=False)
+    _emit_line(
+        f" {name} ",
+        journal_text=f"starting task: {name}",
+        priority=priority,
+        banner=True,
+    )
 
 
 def log_result_line(
@@ -302,14 +357,11 @@ def log_result_line(
         if duration_seconds is not None:
             line = f"{line} in {duration_seconds:.3f}s"
         line = f"{line}: {detail}"
-    print(line)
-    if to_journal:
-        _send_to_journal(line, priority=priority)
+    _emit_line(line, to_journal=to_journal, priority=priority)
     for warning in result.warnings:
-        warn_line = f"[warn] {name}: {warning}"
-        print(warn_line)
-        if to_journal:
-            _send_to_journal(warn_line, priority=priority)
+        _emit_line(
+            f"[warn] {name}: {warning}", to_journal=to_journal, priority=priority
+        )
 
 
 def log_event(
@@ -327,10 +379,8 @@ def log_event(
     line carries the given syslog priority, informational by default.
     """
 
-    stream = sys.stderr if to_stderr else sys.stdout
-    print(message, file=stream)
-    if to_journal:
-        _send_to_journal(message, priority=priority)
+    stream = sys.stderr if to_stderr else None
+    _emit_line(message, to_journal=to_journal, priority=priority, stream=stream)
 
 
 def log_run_start(command: str, *, priority: int | None = None) -> None:
@@ -339,12 +389,12 @@ def log_run_start(command: str, *, priority: int | None = None) -> None:
     The line `  run : <command>` opens every command that runs through
     run_command, so walls of subprocess output in the install log are
     attributed to the command that produced them (project rules, Task
-    progress output). The journal copy carries the plain text without the
-    leading indent at the given syslog priority, informational by default.
+    progress output). The indent keeps the pair of tracking lines apart from
+    the output they frame; the journal copy carries the plain text without
+    the indent at the given syslog priority, informational by default.
     """
 
-    print(f"  run : {command}", flush=True)
-    _send_to_journal(f"run : {command}", priority=priority)
+    _emit_line(f"run : {command}", indent="  ", priority=priority)
 
 
 def log_run_end(
@@ -361,11 +411,13 @@ def log_run_end(
     command reports how it ended even when run_command raises. exit_code
     is None when the command was killed by its timeout, and the line then
     shows the word timeout. The duration is printed with three decimal
-    places; the journal copy carries the plain text without the leading
-    indent at the given syslog priority.
+    places; the journal copy carries the plain text without the indent at
+    the given syslog priority.
     """
 
     code_text = "timeout" if exit_code is None else str(exit_code)
-    line = f"  /run: {code_text} {duration_seconds:.3f}s {command}"
-    print(line, flush=True)
-    _send_to_journal(line[2:], priority=priority)
+    _emit_line(
+        f"/run: {code_text} {duration_seconds:.3f}s {command}",
+        indent="  ",
+        priority=priority,
+    )
