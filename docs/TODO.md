@@ -65,3 +65,21 @@ whole body of that program, about 250 lines, into the install log on one `run :`
 line, so a single command filled more of the log than any task of the run. The
 goal is an install log where one command is one line and the client of a section
 stays a readable file on the machine.
+
+## Make the fast gate independent of the test order
+
+`bash scripts/check_gates.sh --fast` fails on the port tests of
+tests/test_utils.py whenever tests/test_entry.py runs in the same process, which
+the alphabetical module list of the fast mode makes it do. Two module globals
+cause it. The logger holds its journal identifier in `_journal_identifier` and
+prints the moment of a line while that identifier is set, and pyntara.py
+configures the journal with the engine identifier, so after an entry-point test
+the logger emits moments again in the same process. The port tests hand the
+moment clock a fixed sequence by patching `pyntara.utils.time.monotonic`, which
+is the same module object the logger reads, so one extra read raises
+StopIteration and three tests of TestPortFreeing fail. Measured on 2026-09-24
+while landing the space work: the fast gate failed with those three, and the full
+gate passed, because pytest-xdist spreads the modules over worker processes, so
+the defect hides there too. The goal is a fast gate that fails only for the code
+under test: either the logger gives its identifier back at the end of a test, or
+the port tests stop depending on how many times the clock is read.
