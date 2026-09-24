@@ -56,3 +56,33 @@ for these measurements is gone.
 ## Install antivirus antirootkit.
 
 Find the best solutions, choose the best, create task to install it.
+
+## Stop repeating a package install that cannot succeed
+
+A package that cannot be installed must be reported once with the real reason and
+must not be attempted again; the configured retries keep their meaning for a
+transient failure only. The live run on the live USB machine lobam-huluk of
+2026-09-24 did the opposite: the writable layer filled, apt answered `No space
+left on device` and then `dpkg was interrupted`, and thirty packages of
+cli_tools_lite_setup were each attempted four times with the same answer. A
+reason of that class belongs to the whole list, so the goal is one plain
+sentence naming it, with the remaining packages left alone.
+
+## Keep the package database consistent
+
+A run that finds the package database interrupted must hand the machine back in a
+consistent state, because the user of the target machine has nothing else to
+repair it with. The tool is the one apt itself names, `dpkg --configure -a`; the
+live run of 2026-09-24 left a half-unpacked rustdesk and a pending trigger
+behind, and every later install failed on that state alone. When the repair
+cannot run, the goal is a sentence naming the package that stayed unfinished, not
+a half-installed system reported as done.
+
+## Ship the keyring client as a file
+
+The KDE wallet client of keyring_setup must reach the target machine as a file
+and not as the argument of `python3 -c`. The live run of 2026-09-24 wrote the
+whole body of that program, about 250 lines, into the install log on one `run :`
+line, so a single command filled more of the log than any task of the run. The
+goal is an install log where one command is one line and the client of a section
+stays a readable file on the machine.
