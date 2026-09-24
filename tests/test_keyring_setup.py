@@ -103,6 +103,14 @@ def test_the_shipped_client_names_no_service_of_its_own() -> None:
     assert values.INTERNAL_INTERFACE_NAME not in text
 
 
+def test_the_shipped_client_is_rendered_with_the_trash_command() -> None:
+    source = task_module._client_source(
+        CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME
+    )
+    assert values.TRASH_PROGRAM in source
+    assert values.TRASH_SUBCOMMAND in source
+
+
 def test_absent_values_are_reported_and_nothing_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -155,6 +163,33 @@ def test_passwordless_collection_reports_no_change(
     _live_session(monkeypatch)
     _packages_installed(monkeypatch)
     _client_answers(monkeypatch, "outcome=already_passwordless\ndetail=/x\n")
+    result = task_module.task(_context(tmp_path))
+    assert result.success is True
+    assert result.changed is False
+    assert result.warnings == ()
+
+
+def test_replaced_collection_is_reported_as_a_change(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _live_session(monkeypatch)
+    _packages_installed(monkeypatch)
+    login_path = "/org/freedesktop/secrets/collection/login"
+    _client_answers(monkeypatch, f"outcome=recreated\ndetail={login_path}\n")
+    result = task_module.task(_context(tmp_path))
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings == ()
+    assert result.message is not None
+    assert login_path in result.message
+
+
+def test_a_collection_the_login_opened_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _live_session(monkeypatch)
+    _packages_installed(monkeypatch)
+    _client_answers(monkeypatch, "outcome=opened_at_login\ndetail=/x\n")
     result = task_module.task(_context(tmp_path))
     assert result.success is True
     assert result.changed is False

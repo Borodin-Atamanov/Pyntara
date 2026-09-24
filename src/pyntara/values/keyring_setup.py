@@ -18,6 +18,12 @@ The label of the collection is lowercase on purpose: the identifier of a
 collection is built from its label, and the login alias of gnome-keyring
 points at the identifier "login", so the label "Login" would create a second
 keyring named Login.keyring and leave the login collection alone.
+
+A collection the login did not open is replaced when it is empty: its file
+goes to the trash and the collection is created again without a password. A
+collection that holds items is never touched, because replacing it would
+throw them away, and a collection that the login did open is left alone
+because its password is then in use and nothing asks for it.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ INTERNAL_INTERFACE_NAME: str = (
     "org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface"
 )
 LABEL_PROPERTY: str = "org.freedesktop.Secret.Collection.Label"
+COLLECTION_INTERFACE_NAME: str = "org.freedesktop.Secret.Collection"
 
 # The login collection of gnome-keyring, the alias that names the default
 # collection of a session, and the session and content types of a plain
@@ -51,6 +58,19 @@ DEFAULT_ALIAS: str = "default"
 SESSION_ALGORITHM: str = "plain"
 SECRET_CONTENT_TYPE: str = "text/plain"
 
+# The directory gnome-keyring keeps its collections in, below the data
+# directory of the user, and the suffix of a collection file. A file carries
+# the identifier of its collection, so the file of the collection under work
+# is found from the object path the service reports.
+KEYRING_DIRECTORY_NAME: str = "keyrings"
+KEYRING_FILE_SUFFIX: str = ".keyring"
+
+# The command that moves a file of the desktop user to that user's trash,
+# given as its program and its argument. A collection that this run replaces
+# may be wanted again, and no resource of a machine is ever removed for good.
+TRASH_PROGRAM: str = "gio"
+TRASH_SUBCOMMAND: str = "trash"
+
 # The protocol between the client and the task: the client prints
 # <outcome_key>=<word> and then <detail_key>=<text>, so the task reads one
 # small vocabulary instead of parsing a sentence of the client.
@@ -58,6 +78,8 @@ OUTCOME_KEY: str = "outcome"
 DETAIL_KEY: str = "detail"
 OUTCOME_CREATED: str = "created"
 OUTCOME_ALREADY_PASSWORDLESS: str = "already_passwordless"
+OUTCOME_RECREATED: str = "recreated"
+OUTCOME_OPENED_AT_LOGIN: str = "opened_at_login"
 OUTCOME_PROTECTED: str = "protected"
 OUTCOME_ERROR: str = "error"
 
@@ -74,14 +96,21 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SERVICE_INTERFACE_NAME",
     "INTERNAL_INTERFACE_NAME",
     "LABEL_PROPERTY",
+    "COLLECTION_INTERFACE_NAME",
     "LOGIN_COLLECTION_LABEL",
     "DEFAULT_ALIAS",
     "SESSION_ALGORITHM",
     "SECRET_CONTENT_TYPE",
+    "KEYRING_DIRECTORY_NAME",
+    "KEYRING_FILE_SUFFIX",
+    "TRASH_PROGRAM",
+    "TRASH_SUBCOMMAND",
     "OUTCOME_KEY",
     "DETAIL_KEY",
     "OUTCOME_CREATED",
     "OUTCOME_ALREADY_PASSWORDLESS",
+    "OUTCOME_RECREATED",
+    "OUTCOME_OPENED_AT_LOGIN",
     "OUTCOME_PROTECTED",
     "OUTCOME_ERROR",
 )

@@ -92,14 +92,21 @@ def _client_source(script_path: Path) -> str:
         service_interface_name=values.SERVICE_INTERFACE_NAME,
         internal_interface_name=values.INTERNAL_INTERFACE_NAME,
         label_property=values.LABEL_PROPERTY,
+        collection_interface_name=values.COLLECTION_INTERFACE_NAME,
         login_collection_label=values.LOGIN_COLLECTION_LABEL,
         default_alias=values.DEFAULT_ALIAS,
         session_algorithm=values.SESSION_ALGORITHM,
         secret_content_type=values.SECRET_CONTENT_TYPE,
+        keyring_directory_name=values.KEYRING_DIRECTORY_NAME,
+        keyring_file_suffix=values.KEYRING_FILE_SUFFIX,
+        trash_program=values.TRASH_PROGRAM,
+        trash_subcommand=values.TRASH_SUBCOMMAND,
         outcome_key=values.OUTCOME_KEY,
         detail_key=values.DETAIL_KEY,
         outcome_created=values.OUTCOME_CREATED,
         outcome_already_passwordless=values.OUTCOME_ALREADY_PASSWORDLESS,
+        outcome_recreated=values.OUTCOME_RECREATED,
+        outcome_opened_at_login=values.OUTCOME_OPENED_AT_LOGIN,
         outcome_protected=values.OUTCOME_PROTECTED,
         outcome_error=values.OUTCOME_ERROR,
     )
@@ -216,10 +223,26 @@ def task(ctx: Context) -> TaskResult:
             message=f"created the login keyring without a password: {detail}",
             warnings=warnings,
         )
+    if outcome == values.OUTCOME_RECREATED:
+        _log(f"replaced the empty login keyring: {detail}")
+        return _done(
+            changed=True,
+            message=(
+                "replaced the empty login keyring with one that opens without "
+                f"a password: {detail}"
+            ),
+            warnings=warnings,
+        )
     if outcome == values.OUTCOME_ALREADY_PASSWORDLESS:
         return _done(
             changed=False,
             message="the login keyring already opens without a password",
+            warnings=warnings,
+        )
+    if outcome == values.OUTCOME_OPENED_AT_LOGIN:
+        return _done(
+            changed=False,
+            message="the login keyring opens at login with the typed password",
             warnings=warnings,
         )
     if outcome == values.OUTCOME_PROTECTED:
