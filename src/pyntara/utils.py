@@ -777,6 +777,53 @@ def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
         os.chown(path, owner_uid, owner_gid)
 
 
+def move_paths_to_trash(
+    paths: Sequence[Path],
+    *,
+    run_as_user_command: Sequence[str],
+    username: str,
+    home_dir: str,
+    program: str,
+    subcommand: str,
+    timeout: float,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Move paths into the trash of a user, one call per path.
+
+    The trash tool runs as that user through the given wrapper and with that
+    user's home, so every entry belongs to the user and carries the metadata
+    the freedesktop trash specification asks for; the same call as root would
+    put the entries into the trash of root instead. A path that cannot be
+    moved is reported and stays where it is, so nothing is removed for good
+    (project rule: deletions go to the trash only). Returns the names that
+    were moved and the error texts of the ones that were not.
+    """
+
+    moved: list[str] = []
+    failures: list[str] = []
+    for path in paths:
+        command = [
+            *substituted_command(run_as_user_command, {"username": username}),
+            program,
+            subcommand,
+            str(path),
+        ]
+        try:
+            run_command(
+                command,
+                timeout=timeout,
+                extra_env={"HOME": home_dir},
+                capture=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = trim_whitespace(exc.stderr or "")
+            failures.append(f"cannot move {path} into the trash: {detail or exc}")
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            failures.append(f"cannot move {path} into the trash: {exc}")
+        else:
+            moved.append(path.name)
+    return tuple(moved), tuple(failures)
+
+
 def session_environment_command(
     username: str, command_template: tuple[str, ...]
 ) -> list[str]:

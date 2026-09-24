@@ -120,8 +120,8 @@ CATALOG: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "keyring_setup",
-        "Give the login keyring an empty master password, so a machine that "
-        "logs in automatically never asks for one.",
+        "Create the KDE wallet without a password, so a machine that logs in "
+        "automatically is never asked for one.",
         ("kde_settings",),
         ("desktop", "fast_desktop"),
     ),

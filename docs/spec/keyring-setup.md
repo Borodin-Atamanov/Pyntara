@@ -1,56 +1,60 @@
 # keyring_setup
 
 Goal: after provisioning, a machine that logs in automatically never shows a
-dialog that asks for the password of a keyring.
+dialog that offers to create a secret store or asks for the password of one.
 
 ## Why the dialog appears
 
-A login that types no password hands no password to PAM: the PAM service of
-the automatic path carries no keyring module at all. The Secret Service of the
-session therefore starts without a password, its login collection stays
-protected by a password that was never typed, and the first program that
-stores or reads a secret opens a prompt the user cannot answer.
+A login that types no password hands no password to PAM: the PAM service of the
+automatic path carries no wallet module, and the helper the desktop starts at
+login only forwards the environment of a module that never ran. Nothing creates
+the KDE wallet at login, so the first program that asks for one starts its
+creation, and the daemon answers that request with a dialog: the wallet is
+missing, and the daemon offers a new wallet together with its password.
 
-Which store a program uses is the program's own choice, not this task's.
-Chrome and the programs built on Electron take their encryption key from the
-KDE wallet in a KDE session, while programs that speak the freedesktop Secret
-Service use the secret service. The KDE wallet is a store of its own and this
-task does not touch it.
+A wallet created that way is protected, so every later program asks for that
+password again, and the user of a machine that never types one has none to
+give. Which store a program uses is the program's own choice, not this task's;
+the task owns the wallet of the session.
 
 ## What the task does
 
-The task gives the login collection of the Secret Service an empty master
-password. A machine under full disk encryption can afford it: the collection
-stays a private file of the user, and an empty password means it opens at once
-instead of asking.
+The task creates the wallet itself, before any program asks for it, and gives
+it an empty password. A machine under full disk encryption can afford that: the
+wallet stays a private file of the user and opens without a question.
 
-The task runs as the desktop user inside the live session, because the secret
-service exists only inside that session, and it decides by the state it finds.
+The creation uses the entry point the PAM module of the wallet uses, which
+takes a ready key instead of asking for a password, so the wallet is created
+without any dialog. The key is the key of an empty password, derived exactly as
+that module derives it: a random salt of 56 bytes next to the wallet, then
+PBKDF2-HMAC-SHA512 over it with 50000 iterations and a 56 byte key. Every later
+program derives the same key from the empty password, so the wallet opens
+without a dialog for them as well.
 
-A collection that opens without a password is the target state, and nothing is
-written.
+The client runs as the desktop user on the session bus of that user, because
+the wallet belongs to the session. It asks the wallet service for the name of
+the wallet of the session, and that question is also what starts the daemon
+that creates the wallet.
 
-A collection the login opened is left alone: its password is in use and
-nothing asks for it.
+A wallet file that exists is left untouched and reported. A wallet may carry a
+password, and asking it to open in order to find out is the call that shows the
+dialog.
 
-A collection that is protected, that the login did not open and that holds no
-items is replaced. Its file goes to the trash of the user and the collection is
-created again without a password. The login that did not open it is the signal
-that the machine logs in automatically, and an empty collection is the signal
-that there is nothing to lose.
+Force mode replaces the wallet. Every file of every wallet of the desktop user,
+the wallet itself, the salt of its key and the cache of item attributes, goes
+to the trash of that user, and the wallet is created again without a password.
+That is the state a fresh installation plus a normal run would reach.
 
-A collection that holds items is left untouched and reported as a warning.
-Replacing it would throw the secrets away, and nothing can open it without the
-password it carries.
-
-No resource is ever removed for good: a file the task replaces goes to the
+No resource is ever removed for good: the files of a replaced wallet go to the
 trash of the user. A machine without a live session is left untouched and
-reported.
+reported, and force mode replaces nothing there either, because a wallet that
+is missing would be created by the daemon with the dialog this task removes.
 
 ## Configuration
 
 Values live in `src/pyntara/values/keyring_setup.py`: the binding the client
-imports, the wrapper that runs a command as the desktop user, the interpreter
-of the client, the name of the client under `task_data/keyring_setup/`, the
-names of the secret service, the labels and aliases of the collections, the
-trash command, and the vocabulary of the answer the client prints.
+imports, the wrapper that runs a command as the desktop user, the name of the
+client under `task_data/keyring_setup/`, the seconds a call may take, the names
+of the wallet service and of its daemon, the constants of the key derivation,
+the directory of the wallets and the endings of their files, the trash command
+and the vocabulary of the answer the client prints.

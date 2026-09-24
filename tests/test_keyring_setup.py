@@ -2,7 +2,10 @@
 
 The client never runs for real here: run_command is replaced with a recorded
 fake and the session bus lookup with a fixed address, so no test reaches the
-session bus of the machine it runs on (docs/guides/developer-guide.md).
+session bus of the machine it runs on (docs/guides/developer-guide.md). The
+home directory of the desktop user is pointed at a temporary directory as well,
+so no test reads or writes the wallet directory of the machine it runs on, and
+the package install is replaced with an empty answer for the same reason.
 """
 
 from __future__ import annotations
@@ -21,8 +24,43 @@ from pyntara.values import tasks as tasks_values
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CLIENT_DIRECTORY = REPO_ROOT / "task_data" / "keyring_setup"
-BUS_ADDRESS = "unix:path=/run/user/1000/bus"
 CATALOG_NAME = "keyring_setup"
+BUS_ADDRESS = "unix:path=/run/user/1000/bus"
+PACKAGE_ANSWER = "install ok installed"
+WALLET_FILES = (
+    "kdewallet.kwl",
+    "kdewallet.salt",
+    "kdewallet_attributes.json",
+)
+
+
+class _Recorder:
+    """The recorded run_command of one test."""
+
+    def __init__(self, *, answer: str = "", client_failure: bool = False) -> None:
+        self.commands: list[list[str]] = []
+        self.answer = answer
+        self.client_failure = client_failure
+
+    def __call__(self, command, **_kwargs) -> FakeProc:
+        command_list = [str(part) for part in command]
+        self.commands.append(command_list)
+        text = " ".join(command_list)
+        if "dpkg-query" in text:
+            return FakeProc(0, PACKAGE_ANSWER)
+        if self.client_failure:
+            raise subprocess.CalledProcessError(
+                1, command_list, output="", stderr="the client failed"
+            )
+        if "-c" in command_list:
+            return FakeProc(0, self.answer)
+        return FakeProc(0, "")
+
+    @property
+    def client_was_run(self) -> bool:
+        """Whether the wallet client command was run at all."""
+
+        return any("-c" in command for command in self.commands)
 
 
 def _fixture_repo(tmp_path: Path) -> Path:
@@ -37,227 +75,260 @@ def _fixture_repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
-def _context(tmp_path: Path) -> Context:
+def _context(tmp_path: Path, *, force: bool = False) -> Context:
     repo = _fixture_repo(tmp_path)
     return make_context(
         install_mode="desktop",
         repo_root=repo,
         task_data_root=repo,
         task_name=CATALOG_NAME,
+        force_tasks=frozenset({CATALOG_NAME}) if force else frozenset(),
     )
 
 
-def _live_session(monkeypatch: pytest.MonkeyPatch) -> None:
+def _prepare(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    answer: str = "",
+    force: bool = False,
+    session: bool = True,
+    client_failure: bool = False,
+) -> tuple[Context, _Recorder]:
+    """A context and a recorded run_command, with the machine kept out."""
+
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
     monkeypatch.setattr(
-        task_module, "session_bus_address", lambda *_args, **_kwargs: BUS_ADDRESS
+        task_module,
+        "session_bus_address",
+        lambda *_args, **_kwargs: BUS_ADDRESS if session else None,
     )
-
-
-def _no_session(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        task_module, "session_bus_address", lambda *_args, **_kwargs: None
-    )
-
-
-def _packages_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         task_module,
         "install_missing_packages",
-        lambda _ctx, _packages: ([], [], [], []),
+        lambda *_args, **_kwargs: ([], [], [], []),
     )
+    recorder = _Recorder(answer=answer, client_failure=client_failure)
+    monkeypatch.setattr(task_module, "run_command", recorder)
+    return _context(tmp_path, force=force), recorder
 
 
-def _client_answers(monkeypatch: pytest.MonkeyPatch, stdout: str) -> list[list[str]]:
-    """Replace the subprocess with a fake that answers and records the calls."""
+def _wallet_directory(tmp_path: Path) -> Path:
+    """The wallet directory of the temporary home of a test."""
 
-    calls: list[list[str]] = []
-
-    def fake_run(command: list[str], **_kwargs: object) -> FakeProc:
-        calls.append(list(command))
-        return FakeProc(0, stdout)
-
-    monkeypatch.setattr(task_module, "run_command", fake_run)
-    return calls
+    directory = tmp_path / values.WALLET_DIRECTORY_RELATIVE_PATH
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 
-def _client_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_run(command: list[str], **_kwargs: object) -> FakeProc:
-        raise subprocess.CalledProcessError(1, command, output="", stderr="boom")
-
-    monkeypatch.setattr(task_module, "run_command", fake_run)
+def test_read_value_names_are_declared() -> None:
+    for name in values.READ_VALUE_NAMES:
+        assert hasattr(values, name), name
 
 
-def test_the_shipped_client_is_valid_python_after_substitution() -> None:
-    source = task_module._client_source(
-        CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME
-    )
-    assert "$" not in source
-    compile(source, values.CLIENT_SCRIPT_FILE_NAME, "exec")
-
-
-def test_the_shipped_client_names_no_service_of_its_own() -> None:
-    text = (CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME).read_text(
-        encoding="utf-8"
-    )
-    assert values.BUS_NAME not in text
-    assert values.INTERNAL_INTERFACE_NAME not in text
-
-
-def test_the_shipped_client_is_rendered_with_the_trash_command() -> None:
-    source = task_module._client_source(
-        CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME
-    )
-    assert values.TRASH_PROGRAM in source
-    assert values.TRASH_SUBCOMMAND in source
-
-
-def test_absent_values_are_reported_and_nothing_runs(
+def test_missing_values_report_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(
-        values,
-        "READ_VALUE_NAMES",
-        (*values.READ_VALUE_NAMES, "NOT_DECLARED_ANYWHERE"),
-    )
-    calls = _client_answers(monkeypatch, "")
-    result = task_module.task(_context(tmp_path))
+    context, _ = _prepare(monkeypatch, tmp_path)
+    monkeypatch.setattr(task_module, "missing_value_names", lambda *_a, **_k: ["TRASH_PROGRAM"])
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings
-    assert "NOT_DECLARED_ANYWHERE" in result.warnings[0]
-    assert calls == []
+    assert result.message is not None
+    assert "not declared" in result.message
+    assert "TRASH_PROGRAM" in result.warnings[0]
 
 
-def test_no_live_session_is_a_warning_and_no_client_runs(
+def test_no_session_leaves_the_wallet_alone(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _no_session(monkeypatch)
-    calls = _client_answers(monkeypatch, "")
-    result = task_module.task(_context(tmp_path))
+    context, recorder = _prepare(monkeypatch, tmp_path, session=False)
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings
-    assert "session" in result.warnings[0]
-    assert calls == []
+    assert result.message == "no live desktop session found"
+    assert "may open a dialog" in result.warnings[0]
+    assert recorder.client_was_run is False
 
 
-def test_created_collection_is_reported_as_a_change(
+def test_created_wallet_changes_the_task(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    login_path = "/org/freedesktop/secrets/collection/login"
-    calls = _client_answers(monkeypatch, f"outcome=created\ndetail={login_path}\n")
-    result = task_module.task(_context(tmp_path))
+    answer = f"{values.OUTCOME_KEY}={values.OUTCOME_CREATED}\n{values.DETAIL_KEY}=/w/kdewallet.kwl"
+    context, _ = _prepare(monkeypatch, tmp_path, answer=answer)
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is True
-    assert result.warnings == ()
     assert result.message is not None
-    assert login_path in result.message
+    assert "created the KDE wallet without a password" in result.message
+    assert result.warnings == ()
+
+
+def test_existing_wallet_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    answer = f"{values.OUTCOME_KEY}={values.OUTCOME_EXISTS}\n{values.DETAIL_KEY}=/w/kdewallet.kwl"
+    context, _ = _prepare(monkeypatch, tmp_path, answer=answer)
+
+    result = task_module.task(context)
+
+    assert result.success is True
+    assert result.changed is False
+    assert result.message is not None
+    assert "already exists" in result.message
+    assert result.warnings == ()
+
+
+def test_force_moves_wallet_files_then_creates(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    answer = f"{values.OUTCOME_KEY}={values.OUTCOME_CREATED}\n{values.DETAIL_KEY}=/w"
+    context, _ = _prepare(monkeypatch, tmp_path, answer=answer, force=True)
+    directory = _wallet_directory(tmp_path)
+    for name in (*WALLET_FILES, "notes.txt"):
+        (directory / name).write_text("x", encoding="utf-8")
+    calls: list[tuple[tuple[Path, ...], dict[str, object]]] = []
+
+    def fake_move(paths, **kwargs):
+        calls.append((tuple(paths), kwargs))
+        return tuple(path.name for path in paths), ()
+
+    monkeypatch.setattr(task_module, "move_paths_to_trash", fake_move)
+
+    result = task_module.task(context)
+
+    assert result.success is True
+    assert result.changed is True
     assert len(calls) == 1
+    moved, arguments = calls[0]
+    assert sorted(path.name for path in moved) == sorted(WALLET_FILES)
+    assert arguments["username"] == common_values.DESKTOP_USERNAME
+    assert arguments["home_dir"] == str(tmp_path)
+    assert arguments["program"] == values.TRASH_PROGRAM
 
 
-def test_passwordless_collection_reports_no_change(
+def test_force_without_wallet_files_only_creates(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    _client_answers(monkeypatch, "outcome=already_passwordless\ndetail=/x\n")
-    result = task_module.task(_context(tmp_path))
-    assert result.success is True
-    assert result.changed is False
-    assert result.warnings == ()
+    answer = f"{values.OUTCOME_KEY}={values.OUTCOME_CREATED}\n{values.DETAIL_KEY}=/w"
+    context, _ = _prepare(monkeypatch, tmp_path, answer=answer, force=True)
 
+    def unexpected_move(*_args, **_kwargs):
+        raise AssertionError("nothing to move is not a move")
 
-def test_replaced_collection_is_reported_as_a_change(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    login_path = "/org/freedesktop/secrets/collection/login"
-    _client_answers(monkeypatch, f"outcome=recreated\ndetail={login_path}\n")
-    result = task_module.task(_context(tmp_path))
-    assert result.success is True
+    monkeypatch.setattr(task_module, "move_paths_to_trash", unexpected_move)
+
+    result = task_module.task(context)
+
     assert result.changed is True
     assert result.warnings == ()
-    assert result.message is not None
-    assert login_path in result.message
 
 
-def test_a_collection_the_login_opened_is_left_alone(
+def test_force_warns_when_the_wallet_file_comes_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    _client_answers(monkeypatch, "outcome=opened_at_login\ndetail=/x\n")
-    result = task_module.task(_context(tmp_path))
+    answer = f"{values.OUTCOME_KEY}={values.OUTCOME_EXISTS}\n{values.DETAIL_KEY}=/w"
+    context, _ = _prepare(monkeypatch, tmp_path, answer=answer, force=True)
+    directory = _wallet_directory(tmp_path)
+    (directory / WALLET_FILES[0]).write_text("x", encoding="utf-8")
+    monkeypatch.setattr(
+        task_module, "move_paths_to_trash", lambda paths, **_kwargs: (
+            tuple(path.name for path in paths),
+            (),
+        )
+    )
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings == ()
+    assert result.message == "the KDE wallet was not replaced"
+    assert "still carries its password" in result.warnings[0]
 
 
-def test_protected_collection_is_left_alone_and_warned_about(
+def test_force_does_not_continue_when_the_move_fails(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    _client_answers(monkeypatch, "outcome=protected\ndetail=Denied: invalid\n")
-    result = task_module.task(_context(tmp_path))
+    context, recorder = _prepare(monkeypatch, tmp_path, force=True)
+    directory = _wallet_directory(tmp_path)
+    (directory / WALLET_FILES[0]).write_text("x", encoding="utf-8")
+    monkeypatch.setattr(
+        task_module,
+        "move_paths_to_trash",
+        lambda *_args, **_kwargs: ((), ("cannot move the wallet: the tool refused",)),
+    )
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings
-    assert "Denied: invalid" in result.warnings[0]
+    assert result.message == "the wallet files were not all replaced"
+    assert "the tool refused" in result.warnings[0]
+    assert recorder.client_was_run is False
 
 
-def test_a_failed_client_is_a_warning(
+def test_force_does_not_replace_without_a_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    _client_fails(monkeypatch)
-    result = task_module.task(_context(tmp_path))
+    context, _ = _prepare(monkeypatch, tmp_path, force=True, session=False)
+
+    def unexpected_move(*_args, **_kwargs):
+        raise AssertionError("a wallet is not replaced without a session")
+
+    monkeypatch.setattr(task_module, "move_paths_to_trash", unexpected_move)
+
+    result = task_module.task(context)
+
+    assert result.changed is False
+    assert result.message == "no live desktop session found"
+
+
+def test_client_failure_reports_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    context, _ = _prepare(monkeypatch, tmp_path, client_failure=True)
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings
-    assert "boom" in result.warnings[0]
+    assert result.message == "the KDE wallet was not checked"
+    assert "the client failed" in result.warnings[0]
 
 
-def test_an_unknown_answer_is_a_warning(
+def test_unknown_answer_reports_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    _client_answers(monkeypatch, "outcome=something_else\ndetail=?\n")
-    result = task_module.task(_context(tmp_path))
+    context, _ = _prepare(monkeypatch, tmp_path, answer="outcome=whatever\ndetail=why")
+
+    result = task_module.task(context)
+
     assert result.success is True
     assert result.changed is False
-    assert result.warnings
-    assert "something_else" in result.warnings[0]
+    assert result.message == "the KDE wallet was not checked"
+    assert "whatever" in result.warnings[0]
 
 
-def test_the_wrapper_and_the_interpreter_come_from_the_values(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _live_session(monkeypatch)
-    _packages_installed(monkeypatch)
-    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--"))
-    monkeypatch.setattr(values, "PYTHON_SCRIPT_COMMAND", ("/opt/python", "-c"))
-    calls = _client_answers(monkeypatch, "outcome=already_passwordless\n")
-    task_module.task(_context(tmp_path))
-    command = calls[0]
-    assert command[:4] == ["sudo", "-u", common_values.DESKTOP_USERNAME, "--"]
-    assert command[4] == "/opt/python"
-    assert any(values.BUS_NAME in part for part in command)
+def test_client_source_is_valid_after_substitution() -> None:
+    source = task_module._client_source(
+        CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME
+    )
+
+    compile(source, values.CLIENT_SCRIPT_FILE_NAME, "exec")
+    assert "$" not in source
 
 
-def test_the_answer_keeps_an_equals_sign_inside_the_detail() -> None:
-    answer = task_module._parse_answer("outcome=protected\ndetail=a=b\n")
-    assert answer == {"outcome": "protected", "detail": "a=b"}
+def test_catalog_describes_the_wallet() -> None:
+    records = {record.name: record.description for record in tasks_values.CATALOG}
+
+    assert "wallet" in records[CATALOG_NAME].lower()
 
 
-def test_the_catalog_entry_depends_on_kde_settings_and_runs_on_desktops() -> None:
-    entries = {spec.name: spec for spec in tasks_values.CATALOG}
-    assert CATALOG_NAME in entries
-    spec = entries[CATALOG_NAME]
-    assert spec.depends == ("kde_settings",)
-    assert spec.modes == ("desktop", "fast_desktop")
+def test_the_old_client_is_gone() -> None:
+    assert not (CLIENT_DIRECTORY / "configure_login_keyring.py").exists()

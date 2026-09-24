@@ -1,29 +1,28 @@
 """Values of the keyring_setup task.
 
-A machine that logs in automatically never types the account password, and
-/etc/pam.d/sddm-autologin carries no keyring module at all, so neither
-gnome-keyring nor KWallet ever receives a password at login. The login
-collection of the Secret Service is then protected by a password nobody
-knows, and the first program that stores or reads a secret asks the user for
-it. The task removes the question by giving that collection an empty master
-password, which a machine under full disk encryption can afford.
+A machine that logs in automatically hands no password to PAM: the PAM
+service of that path carries no wallet module, and the helper the desktop
+starts at login only forwards the environment of a module that never ran. The
+KDE wallet is then created by the first program that asks for it, and that
+creation is a dialog: the daemon offers a new wallet and asks for a password.
+A wallet created that way is protected, so every later program asks again.
 
-The collection is created through the internal interface of gnome-keyring,
-because the public CreateCollection of the Secret Service opens a prompt for
-the password instead of taking one. The client that speaks the protocol runs
-as the desktop user on the session bus of that user, because the secret
-service belongs to the session and not to the root process of the run.
+The task takes the dialog out of the way by creating the wallet itself, before
+any program asks for it. The daemon offers exactly one path for that, the
+entry point the PAM module of the wallet uses, and that entry point receives a
+ready key instead of asking for a password. The key is what the PAM module
+computes from a password, and a machine that never types a password has the
+empty string, so the key is PBKDF2-HMAC-SHA512 over a random salt with the
+empty string as the password. The algorithm, the salt length, the iteration
+count and the key length below are the constants of that PAM module, so the
+key computed here is the key the daemon and every later program derive from
+the empty password, and a wallet created with it opens without a dialog.
 
-The label of the collection is lowercase on purpose: the identifier of a
-collection is built from its label, and the login alias of gnome-keyring
-points at the identifier "login", so the label "Login" would create a second
-keyring named Login.keyring and leave the login collection alone.
-
-A collection the login did not open is replaced when it is empty: its file
-goes to the trash and the collection is created again without a password. A
-collection that holds items is never touched, because replacing it would
-throw them away, and a collection that the login did open is left alone
-because its password is then in use and nothing asks for it.
+A wallet that already exists is left alone, because it may carry a password
+and asking it to open is the very call that shows the dialog. Force mode
+replaces it instead: the wallet files go to the trash of the desktop user and
+the wallet is created again without a password, which leaves the machine in
+the state a fresh installation plus a normal run would reach.
 """
 
 from __future__ import annotations
@@ -38,36 +37,47 @@ PACKAGES: tuple[str, ...] = ("python3-gi",)
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "-c")
 
-# The client under task_data/keyring_setup/ of the clone, and the names of the
-# secret service it is rendered with.
-CLIENT_SCRIPT_FILE_NAME: str = "configure_login_keyring.py"
-BUS_NAME: str = "org.freedesktop.secrets"
-SERVICE_OBJECT_PATH: str = "/org/freedesktop/secrets"
-SERVICE_INTERFACE_NAME: str = "org.freedesktop.Secret.Service"
-INTERNAL_INTERFACE_NAME: str = (
-    "org.gnome.keyring.InternalUnsupportedGuiltRiddenInterface"
-)
-LABEL_PROPERTY: str = "org.freedesktop.Secret.Collection.Label"
-COLLECTION_INTERFACE_NAME: str = "org.freedesktop.Secret.Collection"
+# The client under task_data/keyring_setup/ of the clone, and the seconds one
+# call of it may take. The wallet service starts on the first question, so the
+# bound has to cover that start and not only the call itself.
+CLIENT_SCRIPT_FILE_NAME: str = "configure_wallet.py"
+CLIENT_TIMEOUT_SECONDS: int = 60
 
-# The login collection of gnome-keyring, the alias that names the default
-# collection of a session, and the session and content types of a plain
-# secret whose value is a password.
-LOGIN_COLLECTION_LABEL: str = "login"
-DEFAULT_ALIAS: str = "default"
-SESSION_ALGORITHM: str = "plain"
-SECRET_CONTENT_TYPE: str = "text/plain"
+# The service of the wallet, which names the wallet of the session, and the
+# daemon behind it with the entry point that takes a ready key. The daemon
+# does not answer its own bus name until something asks the wallet service, so
+# the client asks the wallet service first, and that question is what starts
+# the daemon as well.
+WALLET_BUS_NAME: str = "org.kde.kwalletd6"
+WALLET_OBJECT_PATH: str = "/modules/kwalletd6"
+WALLET_INTERFACE_NAME: str = "org.kde.KWallet"
+WALLET_NAME_METHOD_NAME: str = "networkWallet"
+DAEMON_BUS_NAME: str = "org.kde.ksecretd"
+DAEMON_OBJECT_PATH: str = "/ksecretd"
+DAEMON_OPEN_METHOD_NAME: str = "pamOpen"
+DAEMON_OPEN_SIGNATURE: str = "(sayi)"
 
-# The directory gnome-keyring keeps its collections in, below the data
-# directory of the user, and the suffix of a collection file. A file carries
-# the identifier of its collection, so the file of the collection under work
-# is found from the object path the service reports.
-KEYRING_DIRECTORY_NAME: str = "keyrings"
-KEYRING_FILE_SUFFIX: str = ".keyring"
+# The key derivation of the PAM module of the wallet (kwallet-pam,
+# pam_kwallet.c): PBKDF2-HMAC-SHA512, a random salt of 56 bytes, 50000
+# iterations and a key of 56 bytes. The salt stands in the salt file below.
+KEY_ALGORITHM: str = "sha512"
+KEY_ITERATIONS: int = 50000
+KEY_LENGTH_BYTES: int = 56
+SALT_LENGTH_BYTES: int = 56
+
+# The directory the daemon keeps its wallets in, below the home of the user,
+# and the names of the files of one wallet: the wallet itself, the salt of its
+# key and the cache of item attributes. The file of a wallet carries the name
+# of the wallet, so force mode finds every file of every wallet by these
+# endings.
+WALLET_DIRECTORY_RELATIVE_PATH: str = ".local/share/kwalletd"
+WALLET_FILE_SUFFIX: str = ".kwl"
+WALLET_SALT_SUFFIX: str = ".salt"
+WALLET_ATTRIBUTES_SUFFIX: str = "_attributes.json"
 
 # The command that moves a file of the desktop user to that user's trash,
-# given as its program and its argument. A collection that this run replaces
-# may be wanted again, and no resource of a machine is ever removed for good.
+# given as its program and its argument. A wallet that force mode replaces may
+# be wanted again, and no resource of a machine is ever removed for good.
 TRASH_PROGRAM: str = "gio"
 TRASH_SUBCOMMAND: str = "trash"
 
@@ -77,10 +87,7 @@ TRASH_SUBCOMMAND: str = "trash"
 OUTCOME_KEY: str = "outcome"
 DETAIL_KEY: str = "detail"
 OUTCOME_CREATED: str = "created"
-OUTCOME_ALREADY_PASSWORDLESS: str = "already_passwordless"
-OUTCOME_RECREATED: str = "recreated"
-OUTCOME_OPENED_AT_LOGIN: str = "opened_at_login"
-OUTCOME_PROTECTED: str = "protected"
+OUTCOME_EXISTS: str = "exists"
 OUTCOME_ERROR: str = "error"
 
 # The names the task reads. The list lives next to the values it names, the
@@ -91,26 +98,28 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "RUNUSER_COMMAND",
     "PYTHON_SCRIPT_COMMAND",
     "CLIENT_SCRIPT_FILE_NAME",
-    "BUS_NAME",
-    "SERVICE_OBJECT_PATH",
-    "SERVICE_INTERFACE_NAME",
-    "INTERNAL_INTERFACE_NAME",
-    "LABEL_PROPERTY",
-    "COLLECTION_INTERFACE_NAME",
-    "LOGIN_COLLECTION_LABEL",
-    "DEFAULT_ALIAS",
-    "SESSION_ALGORITHM",
-    "SECRET_CONTENT_TYPE",
-    "KEYRING_DIRECTORY_NAME",
-    "KEYRING_FILE_SUFFIX",
+    "CLIENT_TIMEOUT_SECONDS",
+    "WALLET_BUS_NAME",
+    "WALLET_OBJECT_PATH",
+    "WALLET_INTERFACE_NAME",
+    "WALLET_NAME_METHOD_NAME",
+    "DAEMON_BUS_NAME",
+    "DAEMON_OBJECT_PATH",
+    "DAEMON_OPEN_METHOD_NAME",
+    "DAEMON_OPEN_SIGNATURE",
+    "KEY_ALGORITHM",
+    "KEY_ITERATIONS",
+    "KEY_LENGTH_BYTES",
+    "SALT_LENGTH_BYTES",
+    "WALLET_DIRECTORY_RELATIVE_PATH",
+    "WALLET_FILE_SUFFIX",
+    "WALLET_SALT_SUFFIX",
+    "WALLET_ATTRIBUTES_SUFFIX",
     "TRASH_PROGRAM",
     "TRASH_SUBCOMMAND",
     "OUTCOME_KEY",
     "DETAIL_KEY",
     "OUTCOME_CREATED",
-    "OUTCOME_ALREADY_PASSWORDLESS",
-    "OUTCOME_RECREATED",
-    "OUTCOME_OPENED_AT_LOGIN",
-    "OUTCOME_PROTECTED",
+    "OUTCOME_EXISTS",
     "OUTCOME_ERROR",
 )
