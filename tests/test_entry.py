@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from pyntara import task_catalog, task_runner
+from pyntara import logger, task_catalog, task_runner
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import (
@@ -418,6 +418,23 @@ def test_run_journals_the_declared_identifier_without_a_config_file(
     assert result.exit_code == 0
     assert configured
     assert configured[-1] == engine_values.JOURNAL_IDENTIFIER
+
+
+def test_a_run_keeps_the_journal_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The run configures the journal under the engine identifier, and conftest
+    # replaces that call for the length of a test, so a test of the run never
+    # writes into the real system journal and never leaves the logger
+    # configured for the tests that follow it in the same process. The state
+    # is cleared first, because the order of the suite must not decide what
+    # this test proves, and the untouched module is the proof: the logger was
+    # never given an identifier.
+    logger.configure_journal(None)
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert logger._journal_identifier is None
 
 
 def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
