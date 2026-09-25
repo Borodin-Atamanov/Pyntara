@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 
 from pyntara import btrfs, fstab
 from pyntara.config_edit import add_line_to_file, replace_line_by_string
@@ -34,12 +35,14 @@ from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     download_command,
     run_command,
+    service_is_active,
     service_is_enabled,
     substituted_command,
     task_data_dir,
 )
 from pyntara.values import btrfs_setup as values
 from pyntara.values import engine as engine_values
+from pyntara.values import swapfile_service_install as swapfile_values
 
 # Warning of a machine whose root filesystem the section could not read.
 ROOT_QUERY_WARNING: str = (
@@ -76,13 +79,17 @@ def task(ctx: Context) -> TaskResult:
     changed = _install_tools(ctx, warnings) or changed
     changed = _turn_on_compression(warnings) or changed
     changed = _ensure_points_subvolume(mount, warnings) or changed
+    changed = _ensure_swap_subvolume(mount, warnings) or changed
     changed = _write_maintenance_schedule(warnings) or changed
     changed = _prepare_menu(ctx, warnings) or changed
 
     message = (
         f"btrfs ready: the mounted subvolumes carry "
         f"{values.COMPRESSION_OPTION_ASSIGNMENT}, points mounted at "
-        f"{values.POINTS_MOUNT_POINT}, maintenance written, menu prepared"
+        f"{values.POINTS_MOUNT_POINT}, the swap area in "
+        f"{values.SWAP_SUBVOLUME_NAME} mounted at "
+        f"{swapfile_values.SWAPFILE_PATH.parent}, maintenance written, menu "
+        f"prepared"
     )
     _log(message)
     return TaskResult(
@@ -196,21 +203,116 @@ def _subvolume_paths() -> tuple[str, ...]:
 def _ensure_points_subvolume(
     mount: btrfs.MountedFilesystem, warnings: list[str]
 ) -> bool:
-    """Write the fstab line, create the subvolume and mount it."""
+    """Write the fstab line, create the points subvolume and mount it."""
 
-    changed = _write_points_fstab_line(warnings)
-    if values.POINTS_SUBVOLUME_NAME in _subvolume_paths():
-        _log(f"subvolume {values.POINTS_SUBVOLUME_NAME} already present")
+    return _ensure_subvolume_mounted(
+        mount,
+        subvolume_name=values.POINTS_SUBVOLUME_NAME,
+        mount_point=values.POINTS_MOUNT_POINT,
+        warnings=warnings,
+    )
+
+
+def _ensure_swap_subvolume(
+    mount: btrfs.MountedFilesystem, warnings: list[str]
+) -> bool:
+    """Move the swap area into a subvolume of its own and mount it there.
+
+    A swap file inside the root subvolume either blocks the save point or is
+    left dead by it: the kernel refuses to snapshot a subvolume that carries an
+    active swap file of this filesystem, which btrfs reports as "Could not
+    create subvolume: Text file busy", and it refuses to activate a swap file
+    whose extents a snapshot shares, which btrfs reports as "swapon failed:
+    Invalid argument" with "swapfile must not be copy-on-write" in the journal.
+    Measured on the target machine on 2026-09-25: with the swap area in a
+    subvolume of its own the snapshot of the root succeeds while the swap stays
+    active, the swap file activates again after the snapshot, and the
+    defragmentation of the root does not descend into that subvolume. The mount
+    point is the directory of the swap file, read from the values of the swap
+    section, so the path of the swap area is declared once.
+    """
+
+    swapfile_path = swapfile_values.SWAPFILE_PATH
+    mount_point = swapfile_path.parent
+    if _mount_point_is_mounted(mount_point):
+        _log(f"{mount_point} is a mounted filesystem of its own, left as it is")
+        return False
+    swap_unit = swapfile_values.SERVICE_UNIT_NAME
+    timeout = values.STORAGE_COMMAND_TIMEOUT_SECONDS
+    swap_was_active = service_is_active(swap_unit, timeout)
+    changed = False
+    if swap_was_active:
+        changed = _systemctl(values.SYSTEMCTL_STOP_COMMAND, swap_unit, warnings)
+    if not _remove_swap_file_of_the_root_subvolume(swapfile_path, warnings):
+        return changed
+    changed = (
+        _ensure_subvolume_mounted(
+            mount,
+            subvolume_name=values.SWAP_SUBVOLUME_NAME,
+            mount_point=mount_point,
+            warnings=warnings,
+        )
+        or changed
+    )
+    if swap_was_active:
+        _systemctl(values.SYSTEMCTL_START_COMMAND, swap_unit, warnings)
+    return changed
+
+
+def _remove_swap_file_of_the_root_subvolume(
+    swapfile_path: Path, warnings: list[str]
+) -> bool:
+    """Remove the swap file that the mount of the swap subvolume would hide.
+
+    A machine whose swap area was created before it had a subvolume of its own
+    carries its swap file inside the root subvolume. The swap section creates
+    the file again inside the new subvolume, because a file whose extents a
+    snapshot shares cannot be activated any more, so the old file is removed
+    here and the size named in the log is the room the machine wins back.
+    Returns whether the way is clear for the mount.
+    """
+
+    if not swapfile_path.is_file():
+        return True
+    try:
+        size_mib = swapfile_path.stat().st_size // (1024 * 1024)
+        swapfile_path.unlink()
+    except OSError as exc:
+        warnings.append(
+            f"the swap file {swapfile_path} lies inside the root subvolume and "
+            f"could not be removed ({exc}), so the swap area stays inside that "
+            f"subvolume and the save point needs an inactive swap to be taken"
+        )
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
+    _log(f"{swapfile_path} of {size_mib} MiB removed from the root subvolume")
+    return True
+
+
+def _ensure_subvolume_mounted(
+    mount: btrfs.MountedFilesystem,
+    *,
+    subvolume_name: str,
+    mount_point: Path,
+    warnings: list[str],
+) -> bool:
+    """Write the fstab line, create a subvolume and mount it at its mount point."""
+
+    changed = _write_subvolume_fstab_line(subvolume_name, mount_point, warnings)
+    if subvolume_name in _subvolume_paths():
+        _log(f"subvolume {subvolume_name} already present")
     else:
-        created = _create_points_subvolume(mount, warnings)
+        created = _create_subvolume(mount, subvolume_name, warnings)
         changed = created or changed
-    if _mount_points(warnings):
+    if _mount_subvolume(mount_point, warnings):
         changed = True
     return changed
 
 
-def _write_points_fstab_line(warnings: list[str]) -> bool:
-    """Append the points line to the fstab when it is not there yet."""
+def _write_subvolume_fstab_line(
+    subvolume_name: str, mount_point: Path, warnings: list[str]
+) -> bool:
+    """Append the line of a subvolume mount to the fstab when it is missing."""
 
     try:
         text = values.FSTAB_PATH.read_text(encoding="utf-8")
@@ -218,24 +320,24 @@ def _write_points_fstab_line(warnings: list[str]) -> bool:
         warnings.append(f"cannot read {values.FSTAB_PATH}: {exc}")
         return False
 
-    mount_point = str(values.POINTS_MOUNT_POINT)
-    if fstab.carries_mount_point(text, mount_point):
-        _log(f"fstab already carries the line for {mount_point}")
+    mount_point_text = str(mount_point)
+    if fstab.carries_mount_point(text, mount_point_text):
+        _log(f"fstab already carries the line for {mount_point_text}")
         return False
 
     spec = fstab.spec_of_mount_point(text, str(values.ROOT_MOUNT_POINT))
     if spec is None:
         warnings.append(
             f"{values.FSTAB_PATH} carries no line for {values.ROOT_MOUNT_POINT}, "
-            f"so the line for {mount_point} was not written"
+            f"so the line for {mount_point_text} was not written"
         )
         return False
 
-    line = values.POINTS_FSTAB_LINE_FORMAT.format(
+    line = values.SUBVOLUME_FSTAB_LINE_FORMAT.format(
         spec=spec,
-        mount_point=mount_point,
+        mount_point=mount_point_text,
         filesystem_type=values.BTRFS_FILESYSTEM_TYPE,
-        subvolume=values.POINTS_SUBVOLUME_NAME,
+        subvolume=subvolume_name,
     )
     try:
         written = add_line_to_file(
@@ -245,14 +347,14 @@ def _write_points_fstab_line(warnings: list[str]) -> bool:
         warnings.append(f"cannot write {values.FSTAB_PATH}: {exc}")
         return False
     if written:
-        _log(f"fstab line for {mount_point} written")
+        _log(f"fstab line for {mount_point_text} written")
     return written
 
 
-def _create_points_subvolume(
-    mount: btrfs.MountedFilesystem, warnings: list[str]
+def _create_subvolume(
+    mount: btrfs.MountedFilesystem, subvolume_name: str, warnings: list[str]
 ) -> bool:
-    """Create the points subvolume through a temporary mount of the top level."""
+    """Create a subvolume through a temporary mount of the top level."""
 
     try:
         values.TOPLEVEL_MOUNT_POINT.mkdir(parents=True, exist_ok=True)
@@ -283,7 +385,7 @@ def _create_points_subvolume(
     ) as exc:
         warnings.append(
             f"the top level of {mount.device} could not be mounted, so the "
-            f"subvolume {values.POINTS_SUBVOLUME_NAME} was not created: {btrfs.failure_text(exc)}"
+            f"subvolume {subvolume_name} was not created: {btrfs.failure_text(exc)}"
         )
         return False
 
@@ -291,11 +393,7 @@ def _create_points_subvolume(
     try:
         create_command = substituted_command(
             values.SUBVOLUME_CREATE_COMMAND,
-            {
-                "path": str(
-                    values.TOPLEVEL_MOUNT_POINT / values.POINTS_SUBVOLUME_NAME
-                )
-            },
+            {"path": str(values.TOPLEVEL_MOUNT_POINT / subvolume_name)},
         )
         run_command(
             create_command,
@@ -304,14 +402,14 @@ def _create_points_subvolume(
             capture=True,
         )
         created = True
-        _log(f"subvolume {values.POINTS_SUBVOLUME_NAME} created")
+        _log(f"subvolume {subvolume_name} created")
     except (
         OSError,
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ) as exc:
         warnings.append(
-            f"the subvolume {values.POINTS_SUBVOLUME_NAME} could not be "
+            f"the subvolume {subvolume_name} could not be "
             f"created: {btrfs.failure_text(exc)}"
         )
     finally:
@@ -343,25 +441,25 @@ def _unmount_toplevel(warnings: list[str]) -> None:
         )
 
 
-def _points_mounted() -> bool:
-    """Answer whether the points subvolume is mounted at its mount point."""
+def _mount_point_is_mounted(mount_point: Path) -> bool:
+    """Answer whether a mount point carries a mounted filesystem."""
 
-    return os.path.ismount(values.POINTS_MOUNT_POINT)
+    return os.path.ismount(mount_point)
 
 
-def _mount_points(warnings: list[str]) -> bool:
-    """Mount the points subvolume at its mount point when it is not mounted."""
+def _mount_subvolume(mount_point: Path, warnings: list[str]) -> bool:
+    """Mount a subvolume at its mount point when it is not mounted there."""
 
-    if _points_mounted():
-        _log(f"{values.POINTS_MOUNT_POINT} is mounted")
+    if _mount_point_is_mounted(mount_point):
+        _log(f"{mount_point} is mounted")
         return False
     try:
-        values.POINTS_MOUNT_POINT.mkdir(parents=True, exist_ok=True)
+        mount_point.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        warnings.append(f"cannot create {values.POINTS_MOUNT_POINT}: {exc}")
+        warnings.append(f"cannot create {mount_point}: {exc}")
         return False
     command = substituted_command(
-        values.MOUNT_COMMAND, {"mount_point": str(values.POINTS_MOUNT_POINT)}
+        values.MOUNT_COMMAND, {"mount_point": str(mount_point)}
     )
     try:
         run_command(
@@ -376,11 +474,29 @@ def _mount_points(warnings: list[str]) -> bool:
         subprocess.TimeoutExpired,
     ) as exc:
         warnings.append(
-            f"{values.POINTS_MOUNT_POINT} could not be mounted, so the save "
-            f"points cannot be stored: {btrfs.failure_text(exc)}"
+            f"{mount_point} could not be mounted: {btrfs.failure_text(exc)}"
         )
         return False
-    _log(f"{values.POINTS_MOUNT_POINT} mounted")
+    _log(f"{mount_point} mounted")
+    return True
+
+
+def _systemctl(
+    command: tuple[str, ...], unit: str, warnings: list[str]
+) -> bool:
+    """Run one systemctl call of the section on one unit."""
+
+    try:
+        run_command(
+            substituted_command(command, {"unit": unit}),
+            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+            check=True,
+            capture=True,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        warnings.append(f"the call on {unit} failed: {btrfs.failure_text(exc)}")
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
     return True
 
 

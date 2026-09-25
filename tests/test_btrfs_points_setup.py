@@ -29,6 +29,7 @@ from pyntara.tasks import btrfs_points_setup
 from pyntara.values import btrfs_points_setup as values
 from pyntara.values import btrfs_recompress as recompress_values
 from pyntara.values import btrfs_setup as setup_values
+from pyntara.values import swapfile_service_install as swapfile_values
 from pyntara.values import tasks as tasks_values
 
 # Root of the clone the tests run from, so the shipped templates are the ones
@@ -210,6 +211,31 @@ def test_points_setup_skips_a_machine_that_does_not_run_on_btrfs(
     assert result.changed is False
     assert result.warnings and "ext4" in result.warnings[0]
     assert [call[0] for call in calls] == ["findmnt"]
+
+
+def test_the_snapshots_need_no_release_of_the_swap_of_the_machine(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The storage section keeps the swap area in a subvolume of its own, and a
+    # subvolume is a barrier for a snapshot: the point never carries the swap
+    # file, the kernel refuses neither the snapshot nor the next activation of
+    # the swap, and this section never stops the swap of the machine.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    calls = _commands_fake(monkeypatch, machine)
+    monkeypatch.setattr(
+        btrfs_points_setup,
+        "service_is_active",
+        lambda unit, timeout: unit == swapfile_values.SERVICE_UNIT_NAME,
+    )
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert result.success is True
+    assert not any("could not be stored" in warning for warning in result.warnings)
+    assert not any(
+        call[-1] == swapfile_values.SERVICE_UNIT_NAME for call in calls
+    )
 
 
 def test_points_setup_skips_a_machine_without_a_mounted_points_subvolume(

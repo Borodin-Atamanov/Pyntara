@@ -74,18 +74,28 @@ FSTAB_PATH: Path = Path("/etc/fstab")
 POINTS_SUBVOLUME_NAME: str = "@points"
 POINTS_MOUNT_POINT: Path = Path("/points")
 
-# fstab line of the points subvolume. The specification of the line is taken
-# from the root line of the same fstab, so the task copies no UUID and the line
-# names the device the way this machine names it. nofail keeps a machine whose
-# points subvolume is missing bootable.
-POINTS_FSTAB_LINE_FORMAT: str = (
+# Name of the top level subvolume that holds the swap area. The kernel refuses
+# to snapshot a subvolume that carries an active swap file of this filesystem,
+# and it refuses to activate a swap file whose extents a snapshot shares, so a
+# swap file inside the root subvolume either blocks the save point or is left
+# dead by it. The kernel names both refusals in its journal: "cannot snapshot
+# subvolume with active swapfile" and "swapfile must not be copy-on-write".
+# The directory the subvolume is mounted at is the directory of the swap file,
+# read from the values of the swap section, so the path is declared once.
+SWAP_SUBVOLUME_NAME: str = "@swap"
+
+# fstab line of a subvolume mount. The specification of the line is taken from
+# the root line of the same fstab, so the task copies no UUID and the line names
+# the device the way this machine names it. nofail keeps a machine whose
+# subvolume is missing bootable.
+SUBVOLUME_FSTAB_LINE_FORMAT: str = (
     "{spec} {mount_point} {filesystem_type} "
     "subvol={subvolume},defaults,noatime,nofail 0 0"
 )
 
-# Mount that reaches the top level of the filesystem, where the points
-# subvolume is created, and the temporary mount point it uses. The directory
-# lives under /run, the runtime directory the project already owns.
+# Mount that reaches the top level of the filesystem, where the subvolumes are
+# created, and the temporary mount point it uses. The directory lives under
+# /run, the runtime directory the project already owns.
 TOPLEVEL_SUBVOLUME_ID: str = "5"
 TOPLEVEL_MOUNT_COMMAND: tuple[str, ...] = (
     "mount",
@@ -99,9 +109,8 @@ TOPLEVEL_MOUNT_POINT: Path = Path("/run/pyntara/btrfs-toplevel")
 TOPLEVEL_DIRECTORY_MODE: int = 0o755
 
 # Subcommands of btrfs the section runs, with the placeholders the task fills:
-# the listing that tells whether the points subvolume is already there, the
-# creation of that subvolume and the mount that appears at the points mount
-# point.
+# the listing that tells whether a subvolume is already there, the creation of
+# one subvolume and the mount that appears at its mount point.
 SUBVOLUME_LIST_COMMAND: tuple[str, ...] = ("btrfs", "subvolume", "list", "{path}")
 SUBVOLUME_CREATE_COMMAND: tuple[str, ...] = ("btrfs", "subvolume", "create", "{path}")
 MOUNT_COMMAND: tuple[str, ...] = ("mount", "{mount_point}")
@@ -198,7 +207,9 @@ MAINTENANCE_DISABLED_TIMERS: tuple[str, ...] = (
 )
 
 # systemctl calls of the section, each carrying the unit name where it needs
-# one.
+# one. The swap calls serve the move of the swap area into its subvolume: the
+# swap file has to be inactive before it can be removed from the root
+# subvolume, and the swap service starts again once the subvolume is mounted.
 SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "--now", "{unit}")
 SYSTEMCTL_DISABLE_COMMAND: tuple[str, ...] = (
@@ -208,6 +219,8 @@ SYSTEMCTL_DISABLE_COMMAND: tuple[str, ...] = (
     "{unit}",
 )
 SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = ("systemctl", "restart", "{unit}")
+SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
+SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 
 # The value names this module declares, so the values guard of the test suite
 # applies its rules to every one of them.
@@ -222,7 +235,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "FSTAB_PATH",
     "POINTS_SUBVOLUME_NAME",
     "POINTS_MOUNT_POINT",
-    "POINTS_FSTAB_LINE_FORMAT",
+    "SWAP_SUBVOLUME_NAME",
+    "SUBVOLUME_FSTAB_LINE_FORMAT",
     "TOPLEVEL_SUBVOLUME_ID",
     "TOPLEVEL_MOUNT_COMMAND",
     "TOPLEVEL_UNMOUNT_COMMAND",
@@ -260,4 +274,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_ENABLE_COMMAND",
     "SYSTEMCTL_DISABLE_COMMAND",
     "SYSTEMCTL_RESTART_COMMAND",
+    "SYSTEMCTL_STOP_COMMAND",
+    "SYSTEMCTL_START_COMMAND",
 )

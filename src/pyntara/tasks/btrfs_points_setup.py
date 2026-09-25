@@ -20,6 +20,14 @@ the point carries the finished state of the machine. The wait is bounded: a
 machine whose recompression takes longer than the bound still receives its
 point, taken from the state it has by then.
 
+The snapshot of the running root needs no release of the swap of the machine:
+the storage section keeps the swap area in a subvolume of its own, and a
+subvolume is a barrier for a snapshot, so the point never carries the swap file
+and the swap stays active while the point is taken. Measured on the target
+machine on 2026-09-25: with the swap file inside the root subvolume the kernel
+refuses the snapshot while that swap is active and refuses to activate the swap
+file again once a snapshot shares its extents.
+
 Every step reads the state of the machine before it writes and changes nothing
 that is already in place: an existing point is never recreated, because it is
 the state the user returns to, and an existing work copy is never overwritten,
@@ -108,7 +116,6 @@ def task(ctx: Context) -> TaskResult:
         )
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
     changed = _write_ignore_setting(warnings) or changed
-
     if changed or _is_forced(ctx):
         _refresh_menu(warnings)
 

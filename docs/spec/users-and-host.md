@@ -41,7 +41,12 @@ The values are aggressive, matching the ZRAM philosophy. All parameters live in 
 Task: swapfile_service_install. One program of the section, deployed from
 task_data/swapfile_service_install/configure_swapfile.py to its configured path,
 creates, formats and activates the swap file at swapfile_path, which is
-/swap/swapfile, and the program creates the directory that holds it. The unit
+/swap/swapfile, and the program creates the directory that holds it when the
+directory is not there yet. On a machine whose root is btrfs that directory is
+already the mount point of the swap subvolume, which the storage section creates
+and mounts (docs/spec/btrfs-setup.md, "The swap area"); on any other machine the
+directory stays an ordinary directory, which is what the section needs there.
+The unit
 swapfile.service starts that same program at every boot, so a run and a boot
 apply one code instead of two implementations of the same steps. The packages
 the tools of the program come from (mount for swapon and swapoff, util-linux for

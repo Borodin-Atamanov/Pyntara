@@ -59,8 +59,9 @@ CATALOG: tuple[TaskSpec, ...] = (
     ),
     TaskSpec(
         "btrfs_setup",
-        "Ready the btrfs filesystem: compression, the points subvolume, the "
-        "maintenance schedule and the boot menu that shows the save points.",
+        "Ready the btrfs filesystem: compression, the subvolume of the points and "
+        "the subvolume of the swap area, the maintenance schedule and the boot "
+        "menu that shows the save points.",
         ("add_extra_repos",),
         MODES,
     ),

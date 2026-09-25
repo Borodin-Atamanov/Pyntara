@@ -31,6 +31,7 @@ from support import make_context
 from pyntara.context import Context
 from pyntara.tasks import btrfs_setup
 from pyntara.values import btrfs_setup as values
+from pyntara.values import swapfile_service_install as swapfile_values
 from pyntara.values import tasks as tasks_values
 
 # Root of the clone the tests run from, so the shipped template is the one the
@@ -68,6 +69,11 @@ GENERATOR_CONFIG_TEXT = (
 
 SUBDIR_ANSWER_WITHOUT_POINTS = "ID 256 gen 10 top level 5 path @\n"
 SUBDIR_ANSWER_WITH_POINTS = "ID 256 gen 10 top level 5 path @\nID 263 gen 12 top level 5 path @points\n"
+SUBDIR_ANSWER_WITH_THE_SUBVOLUMES = (
+    "ID 256 gen 10 top level 5 path @\n"
+    "ID 263 gen 12 top level 5 path @points\n"
+    "ID 264 gen 13 top level 5 path @swap\n"
+)
 
 
 class _Machine:
@@ -85,6 +91,7 @@ class _Machine:
         self.dropin = tmp_path / "grub-btrfsd.service.d" / "watch-points.conf"
         self.points_mount_point = tmp_path / "points"
         self.toplevel_mount_point = tmp_path / "toplevel"
+        self.swapfile_path = tmp_path / "swap" / "swapfile"
         self.installed_packages: set[str] = set()
         self.enabled_timers: set[str] = set()
         self.calls: list[list[str]] = []
@@ -119,6 +126,7 @@ def _use_values(monkeypatch: pytest.MonkeyPatch, machine: _Machine) -> None:
     monkeypatch.setattr(values, "GRUB_BTRFS_DAEMON_DROPIN_PATH", machine.dropin)
     monkeypatch.setattr(values, "POINTS_MOUNT_POINT", machine.points_mount_point)
     monkeypatch.setattr(values, "TOPLEVEL_MOUNT_POINT", machine.toplevel_mount_point)
+    monkeypatch.setattr(swapfile_values, "SWAPFILE_PATH", machine.swapfile_path)
 
 
 def _commands_fake(
@@ -201,7 +209,9 @@ def _machine_that_changes_nothing(
         "UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 /home btrfs "
         f"{values.COMPRESSION_OPTION_ASSIGNMENT},noatime 0 0\n"
         f"UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 {machine.points_mount_point} "
-        f"btrfs subvol={values.POINTS_SUBVOLUME_NAME},defaults 0 0\n",
+        f"btrfs subvol={values.POINTS_SUBVOLUME_NAME},defaults 0 0\n"
+        f"UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 {machine.swapfile_path.parent} "
+        f"btrfs subvol={values.SWAP_SUBVOLUME_NAME},defaults 0 0\n",
         encoding="utf-8",
     )
     directives = "\n".join(values.MAINTENANCE_DIRECTIVES) + "\n"
@@ -257,7 +267,9 @@ def test_btrfs_setup_brings_a_fresh_machine_to_the_declared_state(
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_setup, "_points_mounted", lambda: False)
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: False
+    )
 
     result = btrfs_setup.task(_ctx())
 
@@ -268,6 +280,8 @@ def test_btrfs_setup_brings_a_fresh_machine_to_the_declared_state(
     assert fstab.count(values.COMPRESSION_OPTION_ASSIGNMENT) == 2
     assert f"{machine.points_mount_point}" in fstab
     assert f"subvol={values.POINTS_SUBVOLUME_NAME}" in fstab
+    assert f"subvol={values.SWAP_SUBVOLUME_NAME}" in fstab
+    assert f"{machine.swapfile_path.parent}" in fstab
 
     created = [
         call
@@ -276,9 +290,17 @@ def test_btrfs_setup_brings_a_fresh_machine_to_the_declared_state(
         == ["subvolume", "create", str(machine.toplevel_mount_point / values.POINTS_SUBVOLUME_NAME)]
     ]
     assert created
+    created_swap = [
+        call
+        for call in machine.calls_of("btrfs")
+        if call[1:4]
+        == ["subvolume", "create", str(machine.toplevel_mount_point / values.SWAP_SUBVOLUME_NAME)]
+    ]
+    assert created_swap
     mounts = [call[1:] for call in machine.calls_of("mount")]
     assert ["-o", f"subvolid={values.TOPLEVEL_SUBVOLUME_ID}", "/dev/vda2", str(machine.toplevel_mount_point)] in mounts
     assert [str(machine.points_mount_point)] in mounts
+    assert [str(machine.swapfile_path.parent)] in mounts
     assert ["-o", "remount", "/"] in mounts
     assert machine.calls_of("umount")
 
@@ -313,8 +335,12 @@ def test_btrfs_setup_changes_nothing_on_a_machine_that_is_already_configured(
     # and the answer says that nothing changed.
     machine = _machine_that_changes_nothing(monkeypatch, tmp_path)
     _use_values(monkeypatch, machine)
-    _commands_fake(monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_POINTS)
-    monkeypatch.setattr(btrfs_setup, "_points_mounted", lambda: True)
+    _commands_fake(
+        monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_THE_SUBVOLUMES
+    )
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: True
+    )
     btrfs_setup._deploy_daemon_dropin(_ctx(), [])
 
     result = btrfs_setup.task(_ctx(skip_apt_update=True))
@@ -335,13 +361,116 @@ def test_btrfs_setup_reports_a_points_subvolume_that_cannot_be_mounted(
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(monkeypatch, machine, mount_rc=1)
-    monkeypatch.setattr(btrfs_setup, "_points_mounted", lambda: False)
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: False
+    )
 
     result = btrfs_setup.task(_ctx())
 
     assert result.success is True
     assert result.warnings
     assert any("could not be mounted" in warning for warning in result.warnings)
+    assert machine.maintenance.read_text(encoding="utf-8") != MAINTENANCE_TEXT
+
+
+def test_btrfs_setup_moves_the_swap_area_into_a_subvolume_of_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine configured before the swap area had a subvolume of its own
+    # carries its swap file inside the root subvolume. The section stops the
+    # swap, removes that file, creates and mounts the subvolume of the swap
+    # area and starts the swap again, so the machine neither keeps a swap file
+    # inside the snapshotted subvolume nor loses its swap.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.swapfile_path.parent.mkdir(parents=True, exist_ok=True)
+    machine.swapfile_path.write_bytes(b"\0" * 4096)
+    _commands_fake(
+        monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_POINTS
+    )
+    monkeypatch.setattr(btrfs_setup, "service_is_active", lambda unit, timeout: True)
+
+    result = btrfs_setup.task(_ctx())
+
+    assert result.success is True
+    assert not machine.swapfile_path.exists()
+    fstab = machine.fstab.read_text(encoding="utf-8")
+    assert f"subvol={values.SWAP_SUBVOLUME_NAME}" in fstab
+    stop = machine.calls.index(
+        ["systemctl", "stop", swapfile_values.SERVICE_UNIT_NAME]
+    )
+    create = machine.calls.index(
+        [
+            "btrfs",
+            "subvolume",
+            "create",
+            str(
+                machine.toplevel_mount_point / values.SWAP_SUBVOLUME_NAME
+            ),
+        ]
+    )
+    start = machine.calls.index(
+        ["systemctl", "start", swapfile_values.SERVICE_UNIT_NAME]
+    )
+    assert stop < create < start
+
+
+def test_btrfs_setup_leaves_a_mounted_swap_area_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine whose /swap is a mounted filesystem of its own, for example a
+    # swap partition, carries no swap file of this filesystem in its root
+    # subvolume, so the section touches neither the line nor the file nor the
+    # service of that machine.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.swapfile_path.parent.mkdir(parents=True, exist_ok=True)
+    machine.swapfile_path.write_bytes(b"\0" * 4096)
+    _commands_fake(
+        monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_THE_SUBVOLUMES
+    )
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: True
+    )
+
+    btrfs_setup.task(_ctx())
+
+    assert machine.swapfile_path.exists()
+    fstab = machine.fstab.read_text(encoding="utf-8")
+    assert values.SWAP_SUBVOLUME_NAME not in fstab
+    assert not any(
+        call[-1] == swapfile_values.SERVICE_UNIT_NAME
+        for call in machine.calls_of("systemctl")
+    )
+
+
+def test_btrfs_setup_keeps_the_swap_area_when_it_cannot_clear_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A swap file that cannot be removed would stay inside the root subvolume
+    # and disappear behind the mount of the new subvolume, with its size still
+    # allocated, so the section reports the file and leaves the swap area where
+    # it is instead of hiding it.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_THE_SUBVOLUMES
+    )
+
+    def refuse(swapfile_path: Path, warnings: list[str]) -> bool:
+        warnings.append(f"the swap file {swapfile_path} could not be removed")
+        return False
+
+    monkeypatch.setattr(
+        btrfs_setup, "_remove_swap_file_of_the_root_subvolume", refuse
+    )
+
+    result = btrfs_setup.task(_ctx())
+
+    assert result.success is True
+    assert any("could not be removed" in warning for warning in result.warnings)
+    fstab = machine.fstab.read_text(encoding="utf-8")
+    assert values.SWAP_SUBVOLUME_NAME not in fstab
     assert machine.maintenance.read_text(encoding="utf-8") != MAINTENANCE_TEXT
 
 
@@ -353,7 +482,9 @@ def test_btrfs_setup_reports_a_generator_that_cannot_be_built(
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(monkeypatch, machine, build_rc=1)
-    monkeypatch.setattr(btrfs_setup, "_points_mounted", lambda: True)
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: True
+    )
 
     result = btrfs_setup.task(_ctx())
 
