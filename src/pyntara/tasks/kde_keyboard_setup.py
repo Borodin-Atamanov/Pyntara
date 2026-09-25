@@ -10,12 +10,15 @@ kwriteconfig6 runs as the configured user through runuser, so the config
 files stay owned by that user. When a value changed, the task reloads the
 kwin configuration, which applies the kwinrc values of a running session;
 the layout values behave differently: kwin builds its keymap from kxkbrc
-when it starts and offers no live reload of the layout list or of the
-switch option, so both take effect at the next start of the session. The
+when it starts and offers no live reload of the layout list, of the switch
+option or of the per-layout actions, so the task restarts the compositor
+inside the running session, which brings the session to the configured
+layouts without a logout or a machine reboot. A session the run cannot
+reach is not an error: the settings then apply after the next login. The
 task is idempotent: it compares every value with kreadconfig6 and writes
-only what differs. Missing packages (the kwriteconfig6 provider and the
-DBus client) are installed first. A desktop session that cannot be found
-disables the reload: the settings then apply after the next login.
+only what differs, so the compositor is restarted only when the layout
+configuration changed. Missing packages (the kwriteconfig6 provider and the
+DBus client) are installed first.
 
 Optional per-layout hotkeys (layout_switch_shortcuts) are written to
 kglobalshortcutsrc the same way; when a desktop session is running, the
@@ -28,6 +31,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import time
 from pathlib import Path
 
 from pyntara.context import Context
@@ -248,6 +252,107 @@ def _reload_kwin(
         return f"cannot reload kwin layouts: {exc}"
     _log("reloaded kwin keyboard layouts")
     return None
+
+
+def _compositor_runs(timeout: float) -> bool:
+    """True when the compositor process of the session answers.
+
+    The question goes to the machine, so a weak machine that needs minutes to
+    bring the compositor back is waited out instead of failed.
+    """
+
+    command = substituted_command(
+        values.PROCESS_CHECK_COMMAND, {"process_name": values.KWIN_PROCESS_NAME}
+    )
+    try:
+        result = run_command(
+            command, check=False, capture=True, timeout=timeout, log_command=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _session_manager_is_active(username: str, timeout: float) -> bool:
+    """True when the session manager of the desktop user reports active.
+
+    The unit runs in the user session, so it is asked with --machine: a plain
+    --user call from root reaches no session.
+    """
+
+    command = substituted_command(
+        values.SESSION_MANAGER_IS_ACTIVE_COMMAND,
+        {"username": username, "unit_name": values.SESSION_MANAGER_UNIT_NAME},
+    )
+    try:
+        result = run_command(
+            command, check=False, capture=True, timeout=timeout, log_command=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return trim_whitespace(result.stdout) == engine_values.SYSTEMD_ACTIVE_STATE
+
+
+def _restart_compositor_for_layouts(
+    *,
+    username: str,
+    timeout: float,
+    home_env: dict[str, str],
+    bus_env: dict[str, str],
+) -> str | None:
+    """Restart the compositor so the configured layouts apply now.
+
+    KWin reads the layout list from kxkbrc only when it starts, offers no setter
+    for it, does not watch the file and rebuilds nothing on a configuration
+    reload, so a session reaches the configured layouts when its compositor
+    starts again. The restart happens inside the session: the call returns at
+    once and the session brings the compositor back under its wrapper, so no
+    logout and no machine reboot is needed. The restart drops the windows the
+    compositor owns, which is why it runs only after the layout configuration
+    changed. The session manager is started afterwards because KWin does not
+    restart it, and the caller then waits for both by asking the machine. A
+    session the run cannot reach is not an error: the layouts apply at the next
+    login. Returns error text or None.
+    """
+
+    if not bus_env:
+        _log("no desktop session found, the layouts apply at the next login")
+        return None
+    try:
+        run_command(
+            _as_user_command(list(values.KWIN_RESTART_COMMAND)),
+            extra_env={**home_env, **bus_env},
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"cannot restart the compositor for the configured layouts: {exc}"
+    _log("restarted the compositor so the configured layouts apply now")
+    try:
+        run_command(
+            substituted_command(
+                values.SESSION_MANAGER_START_COMMAND,
+                {
+                    "username": username,
+                    "unit_name": values.SESSION_MANAGER_UNIT_NAME,
+                },
+            ),
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return (
+            f"cannot start {values.SESSION_MANAGER_UNIT_NAME} after the "
+            f"compositor restart: {exc}"
+        )
+    deadline = time.monotonic() + values.KWIN_RESTART_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        if _compositor_runs(timeout) and _session_manager_is_active(username, timeout):
+            _log("the restarted compositor and the session manager are ready")
+            return None
+        time.sleep(values.KWIN_RESTART_POLL_SECONDS)
+    return (
+        "the restarted compositor and the session manager did not report ready "
+        f"within {values.KWIN_RESTART_WAIT_SECONDS} s"
+    )
 
 
 def _shortcut_to_combined(shortcut: str) -> int | None:
@@ -611,9 +716,14 @@ def task(ctx: Context) -> TaskResult:
         reload_error = _reload_kwin(timeout=timeout, home_env=home_env, bus_env=bus_env)
         if reload_error is not None:
             warnings.append(reload_error)
-        _log("the layout switch option takes effect at the next login")
-
-
+        restart_error = _restart_compositor_for_layouts(
+            username=common_values.DESKTOP_USERNAME,
+            timeout=timeout,
+            home_env=home_env,
+            bus_env=bus_env,
+        )
+        if restart_error is not None:
+            warnings.append(restart_error)
     if warnings:
         message = (
             "KDE keyboard layouts configured with warnings"

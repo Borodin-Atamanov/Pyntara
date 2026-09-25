@@ -64,14 +64,62 @@ USE_LAYOUT_SWITCHING: int = 1
 # country flag instead of the layout name.
 INDICATOR_DISPLAY_STYLE: str = "Flag"
 
-# Command that makes kwin re-read the keyboard layout configuration, so the
-# layouts apply immediately.
+# Command that makes kwin re-read its own configuration file (kwinrc), so the
+# kwinrc values of a running session apply immediately. It does not rebuild the
+# keymap: KWin reads the layout list from kxkbrc only when it starts.
 KWIN_RELOAD_COMMAND: tuple[str, ...] = (
     "qdbus6",
     "org.kde.KWin",
     "/KWin",
     "org.kde.KWin.reconfigure",
 )
+
+# Command that restarts the running compositor inside the session, which is the
+# only way to make the configured layout list take effect without a logout. KWin
+# builds its keymap from kxkbrc when it starts, offers no setter for the layout
+# list on org.kde.KeyboardLayouts, does not watch kxkbrc and rebuilds nothing on
+# a configuration reload, so a session reaches the configured layouts when the
+# compositor starts again. The session runs the compositor under
+# kwin_wayland_wrapper, which brings it back in place of the old one.
+KWIN_RESTART_COMMAND: tuple[str, ...] = (
+    "qdbus6",
+    "org.kde.KWin",
+    "/KWin",
+    "org.kde.KWin.replace",
+)
+
+# Name of the compositor process a caller waits for after the restart, and the
+# command that asks whether it runs.
+KWIN_PROCESS_NAME: str = "kwin_wayland"
+PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
+
+# The session manager of the desktop user. KWin does not restart it, so the
+# caller starts it after the compositor restart and waits for it; {username} is
+# the account of the machine and {unit_name} the unit.
+SESSION_MANAGER_UNIT_NAME: str = "plasma-ksmserver.service"
+SESSION_MANAGER_IS_ACTIVE_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "--user",
+    "--machine",
+    "{username}@.host",
+    "is-active",
+    "{unit_name}",
+)
+SESSION_MANAGER_START_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "--user",
+    "--machine",
+    "{username}@.host",
+    "start",
+    "{unit_name}",
+)
+
+# How long a caller waits for the restarted compositor and the session manager,
+# and how long it waits between two questions. The wait asks the machine instead
+# of sleeping a fixed time, because a weak machine can take minutes to bring the
+# compositor back.
+KWIN_RESTART_WAIT_SECONDS: int = 180
+KWIN_RESTART_POLL_SECONDS: float = 2.0
 
 # Per-layout hotkeys are managed by the kde_settings task through its kconfig
 # records, not here. Empty by default: no hotkeys.
@@ -152,6 +200,14 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "USE_LAYOUT_SWITCHING",
     "INDICATOR_DISPLAY_STYLE",
     "KWIN_RELOAD_COMMAND",
+    "KWIN_RESTART_COMMAND",
+    "KWIN_PROCESS_NAME",
+    "PROCESS_CHECK_COMMAND",
+    "SESSION_MANAGER_UNIT_NAME",
+    "SESSION_MANAGER_IS_ACTIVE_COMMAND",
+    "SESSION_MANAGER_START_COMMAND",
+    "KWIN_RESTART_WAIT_SECONDS",
+    "KWIN_RESTART_POLL_SECONDS",
     "LAYOUT_SWITCH_SHORTCUTS",
     "KXKBRC_GROUP",
     "APPLET_CONFIGURATION_GROUP",

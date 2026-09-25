@@ -113,12 +113,14 @@ def _install_fakes(
     desktop session lookup. hotkey_state maps a hotkey action name to the
     combinations the client reports before the live apply, for idempotency
     tests; the fake reports a combination as the portable text the request
-    carries, because the task compares the two lists of one report.
+    carries, because the task compares the two lists of one report. The
+    second list carries every command sent to the live session: the kwin
+    reload, the kwin restart and the session manager start.
     """
 
     currents = currents or {}
     writes: list[list[str]] = []
-    reloads: list[list[str]] = []
+    session_applies: list[list[str]] = []
     installs: list[str] = []
     live_applies: list[list[str]] = []
 
@@ -136,7 +138,7 @@ def _install_fakes(
             if inner[0] == "mkdir":
                 return _FakeProc(0, "")
             if inner[0] == "qdbus6":
-                reloads.append(list(command))
+                session_applies.append(list(command))
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 live_applies.append(list(command))
@@ -162,6 +164,11 @@ def _install_fakes(
                 return _FakeProc(0, json.dumps({"results": results}))
         if command[0] == "pgrep":
             return _FakeProc(0, f"{bus_pid}\n" if bus_pid else "")
+        if command[0] == "systemctl" and "--machine" in command:
+            session_applies.append(list(command))
+            if command[-2] == "is-active":
+                return _FakeProc(0, "active\n")
+            return _FakeProc(0, "")
         raise AssertionError(f"unexpected command: {command}")
 
     def fake_installed(package: str, timeout: float) -> bool:
@@ -185,7 +192,7 @@ def _install_fakes(
             )
         ),
     )
-    return writes, reloads, installs, live_applies
+    return writes, session_applies, installs, live_applies
 
 
 def test_first_run_writes_and_reloads(
@@ -244,6 +251,34 @@ def test_writes_complete_kxkbrc_layout_group(
     assert any(
         "--key" in command and "SwitchMode" in command and "WinClass" in command
         for command in layout_writes
+    )
+
+
+def test_the_layout_change_restarts_the_compositor_and_starts_the_session_manager(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # KWin builds its keymap from kxkbrc only when it starts and offers no live
+    # way to change the layout list, so a running session reaches the configured
+    # layouts when its compositor starts again. The restart happens inside the
+    # session, and the session manager is started afterwards because KWin does
+    # not restart it: both together are what applies the layouts without a
+    # logout and without a machine reboot.
+    ctx = _ctx(tmp_path)
+    _writes, session_applies, _installs, _live = _install_fakes(monkeypatch)
+
+    result = task_module.task(ctx)
+
+    assert result.success is True
+    assert result.warnings == ()
+    assert any(
+        command[0] == "runuser" and "org.kde.KWin.replace" in command
+        for command in session_applies
+    )
+    assert any(
+        command[:4] == ["systemctl", "--user", "--machine", "i@.host"]
+        and command[-2] == "start"
+        and command[-1] == values.SESSION_MANAGER_UNIT_NAME
+        for command in session_applies
     )
 
 
