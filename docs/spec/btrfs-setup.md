@@ -14,6 +14,8 @@ The rewrite of the data that predates the option is the job of the recompression
 
 The job writes a marker file when every step succeeded. The marker is what makes the work one-off: a later run finds it and skips the rewrite, and the forced run of the task removes the marker first, so a run that asks for the work again really performs it. A failing step leaves no marker and exits nonzero, so a later run tries again.
 
+The rewrite belongs before the machine carries its first save point, and the catalog puts the recompression section before the points section for exactly that reason. The reason is space, not taste: a point shares its extents with the root it was taken from, so rewriting the root of a machine that already carries points copies all the shared data into new extents instead of replacing them, and the machine needs room for that copy. A machine that is left with its one-off work unfinished because a run was interrupted still carries the marker of nothing and repeats the work on the next run, which is why the free space is checked before the rewrite starts.
+
 ## The points subvolume
 
 The save points live in a top-level subvolume named @points, mounted at /points. The top level matters: a point stored inside the root subvolume would travel away with the root the moment the root subvolume is renamed, which is exactly what a recovery does. The storage setup creates the subvolume when it is missing, writes its fstab line from the device field of the root line (so no identifier is written into the code, and a machine that names its device by UUID, by label or by path is served the same way) and mounts it.

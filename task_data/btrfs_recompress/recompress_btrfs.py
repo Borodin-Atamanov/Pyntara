@@ -66,6 +66,17 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def free_mib() -> int:
+    """The free space of the filesystem the program works on, in MiB.
+
+    The number is printed after every step, because the point of the whole job
+    is the room the compression gains, and a user watching the window sees the
+    gain of each step instead of waiting for one line after an hour.
+    """
+
+    return shutil.disk_usage("/").free // (1024 * 1024)
+
+
 def main() -> int:
     """Rewrite the data, balance the chunks and record the result."""
 
@@ -115,8 +126,9 @@ def main() -> int:
         )
         if code != 0:
             failures.append(f"rewrite of {path} failed with status {code}")
+        print(f"free space after the rewrite of {path}: {free_mib()} MiB", flush=True)
 
-    print("balancing the data chunks", flush=True)
+    print(f"balancing the data chunks, free space: {free_mib()} MiB", flush=True)
     code = run_step(
         [
             "btrfs",
@@ -130,6 +142,7 @@ def main() -> int:
     )
     if code != 0:
         failures.append(f"balance failed with status {code}")
+    print(f"free space after the balance: {free_mib()} MiB", flush=True)
 
     free_after_bytes = shutil.disk_usage("/").free
     summary = {

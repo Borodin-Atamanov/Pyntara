@@ -312,6 +312,8 @@ def test_recompress_runs_the_program_with_the_options_it_reads(
     assert asked[-1] == (
         f"balance start -dusage={values.BALANCE_USAGE_PERCENT} --full-balance /"
     )
+    assert "free space after the rewrite of /" in completed.stdout
+    assert "free space after the balance" in completed.stdout
     assert marker.is_file()
     summary = json.loads(marker.read_text(encoding="utf-8"))
     assert summary["failures"] == []
