@@ -94,7 +94,11 @@ def main() -> int:
         if not Path(path).exists():
             print(f"skip: {path} is not present on this machine", flush=True)
             continue
-        print(f"rewriting {path}", flush=True)
+        print(
+            f"rewriting {path}: btrfs prints nothing while it works, so the "
+            f"result and the time it took appear when this step ends",
+            flush=True,
+        )
         code = run_step(
             [
                 "btrfs",

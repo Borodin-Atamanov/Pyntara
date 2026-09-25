@@ -240,39 +240,41 @@ def _ensure_point(warnings: list[str]) -> bool:
     directory = _point_directory()
     if _name_in_listing(directory):
         _log(f"save point already stored: {directory}")
-        _report_writable_point(directory, warnings)
+        _verify_point_is_read_only(directory, warnings)
         return False
     if not _snapshot(
         setup_values.ROOT_MOUNT_POINT, directory, read_only=True, warnings=warnings
     ):
         return False
     _log(f"save point stored: {directory}")
-    read_only = _read_only(directory)
-    if read_only is not True:
-        warnings.append(
-            f"the save point {directory} does not answer that it is read only "
-            f"({read_only}), so check it with 'btrfs property get {directory} ro'"
-        )
-        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+    _verify_point_is_read_only(directory, warnings)
     return True
 
 
-def _report_writable_point(directory: Path, warnings: list[str]) -> None:
+def _verify_point_is_read_only(directory: Path, warnings: list[str]) -> None:
     """Report a save point that does not answer that it is read only.
 
     A point that can be written is not a point: a session started from it would
-    change the state the user returns to. The section reports it and leaves the
-    subvolume alone, because writing the property of an existing point is a
-    change to the state the user keeps.
+    change the state the user returns to, and a machine that cannot answer the
+    query leaves the user without the assurance that the point is safe. The
+    section reports both cases and leaves the subvolume alone, because writing
+    the property of an existing point is a change to the state the user keeps.
     """
 
     read_only = _read_only(directory)
+    if read_only is True:
+        return
     if read_only is False:
         warnings.append(
             f"the save point {directory} is not read only, so a session started "
             f"from it would change it"
         )
-        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+    else:
+        warnings.append(
+            f"the save point {directory} does not answer whether it is read "
+            f"only, so check it with 'btrfs property get {directory} ro'"
+        )
+    _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
 
 
 def _ensure_work_copy(warnings: list[str]) -> bool:

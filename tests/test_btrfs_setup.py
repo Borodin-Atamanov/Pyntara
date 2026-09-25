@@ -362,13 +362,6 @@ def test_btrfs_setup_reports_a_generator_that_cannot_be_built(
     assert any("menu generator" in warning for warning in result.warnings)
 
 
-def test_btrfs_setup_writes_the_compression_option_on_the_mounted_subvolumes() -> None:
-    # The compression of the machine is one fact, and the option the fstab
-    # receives is the option the recompression section rewrites with.
-    assert values.COMPRESSION_OPTION_ASSIGNMENT.startswith("compress=")
-    assert values.COMPRESSED_MOUNT_POINTS == ("/", "/home")
-
-
 def test_btrfs_setup_depends_on_the_extra_repositories() -> None:
     # The generator is built from sources and its tools come from the extra
     # archive components, so the section runs after the repositories are on.

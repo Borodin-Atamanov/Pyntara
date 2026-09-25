@@ -412,6 +412,20 @@ def test_recompress_belongs_to_every_install_mode() -> None:
     assert records["btrfs_recompress"].modes == tasks_values.MODES
 
 
+def test_the_recompression_writes_the_compression_the_storage_setup_declares() -> None:
+    # One machine has one compression: the option the fstab lines receive and
+    # the option the one-off rewrite writes are the same fact, so the two
+    # sections read it from one place. A drift here would rewrite the machine
+    # with another compression than the one it mounts with.
+    option = setup_values.COMPRESSION_OPTION_ASSIGNMENT
+
+    assert option.startswith("compress=")
+    algorithm, _, level = option.split("=", 1)[1].partition(":")
+    assert values.COMPRESSION_ALGORITHM == algorithm
+    assert values.COMPRESSION_LEVEL == int(level)
+    assert values.DEFRAGMENTED_MOUNT_POINTS == setup_values.COMPRESSED_MOUNT_POINTS
+
+
 def test_the_setup_values_are_read_by_the_recompress_section() -> None:
     # The sections share the storage facts through the values of the setup
     # section, so a rename there is caught here instead of on a target machine.
