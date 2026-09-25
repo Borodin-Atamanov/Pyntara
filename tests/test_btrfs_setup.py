@@ -450,12 +450,14 @@ def test_btrfs_setup_keeps_the_swap_area_when_it_cannot_clear_it(
     # A swap file that cannot be removed would stay inside the root subvolume
     # and disappear behind the mount of the new subvolume, with its size still
     # allocated, so the section reports the file and leaves the swap area where
-    # it is instead of hiding it.
+    # it is instead of hiding it. The swap it stopped for the removal is started
+    # again: the machine keeps its swap whatever the outcome.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(
         monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_THE_SUBVOLUMES
     )
+    monkeypatch.setattr(btrfs_setup, "service_is_active", lambda unit, timeout: True)
 
     def refuse(swapfile_path: Path, warnings: list[str]) -> bool:
         warnings.append(f"the swap file {swapfile_path} could not be removed")
@@ -472,6 +474,8 @@ def test_btrfs_setup_keeps_the_swap_area_when_it_cannot_clear_it(
     fstab = machine.fstab.read_text(encoding="utf-8")
     assert values.SWAP_SUBVOLUME_NAME not in fstab
     assert machine.maintenance.read_text(encoding="utf-8") != MAINTENANCE_TEXT
+    assert ["systemctl", "stop", swapfile_values.SERVICE_UNIT_NAME] in machine.calls
+    assert ["systemctl", "start", swapfile_values.SERVICE_UNIT_NAME] in machine.calls
 
 
 def test_btrfs_setup_reports_a_generator_that_cannot_be_built(

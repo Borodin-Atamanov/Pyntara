@@ -243,19 +243,20 @@ def _ensure_swap_subvolume(
     changed = False
     if swap_was_active:
         changed = _systemctl(values.SYSTEMCTL_STOP_COMMAND, swap_unit, warnings)
-    if not _remove_swap_file_of_the_root_subvolume(swapfile_path, warnings):
-        return changed
-    changed = (
-        _ensure_subvolume_mounted(
-            mount,
-            subvolume_name=values.SWAP_SUBVOLUME_NAME,
-            mount_point=mount_point,
-            warnings=warnings,
-        )
-        or changed
-    )
-    if swap_was_active:
-        _systemctl(values.SYSTEMCTL_START_COMMAND, swap_unit, warnings)
+    try:
+        if _remove_swap_file_of_the_root_subvolume(swapfile_path, warnings):
+            changed = (
+                _ensure_subvolume_mounted(
+                    mount,
+                    subvolume_name=values.SWAP_SUBVOLUME_NAME,
+                    mount_point=mount_point,
+                    warnings=warnings,
+                )
+                or changed
+            )
+    finally:
+        if swap_was_active:
+            _systemctl(values.SYSTEMCTL_START_COMMAND, swap_unit, warnings)
     return changed
 
 
@@ -281,7 +282,8 @@ def _remove_swap_file_of_the_root_subvolume(
         warnings.append(
             f"the swap file {swapfile_path} lies inside the root subvolume and "
             f"could not be removed ({exc}), so the swap area stays inside that "
-            f"subvolume and the save point needs an inactive swap to be taken"
+            f"subvolume: a save point of that root needs an inactive swap to "
+            f"be taken"
         )
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
