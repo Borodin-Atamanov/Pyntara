@@ -182,13 +182,18 @@ SETTINGS_RESET_COMMAND: tuple[str, ...] = (
 # Command that tells whether the browser runs; {process_name} is PROCESS_NAME.
 PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
-# Command that reports the mount that contains a path, used to confirm the
-# profile mirror; {path} is the path to inspect.
+# Command that reports the mount point that contains a path, used to confirm
+# the profile mirror; {path} is the path to inspect. Only the target is read:
+# a bind mount of a directory that lies on a btrfs subvolume reports its
+# filesystem root with the subvolume prefix (/@home/i/.config/google-chrome for
+# /home/i/.config/google-chrome), so that root never equals the plain path and
+# a check comparing them would report every correct mirror as unmounted. The
+# identity of the two directories is proven by their inode instead.
 MOUNT_CHECK_COMMAND: tuple[str, ...] = (
     "findmnt",
     "--noheadings",
     "--output",
-    "TARGET,FSROOT",
+    "TARGET",
     "--target",
     "{path}",
 )

@@ -267,9 +267,12 @@ def _fake_run_factory(
     them to the keyring, dpkg-query answers the install state, apt-get and
     git succeed, pgrep answers the Chrome running state, ss answers the
     listener question of the local proxy and of the DevTools port, findmnt
-    reports the mirror as a bind mount of the profile directory and runuser
-    succeeds. Failure knobs raise CalledProcessError for curl, apt and git;
-    the listening and mounting knobs answer the readiness questions.
+    reports the mount point that contains a path, the mirror answers as a
+    bind mount of the profile directory and runuser succeeds. Failure knobs
+    raise CalledProcessError for curl, apt and git; the listening and
+    mounting knobs answer the readiness questions. A mirror_source names
+    another directory the mirror is mounted from, so the mount is a mount
+    point that is not the profile.
     """
 
     calls: list[list[str]] = []
@@ -320,16 +323,18 @@ def _fake_run_factory(
             )
         if name == "findmnt":
             if not mirror_mounted:
-                return _FakeProc(0, "/ /\n")
-            profile_dir = mirror_source or str(
-                Path(command[-1]).parent / "google-chrome"
-            )
-            return _FakeProc(0, f"{command[-1]} {profile_dir}\n")
+                return _FakeProc(0, f"{Path(command[-1]).parent}\n")
+            return _FakeProc(0, f"{command[-1]}\n")
         if name == "runuser":
             return _FakeProc(0, "")
         return _FakeProc(0, "")
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        chrome_setup,
+        "_same_directory",
+        lambda left, right: mirror_mounted and not mirror_source,
+    )
     return calls
 
 
@@ -543,6 +548,39 @@ def test_mirror_that_is_not_mounted_keeps_the_user_data_dir_flag_out(
     assert "--user-data-dir" not in override_text
     assert PROXY_FLAG in override_text
     assert CDP_FLAGS in override_text
+
+
+def test_the_mirror_check_reads_the_mount_point_and_the_inode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A bind mount of a directory that lies on a btrfs subvolume reports its
+    # filesystem root with the subvolume prefix (/@home/i/.config/google-chrome
+    # for /home/i/.config/google-chrome), so a check that compared that root
+    # with the plain profile path reported every correct mirror as unmounted
+    # and Chrome was started without --user-data-dir on the target machine.
+    # The check reads the mount point and the identity of the two directories.
+    profile_dir = tmp_path / "google-chrome"
+    profile_dir.mkdir()
+    mirror_path = tmp_path / "google-chrome-cdp"
+    mirror_path.symlink_to(profile_dir)
+
+    def fake_mount_check(command: list[str], **kwargs: object) -> _FakeProc:
+        # Every path answers as its own mount point, so the identity of the
+        # two directories is the only thing the check decides on.
+        return _FakeProc(0, f"{command[-1]}\n")
+
+    monkeypatch.setattr(chrome_setup, "run_command", fake_mount_check)
+    assert chrome_setup._mirror_is_mounted(profile_dir, mirror_path, 5) is True
+    other_dir = tmp_path / "other-directory"
+    other_dir.mkdir()
+    assert chrome_setup._mirror_is_mounted(profile_dir, other_dir, 5) is False
+    # A path that is not a mount point is not the mirror, whatever it holds.
+    monkeypatch.setattr(
+        chrome_setup,
+        "run_command",
+        lambda *args, **kwargs: _FakeProc(0, f"{tmp_path}\n"),
+    )
+    assert chrome_setup._mirror_is_mounted(profile_dir, mirror_path, 5) is False
 
 
 def test_cdp_listener_warning_when_chrome_runs_without_the_listener(

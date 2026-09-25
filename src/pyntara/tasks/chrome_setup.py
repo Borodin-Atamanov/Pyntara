@@ -388,16 +388,31 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     return True, None
 
 
+def _same_directory(left: Path, right: Path) -> bool:
+    """True when two paths name the same directory.
+
+    A bind mount shares the device and the inode of the directory it mounts,
+    so the two paths of a correct mirror answer the same pair whatever
+    filesystem carries them, while a copy or a second directory answers a
+    different one. A path that cannot be inspected answers False.
+    """
+
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
 def _mirror_is_mounted(profile_dir: Path, mirror_path: Path, timeout: float) -> bool:
     """True when the mirror path is a bind mount of the live profile.
 
-    findmnt answers the mount that contains the target path: TARGET is that
-    mount point and FSROOT is the directory inside the mounted filesystem the
-    mount starts at. A bind mount of the profile shows the mirror path as the
-    mount point and the profile directory as the filesystem root, while a
-    plain directory reports the mount that encloses it. The source column is
-    not used because findmnt renders a bind mount source as the device with
-    the subdirectory in brackets.
+    findmnt answers the mount that contains the target path, so the mirror is
+    a mount point when it reports the mirror path itself. The filesystem root
+    is not compared: a bind mount of a directory on a btrfs subvolume reports
+    it with the subvolume prefix (a mirror of /home/i/.config/google-chrome
+    reports /@home/i/.config/google-chrome), so the same directory would look
+    like another one and every correct mirror would be reported unmounted. The
+    identity of the two directories is proven by their inode instead.
     """
 
     result = run_command(
@@ -408,12 +423,9 @@ def _mirror_is_mounted(profile_dir: Path, mirror_path: Path, timeout: float) -> 
     )
     if result.returncode != 0:
         return False
-    fields = trim_whitespace(result.stdout).split()
-    return (
-        len(fields) == 2
-        and fields[0] == str(mirror_path)
-        and fields[1] == str(profile_dir)
-    )
+    if trim_whitespace(result.stdout) != str(mirror_path):
+        return False
+    return _same_directory(profile_dir, mirror_path)
 
 
 def _render_mount_unit(
