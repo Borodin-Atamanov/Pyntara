@@ -24,8 +24,11 @@ substitutions of the engine table, so the client names no interface of the
 desktop itself.
 """
 
+from __future__ import annotations
+
 import json
 import sys
+from typing import Any
 
 import dbus
 from PyQt6.QtGui import QKeySequence
@@ -34,10 +37,12 @@ bus = dbus.SessionBus()
 daemon = bus.get_object("$kglobalaccel_bus_name", "$kglobalaccel_object_path")
 iface = dbus.Interface(daemon, "$kglobalaccel_interface_name")
 
-known = {}
+# The action names the daemon knows, per component, remembered because the
+# question travels to the daemon and a payload may name one component twice.
+known: dict[str, set[str]] = {}
 
 
-def combined_code(text):
+def combined_code(text: str) -> int | None:
     """The combined Qt key code of a portable combination, or None.
 
     Qt reads the same spellings the KDE files store. A text Qt cannot
@@ -48,11 +53,11 @@ def combined_code(text):
     sequence = QKeySequence(text)
     if sequence.count() == 0:
         return None
-    code = sequence[0].toCombined()
+    code: int = sequence[0].toCombined()
     return code if code > 0 else None
 
 
-def key_sequence(code):
+def key_sequence(code: int) -> dbus.Struct:
     """One key sequence as the daemon marshals it: a four int array."""
 
     return dbus.Struct(
@@ -71,7 +76,7 @@ def key_sequence(code):
     )
 
 
-def action_id(change, action):
+def action_id(change: dict[str, Any], action: str) -> list[str]:
     """The four parts the daemon addresses an action by.
 
     The unique parts select the action and they are unique inside the
@@ -79,16 +84,16 @@ def action_id(change, action):
     one as well; a change may name the friendly component explicitly.
     """
 
-    component = change["component_unique"]
+    component = str(change["component_unique"])
     return [
         component,
         action,
-        change.get("component_friendly") or component,
+        str(change.get("component_friendly") or component),
         action,
     ]
 
 
-def known_actions(component):
+def known_actions(component: str) -> set[str]:
     """The unique action names the daemon knows for one component."""
 
     if component not in known:
@@ -98,7 +103,7 @@ def known_actions(component):
     return known[component]
 
 
-def current_keys(action):
+def current_keys(action: list[str]) -> list[int]:
     """The combined codes one action holds now.
 
     A code of zero is the placeholder of a slot the daemon granted
@@ -106,7 +111,7 @@ def current_keys(action):
     caller compares what the action really holds.
     """
 
-    codes = []
+    codes: list[int] = []
     for sequence in iface.shortcutKeys(action):
         code = int(sequence[0][0])
         if code and code not in codes:
@@ -114,7 +119,7 @@ def current_keys(action):
     return codes
 
 
-def give_keys(action, codes):
+def give_keys(action: list[str], codes: list[int]) -> None:
     """Let one action own exactly the given codes and nothing else."""
 
     if codes:
@@ -124,15 +129,20 @@ def give_keys(action, codes):
     iface.setForeignShortcutKeys(action, keys)
 
 
-def owner_of(code):
+def owner_of(code: int) -> list[str] | None:
     """The action that holds one combination now, or None."""
 
     result = list(iface.actionList(key_sequence(code)))
     return [str(part) for part in result] if result else None
 
 
-def take_from_owner(code, action):
-    """Free one combination from the action that holds it, if a stranger."""
+def take_from_owner(code: int, action: str) -> None:
+    """Free one combination from the action that holds it, if a stranger.
+
+    The owner is addressed by its four parts while the payload names the
+    action of the change alone, so the second part of the owner is what
+    is compared with that name.
+    """
 
     owner = owner_of(code)
     if not owner or owner[1] == action:
@@ -142,11 +152,11 @@ def take_from_owner(code, action):
 
 
 payload = json.loads(sys.argv[1])
-results = []
+results: list[dict[str, Any]] = []
 for change in payload["changes"]:
-    action = change["action"]
+    action: str = change["action"]
     target = action_id(change, action)
-    report = {
+    report: dict[str, Any] = {
         "action": action,
         "requested": [],
         "before": [],

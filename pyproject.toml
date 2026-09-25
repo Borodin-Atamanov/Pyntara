@@ -72,6 +72,17 @@ files = ["src", "tests"]
 module = ["pykeepass.*", "reportlab.*"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# The clients under task_data/ import dbus-python, the gi bindings and PyQt6.
+# dbus-python has no stubs at all, and gi and PyQt6 are apt packages of the
+# target machine (python3-gi, python3-pyqt6) that the venv of the project
+# never installs, because those clients run under the interpreter of the
+# machine and not under the venv. Treating the three as Any lets the strict
+# check cover the client code itself; the call surface of those libraries
+# stays unchecked, and that is the honest price of the override.
+module = ["dbus", "dbus.*", "gi", "gi.*", "PyQt6", "PyQt6.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 # The secrets maintenance script is a standalone user-invoked utility, not
 # part of the application package, so its shebang state is not linted here.

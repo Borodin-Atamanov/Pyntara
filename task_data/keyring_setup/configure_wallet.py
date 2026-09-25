@@ -24,6 +24,8 @@ Every name and every constant of the service below is substituted by the task
 from the values module of the section, so none of them stands in this file.
 """
 
+from __future__ import annotations
+
 import hashlib
 import os
 import secrets
@@ -58,7 +60,7 @@ CALL_TIMEOUT_MILLISECONDS = 30000
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 
 
-def print_answer(outcome, detail=""):
+def print_answer(outcome: str, detail: str = "") -> None:
     """Print the answer of this client in the protocol the task reads."""
 
     print(f"{OUTCOME_KEY}={outcome}", flush=True)
@@ -66,7 +68,13 @@ def print_answer(outcome, detail=""):
         print(f"{DETAIL_KEY}={detail}", flush=True)
 
 
-def call(destination, path, interface, method, parameters):
+def call(
+    destination: str,
+    path: str,
+    interface: str,
+    method: str,
+    parameters: GLib.Variant,
+) -> GLib.Variant:
     """One call of the wallet service, answered or raised."""
 
     return bus.call_sync(
@@ -82,7 +90,7 @@ def call(destination, path, interface, method, parameters):
     )
 
 
-def wallet_name():
+def wallet_name() -> str:
     """The name of the wallet of this session, asked from the wallet service.
 
     The question itself starts the daemon that creates the wallet, so it comes
@@ -96,10 +104,10 @@ def wallet_name():
         WALLET_NAME_METHOD_NAME,
         GLib.Variant("()", ()),
     )
-    return answer.unpack()[0]
+    return str(answer.unpack()[0])
 
 
-def wallet_file_paths(name):
+def wallet_file_paths(name: str) -> tuple[str, str]:
     """The directory of the wallets and the file of the named wallet."""
 
     directory = os.path.join(
@@ -108,14 +116,14 @@ def wallet_file_paths(name):
     return directory, os.path.join(directory, name + WALLET_FILE_SUFFIX)
 
 
-def salt_file_path(name):
+def salt_file_path(name: str) -> str:
     """The file that carries the salt of the key of the named wallet."""
 
     directory, _ = wallet_file_paths(name)
     return os.path.join(directory, name + WALLET_SALT_SUFFIX)
 
 
-def read_or_write_salt(path):
+def read_or_write_salt(path: str) -> bytes:
     """The salt of the wallet, read when it exists and written when it does not.
 
     The salt of a wallet outlives its file, so an existing one is reused: a
@@ -141,7 +149,7 @@ def read_or_write_salt(path):
     return salt
 
 
-def key_for_empty_password(salt):
+def key_for_empty_password(salt: bytes) -> bytes:
     """The key the daemon and every program derive from the empty password."""
 
     return hashlib.pbkdf2_hmac(
@@ -149,7 +157,7 @@ def key_for_empty_password(salt):
     )
 
 
-def create_wallet(name, key):
+def create_wallet(name: str, key: bytes) -> None:
     """Create the wallet from a ready key, without any dialog."""
 
     call(
@@ -161,7 +169,7 @@ def create_wallet(name, key):
     )
 
 
-def main():
+def main() -> None:
     try:
         name = wallet_name()
         _, wallet_path = wallet_file_paths(name)

@@ -47,7 +47,7 @@ touched_python_files() {
         git status --porcelain --untracked-files=all 2>/dev/null | awk '{ print $NF }' || true
     } | sort -u | while IFS= read -r path; do
         case "$path" in
-            src/*.py|tests/*.py) if [[ -f "$path" ]]; then printf '%s\n' "$path"; fi ;;
+            src/*.py|tests/*.py|task_data/*.py) if [[ -f "$path" ]]; then printf '%s\n' "$path"; fi ;;
         esac
     done
 }
@@ -78,7 +78,7 @@ matching_test_modules() {
 
 if [[ "$fast_mode" -eq 0 ]]; then
     run_gate ruff uv run ruff check .
-    run_gate "mypy strict src" uv run mypy --strict src/
+    run_gate "mypy strict sources" uv run mypy --strict src/ task_data
     run_gate "mypy tests" uv run mypy
     run_gate pytest uv run pytest
     run_gate "bootstrap installer" bash tests/test_inst.sh
@@ -100,17 +100,17 @@ printf '  %s\n' "${touched[@]}"
 
 run_gate ruff uv run ruff check .
 
-touched_src=()
+touched_strict_sources=()
 touched_tests=()
 for path in "${touched[@]}"; do
     if [[ "$path" == tests/* ]]; then
         touched_tests+=("$path")
     else
-        touched_src+=("$path")
+        touched_strict_sources+=("$path")
     fi
 done
-if [[ "${#touched_src[@]}" -gt 0 ]]; then
-    run_gate "mypy strict touched sources" uv run mypy --strict "${touched_src[@]}"
+if [[ "${#touched_strict_sources[@]}" -gt 0 ]]; then
+    run_gate "mypy strict touched sources" uv run mypy --strict "${touched_strict_sources[@]}"
 fi
 if [[ "${#touched_tests[@]}" -gt 0 ]]; then
     run_gate "mypy touched tests" uv run mypy "${touched_tests[@]}"

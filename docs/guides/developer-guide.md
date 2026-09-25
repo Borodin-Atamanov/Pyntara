@@ -7,10 +7,11 @@ Install the interpreter of the distribution: the project requires Python 3.14, w
 Run uv sync to set up the Python environment.  
 Run uv run pytest to execute the test suite.  
 Run uv run ruff check . for linting.  
-Run uv run mypy --strict src/ for type checking.  
+Run uv run mypy --strict src/ task_data for type checking: the strict gate covers the application and the clients under task_data/, which are deployed to the target machine and run there.  
 Run scripts/check_gates.sh to run every gate of this page in one command: the linting, both type checks, the test suite and the five bash suites.  
 Add --fast to check only the touched python files and the test modules that match them by name, which is the command of the development loop; the full run stays the check before a landing.  
-The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default.
+The py.typed marker in src/pyntara lets the bare uv run mypy type-check the tests as well, so a type regression in a test helper is caught by default; that invocation keeps its own file list, src and tests, so the strict gate is what covers task_data/.  
+The dbus-python, gi and PyQt6 bindings the task_data clients import have no stubs the venv of the project could use, and dbus-python has none at all, so pyproject.toml declares them through ignore_missing_imports. The client code is checked; the call surface of those three libraries is not.
 
 The test suite runs in parallel through pytest-xdist: [tool.pytest.ini_options] addopts in pyproject.toml is -n auto, so uv run pytest spreads the tests over worker processes on its own, and the worker count follows the machine. Use uv run pytest -n 0 for a serial run when measuring where the time goes, because under workers the wall time no longer maps to a single test.
 

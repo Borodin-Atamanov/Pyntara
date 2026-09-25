@@ -29,7 +29,10 @@ import re
 import signal
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
+from types import FrameType
+from typing import Any
 
 import dbus
 import gi
@@ -120,7 +123,13 @@ class PortalClient:
         path = f"{DESKTOP_PATH}/request/{self._sender_name}/{token}"
         return (path, token)
 
-    def _dbus_screencast(self, method, callback, *args, options=None):
+    def _dbus_screencast(
+        self,
+        method: Any,
+        callback: Callable[..., None],
+        *args: Any,
+        options: dict[str, Any] | None = None,
+    ) -> None:
         (request_path, request_token) = self._new_request_path()
         self._bus.add_signal_receiver(
             callback, "Response", REQUEST_IFACE, DESKTOP_IFACE, request_path
@@ -129,7 +138,7 @@ class PortalClient:
         options["handle_token"] = request_token
         method(*(args + (options,)), dbus_interface=SCREENCAST_IFACE)
 
-    def create_session(self, callback):
+    def create_session(self, callback: Callable[..., None]) -> None:
         self._session_token_counter += 1
         token = f"u{self._session_token_counter}"
         self._dbus_screencast(
@@ -138,7 +147,9 @@ class PortalClient:
             options={"session_handle_token": token},
         )
 
-    def select_sources(self, callback, session: str, restore_token: str | None):
+    def select_sources(
+        self, callback: Callable[..., None], session: str, restore_token: str | None
+    ) -> None:
         options = {
             "multiple": False,
             "types": dbus.UInt32(1),
@@ -151,7 +162,7 @@ class PortalClient:
             self._portal.SelectSources, callback, session, options=options
         )
 
-    def start(self, callback, session: str):
+    def start(self, callback: Callable[..., None], session: str) -> None:
         self._dbus_screencast(self._portal.Start, callback, session, "")
 
     def open_pipewire_fd(self) -> int:
@@ -174,7 +185,7 @@ class PortalClient:
                     time.sleep(OPEN_PIPEWIRE_RETRY_DELAY_SECONDS)
         raise last_error  # type: ignore[misc]
 
-    def close_session(self):
+    def close_session(self) -> None:
         if not self._session:
             return
         try:
@@ -203,7 +214,7 @@ def load_token() -> str | None:
         return None
 
 
-def save_token(token: str):
+def save_token(token: str) -> None:
     path = token_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -247,9 +258,9 @@ def main(argv: list[str] | None = None) -> int:
     bus = dbus.SessionBus()
     client = PortalClient(bus)
     loop = GLib.MainLoop()
-    state: dict[str, object] = {}
+    state: dict[str, Any] = {}
 
-    def on_create(response, results):
+    def on_create(response: int, results: dict[str, Any]) -> None:
         if response != 0:
             print(
                 f"error: cannot create portal session ({response})", file=sys.stderr
@@ -261,14 +272,14 @@ def main(argv: list[str] | None = None) -> int:
         print("portal session created", file=sys.stderr)
         client.select_sources(on_select, str(state["session"]), load_token())
 
-    def on_select(response, results):
+    def on_select(response: int, results: dict[str, Any]) -> None:
         if response != 0:
             print(f"error: cannot select sources ({response})", file=sys.stderr)
             loop.quit()
             return
         client.start(on_start, str(state["session"]))
 
-    def on_start(response, results):
+    def on_start(response: int, results: dict[str, Any]) -> None:
         if response != 0:
             print("error: screen sharing was not granted", file=sys.stderr)
             loop.quit()
@@ -340,11 +351,11 @@ def main(argv: list[str] | None = None) -> int:
 
     stop = {"flag": False, "code": 0}
 
-    def on_signal(signum, frame):
+    def on_signal(signum: int, frame: FrameType | None) -> None:
         stop["flag"] = True
         GLib.idle_add(loop.quit)
 
-    def on_message(bus, msg):
+    def on_message(bus: Gst.Bus, msg: Gst.Message) -> bool:
         if msg.type == Gst.MessageType.ERROR:
             err, dbg = msg.parse_error()
             message = err.message
