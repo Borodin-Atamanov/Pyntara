@@ -2,11 +2,13 @@
 Description=System Metrics service
 # Deployed by Pyntara $version
 After=local-fs.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 StandardOutput=null
-Restart=on-failure
+Restart=always
+RestartSec=$restart_seconds
 $exec_lines
 
 [Install]

@@ -72,9 +72,10 @@ def test_ingest_moves_file_into_outbox_with_suffix(
     # removed after the ingest.
     _spool_config(monkeypatch, tmp_path)
     entry = _spool_file(tmp_path, "report.txt", "hello")
-    ingest_spool()
+    left_behind = ingest_spool()
     outbox = tmp_path / "metrics" / OUTBOX
     names = list(outbox.iterdir())
+    assert left_behind == 0
     assert len(names) == 1
     committed = names[0]
     assert committed.name.startswith("report.txt.")
@@ -294,3 +295,20 @@ def test_missing_spool_creates_queue_dirs(monkeypatch: pytest.MonkeyPatch, tmp_p
     ingest_spool()
     assert (tmp_path / "metrics" / OUTBOX).is_dir()
     assert (tmp_path / "metrics" / TEMP).is_dir()
+
+
+def test_ingest_counts_an_entry_that_could_not_be_published(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A publication that fails leaves the spool entry in place and is
+    # counted, so the caller can exit nonzero and let systemd retry the
+    # whole spool.
+    _spool_config(monkeypatch, tmp_path)
+    entry = _spool_file(tmp_path, "report.txt", "x")
+
+    def failing_link(source: object, target: object) -> None:
+        raise OSError("the outbox is not writable")
+
+    monkeypatch.setattr(metrics_commit.os, "link", failing_link)
+    assert ingest_spool() == 1
+    assert entry.exists()

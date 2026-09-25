@@ -26,6 +26,7 @@ import os
 import random
 import stat
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 import pyntara.metrics
@@ -36,7 +37,26 @@ from pyntara.values import engine as engine_values
 from pyntara.values import system_metrics_setup as values
 
 
-def dispatch_entries() -> None:
+@dataclass(frozen=True)
+class ChannelOutcome:
+    """Result of one drain of a channel queue.
+
+    attempts is the number of send attempts of the cycle and sent the number
+    of entries moved to the sent archive. problem carries one readable line
+    when the drain could not run because a local support is missing (the
+    channel directory or the runtime vault with its password), and None when
+    the drain ran, whatever the per-entry results. The send loop separates a
+    missing support, which a person or a later installer run repairs and
+    which therefore gets the short support pause, from a refused upload,
+    which the network ceiling already covers.
+    """
+
+    attempts: int
+    sent: int
+    problem: str | None
+
+
+def dispatch_entries() -> str | None:
     """Link every main_outbox entry into every channel queue.
 
     The channel queues and the sent archive are ensured with the
@@ -44,9 +64,11 @@ def dispatch_entries() -> None:
     link is created in every channel directory; only when all links
     succeeded is the name removed from main_outbox, so a channel that is
     enabled later receives only entries committed after its enablement.
-    A failed link journals the error, removes the links already created
-    for the entry in other channels and keeps the entry in main_outbox
-    for the next cycle.
+    A queue directory that cannot be prepared and a failed link both keep
+    the entry for the next cycle; the first such failure is returned as one
+    readable line instead of being journaled here, so the send loop reports
+    a broken queue once and retries with the support pause. None means the
+    dispatch ran.
     """
 
     root = values.SYSTEM_METRICS_DIR
@@ -54,21 +76,29 @@ def dispatch_entries() -> None:
     channels = [root / values.GOOGLE_SCRIPT_DIR]
     sent = root / values.MAIN_SENT_DIR
     for directory in (outbox, sent, *channels):
-        directory.mkdir(
-            mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True
-        )
-    for entry in sorted(outbox.iterdir()):
+        try:
+            directory.mkdir(
+                mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True
+            )
+        except OSError as exc:
+            return f"cannot prepare the System Metrics directory {directory}: {exc}"
+    try:
+        entries = sorted(outbox.iterdir())
+    except OSError as exc:
+        return f"cannot list the System Metrics outbox {outbox}: {exc}"
+    problem: str | None = None
+    for entry in entries:
         linked: list[Path] = []
         for channel in channels:
             target = channel / entry.name
             try:
                 os.link(entry, target)
             except OSError as exc:
-                _log(
-                    f"dispatching {entry.name} into {channel}: failed: {exc}, "
-                    "keeping it",
-                    priority=engine_values.ERROR_PRIORITY,
-                )
+                if problem is None:
+                    problem = (
+                        f"dispatching {entry.name} into {channel}: failed: {exc}, "
+                        "keeping it"
+                    )
                 for created in linked:
                     created.unlink(missing_ok=True)
                 break
@@ -76,9 +106,10 @@ def dispatch_entries() -> None:
         else:
             entry.unlink(missing_ok=True)
             _log(f"dispatched {entry.name} into the channel queues")
+    return problem
 
 
-def send_google_queue(single_random: bool = False) -> tuple[int, int]:
+def send_google_queue(single_random: bool = False) -> ChannelOutcome:
     """Drain the Google Drive channel queue into the web app.
 
     Every regular non-empty entry no larger than the configured limit is
@@ -87,9 +118,10 @@ def send_google_queue(single_random: bool = False) -> tuple[int, int]:
     An OK response moves the entry to main_sent; an ERROR response, a
     curl failure or missing credentials keep every entry for the next
     cycle. Each entry is handled independently, so one failure never
-    stops the drain. The function returns the number of send attempts
-    and the number of entries moved to main_sent; a skipped entry is not
-    an attempt. In the retry mode (single_random) exactly one randomly
+    stops the drain. The outcome carries the number of send attempts and
+    the number of entries moved to main_sent, where a skipped entry is not
+    an attempt, and one readable line when a local support is missing. In
+    the retry mode (single_random) exactly one randomly
     chosen uploadable entry is attempted, so one permanently rejected
     entry never blocks the drain of the rest
     (docs/spec/system-metrics.md, section Schedule and retry). The
@@ -99,13 +131,23 @@ def send_google_queue(single_random: bool = False) -> tuple[int, int]:
 
     channel = values.SYSTEM_METRICS_DIR / values.GOOGLE_SCRIPT_DIR
     sent = values.SYSTEM_METRICS_DIR / values.MAIN_SENT_DIR
-    sent.mkdir(mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True)
+    try:
+        sent.mkdir(mode=values.SYSTEM_METRICS_DIR_MODE, parents=True, exist_ok=True)
+    except OSError as exc:
+        return ChannelOutcome(
+            0, 0, f"google script channel: cannot prepare {sent}: {exc}"
+        )
     if not channel.is_dir():
-        _log(f"google script channel: queue {channel} missing, skipping")
-        return 0, 0
+        return ChannelOutcome(0, 0, f"google script channel: queue {channel} missing")
+    try:
+        ordered = _ordered_entries(channel, values.SEND_ORDER)
+    except OSError as exc:
+        return ChannelOutcome(
+            0, 0, f"google script channel: cannot list {channel}: {exc}"
+        )
     entries = [
         entry
-        for entry in _ordered_entries(channel, values.SEND_ORDER)
+        for entry in ordered
         if _entry_uploadable(
             entry,
             values.MAX_QUEUE_FILE_SIZE_BYTES,
@@ -113,57 +155,51 @@ def send_google_queue(single_random: bool = False) -> tuple[int, int]:
         )
     ]
     if not entries:
-        return 0, 0
+        return ChannelOutcome(0, 0, None)
     credentials = _google_script_credentials()
-    if credentials is None:
-        _log("google script channel: no credentials, skipping the drain")
-        return 0, 0
+    if isinstance(credentials, str):
+        return ChannelOutcome(0, 0, credentials)
     url, key = credentials
     if single_random:
         chosen = random.choice(entries)
-        return 1, 1 if _send_entry(chosen, url, key, sent) else 0
+        return ChannelOutcome(
+            1, 1 if _send_entry(chosen, url, key, sent) else 0, None
+        )
     attempts = 0
     sent_count = 0
     for entry in entries:
         attempts += 1
         if _send_entry(entry, url, key, sent):
             sent_count += 1
-    return attempts, sent_count
+    return ChannelOutcome(attempts, sent_count, None)
 
 
-def _google_script_credentials() -> tuple[str, str] | None:
-    """The Google web app url and auth key from the runtime vault, or None.
+def _google_script_credentials() -> tuple[str, str] | str:
+    """The Google web app url and auth key, or the reason they are absent.
 
     The entry whose title comes from system_metrics_setup
     .google_script_key_entry_title carries the web app endpoint in the
     url field and the shared auth key in the password field
     (docs/spec/secrets-model.md). A vault that does not open, a missing
-    entry or an empty field are journaled and None is returned, so the
-    sender skips the drain instead of failing the service loop. The
-    auth key never appears in any message.
+    entry or an empty field is returned as one readable line instead of
+    being journaled here, so the send loop reports a missing support once
+    and not every cycle; the auth key never appears in the line. The
+    successful answer is the (url, key) pair.
     """
 
-    kp = pyntara.metrics.open_runtime_vault()
+    kp, reason = pyntara.metrics.open_runtime_vault_with_reason()
     if kp is None:
-        return None
+        return reason or "the runtime vault is unavailable"
     title = values.GOOGLE_SCRIPT_KEY_ENTRY_TITLE
     entry = kp.find_entries(
         title=title, group=kp.root_group, recursive=False, first=True
     )
     if entry is None:
-        _log(
-            f"google script channel: entry {title!r} not found in the runtime vault",
-            priority=engine_values.ERROR_PRIORITY,
-        )
-        return None
+        return f"google script channel: entry {title!r} not found in the runtime vault"
     url = (entry.url or "").strip()
     key = (entry.password or "").strip()
     if not url or not key:
-        _log(
-            f"google script channel: entry {title!r} has an empty url or password",
-            priority=engine_values.ERROR_PRIORITY,
-        )
-        return None
+        return f"google script channel: entry {title!r} has an empty url or password"
     return url, key
 
 

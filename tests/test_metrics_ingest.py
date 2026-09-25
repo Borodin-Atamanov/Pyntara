@@ -41,13 +41,31 @@ def test_main_reports_a_failed_ingest_in_one_line(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    # A failure while the ingest works is reported in one line, so the
+    # A failure while the ingest works is reported in one line and exits
+    # nonzero, so the systemd restart policy retries the spool; the
     # journal of the machine never carries a traceback.
     def fail() -> None:
         raise OSError("the spool is not readable")
 
     monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", fail)
-    main()
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+    assert excinfo.value.code == 1
     captured = capsys.readouterr()
     assert "error: the ingest failed: the spool is not readable" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_main_exits_nonzero_when_an_entry_is_left_behind(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A run that could not publish an entry exits nonzero, so the systemd
+    # restart policy retries the whole spool instead of waiting for the
+    # next file to appear beside the stuck one.
+    monkeypatch.setattr("pyntara.metrics_ingest.ingest_spool", lambda: 2)
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "left 2 spool entries unpublished" in captured.err

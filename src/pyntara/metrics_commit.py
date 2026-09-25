@@ -63,8 +63,8 @@ def _ensure_dirs(root: Path, outbox: Path, temp: Path, mode: int) -> None:
         directory.mkdir(mode=mode, parents=True, exist_ok=True)
 
 
-def ingest_spool() -> None:
-    """Move every spool file into the queue; log each action.
+def ingest_spool() -> int:
+    """Move every spool file into the queue; return the entries left behind.
 
     Each spool entry that is a regular non-empty file no larger than
     max_queue_file_size_bytes is published into main_outbox and then
@@ -72,7 +72,10 @@ def ingest_spool() -> None:
     commit command temporaries and are skipped. Rejected entries (not
     regular, empty, oversized) are removed from the spool and reported
     in the journal; a failed publication leaves the spool entry in place
-    so the next ingest run retries it.
+    so the next ingest run retries it, and the returned count is the
+    number of such entries, so the caller can report a real failure and
+    let systemd retry the whole spool instead of waiting for the next
+    file to appear.
     """
 
     spool_dir = values.SPOOL_DIR
@@ -80,7 +83,8 @@ def ingest_spool() -> None:
     _ensure_dirs(root, outbox, temp, values.SYSTEM_METRICS_DIR_MODE)
     if not spool_dir.is_dir():
         _log(f"ingesting spool {spool_dir}: directory missing, nothing to do")
-        return
+        return 0
+    left_behind = 0
     for entry in sorted(spool_dir.iterdir()):
         if entry.name.startswith(values.SPOOL_TEMP_PREFIX):
             continue
@@ -97,8 +101,9 @@ def ingest_spool() -> None:
                     f"ingesting spool entry {entry}: cannot remove it: {exc}",
                     priority=engine_values.ERROR_PRIORITY,
                 )
+                left_behind += 1
             continue
-        _publish_entry(
+        if not _publish_entry(
             entry,
             outbox,
             temp,
@@ -109,7 +114,9 @@ def ingest_spool() -> None:
             values.QUEUE_LINK_ATTEMPTS,
             engine_values.NANOSECONDS_PER_SECOND,
             engine_values.ERROR_PRIORITY,
-        )
+        ):
+            left_behind += 1
+    return left_behind
 
 
 def _reject_reason(entry: Path, limit: int) -> str | None:
@@ -144,7 +151,7 @@ def _publish_entry(
     link_attempts: int,
     nanoseconds_per_second: int,
     error_priority: int,
-) -> None:
+) -> bool:
     """Publish one spool entry into the queue and remove it from the spool.
 
     The entry is copied into the queue temp directory under a name whose
@@ -155,12 +162,15 @@ def _publish_entry(
     removed from the spool. A queue name collision tries another suffix.
     On any failure the spool entry is left in place so the next ingest
     run retries it; every successful ingest is journaled at the progress
-    level and every failure at the error level of the config.
+    level and every failure at the error level of the config. The answer
+    is True when the entry was published and removed, False when it was
+    left for the next run.
     """
 
-    commit_time = entry.stat().st_mtime
     temp_path = temp / f".ingest-{secrets.token_hex(temp_name_random_bytes)}"
+    published = False
     try:
+        commit_time = entry.stat().st_mtime
         shutil.copy2(entry, temp_path)
         os.chmod(temp_path, file_mode)
         commit_time_ns = int(commit_time * nanoseconds_per_second)
@@ -179,12 +189,14 @@ def _publish_entry(
             temp_path.unlink(missing_ok=True)
             entry.unlink(missing_ok=True)
             _log(f"ingested spool entry {entry} into {entry_path}")
-            return
-        _log(
-            f"ingesting spool entry {entry}: cannot allocate a unique queue "
-            f"name after {link_attempts} attempts, leaving it",
-            priority=error_priority,
-        )
+            published = True
+            break
+        else:
+            _log(
+                f"ingesting spool entry {entry}: cannot allocate a unique queue "
+                f"name after {link_attempts} attempts, leaving it",
+                priority=error_priority,
+            )
     except OSError as exc:
         _log(
             f"ingesting spool entry {entry}: failed: {exc}, leaving it",
@@ -192,3 +204,4 @@ def _publish_entry(
         )
     finally:
         temp_path.unlink(missing_ok=True)
+    return published

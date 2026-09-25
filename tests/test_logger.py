@@ -20,6 +20,7 @@ from pathlib import Path
 import pytest
 
 from pyntara import logger
+from pyntara.metrics_send import ChannelOutcome
 from pyntara.models import TaskResult
 from pyntara.values import engine as engine_values
 
@@ -510,7 +511,7 @@ def test_a_service_entry_point_keeps_the_journal_off(
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda: None)
     monkeypatch.setattr(
         "pyntara.metrics_send.send_google_queue",
-        lambda single_random=False: (0, 0),
+        lambda single_random=False: ChannelOutcome(0, 0, None),
     )
     with pytest.raises(KeyboardInterrupt):
         metrics.main()

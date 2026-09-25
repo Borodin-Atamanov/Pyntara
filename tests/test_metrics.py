@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from pyntara.metrics import main
+from pyntara.metrics_send import ChannelOutcome
 from pyntara.utils import backoff_delay
 from pyntara.values import system_metrics_setup as values
 
@@ -32,7 +33,7 @@ def test_main_journals_under_the_declared_service_identifier(
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", lambda: None)
     monkeypatch.setattr(
         "pyntara.metrics_send.send_google_queue",
-        lambda single_random=False: (0, 0),
+        lambda single_random=False: ChannelOutcome(0, 0, None),
     )
     with pytest.raises(KeyboardInterrupt):
         main()
@@ -58,9 +59,9 @@ def test_main_loops_with_base_pause(
     def fake_dispatch() -> None:
         dispatched.append(True)
 
-    def fake_send(single_random: bool = False) -> tuple[int, int]:
+    def fake_send(single_random: bool = False) -> ChannelOutcome:
         sent.append(int(single_random))
-        return 0, 0
+        return ChannelOutcome(0, 0, None)
 
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
@@ -104,9 +105,9 @@ def test_main_enters_retry_mode_and_grows_pauses(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(single_random: bool = False) -> tuple[int, int]:
+    def fake_send(single_random: bool = False) -> ChannelOutcome:
         modes.append(single_random)
-        return 1, 0
+        return ChannelOutcome(1, 0, None)
 
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
@@ -126,7 +127,12 @@ def test_main_resets_retry_mode_after_success(
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    results = [(1, 0), (1, 0), (1, 1), (1, 0)]
+    results = [
+        ChannelOutcome(1, 0, None),
+        ChannelOutcome(1, 0, None),
+        ChannelOutcome(1, 1, None),
+        ChannelOutcome(1, 0, None),
+    ]
     pauses: list[int] = []
 
     def fake_sleep(seconds: float) -> None:
@@ -137,7 +143,7 @@ def test_main_resets_retry_mode_after_success(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(single_random: bool = False) -> tuple[int, int]:
+    def fake_send(single_random: bool = False) -> ChannelOutcome:
         return results.pop(0)
 
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
@@ -158,7 +164,7 @@ def test_main_cycle_without_attempts_stays_normal(
     monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
     monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
     monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
-    results = [(0, 0), (1, 0)]
+    results = [ChannelOutcome(0, 0, None), ChannelOutcome(1, 0, None)]
     pauses: list[int] = []
 
     def fake_sleep(seconds: float) -> None:
@@ -169,7 +175,7 @@ def test_main_cycle_without_attempts_stays_normal(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(single_random: bool = False) -> tuple[int, int]:
+    def fake_send(single_random: bool = False) -> ChannelOutcome:
         return results.pop(0)
 
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
@@ -198,8 +204,8 @@ def test_main_caps_pause_at_maximum(
     def fake_dispatch() -> None:
         pass
 
-    def fake_send(single_random: bool = False) -> tuple[int, int]:
-        return 1, 0
+    def fake_send(single_random: bool = False) -> ChannelOutcome:
+        return ChannelOutcome(1, 0, None)
 
     monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
     monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
@@ -207,5 +213,83 @@ def test_main_caps_pause_at_maximum(
     with pytest.raises(KeyboardInterrupt):
         main()
     assert pauses == [2, 4, 8, 16, 16]
+
+
+def test_main_grows_the_pause_to_the_support_ceiling_and_reports_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A missing local support (a queue that cannot be prepared, a vault
+    # that does not open) is reported once when it appears and grows the
+    # pause to the shorter support ceiling, not the network ceiling, so a
+    # repaired machine is noticed within minutes instead of hours.
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "SUPPORT_RETRY_MAX_SECONDS", 8)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    pauses: list[int] = []
+    reported: list[str] = []
+
+    def fake_sleep(seconds: float) -> None:
+        pauses.append(int(seconds))
+        if len(pauses) == 4:
+            raise KeyboardInterrupt
+
+    def fake_dispatch() -> str | None:
+        return "cannot prepare the System Metrics directory /var/lib/pyntara/metrics"
+
+    monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
+    monkeypatch.setattr(
+        "pyntara.metrics._log",
+        lambda message, **kwargs: reported.append(message),
+    )
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
+    with pytest.raises(KeyboardInterrupt):
+        main()
+    assert pauses == [2, 4, 8, 8]
+    assert reported == [
+        "cannot prepare the System Metrics directory /var/lib/pyntara/metrics"
+    ]
+
+
+def test_main_reports_a_recovered_support_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The missing support is journaled once when it appears and once when
+    # it is over, never every cycle.
+    monkeypatch.setattr(values, "BACKOFF_BASE_SECONDS", 2)
+    monkeypatch.setattr(values, "BACKOFF_MULTIPLIER", 2)
+    monkeypatch.setattr(values, "SUPPORT_RETRY_MAX_SECONDS", 300)
+    monkeypatch.setattr(values, "BACKOFF_MAX_SECONDS", 14400)
+    problems: list[str | None] = [
+        "the support is missing",
+        "the support is missing",
+        None,
+    ]
+    reported: list[str] = []
+
+    def fake_dispatch() -> str | None:
+        return problems.pop(0)
+
+    def fake_sleep(seconds: float) -> None:
+        # The third cycle found the support back; stop after it slept.
+        if not problems:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("pyntara.metrics.time.sleep", fake_sleep)
+    monkeypatch.setattr(
+        "pyntara.metrics._log",
+        lambda message, **kwargs: reported.append(message),
+    )
+    monkeypatch.setattr("pyntara.metrics_send.dispatch_entries", fake_dispatch)
+    monkeypatch.setattr(
+        "pyntara.metrics_send.send_google_queue",
+        lambda single_random=False: ChannelOutcome(0, 0, None),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        main()
+    assert reported == [
+        "the support is missing",
+        "the missing System Metrics support is available again",
+    ]
 
 

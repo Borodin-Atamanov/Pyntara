@@ -160,7 +160,11 @@ def _render_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
+    return template.substitute(
+        exec_lines=f"ExecStart={command}",
+        version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
+    )
 
 
 def _render_ingest_service_unit(
@@ -182,7 +186,11 @@ def _render_ingest_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
+    return template.substitute(
+        exec_lines=f"ExecStart={command}",
+        version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
+    )
 
 
 def _render_ingest_path_unit(template_path: Path, spool_dir: Path, version: str) -> str:
@@ -216,7 +224,11 @@ def _render_collector_service_unit(
         )
     )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={command}", version=version)
+    return template.substitute(
+        exec_lines=f"ExecStart={command}",
+        version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
+    )
 
 
 def _render_collector_timer_unit(
@@ -528,6 +540,19 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(error)
             venv_changed = False
     changed = changed or venv_changed
+    if venv_changed and (
+        deployment.venv_package_version(
+            values.VENV_VERSION_COMMAND, venv_python, timeout
+        )
+        is None
+    ):
+        # The venv step reported success, so the interpreter must answer;
+        # when it does not, the gap is named instead of hidden, and a later
+        # installer run retries the step.
+        warnings.append(
+            f"the deployed interpreter {venv_python} still does not answer "
+            "after the venv step"
+        )
 
     units = (
         (service_name, service_unit),

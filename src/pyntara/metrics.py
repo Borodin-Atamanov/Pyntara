@@ -17,7 +17,6 @@ Google-only sending in a later stage (docs/spec/system-metrics.md).
 
 from __future__ import annotations
 
-import sys
 import time
 from pathlib import Path
 
@@ -47,91 +46,128 @@ def _read_password(path: Path) -> str | None:
         return None
 
 
-def open_runtime_vault() -> PyKeePass | None:
-    """Open the runtime vault with the local password, or None.
+def open_runtime_vault_with_reason() -> tuple[PyKeePass | None, str | None]:
+    """Open the runtime vault; return the vault or the reason it is closed.
 
-    A missing or empty vault, a missing or empty password file and a
-    vault that does not open with the password are all failures, each
-    journaled at system_metrics_setup.error_priority. The password never
-    appears in any message. The helper is the shared vault opener of the
-    System Metrics service: the channel senders read the runtime vault
-    through it. The vault and the password file are the values of the
-    local_vault_setup section, so the deployed commands take no argument.
+    A missing or empty vault, a missing or empty password file and a vault
+    that does not open with the password are all failures, and each is
+    returned as one readable line instead of being journaled here. The
+    caller decides what to do with the line: a one-shot reader journals it
+    at once, while the send loop reports it once per state change and not
+    every cycle. The password never appears in the line. The vault and the
+    password file are the values of the local_vault_setup section, so the
+    deployed commands take no argument.
     """
 
     vault = local_vault_values.LOCAL_VAULT_PATH
     password_path = local_vault_values.PASS_FILE_PATH
-    error_priority = values.ERROR_PRIORITY
     if not vault.is_file():
-        _log(f"opening runtime vault {vault}: absent", priority=error_priority)
-        return None
+        return None, f"opening runtime vault {vault}: absent"
     try:
         if vault.stat().st_size == 0:
-            _log(f"opening runtime vault {vault}: empty", priority=error_priority)
-            return None
+            return None, f"opening runtime vault {vault}: empty"
     except OSError:
-        _log(f"opening runtime vault {vault}: cannot stat", priority=error_priority)
-        return None
+        return None, f"opening runtime vault {vault}: cannot stat"
     password = _read_password(password_path)
     if password is None:
-        _log(
+        return None, (
             f"opening runtime vault {vault}: password file "
-            f"{password_path} missing or empty",
-            priority=error_priority,
+            f"{password_path} missing or empty"
         )
-        return None
     try:
-        return PyKeePass(str(vault), password=password)
+        return PyKeePass(str(vault), password=password), None
     except CredentialsError:
-        _log(
-            f"opening runtime vault {vault}: password does not match",
-            priority=error_priority,
-        )
-        return None
+        return None, f"opening runtime vault {vault}: password does not match"
     except Exception as exc:  # noqa: BLE001 - any open failure is a failed check
-        _log(
-            f"opening runtime vault {vault}: cannot open: {exc}",
-            priority=error_priority,
-        )
-        return None
+        return None, f"opening runtime vault {vault}: cannot open: {exc}"
+
+
+def open_runtime_vault() -> PyKeePass | None:
+    """Open the runtime vault and journal the reason it is closed.
+
+    The shared opener of the one-shot readers: the collector, the vault
+    backup and the channel senders that report a failure at once. The send
+    loop of the long-running service uses open_runtime_vault_with_reason
+    instead, so a missing support is journaled once per state change and
+    not every cycle.
+    """
+
+    kp, reason = open_runtime_vault_with_reason()
+    if reason is not None:
+        _log(reason, priority=values.ERROR_PRIORITY)
+    return kp
+
+
+def _dispatch_and_send(single_random: bool) -> tuple[str | None, int, int]:
+    """Run one dispatch and send cycle; return problem, attempts and sent.
+
+    A local support that is missing (the queue directory, the runtime vault
+    or the password that opens it) is returned as one line, so the loop can
+    report it once and retry with the steady support pause; the counts are
+    zero then. Any other failure of the cycle is returned the same way, so
+    a broken cycle never kills the service.
+    """
+
+    try:
+        problem = pyntara.metrics_send.dispatch_entries()
+        if problem is not None:
+            return problem, 0, 0
+        outcome = pyntara.metrics_send.send_google_queue(single_random=single_random)
+    except Exception as exc:  # noqa: BLE001 - a broken cycle must not kill the service
+        return f"the System Metrics cycle failed: {exc}", 0, 0
+    return outcome.problem, outcome.attempts, outcome.sent
 
 
 def main() -> None:
     """Run the dispatch and send loop until the service stops.
 
     The systemd unit runs this module with no argument: every value the
-    loop needs comes from the pyntara values package, which ships with
-    the deployed code, so the service never reads a config file. Every
-    cycle dispatches the committed entries into the channel queues and
-    drains the Google Drive channel; a failure of any step is journaled
-    and the loop continues with the next cycle. The pause after a cycle
-    is the retry backoff: a cycle with send attempts and no success grows
-    the pause geometrically from the configured base by the multiplier
-    until the ceiling, every other cycle resets the counter and waits the
-    base (docs/spec/system-metrics.md, section Schedule and retry).
+    loop needs comes from the pyntara values package, which ships with the
+    deployed code, so the service never reads a config file. Every cycle
+    dispatches the committed entries into the channel queues and drains the
+    Google Drive channel. Two kinds of failure drive two geometric pauses:
+    a cycle that made send attempts and stored nothing grows the pause from
+    the configured base by the multiplier until the network ceiling, while a
+    cycle that could not run because a local support is missing (the queue
+    directory, the runtime vault or its password) grows it until the shorter
+    support ceiling, which a repaired machine notices within minutes instead
+    of a whole network ceiling. A missing support is journaled once when it
+    appears and once when it is over, never every cycle. Every other cycle
+    resets the counter and waits the base
+    (docs/spec/system-metrics.md, section Schedule and retry).
     """
 
     configure_journal(values.SERVICE_JOURNAL_IDENTIFIER)
     failed_cycles = 0
+    last_problem: str | None = None
     while True:
-        try:
-            pyntara.metrics_send.dispatch_entries()
-            attempts, sent = pyntara.metrics_send.send_google_queue(
-                single_random=failed_cycles > 0
+        problem, attempts, sent = _dispatch_and_send(failed_cycles > 0)
+        if problem != last_problem:
+            if problem is None:
+                if last_problem is not None:
+                    _log("the missing System Metrics support is available again")
+            else:
+                _log(problem, priority=values.ERROR_PRIORITY)
+            last_problem = problem
+        if problem is not None:
+            failed_cycles += 1
+            pause = backoff_delay(
+                failed_cycles,
+                values.BACKOFF_BASE_SECONDS,
+                values.BACKOFF_MULTIPLIER,
+                values.SUPPORT_RETRY_MAX_SECONDS,
             )
-        except Exception as exc:  # noqa: BLE001 - a broken cycle must not kill the service
-            print(f"error: the cycle failed: {exc}", file=sys.stderr)
-            attempts, sent = 0, 0
-        if sent > 0 or attempts == 0:
+        elif sent > 0 or attempts == 0:
             failed_cycles = 0
+            pause = values.BACKOFF_BASE_SECONDS
         else:
             failed_cycles += 1
-        pause = backoff_delay(
-            failed_cycles,
-            values.BACKOFF_BASE_SECONDS,
-            values.BACKOFF_MULTIPLIER,
-            values.BACKOFF_MAX_SECONDS,
-        )
+            pause = backoff_delay(
+                failed_cycles,
+                values.BACKOFF_BASE_SECONDS,
+                values.BACKOFF_MULTIPLIER,
+                values.BACKOFF_MAX_SECONDS,
+            )
         time.sleep(pause)
 
 

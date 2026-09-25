@@ -31,11 +31,13 @@ UNIT_TEMPLATE = """\
 Description=System Metrics service
 # Deployed by Pyntara $version
 After=local-fs.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
 StandardOutput=null
-Restart=on-failure
+Restart=always
+RestartSec=$restart_seconds
 $exec_lines
 
 [Install]
@@ -47,9 +49,12 @@ INGEST_SERVICE_TEMPLATE = """\
 Description=System Metrics spool ingest
 # Deployed by Pyntara $version
 After=local-fs.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
+Restart=on-failure
+RestartSec=$restart_seconds
 $exec_lines
 """
 
@@ -71,10 +76,12 @@ COLLECTOR_SERVICE_TEMPLATE = """\
 Description=System Metrics report collector
 # Deployed by Pyntara $version
 After=local-fs.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
 Restart=on-failure
+RestartSec=$restart_seconds
 $exec_lines
 """
 
@@ -197,6 +204,7 @@ def _expected_service_unit(
     return Template(UNIT_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
         version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
 
 
@@ -215,6 +223,7 @@ def _expected_ingest_service_unit(
     return Template(INGEST_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
         version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
 
 
@@ -243,6 +252,7 @@ def _expected_collector_service_unit(
     return Template(COLLECTOR_SERVICE_TEMPLATE).substitute(
         exec_lines=f"ExecStart={command}",
         version=version,
+        restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
 
 
@@ -857,16 +867,20 @@ def test_permission_masks_come_from_the_config(tmp_path: Path) -> None:
     assert not system_metrics_setup._spool_dir_ok(spool, 0o1733, 0o777)
 
 
-def test_service_exec_line_comes_from_the_declared_value(
+def test_service_exec_line_and_restart_come_from_the_declared_values(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The line a deployed unit starts with is a declared value: another
-    # command is exactly what the unit runs, with the venv interpreter
-    # filling its placeholder.
+    # The line a deployed unit starts with and the pause before systemd
+    # starts it again are declared values: another command and another
+    # pause are exactly what the unit carries, with the venv interpreter
+    # filling the command placeholder, and the start limit is lifted so
+    # systemd never gives up on a missing support.
     monkeypatch.setattr(values, "SEND_SERVICE_COMMAND", ("myrun", "-m", "mymod"))
+    monkeypatch.setattr(values, "SERVICE_RESTART_SECONDS", 42)
     template = tmp_path / "system_metrics.service"
     template.write_text(
-        "[Service]\n$exec_lines\nRestart=on-failure\n",
+        "[Unit]\nStartLimitIntervalSec=0\n\n[Service]\n$exec_lines\n"
+        "Restart=always\nRestartSec=$restart_seconds\n",
         encoding="utf-8",
     )
     unit = system_metrics_setup._render_service_unit(
@@ -875,7 +889,9 @@ def test_service_exec_line_comes_from_the_declared_value(
         "0.3.516",
     )
     assert "ExecStart=myrun -m mymod" in unit
-    assert "Restart=on-failure" in unit
+    assert "StartLimitIntervalSec=0" in unit
+    assert "Restart=always" in unit
+    assert "RestartSec=42" in unit
 
 
 def test_collector_calendar_comes_from_the_config(tmp_path: Path) -> None:

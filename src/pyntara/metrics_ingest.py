@@ -22,17 +22,29 @@ def main() -> None:
 
     The ingest reads every path it needs from the declared values of
     pyntara.values.system_metrics_setup, so it takes no argument at all
-    and the unit starts it the same way whatever the machine carries.
+    and the unit starts it the same way whatever the machine carries. A
+    run that fails or leaves an entry unpublished exits nonzero with one
+    readable line, so the systemd restart policy retries the whole spool
+    instead of waiting for the next file to appear beside a stuck one.
     """
 
     configure_journal(values.SERVICE_JOURNAL_IDENTIFIER)
     try:
-        ingest_spool()
-    except Exception as exc:  # noqa: BLE001 - a failed run reports one line, never a traceback
+        left_behind = ingest_spool()
+    except Exception as exc:
+        # A failed run reports one line and exits nonzero, never a
+        # traceback, so systemd retries the whole spool.
         print(
             f"error: the ingest failed: {exc}",
             file=sys.stderr,
         )
+        raise SystemExit(1) from exc
+    if left_behind:
+        print(
+            f"error: the ingest left {left_behind} spool entries unpublished",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

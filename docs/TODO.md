@@ -2,21 +2,6 @@
 
 Planned future work. После реализации - удаляем из этого файла.
 
-## Make the System Metrics service survive a missing piece
-
-The service must collect and send on every machine and must not die when
-something it needs is absent or rejected. Today it stands on four supports: the
-deployment venv built with uv from the clone, the runtime vault and the password
-that opens it, the network, and the Google Drive channel whose queue drains
-through the deployed Google web app (the Telegram channel is not implemented
-yet). The collector is a timer and the ingest is an inotify path unit beside
-them. Task: walk every support, decide what the service does when that support
-is missing, unreadable, unreachable or refusing, and turn each case into a
-reported warning with a retry instead of a dead service or a silently lost
-report. Worth checking first: a machine without the venv, without the password
-file, without network, with a revoked Google deployment and with an unwritable
-queue directory (docs/spec/system-metrics.md).
-
 ## Bring the desktop settings to the running session
 
 The desktop tasks write config files, and a running KDE component that owns such

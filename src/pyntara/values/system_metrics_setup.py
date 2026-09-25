@@ -27,6 +27,14 @@ BACKOFF_BASE_SECONDS: int = 2
 BACKOFF_MULTIPLIER: int = 2
 BACKOFF_MAX_SECONDS: int = 14400
 
+# Ceiling of the pause of a cycle that failed because a local support is
+# missing: the queue directory cannot be used, or the runtime vault or the
+# password that opens it is absent or unreadable. Such a failure is repaired
+# by a person or by a later installer run, never by the network, so the loop
+# retries steadily and notices the repair within this bound instead of
+# waiting out the much longer ceiling of a failed upload.
+SUPPORT_RETRY_MAX_SECONDS: int = 300
+
 # Syslog priority of a failed vault open by the senders, 0 to 7.
 ERROR_PRIORITY: int = 3
 
@@ -103,6 +111,14 @@ SPOOL_DIR_PERMISSION_MASK: int = 0o7777
 # have to match.
 COMMAND_FILE_MODE: int = 0o755
 COMMAND_PERMISSION_MASK: int = 0o777
+
+# Pause before systemd starts a System Metrics unit again after it exited, in
+# seconds, and the start limit of the deployed units. The units carry
+# StartLimitIntervalSec=0, so systemd never gives up on a unit whose local
+# support is missing (for example the venv interpreter): the unit is retried
+# with this pause and every attempt is journaled, instead of the unit dying in
+# the failed state after a few quick starts.
+SERVICE_RESTART_SECONDS: int = 600
 
 # Names of the long-running service unit, the ingest oneshot service and the
 # ingest path unit the task manages.
@@ -505,6 +521,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "BACKOFF_BASE_SECONDS",
     "BACKOFF_MULTIPLIER",
     "BACKOFF_MAX_SECONDS",
+    "SUPPORT_RETRY_MAX_SECONDS",
     "ERROR_PRIORITY",
     "PYTHON_VERSION",
     "VENV_DIR",
@@ -527,6 +544,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "COMMAND_FILE_MODE",
     "COMMAND_PERMISSION_MASK",
     "SERVICE_UNIT_NAME",
+    "SERVICE_RESTART_SECONDS",
     "INGEST_SERVICE_UNIT_NAME",
     "INGEST_PATH_UNIT_NAME",
     "UNIT_TEMPLATE_FILE_NAME",

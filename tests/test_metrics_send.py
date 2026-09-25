@@ -165,7 +165,8 @@ def test_dispatch_failed_link_keeps_entry_in_outbox(
     channel = tmp_path / "metrics" / "google_script"
     channel.mkdir(parents=True)
     (channel / entry.name).mkdir()
-    dispatch_entries()
+    problem = dispatch_entries()
+    assert problem is not None
     assert entry.exists()
     assert len(list(channel.iterdir())) == 1
 
@@ -306,8 +307,9 @@ def test_send_without_vault_skips_without_upload(
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "report.txt", "x", time.time())
-    send_google_queue()
+    outcome = send_google_queue()
     assert calls == []
+    assert outcome.problem is not None
     assert entry.exists()
 
 
@@ -419,10 +421,11 @@ def test_send_returns_attempts_and_sent_counts(
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "a.txt", "1", time.time())
     _make_entry(channel, "b.txt", "2", time.time())
-    attempts, sent = send_google_queue()
+    outcome = send_google_queue()
     assert len(calls) == 2
-    assert attempts == 2
-    assert sent == 2
+    assert outcome.attempts == 2
+    assert outcome.sent == 2
+    assert outcome.problem is None
 
 
 def test_send_counts_partial_failure(
@@ -441,9 +444,10 @@ def test_send_counts_partial_failure(
     channel = tmp_path / "metrics" / "google_script"
     first = _make_entry(channel, "a.txt", "1", time.time())
     second = _make_entry(channel, "b.txt", "2", time.time())
-    attempts, sent = send_google_queue()
-    assert attempts == 2
-    assert sent == 1
+    outcome = send_google_queue()
+    assert outcome.attempts == 2
+    assert outcome.sent == 1
+    assert outcome.problem is None
     assert not first.exists()
     assert second.exists()
 
@@ -461,9 +465,9 @@ def test_send_retry_mode_attempts_one_random_entry(
     first = _make_entry(channel, "a.txt", "1", time.time())
     second = _make_entry(channel, "b.txt", "2", time.time())
     third = _make_entry(channel, "c.txt", "3", time.time())
-    attempts, sent = send_google_queue(single_random=True)
-    assert attempts == 1
-    assert sent == 1
+    outcome = send_google_queue(single_random=True)
+    assert outcome.attempts == 1
+    assert outcome.sent == 1
     assert len(calls) == 1
     assert _arg(calls[0], "filename=") == "b.txt"
     assert first.exists()
@@ -481,10 +485,11 @@ def test_send_retry_mode_failure_counts_one_attempt(
     calls = _fake_curl(monkeypatch, stdout="ERROR: Unauthorized")
     channel = tmp_path / "metrics" / "google_script"
     entry = _make_entry(channel, "a.txt", "1", time.time())
-    attempts, sent = send_google_queue(single_random=True)
+    outcome = send_google_queue(single_random=True)
     assert len(calls) == 1
-    assert attempts == 1
-    assert sent == 0
+    assert outcome.attempts == 1
+    assert outcome.sent == 0
+    assert outcome.problem is None
     assert entry.exists()
 
 
@@ -497,10 +502,11 @@ def test_send_retry_mode_without_vault_returns_zero_attempts(
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "a.txt", "1", time.time())
-    attempts, sent = send_google_queue(single_random=True)
+    outcome = send_google_queue(single_random=True)
     assert calls == []
-    assert attempts == 0
-    assert sent == 0
+    assert outcome.attempts == 0
+    assert outcome.sent == 0
+    assert outcome.problem is not None
 
 
 def test_send_retry_mode_without_uploadable_returns_zero_attempts(
@@ -513,7 +519,8 @@ def test_send_retry_mode_without_uploadable_returns_zero_attempts(
     calls = _fake_curl(monkeypatch)
     channel = tmp_path / "metrics" / "google_script"
     _make_entry(channel, "empty.txt", "", time.time())
-    attempts, sent = send_google_queue(single_random=True)
+    outcome = send_google_queue(single_random=True)
     assert calls == []
-    assert attempts == 0
-    assert sent == 0
+    assert outcome.attempts == 0
+    assert outcome.sent == 0
+    assert outcome.problem is None
