@@ -423,8 +423,11 @@ def task(ctx: Context) -> TaskResult:
         f"(venv {'none' if version_warning else unit_version}, "
         f"repository {__version__})"
     )
-    if version_warning is not None:
-        warnings.append(version_warning)
+    # An interpreter that does not answer yet is not a gap by itself: this
+    # task builds the venv below whenever it is missing or stale. Only a gap
+    # that survives that step is a warning, and the check after the venv step
+    # names it, so a fresh machine that the task provisions correctly ends
+    # without a warning.
 
     service_unit = _render_service_unit(
         template_dir / values.UNIT_TEMPLATE_FILE_NAME,

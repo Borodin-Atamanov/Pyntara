@@ -291,6 +291,7 @@ def _install_fake(
     import_ok: bool,
     uv_available: bool = True,
     venv_version: str = __version__,
+    the_venv_answers_after_the_sync: bool = False,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> list[list[str]]:
     """Install subprocess and uv fakes; return the recorded command calls.
@@ -298,12 +299,18 @@ def _install_fake(
     systemctl is-enabled and is-active answer from the given name sets,
     the venv python import answers from import_ok with the venv_version
     as the printed pyntara version, and uv commands succeed unless
-    matched by fail.
+    matched by fail. The uv venv command creates the interpreter file the
+    real one creates, and the_venv_answers_after_the_sync models the fresh
+    machine: the interpreter cannot be asked before the task builds the
+    venv and answers once the sync has run, so the tests can tell a gap the
+    task closes from a gap that survives the task.
     """
 
     calls: list[list[str]] = []
+    synced = False
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        nonlocal synced
         del kwargs
         calls.append(list(command))
         if fail is not None and fail(command):
@@ -316,8 +323,16 @@ def _install_fake(
             if command[2] in active_names:
                 return _FakeProc(0, "active\n")
             return _FakeProc(1, "inactive")
+        if command[0] == "uv" and len(command) > 1:
+            if command[1] == "venv":
+                created_python = Path(command[2]) / "bin" / "python"
+                created_python.parent.mkdir(parents=True, exist_ok=True)
+                created_python.write_text("#!/bin/sh\n", encoding="utf-8")
+            elif command[1] == "sync":
+                synced = True
+            return _FakeProc(0)
         if command[0].endswith("/python") and command[1] == "-c":
-            if import_ok:
+            if import_ok or (the_venv_answers_after_the_sync and synced):
                 return _FakeProc(0, f"{venv_version}\n")
             return _FakeProc(1)
         return _FakeProc(0)
@@ -348,6 +363,7 @@ def _deploy_fixture(
     spool_ok: bool = True,
     stale_path_unit: bool = False,
     uv_available: bool = True,
+    the_venv_answers_after_the_sync: bool = False,
     fail: Callable[[list[str]], bool] | None = None,
 ) -> tuple[SystemMetricsFixtures, list[list[str]]]:
     """Fixtures plus a fake; when deployed, all state matches the sources.
@@ -416,6 +432,7 @@ def _deploy_fixture(
         import_ok=import_ok,
         uv_available=uv_available,
         venv_version=venv_version,
+        the_venv_answers_after_the_sync=the_venv_answers_after_the_sync,
         fail=fail,
     )
     return fixtures, calls
@@ -528,12 +545,33 @@ def test_the_units_carry_the_version_of_the_deployed_code(
         assert "# Deployed by Pyntara 0.3.999" in unit
 
 
-def test_a_deployment_that_cannot_be_asked_is_a_warning(
+def test_a_venv_the_task_builds_is_not_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A venv that cannot be asked leaves the repository version in the
-    # units and names the gap, so the missing refresh is visible in the
-    # install log instead of being passed off as the new code.
+    # A fresh machine cannot answer before the task runs, and the task then
+    # builds the venv, so the gap it closes itself must not be reported: a
+    # warning here would make every fresh machine finish with a warning and
+    # a nonzero exit code.
+    fixtures, calls = _deploy_fixture(
+        monkeypatch, tmp_path, the_venv_answers_after_the_sync=True
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path))
+    assert result.success
+    assert result.warnings == ()
+    unit = (fixtures["systemd_dir"] / "system_metrics.service").read_text(
+        encoding="utf-8"
+    )
+    assert f"# Deployed by Pyntara {__version__}" in unit
+    assert any(call[:2] == ["uv", "venv"] for call in calls)
+
+
+def test_a_venv_that_still_cannot_be_asked_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A venv that cannot answer even after the venv step leaves the
+    # repository version in the units and names the gap, so a gap that
+    # survives the task is visible in the install log instead of being
+    # passed off as the new code.
     fixtures, _calls = _deploy_fixture(monkeypatch, tmp_path)
     result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success
@@ -541,7 +579,7 @@ def test_a_deployment_that_cannot_be_asked_is_a_warning(
         encoding="utf-8"
     )
     assert f"# Deployed by Pyntara {__version__}" in unit
-    assert any("cannot read the version" in warning for warning in result.warnings)
+    assert any("still does not answer" in warning for warning in result.warnings)
 
 
 def test_skips_when_already_configured(
