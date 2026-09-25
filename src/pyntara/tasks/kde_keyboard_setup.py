@@ -254,11 +254,12 @@ def _reload_kwin(
     return None
 
 
-def _compositor_runs(timeout: float) -> bool:
-    """True when the compositor process of the session answers.
+def _compositor_pids(timeout: float) -> tuple[str, ...]:
+    """The pids of the compositor processes of the session.
 
     The question goes to the machine, so a weak machine that needs minutes to
-    bring the compositor back is waited out instead of failed.
+    bring the compositor back is waited out instead of failed. An empty answer
+    means the compositor does not run.
     """
 
     command = substituted_command(
@@ -269,8 +270,8 @@ def _compositor_runs(timeout: float) -> bool:
             command, check=False, capture=True, timeout=timeout, log_command=False
         )
     except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
+        return ()
+    return tuple(trim_whitespace(result.stdout).split())
 
 
 def _session_manager_is_active(username: str, timeout: float) -> bool:
@@ -318,6 +319,7 @@ def _restart_compositor_for_layouts(
     if not bus_env:
         _log("no desktop session found, the layouts apply at the next login")
         return None
+    before = _compositor_pids(timeout)
     try:
         run_command(
             _as_user_command(list(values.KWIN_RESTART_COMMAND)),
@@ -327,6 +329,21 @@ def _restart_compositor_for_layouts(
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return f"cannot restart the compositor for the configured layouts: {exc}"
     _log("restarted the compositor so the configured layouts apply now")
+    deadline = time.monotonic() + values.KWIN_RESTART_WAIT_SECONDS
+    while time.monotonic() < deadline:
+        running = _compositor_pids(timeout)
+        # The new compositor is the one that reads kxkbrc, so its pid is what
+        # says the layouts took effect; the compositor before the restart
+        # answers until it is replaced.
+        if running and running != before:
+            break
+        time.sleep(values.KWIN_RESTART_POLL_SECONDS)
+    else:
+        return (
+            "the restarted compositor did not appear within "
+            f"{values.KWIN_RESTART_WAIT_SECONDS} s"
+        )
+    _log("the restarted compositor runs")
     try:
         run_command(
             substituted_command(
@@ -343,16 +360,14 @@ def _restart_compositor_for_layouts(
             f"cannot start {values.SESSION_MANAGER_UNIT_NAME} after the "
             f"compositor restart: {exc}"
         )
-    deadline = time.monotonic() + values.KWIN_RESTART_WAIT_SECONDS
-    while time.monotonic() < deadline:
-        if _compositor_runs(timeout) and _session_manager_is_active(username, timeout):
-            _log("the restarted compositor and the session manager are ready")
-            return None
-        time.sleep(values.KWIN_RESTART_POLL_SECONDS)
-    return (
-        "the restarted compositor and the session manager did not report ready "
-        f"within {values.KWIN_RESTART_WAIT_SECONDS} s"
+    # KWin does not restart the session manager, so the state is reported
+    # instead of assumed: a unit the session brought back by itself and a unit
+    # the caller had to start look the same from here.
+    _log(
+        f"{values.SESSION_MANAGER_UNIT_NAME} is "
+        f"{'active' if _session_manager_is_active(username, timeout) else 'inactive'}"
     )
+    return None
 
 
 def _shortcut_to_combined(shortcut: str) -> int | None:

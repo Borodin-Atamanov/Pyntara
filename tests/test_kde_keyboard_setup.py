@@ -123,6 +123,9 @@ def _install_fakes(
     session_applies: list[list[str]] = []
     installs: list[str] = []
     live_applies: list[list[str]] = []
+    # The compositor pid the fake reports; the restart replaces it, which is
+    # what the task waits for.
+    compositor_pid = [bus_pid]
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         if command[:4] == ["runuser", "-u", "i", "--"]:
@@ -139,6 +142,8 @@ def _install_fakes(
                 return _FakeProc(0, "")
             if inner[0] == "qdbus6":
                 session_applies.append(list(command))
+                if "org.kde.KWin.replace" in inner:
+                    compositor_pid[0] = "5999" if bus_pid else ""
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 live_applies.append(list(command))
@@ -163,7 +168,7 @@ def _install_fakes(
                     )
                 return _FakeProc(0, json.dumps({"results": results}))
         if command[0] == "pgrep":
-            return _FakeProc(0, f"{bus_pid}\n" if bus_pid else "")
+            return _FakeProc(0, f"{compositor_pid[0]}\n" if compositor_pid[0] else "")
         if command[0] == "systemctl" and "--machine" in command:
             session_applies.append(list(command))
             if command[-2] == "is-active":
