@@ -52,6 +52,29 @@ def _load_program() -> types.ModuleType:
 
 program: types.ModuleType = _load_program()
 
+# The real lookup, which the fixture below replaces for the tests that read a
+# recorded command; the test of a missing tool calls this one directly.
+_REAL_TOOL_PATH = program._tool_path
+
+
+@pytest.fixture(autouse=True)
+def _tools_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let the recorded commands name the tools directly.
+
+    The program discovers the absolute path of every tool at run time, which
+    depends on the machine that runs the tests; the tests replace that lookup
+    with the name itself, so a recorded command reads the way it would with the
+    tools at their usual place.
+    """
+
+    monkeypatch.setattr(program, "_tool_path", lambda tool_name: tool_name)
+
+
+def test_a_tool_the_machine_does_not_carry_is_named() -> None:
+    with pytest.raises(program.SwapfileError) as raised:
+        _REAL_TOOL_PATH("pyntara-no-such-tool")
+    assert "pyntara-no-such-tool" in str(raised.value)
+
 MEMINFO_TEXT = "MemTotal:       16777216 kB\n"
 RAM_KIB = 16 * 1024 * 1024
 
@@ -256,16 +279,52 @@ def test_the_creation_sequence_runs_on_accepted_storage(
     probe_path = config.swapfile_path.with_name(config.swapfile_path.name + ".probe")
     assert calls == [
         ["swapon", "--show", "--noheadings"],
+        ["chattr", "+C", str(probe_path)],
         ["fallocate", "-l", "512K", str(probe_path)],
         ["chmod", "0600", str(probe_path)],
         ["mkswap", str(probe_path)],
         ["swapon", str(probe_path)],
         ["swapoff", str(probe_path)],
+        ["chattr", "+C", str(config.swapfile_path)],
         ["fallocate", "-l", "1M", str(config.swapfile_path)],
         ["chmod", "0600", str(config.swapfile_path)],
         ["mkswap", str(config.swapfile_path)],
         ["swapon", str(config.swapfile_path)],
     ]
+
+
+def test_a_refused_no_cow_attribute_does_not_stop_the_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A filesystem without copy-on-write answers the attribute request with
+    # "Operation not supported"; the file is still created, formatted and
+    # activated, because only a copying filesystem needs the attribute.
+    config = _config(tmp_path)
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "chattr":
+            return _answered(command, 1, "", "chattr: Operation not supported")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.changed is True
+    assert ["mkswap", str(config.swapfile_path)] in calls
+    assert ["swapon", str(config.swapfile_path)] in calls
+
+
+def test_the_swap_directory_is_created_before_the_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The directory is what the free space is read from and where the probe and
+    # the file are created, so it exists before any of that.
+    directory = tmp_path / "swap"
+    config = _config(tmp_path, swapfile_path=directory / "swapfile")
+    monkeypatch.setattr(program, "_run", _run_double([], None))
+    outcome = program.configure_swapfile(config)
+    assert outcome.changed is True
+    assert directory.is_dir()
 
 
 def test_force_creates_the_file_again(
@@ -376,7 +435,7 @@ def test_the_command_line_runs_the_creation_path_with_stub_commands(
     stub_directory.mkdir()
     call_log = tmp_path / "calls.log"
     stub = '#!/bin/sh\nprintf "%s\\n" "$(basename "$0") $*" >> "$CALL_LOG"\nexit 0\n'
-    for name in ("fallocate", "chmod", "mkswap", "swapon", "swapoff"):
+    for name in ("chattr", "chmod", "fallocate", "mkswap", "swapon", "swapoff"):
         path = stub_directory / name
         path.write_text(stub, encoding="utf-8")
         path.chmod(0o755)
@@ -394,7 +453,9 @@ def test_the_command_line_runs_the_creation_path_with_stub_commands(
     assert result.returncode == 0
     assert json.loads(result.stdout.strip().splitlines()[-1])["changed"] is True
     calls = call_log.read_text(encoding="utf-8")
+    assert f"chattr +C {swapfile_path}.probe" in calls
     assert f"fallocate -l 512K {swapfile_path}.probe" in calls
+    assert f"chattr +C {swapfile_path}" in calls
     assert f"fallocate -l 1M {swapfile_path}" in calls
     assert f"swapon {swapfile_path}" in calls
     assert not Path(f"{swapfile_path}.probe").exists()

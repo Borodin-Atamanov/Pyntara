@@ -4,8 +4,9 @@ The section deploys one program and the boot service that runs it. The program
 creates the swap file at the size min(RAM * ram_multiplier + ram_extra_mb,
 free_disk * disk_fraction), formats it, activates it, and refuses storage that
 keeps its data in memory, so the size formula and the commands of the swap
-itself live in the program alone and the task carries only what it must pass and
-where to put things (docs/spec/users-and-host.md).
+itself live in the program alone and the task carries only what it must pass,
+where to put things and which packages its tools come from
+(docs/spec/users-and-host.md).
 
 The name of the /proc/meminfo line that carries the installed RAM is read from
 the shared module, because the zram_service section reads the same line.
@@ -15,8 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Path to the swap file.
-SWAPFILE_PATH: Path = Path("/swapfile")
+# Path to the swap file. The directory that holds it is created by the program.
+SWAPFILE_PATH: Path = Path("/swap/swapfile")
 
 # Multiplier applied to installed RAM to get the base swap size.
 RAM_MULTIPLIER: float = 1.6
@@ -42,6 +43,12 @@ PROBE_SIZE_KB: int = 512
 # The kernel file the installed memory is read from, handed to the program.
 MEMINFO_PATH: Path = Path("/proc/meminfo")
 
+# The packages the tools of the program come from: swapon and swapoff are in
+# mount, mkswap and fallocate in util-linux, chattr in e2fsprogs. The task
+# installs them through the shared package helper, so the section never assumes
+# the machine already carries them.
+PACKAGES: tuple[str, ...] = ("mount", "util-linux", "e2fsprogs")
+
 # The program of the section: the file of the clone under task_data, the path it
 # is deployed to and the mode that makes it executable. The name carries the
 # project, because the deployed directory holds the commands of several
@@ -65,6 +72,16 @@ SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "enable",
     "{service_unit_name}",
 )
+SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "start",
+    "{service_unit_name}",
+)
+
+# Name of the tool the unit stops the swap with. The task resolves its absolute
+# path at run time and renders it into the unit, so no path has to be kept in
+# step by hand and the boot service takes nothing from PATH.
+SWAPOFF_COMMAND_NAME: str = "swapoff"
 
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.
@@ -77,6 +94,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SIZE_TOLERANCE_MB",
     "PROBE_SIZE_KB",
     "MEMINFO_PATH",
+    "PACKAGES",
     "PROGRAM_FILE_NAME",
     "PROGRAM_DEPLOY_PATH",
     "PROGRAM_FILE_MODE",
@@ -84,4 +102,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "UNIT_TEMPLATE_FILE_NAME",
     "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
     "SYSTEMCTL_ENABLE_COMMAND",
+    "SYSTEMCTL_START_COMMAND",
+    "SWAPOFF_COMMAND_NAME",
 )

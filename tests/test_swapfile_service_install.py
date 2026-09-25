@@ -31,12 +31,13 @@ UNIT_TEMPLATE = """\
 [Unit]
 Description=Create and activate the swap file
 After=local-fs.target
+RequiresMountsFor=$swapfile_path
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 $exec_lines
-ExecStop=/sbin/swapoff $swapfile_path
+ExecStop=$swapoff_path $swapfile_path
 
 [Install]
 WantedBy=multi-user.target
@@ -64,6 +65,35 @@ def _point_the_values_at_the_temporary_tree(
     )
     monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "MemTotal:")
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
+
+
+# The path the tests answer the run-time lookup of swapoff with.
+SWAPOFF_PATH = "/usr/sbin/swapoff"
+
+
+@pytest.fixture(autouse=True)
+def _without_apt_and_with_a_known_swapoff(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep the package helper and the tool lookup away from the machine.
+
+    The task installs its packages through the shared helper and discovers the
+    path of swapoff at run time; both would reach the real machine, so the tests
+    answer with a machine whose packages are already installed and whose swapoff
+    sits at a fixed path. The tests that care about either behaviour replace
+    these answers again.
+    """
+
+    monkeypatch.setattr(
+        swapfile_service_install,
+        "install_missing_packages",
+        lambda context, packages: ([], [], [], []),
+    )
+    monkeypatch.setattr(
+        swapfile_service_install,
+        "_command_path",
+        lambda command_name: SWAPOFF_PATH,
+    )
 
 
 def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
@@ -189,7 +219,8 @@ def test_the_unit_carries_the_command_line_of_the_program(
     command = _program_call(calls)
     unit = _unit_text(tmp_path)
     assert f"ExecStart={' '.join(command)}" in unit
-    assert f"ExecStop=/sbin/swapoff {values.SWAPFILE_PATH}" in unit
+    assert f"ExecStop={SWAPOFF_PATH} {values.SWAPFILE_PATH}" in unit
+    assert f"RequiresMountsFor={values.SWAPFILE_PATH}" in unit
 
 
 def test_the_service_is_enabled_when_it_is_disabled(
@@ -221,6 +252,7 @@ def test_a_configured_machine_reports_no_change(
             / values.UNIT_TEMPLATE_FILE_NAME,
             command,
             values.SWAPFILE_PATH,
+            SWAPOFF_PATH,
         ),
         encoding="utf-8",
     )
@@ -292,6 +324,70 @@ def test_an_unreadable_result_becomes_a_warning(
     assert "reported nothing readable" in result.warnings[0]
 
 
+def test_the_shared_package_helper_installs_the_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    recorded: list[object] = []
+
+    def fake_install(
+        context: object, packages: object
+    ) -> tuple[list[str], list[str], list[tuple[str, str]], list[str]]:
+        recorded.append(packages)
+        return ([], [], [], [])
+
+    monkeypatch.setattr(
+        swapfile_service_install, "install_missing_packages", fake_install
+    )
+    _install_fake(monkeypatch)
+    swapfile_service_install.task(_ctx(tmp_path))
+    assert recorded == [values.PACKAGES]
+
+
+def test_a_package_that_cannot_be_installed_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    monkeypatch.setattr(
+        swapfile_service_install,
+        "install_missing_packages",
+        lambda context, packages: (
+            list(packages),
+            [],
+            [("e2fsprogs", "not found")],
+            [],
+        ),
+    )
+    _install_fake(monkeypatch)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert result.success is True
+    assert any("e2fsprogs: not found" in warning for warning in result.warnings)
+
+
+def test_a_machine_without_swapoff_is_reported_and_nothing_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    monkeypatch.setattr(
+        swapfile_service_install, "_command_path", lambda command_name: None
+    )
+    calls = _install_fake(monkeypatch)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert result.changed is False
+    assert any("swapoff" in warning for warning in result.warnings)
+    assert not (tmp_path / "systemd" / values.SERVICE_UNIT_NAME).exists()
+    assert calls == []
+
+
+def test_the_unit_is_started_as_the_artifact_of_the_next_boot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    calls = _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    assert ["systemctl", "start", values.SERVICE_UNIT_NAME] in calls
+
+
 def test_force_passes_the_force_option(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -332,6 +428,7 @@ def test_the_program_reads_the_command_line_the_task_builds(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(program, "_run", fake_run)
+    monkeypatch.setattr(program, "_tool_path", lambda tool_name: tool_name)
     command = swapfile_service_install._program_command(force=False)
     exit_code = program.main(list(command[1:]))
     assert exit_code == 0

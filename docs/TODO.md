@@ -75,8 +75,6 @@ the defect hides there too. The goal is a fast gate that fails only for the code
 under test: either the logger gives its identifier back at the end of a test, or
 the port tests stop depending on how many times the clock is read.
 
-## Создавать файл подкачки и в btrfs системах
-
 ## Настроить btrfs системы, чтобы появились нужные параметры при загрузке системы
 
 ## Install at through cli_tools_lite_setup

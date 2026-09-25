@@ -6,9 +6,9 @@ the boot service of that task, so it runs with the system interpreter, imports
 the standard library alone and never reaches into the pyntara package: the
 deployment venv of this project belongs to a later task, and the boot path must
 not depend on it. Every value arrives as a command line argument, so the values
-live in the values module of the task and nowhere else; the commands this
-program runs and the file names it derives are its own implementation and are
-written here.
+live in the values module of the task and nowhere else; the absolute path of
+every tool this program runs is discovered at run time with the standard
+library, and the file names it derives are its own implementation.
 
 The program is idempotent. It reads the state of the machine, brings the swap
 file to the computed size, formats it and activates it, and where the target
@@ -17,11 +17,19 @@ min(installed RAM * ram_multiplier + ram_extra_mb, free disk * disk_fraction),
 so a machine with room to spare gets the swap the RAM asks for and a small disk
 never gets a file that fills it.
 
-Storage that keeps its data in memory is refused before the real size is
-allocated: a probe file of a few kibibytes is created next to the swap file,
-formatted and activated, and only a probe the kernel accepts lets the real file
-be created. A swap file on such storage would occupy the memory it is meant to
-extend, and the kernel refuses to activate it in any case.
+One recipe serves every filesystem. The directory that holds the swap file is
+created, an empty file is made, the no-copy-on-write attribute is asked for and
+its refusal is only reported, the size is preallocated without holes, the
+declared mode is set and the file is formatted as swap. That order is what a
+btrfs swap file requires, because the attribute can be set only while the file
+holds no data blocks, and on a filesystem without copy-on-write the same order
+holds and only the attribute step is refused.
+
+Storage is refused before the real size is allocated: a probe file of a few
+kibibytes is created next to the swap file by the very same recipe, formatted
+and activated, and only a probe the kernel accepts lets the real file be
+created. A swap file on storage that keeps its data in memory would occupy the
+memory it is meant to extend, and the kernel refuses to activate it in any case.
 
 The last line this program prints is one JSON object for the caller:
 
@@ -42,25 +50,22 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-# Commands this program runs. They are its implementation and live here rather
-# than in the values module of the task, because nothing else runs them.
-SWAP_SHOW_COMMAND: tuple[str, ...] = ("swapon", "--show", "--noheadings")
-SWAP_ON_COMMAND: tuple[str, ...] = ("swapon", "{swapfile_path}")
-SWAP_OFF_COMMAND: tuple[str, ...] = ("swapoff", "{swapfile_path}")
-CREATE_COMMAND: tuple[str, ...] = (
-    "fallocate",
-    "-l",
-    "{size_mb}M",
-    "{swapfile_path}",
-)
-PROBE_CREATE_COMMAND: tuple[str, ...] = (
-    "fallocate",
-    "-l",
-    "{probe_size_kb}K",
-    "{swapfile_path}",
-)
-CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{swapfile_path}")
-FORMAT_COMMAND: tuple[str, ...] = ("mkswap", "{swapfile_path}")
+# Names of the tools this program runs. They are its implementation and live
+# here rather than in the values module of the task, because nothing else runs
+# them. The absolute path of each one is discovered at run time instead of
+# being written down, so a machine that keeps its tools elsewhere is followed
+# and a missing tool is answered with the name of that tool.
+SWAPON_TOOL: str = "swapon"
+SWAPOFF_TOOL: str = "swapoff"
+MKSWAP_TOOL: str = "mkswap"
+FALLOCATE_TOOL: str = "fallocate"
+CHMOD_TOOL: str = "chmod"
+CHATTR_TOOL: str = "chattr"
+
+# The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
+# without copy-on-write answers the request with "Operation not supported", so
+# the refusal is reported and the work continues.
+NO_COW_ATTRIBUTE: str = "+C"
 
 # Suffix of the probe file. The probe is created next to the swap file, so it
 # runs on the filesystem that would hold the swap.
@@ -107,10 +112,60 @@ class Outcome:
     skipped_reason: str | None
 
 
-def _substituted(command: tuple[str, ...], values: dict[str, str]) -> list[str]:
-    """One command with the placeholders of its parts replaced."""
+def _tool_path(tool_name: str) -> str:
+    """Absolute path of one tool this program runs.
 
-    return [part.format(**values) for part in command]
+    The path is discovered at run time instead of being written down, so a
+    machine that keeps its tools elsewhere is followed, and a machine without
+    the tool is answered with the name of that tool rather than a traceback.
+    """
+
+    path = shutil.which(tool_name)
+    if path is None:
+        raise SwapfileError(f"{tool_name} is not installed on this machine")
+    return path
+
+
+def _swap_show_command() -> list[str]:
+    """The listing of the active swap devices."""
+
+    return [_tool_path(SWAPON_TOOL), "--show", "--noheadings"]
+
+
+def _swap_on_command(swapfile_path: Path) -> list[str]:
+    """The command that activates one swap file."""
+
+    return [_tool_path(SWAPON_TOOL), str(swapfile_path)]
+
+
+def _swap_off_command(swapfile_path: Path) -> list[str]:
+    """The command that deactivates one swap file."""
+
+    return [_tool_path(SWAPOFF_TOOL), str(swapfile_path)]
+
+
+def _no_cow_command(swapfile_path: Path) -> list[str]:
+    """The command that asks for the no-copy-on-write attribute."""
+
+    return [_tool_path(CHATTR_TOOL), NO_COW_ATTRIBUTE, str(swapfile_path)]
+
+
+def _allocate_command(swapfile_path: Path, size_text: str) -> list[str]:
+    """The command that preallocates the file without holes."""
+
+    return [_tool_path(FALLOCATE_TOOL), "-l", size_text, str(swapfile_path)]
+
+
+def _chmod_command(swapfile_path: Path, file_mode: int) -> list[str]:
+    """The command that sets the mode of the swap file."""
+
+    return [_tool_path(CHMOD_TOOL), f"{file_mode:04o}", str(swapfile_path)]
+
+
+def _mkswap_command(swapfile_path: Path) -> list[str]:
+    """The command that writes the swap signature into the file."""
+
+    return [_tool_path(MKSWAP_TOOL), str(swapfile_path)]
 
 
 def _run(
@@ -217,7 +272,7 @@ def _active_swap_paths(timeout_seconds: float) -> tuple[str, ...]:
     text: a path that is the beginning of another one would answer for the other.
     """
 
-    result = _run(list(SWAP_SHOW_COMMAND), timeout_seconds)
+    result = _run(_swap_show_command(), timeout_seconds)
     if result.returncode != 0:
         raise SwapfileError(f"cannot list the active swap: {_failure_sentence(result)}")
     paths: list[str] = []
@@ -242,48 +297,20 @@ def _storage_accepts_swap(config: Config) -> tuple[bool, str]:
         config.swapfile_path.name + PROBE_FILE_SUFFIX
     )
     print(f"probing the storage with {config.probe_size_kb} KiB at {probe_path}")
-    created = False
     activated = False
-    values = {
-        "swapfile_path": str(probe_path),
-        "probe_size_kb": str(config.probe_size_kb),
-        "file_mode": f"{config.file_mode:04o}",
-    }
     try:
-        result = _run(
-            _substituted(PROBE_CREATE_COMMAND, values),
-            config.command_timeout_seconds,
-        )
-        if result.returncode != 0:
-            return False, (
-                f"the storage cannot allocate a file: {_failure_sentence(result)}"
-            )
-        created = True
-        result = _run(
-            _substituted(CHMOD_COMMAND, values), config.command_timeout_seconds
-        )
-        if result.returncode != 0:
-            return (
-                False,
-                f"the storage cannot set a file mode: {_failure_sentence(result)}",
-            )
-        result = _run(
-            _substituted(FORMAT_COMMAND, values), config.command_timeout_seconds
-        )
-        if result.returncode != 0:
-            return False, f"the storage cannot format swap: {_failure_sentence(result)}"
-        result = _run(
-            _substituted(SWAP_ON_COMMAND, values), config.command_timeout_seconds
-        )
+        try:
+            _prepare_swap_file(config, probe_path, f"{config.probe_size_kb}K")
+        except SwapfileError as exc:
+            return False, f"the storage cannot hold a swap file: {exc}"
+        result = _run(_swap_on_command(probe_path), config.command_timeout_seconds)
         if result.returncode != 0:
             return False, (
                 "the kernel refuses to activate swap on this storage: "
                 f"{_failure_sentence(result)}"
             )
         activated = True
-        result = _run(
-            _substituted(SWAP_OFF_COMMAND, values), config.command_timeout_seconds
-        )
+        result = _run(_swap_off_command(probe_path), config.command_timeout_seconds)
         if result.returncode != 0:
             return False, (
                 f"the probe swap could not be deactivated: {_failure_sentence(result)}"
@@ -292,45 +319,73 @@ def _storage_accepts_swap(config: Config) -> tuple[bool, str]:
         return True, ""
     finally:
         if activated:
-            _run(_substituted(SWAP_OFF_COMMAND, values), config.command_timeout_seconds)
-        if created:
+            _run(_swap_off_command(probe_path), config.command_timeout_seconds)
+        if probe_path.exists():
             try:
-                probe_path.unlink(missing_ok=True)
+                probe_path.unlink()
                 print(f"probe removed: {probe_path}")
             except OSError as exc:
                 print(f"the probe file was left in place: {exc}", file=sys.stderr)
 
 
-def _activate_swap(config: Config) -> None:
-    """Activate the existing swap file."""
+def _ensure_swap_directory(directory: Path) -> None:
+    """Create the directory that holds the swap file.
 
-    print(f"activating swap: swapon {config.swapfile_path}")
+    The free space is read from that directory and both the probe and the real
+    file are created inside it, so it exists before either of them.
+    """
+
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SwapfileError(f"cannot create {directory}: {exc}") from exc
+    print(f"swap directory ready: {directory}")
+
+
+def _prepare_swap_file(config: Config, swapfile_path: Path, size_text: str) -> None:
+    """Create one swap file by the one recipe and format it.
+
+    The empty file comes first, because the no-copy-on-write attribute can be
+    set only while the file holds no data blocks; then the size is preallocated
+    without holes, the mode is set and the swap signature is written. A refused
+    attribute is a note and never stops the work.
+    """
+
+    try:
+        swapfile_path.unlink(missing_ok=True)
+        swapfile_path.touch()
+    except OSError as exc:
+        raise SwapfileError(f"cannot create {swapfile_path}: {exc}") from exc
+    print(f"empty swapfile created: {swapfile_path}")
+    result = _run(_no_cow_command(swapfile_path), config.command_timeout_seconds)
+    if result.returncode != 0:
+        print(
+            "the no-copy-on-write attribute is not supported here "
+            f"({_failure_sentence(result)}), continuing"
+        )
     result = _run(
-        _substituted(SWAP_ON_COMMAND, {"swapfile_path": str(config.swapfile_path)}),
-        config.command_timeout_seconds,
+        _allocate_command(swapfile_path, size_text), config.command_timeout_seconds
     )
-    _require_success(result, "activating the swap file", "swap active")
-
-
-def _create_swapfile(config: Config, target_mb: int) -> None:
-    """Create, format and activate the swap file at the computed size."""
-
-    values = {
-        "swapfile_path": str(config.swapfile_path),
-        "size_mb": str(target_mb),
-        "file_mode": f"{config.file_mode:04o}",
-    }
-    print(f"creating swapfile: fallocate -l {target_mb}M {config.swapfile_path}")
-    result = _run(_substituted(CREATE_COMMAND, values), config.command_timeout_seconds)
-    _require_success(
-        result, "creating the swap file", f"swapfile created: {target_mb} MiB"
+    if result.returncode != 0:
+        raise SwapfileError(
+            f"allocating {size_text} failed: {_failure_sentence(result)}"
+        )
+    print(f"swapfile allocated: {swapfile_path} at {size_text}")
+    result = _run(
+        _chmod_command(swapfile_path, config.file_mode), config.command_timeout_seconds
     )
-    result = _run(_substituted(CHMOD_COMMAND, values), config.command_timeout_seconds)
     _require_success(result, "setting the file mode", "permissions set")
-    result = _run(_substituted(FORMAT_COMMAND, values), config.command_timeout_seconds)
+    result = _run(_mkswap_command(swapfile_path), config.command_timeout_seconds)
     _require_success(result, "formatting the swap file", "swapfile formatted")
-    print(f"activating swap: swapon {config.swapfile_path}")
-    result = _run(_substituted(SWAP_ON_COMMAND, values), config.command_timeout_seconds)
+
+
+def _activate_swap(config: Config) -> None:
+    """Activate the swap file."""
+
+    print(f"activating swap: {config.swapfile_path}")
+    result = _run(
+        _swap_on_command(config.swapfile_path), config.command_timeout_seconds
+    )
     _require_success(result, "activating the swap file", "swap active")
 
 
@@ -339,10 +394,9 @@ def _deactivate_swap_if_active(config: Config, active: bool) -> None:
 
     if not active:
         return
-    print(f"deactivating swap: swapoff {config.swapfile_path}")
+    print(f"deactivating swap: {config.swapfile_path}")
     result = _run(
-        _substituted(SWAP_OFF_COMMAND, {"swapfile_path": str(config.swapfile_path)}),
-        config.command_timeout_seconds,
+        _swap_off_command(config.swapfile_path), config.command_timeout_seconds
     )
     _require_success(result, "deactivating the swap file", "swap deactivated")
 
@@ -357,6 +411,7 @@ def configure_swapfile(config: Config) -> Outcome:
     """
 
     ram_kib = _read_total_ram_kib(config.meminfo_path, config.meminfo_total_key)
+    _ensure_swap_directory(config.swapfile_path.parent)
     free_disk_kib = _free_disk_kib(config.swapfile_path.parent)
     target_mb = _calculate_target_size_mb(ram_kib, free_disk_kib, config)
     print(
@@ -419,12 +474,8 @@ def configure_swapfile(config: Config) -> Outcome:
         return Outcome(changed=False, skipped_reason=reason)
 
     _deactivate_swap_if_active(config, active)
-    print(f"removing the old swapfile {config.swapfile_path}")
-    try:
-        config.swapfile_path.unlink(missing_ok=True)
-    except OSError as exc:
-        raise SwapfileError(f"cannot remove {config.swapfile_path}: {exc}") from exc
-    _create_swapfile(config, target_mb)
+    _prepare_swap_file(config, config.swapfile_path, f"{target_mb}M")
+    _activate_swap(config)
     return Outcome(changed=True, skipped_reason=None)
 
 

@@ -269,7 +269,7 @@ def _active_swap_devices(timeout: float) -> set[str]:
 
     The configured swap listing command reports all activated swaps; the
     set includes both the zram devices and a file-backed swap such as
-    /swapfile, so the caller checks the zram paths it cares about
+    /swap/swapfile, so the caller checks the zram paths it cares about
     individually.
     """
 

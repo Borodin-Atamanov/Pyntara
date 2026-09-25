@@ -40,9 +40,13 @@ The values are aggressive, matching the ZRAM philosophy. All parameters live in 
 
 Task: swapfile_service_install. One program of the section, deployed from
 task_data/swapfile_service_install/configure_swapfile.py to its configured path,
-creates, formats and activates the swap file, and the unit swapfile.service
-starts that same program at every boot, so a run and a boot apply one code
-instead of two implementations of the same steps.
+creates, formats and activates the swap file at swapfile_path, which is
+/swap/swapfile, and the program creates the directory that holds it. The unit
+swapfile.service starts that same program at every boot, so a run and a boot
+apply one code instead of two implementations of the same steps. The packages
+the tools of the program come from (mount for swapon and swapoff, util-linux for
+mkswap and fallocate, e2fsprogs for chattr) are installed through the shared
+package helper, so the section never assumes the machine already carries them.
 
 The size is min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction).
 The installed RAM is read from the line of /proc/meminfo whose name
@@ -53,22 +57,44 @@ room to spare keeps its size; where the disk term wins, the file follows the fre
 space of every run and of every boot. A file whose size deviates from the target
 by more than size_tolerance_mb is created again.
 
-The program refuses storage that keeps its data in memory. A probe file of
-probe_size_kb is created next to the swap file, formatted and activated, and only
-a probe the kernel accepts lets the real size be allocated: a swap file on memory
-storage would occupy what it is meant to extend, and the kernel refuses to
-activate it in any case. Such a refusal is reported as a warning of a completed
-task and the service stays installed, because the storage of the next boot may
-well be a disk; the task never stops the run.
+One recipe creates the file on every filesystem: the program makes an empty file,
+asks for the no-copy-on-write attribute, preallocates the size without holes, sets
+the declared mode and writes the swap signature. That order is what a btrfs swap
+file requires, because the attribute can be set only while the file holds no data
+blocks; on a filesystem without copy-on-write the attribute step is refused, and
+the program reports that as a note and continues. The program does not detect the
+filesystem type, because the same recipe holds everywhere. The path of every tool
+is discovered at run time instead of being written down, so a machine that keeps
+its tools elsewhere is followed.
 
-The unit carries the command line the task builds from the values, so the
-program receives every number as an argument and carries none of its own, and the
-program answers with one result line naming what changed, what was refused and
-what failed.
+The program refuses storage that cannot hold swap. A probe file of probe_size_kb
+is created next to the swap file by the same recipe, formatted and activated, and
+only a probe the kernel accepts lets the real size be allocated: a swap file on
+storage that keeps its data in memory would occupy what it is meant to extend,
+and the kernel refuses to activate it in any case. The reason names the step that
+failed, so an allocation failure, a formatting failure and a kernel refusal are
+told apart. Such a refusal is reported as a warning of a completed task and the
+service stays installed, because the storage of the next boot may well be a disk;
+the task never stops the run.
+
+The unit carries the command line the task builds from the values, so the program
+receives every number as an argument and carries none of its own, and the program
+answers with one result line naming what changed, what was refused and what
+failed. The unit requires the mount that provides the swap file
+(RequiresMountsFor), and it stops the swap through the absolute path of swapoff
+that the task resolves at run time, so the boot service takes nothing from PATH.
+After the program has run, the task starts the unit, so the artifact of the next
+boot is proved by this run.
+
+Known limitation of btrfs: a filesystem that holds an active swap file skips the
+block groups of that file during balance and scrub, which the upstream
+documentation calls especially undesirable on the root filesystem, and a subvolume
+that contains an active swap file cannot be snapshotted.
 
 All parameter values live in the src/pyntara/values/swapfile_service_install.py:
-the swapfile path and mode, the size formula factors, the accepted deviation
-size_tolerance_mb, the probe size probe_size_kb, the kernel file the memory is
-read from, and the file name, deployed path and mode of the program.
+the swapfile path and mode, the packages of the tools, the size formula factors,
+the accepted deviation size_tolerance_mb, the probe size probe_size_kb, the kernel
+file the memory is read from, the name of the tool the unit stops the swap with,
+and the file name, deployed path and mode of the program.
 
 These tasks create system services executed at system startup.

@@ -18,14 +18,27 @@ warning of a completed task: the machine stays usable without a disk swap file
 instead of the run failing, and the service stays installed, because the storage
 of the next boot may well be a disk.
 
+The packages that carry the tools of the program are installed through the
+shared package helper, so the section never assumes the machine already has
+them. The path of the tool the unit stops the swap with is resolved at run time
+and rendered into the unit, so the unit carries the absolute path this machine
+really has and takes nothing from PATH at boot.
+
 Every step is idempotent: the program is written only when its content differs
 from the deployed one, the unit only when the rendered content differs, and the
-service is enabled only when it is not enabled yet.
+service is enabled only when it is not enabled yet. Both files are written
+through a temporary file that replaces the target in one step, because a machine
+that loses power in the middle of an in-place write would be left with a
+truncated program or unit and the next boot would fail on it. After the program
+has run, the unit itself is started, so the artifact the next boot uses is
+proved by this run instead of being trusted.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 from string import Template
@@ -33,6 +46,7 @@ from string import Template
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     run_command,
     service_is_enabled,
@@ -44,11 +58,42 @@ from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import swapfile_service_install as values
 
+# Suffix of the temporary file an atomic write goes through before it replaces
+# the deployed program or the rendered unit.
+TEMPORARY_FILE_SUFFIX: str = ".tmp"
+
 
 def _number_text(value: float) -> str:
     """A size factor the way the command line carries it: 2 instead of 2.0."""
 
     return str(int(value)) if float(value).is_integer() else str(value)
+
+
+def _command_path(command_name: str) -> str | None:
+    """Absolute path of a command the rendered unit needs.
+
+    The path is discovered at run time instead of being written down, so the
+    unit carries the path this machine really has and the boot service takes
+    nothing from PATH. None means the machine does not carry the command.
+    """
+
+    return shutil.which(command_name)
+
+
+def _write_file_atomically(path: Path, content: bytes | str) -> None:
+    """Write a file so that it is either the old content or the new one.
+
+    The content goes into a temporary file next to the target and replaces it
+    in one step, because a machine that loses power in the middle of an
+    in-place write would be left with a truncated file.
+    """
+
+    temporary = path.with_name(path.name + TEMPORARY_FILE_SUFFIX)
+    if isinstance(content, bytes):
+        temporary.write_bytes(content)
+    else:
+        temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def _program_command(*, force: bool) -> tuple[str, ...]:
@@ -104,7 +149,7 @@ def _deploy_program(source: Path, target: Path) -> tuple[bool, str | None]:
             _log(f"program already deployed: {target}")
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(content)
+        _write_file_atomically(target, content)
         target.chmod(values.PROGRAM_FILE_MODE)
     except OSError as exc:
         return False, f"cannot deploy the program to {target}: {exc}"
@@ -113,14 +158,22 @@ def _deploy_program(source: Path, target: Path) -> tuple[bool, str | None]:
 
 
 def _render_unit(
-    template_path: Path, command: tuple[str, ...], swapfile_path: Path
+    template_path: Path,
+    command: tuple[str, ...],
+    swapfile_path: Path,
+    swapoff_path: str,
 ) -> str:
-    """Render the unit template with the command line and the swapfile path."""
+    """Render the unit template with the command line and the paths.
+
+    The swapoff path is resolved at run time by the caller, so the rendered unit
+    carries the absolute path this machine really has.
+    """
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
         exec_lines=f"ExecStart={' '.join(command)}",
         swapfile_path=str(swapfile_path),
+        swapoff_path=swapoff_path,
     )
 
 
@@ -135,7 +188,7 @@ def _write_unit_file(
             _log(f"unit file already current: {path}")
             return False, None
         unit_dir.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        _write_file_atomically(path, content)
     except OSError as exc:
         return False, f"cannot write the unit file {path}: {exc}"
     _log(f"unit file written: {path}")
@@ -212,6 +265,28 @@ def task(ctx: Context) -> TaskResult:
     warnings: list[str] = []
     changed = False
 
+    _, installed, failures, package_warnings = install_missing_packages(
+        ctx, values.PACKAGES
+    )
+    warnings.extend(package_warnings)
+    if installed:
+        _log(f"installed for the swap tools: {', '.join(installed)}")
+    if failures:
+        warnings.append(f"packages of the swap tools: {failure_detail(failures)}")
+    swapoff_path = _command_path(values.SWAPOFF_COMMAND_NAME)
+    if swapoff_path is None:
+        # The unit stops the swap through this tool and the program runs it as
+        # well, so a machine without it can neither write a unit that works nor
+        # create a swap file. The tool is named and the rest is left alone.
+        warnings.append(
+            f"{values.SWAPOFF_COMMAND_NAME} is not installed on this machine"
+        )
+        return _result(
+            changed=False,
+            message="the swap tool is not installed",
+            warnings=warnings,
+        )
+
     _log(f"deploying the swap program to {values.PROGRAM_DEPLOY_PATH}")
     program_changed, program_error = _deploy_program(
         data_dir / values.PROGRAM_FILE_NAME, values.PROGRAM_DEPLOY_PATH
@@ -232,32 +307,35 @@ def task(ctx: Context) -> TaskResult:
     _log(f"rendering the unit template {template_path}")
     content: str | None = None
     try:
-        content = _render_unit(template_path, command, values.SWAPFILE_PATH)
+        content = _render_unit(
+            template_path, command, values.SWAPFILE_PATH, swapoff_path
+        )
     except OSError as exc:
         warnings.append(f"cannot read the unit template: {exc}")
+    unit_ready = False
     if content is not None:
         unit_changed, unit_error = _write_unit_file(
             engine_values.SYSTEMD_UNIT_DIR, service_name, content
         )
         if unit_error is not None:
             warnings.append(unit_error)
-        elif unit_changed:
-            changed = True
-            try:
-                _log("reloading systemd: systemctl daemon-reload")
-                run_command(
-                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
-                )
-                _log("systemd reloaded")
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                warnings.append(f"systemd reload failed: {exc}")
+        else:
+            unit_ready = True
+            if unit_changed:
+                changed = True
+                try:
+                    run_command(
+                        list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
+                    )
+                    _log("systemd reloaded")
+                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                    warnings.append(f"systemd reload failed: {exc}")
         enabled = service_is_enabled(service_name, timeout)
         _log(
             f"checking autorun service {service_name}: "
             f"{'enabled' if enabled else 'disabled'}"
         )
         if not enabled:
-            _log(f"enabling service: systemctl enable {service_name}")
             try:
                 run_command(
                     substituted_command(
@@ -272,10 +350,9 @@ def task(ctx: Context) -> TaskResult:
                 _log("service enabled")
                 changed = True
 
-    _log(f"running the swap program: {' '.join(command)}")
     try:
         result = run_command(list(command), check=False, capture=True, timeout=timeout)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+    except (subprocess.TimeoutExpired, OSError) as exc:
         warnings.append(f"the swap program could not run: {exc}")
     else:
         for line in result.stdout.splitlines():
@@ -295,6 +372,22 @@ def task(ctx: Context) -> TaskResult:
                 warnings.append(f"no swap file was created: {skipped_reason}")
             if outcome.get("changed") is True:
                 changed = True
+
+    if unit_ready:
+        # The unit is the artifact the next boot runs, so it is started here as
+        # well: a unit that cannot start is a finding of this run instead of a
+        # surprise of the next boot. The program already did the work above, so
+        # this start changes nothing.
+        try:
+            run_command(
+                substituted_command(
+                    values.SYSTEMCTL_START_COMMAND,
+                    {"service_unit_name": service_name},
+                ),
+                timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"the boot service could not be started: {exc}")
 
     if changed:
         message = (
