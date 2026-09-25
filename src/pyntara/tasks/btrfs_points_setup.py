@@ -200,7 +200,6 @@ def _ensure_subvolume(
     """
 
     if _subvolume_exists(target):
-        _log(f"already stored: {target}")
         return False
     if target.exists():
         warnings.append(
@@ -250,15 +249,16 @@ def _ensure_point(warnings: list[str]) -> bool:
     """Store the immutable save point when it is not there yet."""
 
     directory = _point_directory()
+    if _subvolume_exists(directory):
+        _log(f"save point already stored: {directory}")
+        _verify_point_is_read_only(directory, warnings)
+        return False
     if not _ensure_subvolume(
         setup_values.ROOT_MOUNT_POINT,
         directory,
         read_only=True,
         warnings=warnings,
     ):
-        if _subvolume_exists(directory):
-            _log(f"save point already stored: {directory}")
-            _verify_point_is_read_only(directory, warnings)
         return False
     _log(f"save point stored: {directory}")
     _verify_point_is_read_only(directory, warnings)
@@ -295,6 +295,9 @@ def _ensure_work_copy(warnings: list[str]) -> bool:
     """Store the writable copy of the point when it is not there yet."""
 
     directory = _work_copy_directory()
+    if _subvolume_exists(directory):
+        _log(f"work copy already stored: {directory}")
+        return False
     if not _ensure_subvolume(
         _point_directory(), directory, read_only=False, warnings=warnings
     ):
