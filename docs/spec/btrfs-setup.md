@@ -24,6 +24,8 @@ The point is created with btrfs subvolume snapshot -r / <points>/Pyntara-permane
 
 The work copy is a writable snapshot of the point, btrfs subvolume snapshot <point> <points>/Pyntara-work. It is an ordinary system: it boots its own subvolume directly, writes to the disk, and carries the daily work. An existing work copy is never overwritten, because it carries the work of the user; a machine whose copy broke is repaired by storing a new one from the point.
 
+A snapshot of the root contains the subvolumes of that root, and a subvolume nested inside it is not part of the snapshot. The home of the user and the swap area are subvolumes of their own on this design, so the point holds the system and the installed programs, while the user data lives in the real home of the machine and is the same home in every session, whether the user came from the point, from the work copy or from the ordinary system.
+
 ## The boot menu
 
 The generator grub-btrfs is not in the Ubuntu archive, so the storage setup builds it from pinned sources (commit 38cd2fa419e4c1c0f1e345a374b37c040c170047, make install into the grub.d directory) when its installed file is absent, and starts its daemon with the drop-in that watches the points mount. The generator writes one entry per kernel for every subvolume it lists, and it applies one kernel parameter line to all of those entries. That single line is set empty, so every generated entry boots its subvolume directly, which is what makes the work copy a normal system that writes to the disk.
