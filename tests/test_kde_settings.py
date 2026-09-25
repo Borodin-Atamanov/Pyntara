@@ -2389,3 +2389,18 @@ def test_no_configured_record_carries_a_literal_home() -> None:
             if "/home/" in text and "{" not in text
         ]
         assert literal_parts == []
+
+
+def test_the_activity_switcher_record_names_its_owning_component() -> None:
+    # The Activity Switcher action belongs to plasmashell, and kwin carries
+    # no action of that name: a kwin record would name an action the running
+    # daemon does not know, so it would never apply and would be reported as
+    # an unconfirmed shortcut on every run. The shipped records therefore
+    # name the action in plasmashell alone.
+    groups = [
+        record.group
+        for record in values.KCONFIG_RECORDS
+        if record.file == "kglobalshortcutsrc"
+        and record.key == "manage activities"
+    ]
+    assert groups == [("plasmashell",)]

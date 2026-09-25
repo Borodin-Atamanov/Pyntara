@@ -503,12 +503,9 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "InvertWindow",
         "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window",
     ),
-    KconfigRecord(
-        "kglobalshortcutsrc",
-        ("kwin",),
-        "manage activities",
-        "none,none,Show Activity Switcher",
-    ),
+    # The Activity Switcher belongs to plasmashell alone: kwin carries no
+    # action of that name, so a kwin record would name an action the running
+    # daemon does not know and would be reported as unconfirmed on every run.
     KconfigRecord(
         "kglobalshortcutsrc",
         ("plasmashell",),
