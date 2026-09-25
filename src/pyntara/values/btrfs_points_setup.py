@@ -83,6 +83,15 @@ READ_ONLY_PROPERTY_COMMAND: tuple[str, ...] = (
     "{path}",
     "ro",
 )
+
+# The question that tells whether a path carries a subvolume, which is how the
+# section knows that a point or a work copy is already stored there.
+SUBVOLUME_SHOW_COMMAND: tuple[str, ...] = (
+    "btrfs",
+    "subvolume",
+    "show",
+    "{path}",
+)
 UPDATE_GRUB_COMMAND: tuple[str, ...] = ("update-grub",)
 SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
 SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
@@ -124,6 +133,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SNAPSHOT_COMMAND",
     "READ_ONLY_SNAPSHOT_COMMAND",
     "READ_ONLY_PROPERTY_COMMAND",
+    "SUBVOLUME_SHOW_COMMAND",
     "UPDATE_GRUB_COMMAND",
     "SYSTEMCTL_STOP_COMMAND",
     "SYSTEMCTL_START_COMMAND",

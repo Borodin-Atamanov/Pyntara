@@ -44,6 +44,8 @@ The storage setup writes the maintenance lines of the btrfsmaintenance package a
 
 Every step of the three sections reads the state of the machine before it writes and does nothing when the state is already the intended one, so a rerun on a configured machine is cheap and never touches the user data. A step that cannot be performed becomes a warning of a completed task: the remaining steps and the remaining tasks still run, and the entry point exits nonzero, so an incomplete configuration is visible to scripts. The tasks never delete a point, a work copy or a file of another package.
 
+A warning carries the cause and not only the fact: a command that failed is reported with the text it answered, because a machine where a mount, a snapshot or a menu rebuild fails is read by its user and not by a developer, and a message that says only that something failed leaves that user with nothing to do. Two cases are told apart where a path a section owns is already taken: the path carries the subvolume the section would store, and the section leaves it alone as the state the user keeps; the path carries a directory, and the section refuses it, because a snapshot into an existing directory is stored inside that directory under another name, where nobody looks for it, so the section names the path and asks for it to be moved aside.
+
 ## Parameters
 
 All parameters live in the values modules of the sections: src/pyntara/values/btrfs_setup.py, src/pyntara/values/btrfs_recompress.py and src/pyntara/values/btrfs_points_setup.py.

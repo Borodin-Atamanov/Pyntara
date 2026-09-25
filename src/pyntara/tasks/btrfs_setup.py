@@ -175,7 +175,7 @@ def _remount(mount_point: str, warnings: list[str]) -> None:
     ) as exc:
         warnings.append(
             f"{mount_point} could not be remounted, so the compression applies "
-            f"from the next boot: {exc}"
+            f"from the next boot: {btrfs.failure_text(exc)}"
         )
         return
     _log(f"remounted {mount_point} with the declared options")
@@ -282,7 +282,7 @@ def _create_points_subvolume(
     ) as exc:
         warnings.append(
             f"the top level of {mount.device} could not be mounted, so the "
-            f"subvolume {values.POINTS_SUBVOLUME_NAME} was not created: {exc}"
+            f"subvolume {values.POINTS_SUBVOLUME_NAME} was not created: {btrfs.failure_text(exc)}"
         )
         return False
 
@@ -311,7 +311,7 @@ def _create_points_subvolume(
     ) as exc:
         warnings.append(
             f"the subvolume {values.POINTS_SUBVOLUME_NAME} could not be "
-            f"created: {exc}"
+            f"created: {btrfs.failure_text(exc)}"
         )
     finally:
         _unmount_toplevel(warnings)
@@ -338,7 +338,7 @@ def _unmount_toplevel(warnings: list[str]) -> None:
         subprocess.TimeoutExpired,
     ) as exc:
         warnings.append(
-            f"{values.TOPLEVEL_MOUNT_POINT} could not be unmounted: {exc}"
+            f"{values.TOPLEVEL_MOUNT_POINT} could not be unmounted: {btrfs.failure_text(exc)}"
         )
 
 
@@ -376,7 +376,7 @@ def _mount_points(warnings: list[str]) -> bool:
     ) as exc:
         warnings.append(
             f"{values.POINTS_MOUNT_POINT} could not be mounted, so the save "
-            f"points cannot be stored: {exc}"
+            f"points cannot be stored: {btrfs.failure_text(exc)}"
         )
         return False
     _log(f"{values.POINTS_MOUNT_POINT} mounted")
@@ -445,7 +445,7 @@ def _set_timer_state(name: str, *, enabled: bool, warnings: list[str]) -> bool:
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ) as exc:
-        warnings.append(f"{name} could not be {state_word}: {exc}")
+        warnings.append(f"{name} could not be {state_word}: {btrfs.failure_text(exc)}")
         return False
     _log(f"{name} {state_word}")
     return True
@@ -519,7 +519,7 @@ def _build_menu_generator(warnings: list[str]) -> bool:
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ) as exc:
-        warnings.append(f"the menu generator could not be built: {exc}")
+        warnings.append(f"the menu generator could not be built: {btrfs.failure_text(exc)}")
         return False
 
     if not values.GRUB_BTRFS_INSTALLED_PATH.is_file():
@@ -608,7 +608,7 @@ def _reload_and_start_daemon(dropin_changed: bool, warnings: list[str]) -> bool:
         subprocess.CalledProcessError,
         subprocess.TimeoutExpired,
     ) as exc:
-        warnings.append(f"systemd could not reload its units: {exc}")
+        warnings.append(f"systemd could not reload its units: {btrfs.failure_text(exc)}")
         return False
 
     already_enabled = service_is_enabled(
@@ -634,7 +634,7 @@ def _reload_and_start_daemon(dropin_changed: bool, warnings: list[str]) -> bool:
             subprocess.CalledProcessError,
             subprocess.TimeoutExpired,
         ) as exc:
-            warnings.append(f"{unit} could not be started: {exc}")
+            warnings.append(f"{unit} could not be started: {btrfs.failure_text(exc)}")
             return changed
         changed = True
     _log(f"{unit} watches {values.POINTS_MOUNT_POINT}")

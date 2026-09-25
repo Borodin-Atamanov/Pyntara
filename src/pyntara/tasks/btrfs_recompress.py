@@ -230,7 +230,7 @@ def _start_job(warnings: list[str]) -> bool:
     ) as exc:
         warnings.append(
             f"the recompression job {values.JOB_UNIT_NAME} could not be "
-            f"started: {exc}"
+            f"started: {btrfs.failure_text(exc)}"
         )
         return False
     _log(f"job {values.JOB_UNIT_NAME} started")
@@ -275,7 +275,7 @@ def _open_window(warnings: list[str]) -> None:
     ) as exc:
         warnings.append(
             f"the window that shows the recompression could not be opened: "
-            f"{exc}; the messages are in the journal of {values.JOB_UNIT_NAME}"
+            f"{btrfs.failure_text(exc)}; the messages are in the journal of {values.JOB_UNIT_NAME}"
         )
         return
     _log(f"window {values.WINDOW_UNIT_NAME} shows the journal of {values.JOB_UNIT_NAME}")

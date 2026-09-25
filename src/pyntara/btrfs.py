@@ -167,6 +167,43 @@ def read_only_property(command: Iterable[str], timeout: float) -> bool | None:
     return parse_read_only_property(result.stdout)
 
 
+def subvolume_exists(command: Iterable[str], timeout: float) -> bool:
+    """Answer whether a path is a subvolume of a btrfs filesystem.
+
+    The answer comes from the tool itself: btrfs subvolume show describes a
+    subvolume and fails for a plain directory, so a machine that carries a
+    directory where a subvolume belongs is told apart from a machine that
+    carries the subvolume. Reading the listing instead would need the listing
+    to name the subvolume the way the caller expects, and the listing names a
+    subvolume relative to its parent when the parent is a subvolume of its own
+    (verified on a live machine), which makes such a comparison fragile.
+    """
+
+    try:
+        result = run_command(command, timeout=timeout, check=False, capture=True)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def failure_text(error: BaseException) -> str:
+    """The text of a failed command as a message an operator can act on.
+
+    A command that ran carries the text of its own error, and that text is what
+    names the cause on the machine; a command that could not start or that ran
+    out of time carries none, so its own description is used. A failure that a
+    section reports as its warning is read by the user of the machine, who
+    cannot look at the code, so the cause has to travel with the warning.
+    """
+
+    if isinstance(error, subprocess.CalledProcessError):
+        text = (error.stderr or "").strip()
+        if text:
+            return text.splitlines()[-1]
+        return f"the command answered status {error.returncode}"
+    return str(error)
+
+
 def write_file_atomically(path: Path, content: str, file_mode: int) -> None:
     """Write a file so that it is either the old content or the new one.
 

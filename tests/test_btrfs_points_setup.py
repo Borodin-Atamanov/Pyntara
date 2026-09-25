@@ -53,10 +53,6 @@ GENERATOR_CONFIG_TEXT = (
     'GRUB_BTRFS_IGNORE_SPECIFIC_PATH=("@" "@points/Old-point")\n'
 )
 
-# The subvolume listing of a machine that carries the points subvolume only.
-LISTING_WITHOUT_POINT = "ID 256 gen 10 top level 5 path @\nID 271 gen 12 top level 5 path @points\n"
-
-
 def _ctx(*, force: bool = False) -> Context:
     """Context of the task, with the force mode it was asked for."""
 
@@ -79,6 +75,7 @@ class _Machine:
         self.generator_config.write_text(GENERATOR_CONFIG_TEXT, encoding="utf-8")
         self.entry = tmp_path / "40_pyntara_permanent_entry"
         self.calls: list[list[str]] = []
+        self.subvolumes: set[Path] = set()
 
     @property
     def point(self) -> Path:
@@ -89,15 +86,30 @@ class _Machine:
         return self.mount_point / values.WORK_COPY_NAME
 
     def store(self, directory: Path, *kernels: str) -> None:
-        """Lay out a subvolume with the given kernels and their ramdisks."""
+        """Lay out the files of a subvolume, with the given kernels.
+
+        The files and the subvolume itself are two facts on purpose: the
+        section reads the files of a point it is about to store, and asks the
+        tool whether the path already carries a subvolume, so a test that lays
+        out files and a test that means the subvolume is already stored are
+        written differently.
+        """
 
         boot = directory / values.BOOT_DIRECTORY_NAME
         boot.mkdir(parents=True, exist_ok=True)
         for kernel in kernels:
-            (boot / f"{values.KERNEL_FILE_PREFIX}{kernel}").write_text("", encoding="utf-8")
+            (boot / f"{values.KERNEL_FILE_PREFIX}{kernel}").write_text(
+                "", encoding="utf-8"
+            )
             (boot / f"{values.INITRD_FILE_PREFIX}{kernel}").write_text(
                 "", encoding="utf-8"
             )
+
+    def already_stored(self, *directories: Path) -> None:
+        """Mark directories as subvolumes of the machine image."""
+
+        for directory in directories:
+            self.subvolumes.add(directory)
 
 
 def _use_values(monkeypatch: pytest.MonkeyPatch, machine: _Machine) -> None:
@@ -115,18 +127,24 @@ def _commands_fake(
     machine: _Machine,
     *,
     root_answer: str = BTRFS_ROOT_ANSWER,
-    listing: str = LISTING_WITHOUT_POINT,
     read_only_answer: str = "ro=true\n",
     snapshot_rc: int = 0,
+    snapshot_error: str = "ERROR: Could not create subvolume: File exists",
+    point_kernels: tuple[str, ...] = (NEWER_KERNEL,),
+    kernels_without_initrd: tuple[str, ...] = (),
     active_jobs: tuple[bool, ...] = (),
 ) -> list[list[str]]:
     """Answer every command of the section; record the calls.
 
-    findmnt answers the mount line, the subvolume listing answers with the
-    subvolumes the machine carries, the property query answers with the
-    read-only state, the snapshot answers with snapshot_rc and systemd answers
-    with the state of its units. The wait for the recompression job reads the
-    given answers in turn and reports the job as finished after them.
+    findmnt answers the mount line, the subvolume question answers from the
+    subvolumes of the machine image, the property query answers with the
+    read-only state, the snapshot answers with snapshot_rc and a message that
+    names the cause of a failure, and systemd answers with the state of its
+    units. A snapshot of the root lays the kernels of the machine into the
+    stored subvolume, exactly as the real snapshot carries the whole root, and
+    a kernel named in kernels_without_initrd arrives without its ramdisk. The
+    wait for the recompression job reads the given answers in turn and reports
+    the job as finished after them.
     """
 
     calls = machine.calls
@@ -136,17 +154,32 @@ def _commands_fake(
         calls.append(list(command))
         rc = 0
         stdout = ""
+        stderr = ""
         if command[0] == "findmnt":
             stdout = root_answer
-        elif command[0] == "btrfs" and command[1:3] == ["subvolume", "list"]:
-            stdout = listing
+        elif command[0] == "btrfs" and command[1:3] == ["subvolume", "show"]:
+            if Path(command[-1]) in machine.subvolumes:
+                stdout = f"{command[-1]}\n        Name: {Path(command[-1]).name}\n"
+            else:
+                rc = 1
+                stderr = "ERROR: not a subvolume\n"
         elif command[0] == "btrfs" and command[1:3] == ["property", "get"]:
             stdout = read_only_answer
         elif command[0] == "btrfs" and command[1:3] == ["subvolume", "snapshot"]:
             rc = snapshot_rc
+            if rc != 0:
+                stderr = snapshot_error
+            else:
+                target = Path(command[-1])
+                machine.subvolumes.add(target)
+                machine.store(target, *point_kernels)
+                for kernel in kernels_without_initrd:
+                    (target / values.BOOT_DIRECTORY_NAME / (
+                        f"{values.INITRD_FILE_PREFIX}{kernel}"
+                    )).unlink(missing_ok=True)
         if rc != 0 and kwargs.get("check", False):
-            raise subprocess.CalledProcessError(rc, command, stdout)
-        return _FakeProc(rc, stdout)
+            raise subprocess.CalledProcessError(rc, command, stdout, stderr)
+        return _FakeProc(rc, stdout, stderr)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     if active_jobs:
@@ -204,9 +237,7 @@ def test_points_setup_stores_the_point_and_the_work_copy(
     # order.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
     calls = _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
 
     result = btrfs_points_setup.task(_ctx())
 
@@ -232,18 +263,6 @@ def test_points_setup_stores_the_point_and_the_work_copy(
     ]
 
 
-def _not_in_the_listing(directory: Path) -> bool:
-    """Answer that a subvolume is not stored yet, so the section stores it.
-
-    The directories of the fixture exist, because the fixture lays out the
-    files the section reads, and the listing is answered separately: the
-    listing is what the section asks before it stores a subvolume, and the
-    files are what it reads afterwards.
-    """
-
-    return False
-
-
 def test_points_setup_writes_the_boot_entry_with_the_in_memory_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -252,9 +271,9 @@ def test_points_setup_writes_the_boot_entry_with_the_in_memory_root(
     # and the newest kernel under the plain name of the point.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL, OLDER_KERNEL)
-    _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
+    _commands_fake(
+        monkeypatch, machine, point_kernels=(NEWER_KERNEL, OLDER_KERNEL)
+    )
 
     btrfs_points_setup.task(_ctx())
 
@@ -290,11 +309,12 @@ def test_points_setup_leaves_out_a_kernel_without_its_ramdisk(
     # entry and the section says which kernel it left out.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
-    boot = machine.point / values.BOOT_DIRECTORY_NAME
-    (boot / f"{values.KERNEL_FILE_PREFIX}{OLDER_KERNEL}").write_text("", encoding="utf-8")
-    _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
+    _commands_fake(
+        monkeypatch,
+        machine,
+        point_kernels=(NEWER_KERNEL, OLDER_KERNEL),
+        kernels_without_initrd=(OLDER_KERNEL,),
+    )
 
     result = btrfs_points_setup.task(_ctx())
 
@@ -309,9 +329,7 @@ def test_points_setup_keeps_the_point_out_of_the_generated_list(
     # and the entries of an earlier run survive the edit.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
 
     btrfs_points_setup.task(_ctx())
 
@@ -336,9 +354,7 @@ def test_points_setup_ignores_a_commented_setting_of_the_generator(
         f'#{values.GRUB_BTRFS_IGNORE_KEY}=("example")\n', encoding="utf-8"
     )
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
 
     btrfs_points_setup.task(_ctx())
 
@@ -357,9 +373,7 @@ def test_points_setup_rebuilds_the_menu_with_the_generator_stopped(
     # again afterwards.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
     calls = _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
 
     btrfs_points_setup.task(_ctx())
 
@@ -391,7 +405,7 @@ def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(
         encoding="utf-8",
     )
     _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", lambda directory: True)
+    machine.already_stored(machine.point, machine.work_copy)
     btrfs_points_setup._write_boot_entry(_ctx(), [])
 
     result = btrfs_points_setup.task(_ctx())
@@ -416,7 +430,7 @@ def test_points_setup_rebuilds_the_menu_when_the_run_forces_it(
         encoding="utf-8",
     )
     calls = _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", lambda directory: True)
+    machine.already_stored(machine.point, machine.work_copy)
     btrfs_points_setup._write_boot_entry(_ctx(), [])
 
     result = btrfs_points_setup.task(_ctx(force=True))
@@ -434,7 +448,7 @@ def test_points_setup_reports_a_point_that_is_not_read_only(
     _use_values(monkeypatch, machine)
     machine.store(machine.point, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine, read_only_answer="ro=false\n")
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", lambda directory: True)
+    machine.already_stored(machine.point, machine.work_copy)
 
     result = btrfs_points_setup.task(_ctx())
 
@@ -450,13 +464,32 @@ def test_points_setup_reports_a_snapshot_that_cannot_be_stored(
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(monkeypatch, machine, snapshot_rc=1)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", lambda directory: False)
 
     result = btrfs_points_setup.task(_ctx())
 
     assert result.warnings
     assert any("could not be stored" in warning for warning in result.warnings)
+    assert any("File exists" in warning for warning in result.warnings)
     assert machine.entry.exists() is False
+
+
+def test_points_setup_reports_a_directory_that_occupies_the_place_of_the_point(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A snapshot into an existing directory is stored inside that directory
+    # under another name, where nobody looks for it, so the section refuses the
+    # path and says what to move aside instead of storing something invisible.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.store(machine.point, NEWER_KERNEL)
+    calls = _commands_fake(monkeypatch, machine)
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert any("carries no subvolume" in warning for warning in result.warnings)
+    assert not [
+        call for call in calls if call[1:3] == ["subvolume", "snapshot"]
+    ]
 
 
 def test_points_setup_waits_for_the_recompression_job(
@@ -466,15 +499,15 @@ def test_points_setup_waits_for_the_recompression_job(
     # waits while the one-off recompression of the storage section runs.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
-    machine.store(machine.point, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine, active_jobs=(True, True, False))
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
     monkeypatch.setattr(recompress_values, "JOB_WAIT_POLL_SECONDS", 0.0)
 
     result = btrfs_points_setup.task(_ctx())
 
+    assert any(
+        call[1:3] == ["subvolume", "snapshot"] for call in machine.calls
+    )
     assert result.success is True
-    assert machine.point.is_dir()
 
 
 def test_points_setup_stores_the_point_when_the_job_never_ends(
@@ -486,7 +519,6 @@ def test_points_setup_stores_the_point_when_the_job_never_ends(
     _use_values(monkeypatch, machine)
     machine.store(machine.point, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine, active_jobs=(True, True, True))
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", _not_in_the_listing)
     monkeypatch.setattr(recompress_values, "JOB_WAIT_POLL_SECONDS", 0.0)
     monkeypatch.setattr(recompress_values, "JOB_WAIT_LIMIT_SECONDS", 0)
 
@@ -507,7 +539,7 @@ def test_points_setup_does_not_wait_when_the_point_is_already_stored(
     machine.store(machine.point, NEWER_KERNEL)
     machine.store(machine.work_copy, NEWER_KERNEL)
     _commands_fake(monkeypatch, machine)
-    monkeypatch.setattr(btrfs_points_setup, "_name_in_listing", lambda directory: True)
+    machine.already_stored(machine.point, machine.work_copy)
     monkeypatch.setattr(
         btrfs_points_setup,
         "service_is_active",

@@ -97,7 +97,7 @@ def task(ctx: Context) -> TaskResult:
         _wait_for_recompression(warnings)
 
     changed = _ensure_point(warnings)
-    point_present = _point_directory().is_dir()
+    point_present = _subvolume_exists(_point_directory())
     if point_present:
         changed = _ensure_work_copy(warnings) or changed
         changed = _write_boot_entry(ctx, warnings) or changed
@@ -151,7 +151,7 @@ def _point_is_stored() -> bool:
     machine.
     """
 
-    return _name_in_listing(_point_directory())
+    return _subvolume_exists(_point_directory())
 
 
 def _points_mounted() -> bool:
@@ -172,32 +172,44 @@ def _work_copy_directory() -> Path:
     return setup_values.POINTS_MOUNT_POINT / values.WORK_COPY_NAME
 
 
-def _subvolume_paths() -> tuple[str, ...]:
-    """Read the paths of the subvolumes of the points mount."""
+def _subvolume_exists(directory: Path) -> bool:
+    """Answer whether a path carries a subvolume.
 
-    command = substituted_command(
-        setup_values.SUBVOLUME_LIST_COMMAND,
-        {"path": str(setup_values.POINTS_MOUNT_POINT)},
-    )
-    return btrfs.read_subvolume_paths(
-        command, setup_values.STORAGE_COMMAND_TIMEOUT_SECONDS
-    )
-
-
-def _name_in_listing(directory: Path) -> bool:
-    """Answer whether the points listing carries one subvolume.
-
-    The listing names a subvolume by its path from the top level of the
-    filesystem, so the name of the points subvolume stands before the name of
-    the point. A listing that answers nothing falls back to the directory
-    itself, because the snapshot command is what fails on a missing subvolume.
+    The question goes to the tool, which answers for a subvolume and refuses a
+    plain directory, so a machine that carries a directory where the point
+    belongs is told apart from a machine that carries the point.
     """
 
-    expected = f"{setup_values.POINTS_SUBVOLUME_NAME}/{directory.name}"
-    paths = _subvolume_paths()
-    if not paths:
-        return directory.is_dir()
-    return expected in paths
+    command = substituted_command(
+        values.SUBVOLUME_SHOW_COMMAND, {"path": str(directory)}
+    )
+    return btrfs.subvolume_exists(command, values.STORAGE_COMMAND_TIMEOUT_SECONDS)
+
+
+def _ensure_subvolume(
+    source: Path, target: Path, *, read_only: bool, warnings: list[str]
+) -> bool:
+    """Store a subvolume at a path, unless the path is already taken.
+
+    Three cases are told apart: the path already carries a subvolume, and then
+    nothing is stored because the state the user keeps is never overwritten;
+    the path carries something that is not a subvolume, and then the section
+    reports it, because a snapshot into an existing directory is stored inside
+    that directory under another name, where nobody looks for it; and a free
+    path, which is where the snapshot is stored.
+    """
+
+    if _subvolume_exists(target):
+        _log(f"already stored: {target}")
+        return False
+    if target.exists():
+        warnings.append(
+            f"{target} carries no subvolume, so nothing was stored there: move "
+            f"what occupies that path aside and run the section again"
+        )
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
+    return _snapshot(source, target, read_only=read_only, warnings=warnings)
 
 
 def _wait_for_recompression(warnings: list[str]) -> None:
@@ -238,13 +250,15 @@ def _ensure_point(warnings: list[str]) -> bool:
     """Store the immutable save point when it is not there yet."""
 
     directory = _point_directory()
-    if _name_in_listing(directory):
-        _log(f"save point already stored: {directory}")
-        _verify_point_is_read_only(directory, warnings)
-        return False
-    if not _snapshot(
-        setup_values.ROOT_MOUNT_POINT, directory, read_only=True, warnings=warnings
+    if not _ensure_subvolume(
+        setup_values.ROOT_MOUNT_POINT,
+        directory,
+        read_only=True,
+        warnings=warnings,
     ):
+        if _subvolume_exists(directory):
+            _log(f"save point already stored: {directory}")
+            _verify_point_is_read_only(directory, warnings)
         return False
     _log(f"save point stored: {directory}")
     _verify_point_is_read_only(directory, warnings)
@@ -281,10 +295,7 @@ def _ensure_work_copy(warnings: list[str]) -> bool:
     """Store the writable copy of the point when it is not there yet."""
 
     directory = _work_copy_directory()
-    if _name_in_listing(directory):
-        _log(f"work copy already stored: {directory}")
-        return False
-    if not _snapshot(
+    if not _ensure_subvolume(
         _point_directory(), directory, read_only=False, warnings=warnings
     ):
         return False
@@ -308,7 +319,9 @@ def _snapshot(
             command, timeout=values.SNAPSHOT_TIMEOUT_SECONDS, check=True, capture=True
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        warnings.append(f"the snapshot {target} could not be stored: {exc}")
+        warnings.append(
+            f"the snapshot {target} could not be stored: {btrfs.failure_text(exc)}"
+        )
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
     return True
@@ -589,7 +602,7 @@ def _refresh_menu(warnings: list[str]) -> bool:
             capture=True,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        warnings.append(f"the boot menu could not be rebuilt: {exc}")
+        warnings.append(f"the boot menu could not be rebuilt: {btrfs.failure_text(exc)}")
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
     finally:
@@ -612,7 +625,7 @@ def _systemctl(
             capture=True,
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        warnings.append(f"the call on {unit} failed: {exc}")
+        warnings.append(f"the call on {unit} failed: {btrfs.failure_text(exc)}")
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
     return True
