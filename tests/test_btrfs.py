@@ -67,17 +67,6 @@ def test_parse_mount_line_reports_a_line_without_the_asked_fields() -> None:
     assert btrfs.parse_mount_line("/dev/vda2 btrfs") is None
 
 
-def test_carries_option_compares_the_name_before_the_equals_sign() -> None:
-    # The option a machine carries is named by the part before the equals
-    # sign, so any compression value counts as the option compress.
-    mount = btrfs.parse_mount_line(FINDMNT_ANSWER_WITH_SUBVOLUME)
-
-    assert mount is not None
-    assert mount.carries_option("compress") is True
-    assert mount.carries_option("subvolid") is True
-    assert mount.carries_option("compressforce") is False
-
-
 def test_read_mounted_filesystem_reads_the_first_answer_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

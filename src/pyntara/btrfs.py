@@ -43,17 +43,6 @@ class MountedFilesystem:
     subvolume: str
     options: tuple[str, ...]
 
-    def carries_option(self, option_name: str) -> bool:
-        """Answer whether the mounted option list carries one option.
-
-        The comparison is by the name before the equals sign, so compress and
-        compress=zstd:15 both count as the option compress.
-        """
-
-        return any(
-            word.split("=", 1)[0] == option_name for word in self.options
-        )
-
 
 def split_source(source: str) -> tuple[str, str]:
     """Split a findmnt source into its device and its mounted subvolume.

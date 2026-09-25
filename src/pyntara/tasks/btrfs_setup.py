@@ -80,7 +80,8 @@ def task(ctx: Context) -> TaskResult:
     changed = _prepare_menu(ctx, warnings) or changed
 
     message = (
-        "btrfs ready: compression zstd:15, points mounted at "
+        f"btrfs ready: the mounted subvolumes carry "
+        f"{values.COMPRESSION_OPTION_ASSIGNMENT}, points mounted at "
         f"{values.POINTS_MOUNT_POINT}, maintenance written, menu prepared"
     )
     _log(message)
