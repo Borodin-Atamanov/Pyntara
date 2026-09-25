@@ -58,6 +58,13 @@ CATALOG: tuple[TaskSpec, ...] = (
         MODES,
     ),
     TaskSpec(
+        "btrfs_setup",
+        "Ready the btrfs filesystem: compression, the points subvolume, the "
+        "maintenance schedule and the boot menu that shows the save points.",
+        ("add_extra_repos",),
+        MODES,
+    ),
+    TaskSpec(
         "swapfile_service_install",
         "Calculate and configure swapfile from RAM and free disk space.",
         (),
@@ -258,6 +265,20 @@ CATALOG: tuple[TaskSpec, ...] = (
         "from the GitHub release, with the Ubuntu archive as the fallback.",
         ("add_extra_repos",),
         ("desktop",),
+    ),
+    TaskSpec(
+        "btrfs_recompress",
+        "Compress the data that is already on the btrfs filesystem once and "
+        "balance the chunks, as a background job the user can watch.",
+        ("btrfs_setup",),
+        MODES,
+    ),
+    TaskSpec(
+        "btrfs_points_setup",
+        "Store the immutable save point and its writable work copy in the "
+        "points subvolume and show both in the boot menu.",
+        ("btrfs_setup", "btrfs_recompress"),
+        MODES,
     ),
     TaskSpec(
         "commit_final_system_metrics",

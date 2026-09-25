@@ -46,6 +46,9 @@ from pyntara.values import upnp_forwarding_setup as upnp_forwarding_values
 # Every values module of the package, by its name inside pyntara.values.
 VALUES_MODULE_NAMES: tuple[str, ...] = (
     "add_extra_repos",
+    "btrfs_points_setup",
+    "btrfs_recompress",
+    "btrfs_setup",
     "chrome_setup",
     "cli_tools_heavy_setup",
     "cli_tools_lite_setup",
@@ -92,6 +95,11 @@ READ_VALUE_NAMES_ATTRIBUTE = "READ_VALUE_NAMES"
 # of texts for the generic pass, while a virtual package name in it would make
 # the task reinstall that package on every run without ever reaching its goal.
 EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] = (
+    ("btrfs_points_setup", "GRUB_D_ENTRY_FILE_MODE", check_file_mode),
+    ("btrfs_recompress", "PROGRAM_FILE_MODE", check_file_mode),
+    ("btrfs_setup", "GRUB_BTRFS_BUILD_DIRECTORY_MODE", check_file_mode),
+    ("btrfs_setup", "GRUB_BTRFS_DAEMON_DROPIN_FILE_MODE", check_file_mode),
+    ("btrfs_setup", "TOPLEVEL_DIRECTORY_MODE", check_file_mode),
     ("cli_tools_heavy_setup", "PACKAGES", check_real_package_names),
     ("common", "EXECUTABLE_FILE_MODE", check_file_mode),
     ("common", "LAUNCHER_FILE_MODE", check_file_mode),
