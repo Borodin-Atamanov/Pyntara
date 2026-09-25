@@ -1,0 +1,7 @@
+menuentry '$menu_title' --id $entry_id --class $entry_class --class gnu-linux --class gnu --class os {
+    insmod btrfs
+    $search_line
+    echo 'Loading the immutable save point with the root filesystem in memory'
+    linux "$kernel_path" root=$root_spec ro rootflags=subvol=$subvolume $overlay_parameter quiet splash
+    initrd "$initrd_path"
+}

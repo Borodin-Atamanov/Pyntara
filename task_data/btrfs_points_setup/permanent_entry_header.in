@@ -1,0 +1,8 @@
+#!/bin/sh
+exec tail -n +3 $0
+# Boot entry of the immutable save point of this machine, written by the
+# btrfs_points_setup task of Pyntara. The point is a read-only subvolume, and
+# this entry starts it with the root filesystem in memory, so a session started
+# from it works normally and leaves the point untouched, ready for the next
+# recovery. The writable copy of the point carries its own entry, which the
+# generator of snapshot entries writes.
