@@ -17,6 +17,7 @@ import subprocess
 import time
 from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from pathlib import Path
+from string import Template
 
 from pyntara import logger
 from pyntara.context import Context
@@ -863,6 +864,31 @@ def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> li
     """
 
     return [part.format(**values) for part in command]
+
+
+def render_client_file(script_path: Path, substitutions: Mapping[str, str]) -> Path | str:
+    """Write the client of the clone next to itself with its names filled in.
+
+    A client under task_data/ carries {placeholders} for the names of the
+    interface it talks to, and the interpreter is given the path of the
+    file: the program text never travels as an argument of a command line,
+    so one call of a client prints one line in the log of the run. The file
+    is written on every call and its content is never compared or kept,
+    because it belongs to this run alone. Returns the path of the rendered
+    file, or the text of a failure.
+    """
+
+    try:
+        template = Template(script_path.read_text(encoding="utf-8"))
+        rendered_text = template.substitute(substitutions)
+        rendered_path = script_path.with_name(
+            f"{script_path.stem}.{engine_values.RENDERED_CLIENT_SUFFIX}"
+        )
+        rendered_path.write_text(rendered_text, encoding="utf-8")
+        rendered_path.chmod(engine_values.RENDERED_CLIENT_FILE_MODE)
+    except (OSError, KeyError, ValueError) as exc:
+        return f"cannot render the client {script_path}: {exc}"
+    return rendered_path
 
 
 def kglobalaccel_names() -> dict[str, str]:

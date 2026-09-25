@@ -57,6 +57,22 @@ displayStyle=Flag
 """
 
 
+def _write_task_data(repo_root: Path) -> Path:
+    """Copy the shipped client into the clone of the test, return its path.
+
+    The task renders the client it runs next to the file it read, so the
+    clone of a test carries its own copy and the repository is only read.
+    """
+
+    name = values.APPLY_HOTKEYS_SCRIPT_FILE_NAME
+    directory = task_data_dir(repo_root, "kde_keyboard_setup")
+    directory.mkdir(parents=True, exist_ok=True)
+    shipped = Path(__file__).resolve().parents[1] / "task_data" / "kde_keyboard_setup"
+    path = directory / name
+    path.write_text((shipped / name).read_text(encoding="utf-8"), encoding="utf-8")
+    return path
+
+
 def _ctx(
     tmp_path: Path,
     *,
@@ -68,11 +84,13 @@ def _ctx(
     config_dir = values.CONFIG_DIR
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / values.APPLETSRC_FILE_NAME).write_text(appletsrc, encoding="utf-8")
+    _write_task_data(tmp_path)
     return make_context(
         task_name="kde_keyboard_setup",
         install_mode="desktop",
         force_tasks=frozenset({"kde_keyboard_setup"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=tmp_path,
     )
 
 
@@ -532,12 +550,14 @@ def test_live_apply_runs_the_script_the_values_name(
         / values.APPLY_HOTKEYS_SCRIPT_FILE_NAME
     )
     shipped = script_path.read_text(encoding="utf-8")
-    rendered = shipped
-    for placeholder, value in kglobalaccel_names().items():
-        rendered = rendered.replace(f"${placeholder}", value)
-    assert rendered in live_applies[0]
-    assert shipped not in live_applies[0]
-    assert any("org.example.KGlobalAccel" in part for part in live_applies[0])
+    client_path = Path(live_applies[0][5])
+    assert client_path.parent == script_path.parent
+    assert client_path.name.endswith(engine_values.RENDERED_CLIENT_SUFFIX)
+    rendered = client_path.read_text(encoding="utf-8")
+    assert rendered != shipped
+    assert "$kglobalaccel_bus_name" not in rendered
+    assert "org.example.KGlobalAccel" in rendered
+    assert all("\n" not in part for part in live_applies[0])
 
 
 def test_live_apply_prefix_comes_from_the_values(
@@ -545,20 +565,22 @@ def test_live_apply_prefix_comes_from_the_values(
 ) -> None:
     # The prefix of the client call is a value: another interpreter
     # command is exactly what runs, with the system interpreter filling its
-    # {python} slot and the client source following as the next argument.
+    # {python} slot and the path of the rendered client following as the
+    # next argument.
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
     ctx = _ctx(tmp_path)
     system_python = engine_values.SYSTEM_PYTHON
     monkeypatch.setattr(
-        values, "PYTHON_SCRIPT_COMMAND", (system_python, "--apply", "{python}")
+        values, "PYTHON_SCRIPT_COMMAND", (system_python, "--apply", "{client_file}")
     )
     _, _, _, live_applies = _install_fakes(monkeypatch)
     result = task_module.task(ctx)
     assert result.success is True
     assert live_applies
     assert live_applies[0][:4] == ["runuser", "-u", "i", "--"]
+    assert live_applies[0][4] == system_python
     assert live_applies[0][5] == "--apply"
-    assert live_applies[0][6] == system_python
+    assert live_applies[0][6].endswith(engine_values.RENDERED_CLIENT_SUFFIX)
 
 
 def test_live_apply_reports_a_missing_script(tmp_path: Path) -> None:

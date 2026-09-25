@@ -32,9 +32,13 @@ program derives the same key from the empty password, so the wallet opens
 without a dialog for them as well.
 
 The client runs as the desktop user on the session bus of that user, because
-the wallet belongs to the session. It asks the wallet service for the name of
-the wallet of the session, and that question is also what starts the daemon
-that creates the wallet.
+the wallet belongs to the session. The task renders the client next to its file
+before the call, with the suffix of rendered_client_suffix and the mode of
+rendered_client_file_mode of the engine values module, and the interpreter
+receives the path of the rendered file, so the program text never travels as the
+argument of a command line and one call keeps one line in the log of the run. It
+asks the wallet service for the name of the wallet of the session, and that
+question is also what starts the daemon that creates the wallet.
 
 A wallet file that exists is left untouched and reported. A wallet may carry a
 password, and asking it to open in order to find out is the call that shows the

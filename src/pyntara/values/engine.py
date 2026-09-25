@@ -252,6 +252,14 @@ PARTIAL_DOWNLOAD_FILE_SUFFIX: str = ".download"
 OS_RELEASE_FAMILY_KEYS: tuple[str, ...] = ("ID", "ID_LIKE")
 OS_RELEASE_DEBIAN_FAMILY_NAMES: tuple[str, ...] = ("debian", "ubuntu")
 
+# Suffix of the file a task writes a client of task_data/ to, next to the client
+# itself, and the mode of that file. A client is run as a file and never as the
+# text of a program on the command line, so a call keeps one line in the log of
+# the run; the mode lets the desktop user read a file the run wrote as root, and
+# a machine whose umask hides the file from that user still works.
+RENDERED_CLIENT_SUFFIX: str = "rendered.py"
+RENDERED_CLIENT_FILE_MODE: int = 0o644
+
 # The Python interpreter of the managed system, the one that carries the system
 # packages such as python3-dbus. The absolute path keeps a task that runs an
 # embedded client independent of the caller PATH, where the project venv could
@@ -691,6 +699,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PROCESS_CHECK_TIMEOUT_SECONDS",
     "PROGRESS_PRIORITY",
     "RELEASE_ASSET_ARCHITECTURES",
+    "RENDERED_CLIENT_FILE_MODE",
+    "RENDERED_CLIENT_SUFFIX",
     "REPORT_FAMILY_WORDS",
     "REPORT_JSON_INDENT",
     "REPORT_RECORD_KEYS",

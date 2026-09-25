@@ -109,9 +109,10 @@ KWIN_RELOAD_COMMAND: tuple[str, ...] = (
     "org.kde.KWin.reconfigure",
 )
 
-# Prefix of the calls that run an embedded python client with the system
-# interpreter of the engine and the client source as the next argument.
-PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "-c")
+# Prefix of the calls that run a rendered python client with the system
+# interpreter of the engine and the path of the rendered client as the next
+# argument of the call.
+PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "{client_file}")
 
 # The DBus interface of the running KWin session, by its parts: the bus name, the
 # object path and the interface name of the virtual desktop manager, and the

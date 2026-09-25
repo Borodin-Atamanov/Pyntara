@@ -36,7 +36,6 @@ import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from string import Template
 from typing import TypedDict
 from xml.etree import ElementTree
 
@@ -47,6 +46,7 @@ from pyntara.utils import (
     install_package_once,
     kglobalaccel_names,
     package_is_installed,
+    render_client_file,
     run_command,
     session_environment,
     substituted_command,
@@ -1170,21 +1170,16 @@ def _apply_shortcuts_live(
         _log("no desktop session, the shortcuts apply at the next login")
         _write_shortcut_records_to_file(changes, timeout=timeout, warnings=warnings)
         return False
-    try:
-        client_text = Template(client_path.read_text(encoding="utf-8")).substitute(
-            **kglobalaccel_names
-        )
-    except OSError as exc:
-        report_and_write_for_next_login(
-            changes, f"cannot read the shortcut client {client_path}: {exc}"
-        )
+    rendered_client = render_client_file(client_path, kglobalaccel_names)
+    if isinstance(rendered_client, str):
+        report_and_write_for_next_login(changes, rendered_client)
         return False
     command = _as_user_command(
         [
             *substituted_command(
-                values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
+                values.PYTHON_SCRIPT_COMMAND,
+                {"python": system_python, "client_file": str(rendered_client)},
             ),
-            client_text,
             _shortcut_apply_request(changes),
         ],
     )
@@ -1816,13 +1811,6 @@ def _desktop_dbus_names() -> dict[str, str]:
     }
 
 
-def _desktop_list_client_text(script_path: Path) -> str:
-    """The desktop list client with the DBus names of the section filled in."""
-
-    template = Template(script_path.read_text(encoding="utf-8"))
-    return template.substitute(**_desktop_dbus_names())
-
-
 def _apply_desktop_count_live(
     *,
     script_path: Path,
@@ -1894,17 +1882,16 @@ def _apply_desktop_count_live(
                 return f"cannot create desktop: {exc}"
         _log(f"created {target - current} desktops, live count now {target}")
     else:
-        try:
-            ids_client = _desktop_list_client_text(script_path)
-        except OSError as exc:
-            return f"cannot read the desktop list client {script_path}: {exc}"
+        rendered_ids = render_client_file(script_path, _desktop_dbus_names())
+        if isinstance(rendered_ids, str):
+            return rendered_ids
         ids_result = run_command(
             _as_user_command(
                 [
                     *substituted_command(
-                        values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
+                        values.PYTHON_SCRIPT_COMMAND,
+                        {"python": system_python, "client_file": str(rendered_ids)},
                     ),
-                    ids_client,
                 ],
             ),
             extra_env=env,

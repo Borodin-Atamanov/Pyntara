@@ -57,15 +57,6 @@ for these measurements is gone.
 
 Find the best solutions, choose the best, create task to install it.
 
-## Ship the keyring client as a file
-
-The KDE wallet client of keyring_setup must reach the target machine as a file
-and not as the argument of `python3 -c`. The live run of 2026-09-24 wrote the
-whole body of that program, about 250 lines, into the install log on one `run :`
-line, so a single command filled more of the log than any task of the run. The
-goal is an install log where one command is one line and the client of a section
-stays a readable file on the machine.
-
 ## Make the fast gate independent of the test order
 
 `bash scripts/check_gates.sh --fast` fails on the port tests of

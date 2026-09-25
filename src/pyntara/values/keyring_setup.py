@@ -33,9 +33,10 @@ PACKAGES: tuple[str, ...] = ("python3-gi",)
 
 # The wrapper that runs a command as the desktop user, and the interpreter of
 # the client. The interpreter is the one of the machine and not the one of the
-# run, because the client imports the Gio binding of the system python.
+# run, because the client imports the Gio binding of the system python. The path
+# of the rendered client follows as the next argument of the call.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "-c")
+PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "{client_file}")
 
 # The client under task_data/keyring_setup/ of the clone, and the seconds one
 # call of it may take. The wallet service starts on the first question, so the

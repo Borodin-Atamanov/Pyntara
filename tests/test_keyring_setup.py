@@ -19,6 +19,7 @@ from support import FakeProc, make_context
 from pyntara.context import Context
 from pyntara.tasks import keyring_setup as task_module
 from pyntara.values import common as common_values
+from pyntara.values import engine as engine_values
 from pyntara.values import keyring_setup as values
 from pyntara.values import tasks as tasks_values
 
@@ -52,7 +53,7 @@ class _Recorder:
             raise subprocess.CalledProcessError(
                 1, command_list, output="", stderr="the client failed"
             )
-        if "-c" in command_list:
+        if _is_client_call(command_list):
             return FakeProc(0, self.answer)
         return FakeProc(0, "")
 
@@ -60,7 +61,13 @@ class _Recorder:
     def client_was_run(self) -> bool:
         """Whether the wallet client command was run at all."""
 
-        return any("-c" in command for command in self.commands)
+        return any(_is_client_call(command) for command in self.commands)
+
+
+def _is_client_call(command: list[str]) -> bool:
+    """True when the command runs the rendered wallet client."""
+
+    return any(part.endswith(f".{engine_values.RENDERED_CLIENT_SUFFIX}") for part in command)
 
 
 def _fixture_repo(tmp_path: Path) -> Path:
@@ -315,12 +322,20 @@ def test_unknown_answer_reports_a_warning(
     assert "whatever" in result.warnings[0]
 
 
-def test_client_source_is_valid_after_substitution() -> None:
-    source = task_module._client_source(
-        CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME
+def test_rendered_client_is_valid_after_substitution(tmp_path: Path) -> None:
+    client = tmp_path / values.CLIENT_SCRIPT_FILE_NAME
+    client.write_text(
+        (CLIENT_DIRECTORY / values.CLIENT_SCRIPT_FILE_NAME).read_text(encoding="utf-8"),
+        encoding="utf-8",
     )
 
-    compile(source, values.CLIENT_SCRIPT_FILE_NAME, "exec")
+    rendered = task_module.render_client_file(client, task_module._client_names())
+
+    assert isinstance(rendered, Path)
+    assert rendered.parent == tmp_path
+    assert rendered.name.endswith(engine_values.RENDERED_CLIENT_SUFFIX)
+    source = rendered.read_text(encoding="utf-8")
+    compile(source, rendered.name, "exec")
     assert "$" not in source
 
 

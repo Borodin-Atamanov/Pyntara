@@ -132,10 +132,10 @@ CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
 # filled in at the call site.
 MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
 
-# Prefix of the call that runs the apply_hotkeys client with the system
-# interpreter of the [engine] table; the client source and its payload follow as
-# the next arguments of the command line.
-PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "-c")
+# Prefix of the call that runs the rendered apply_hotkeys client with the system
+# interpreter of the [engine] table; the path of the rendered client and the
+# payload follow as the next arguments of the command line.
+PYTHON_SCRIPT_COMMAND: tuple[str, ...] = ("{python}", "{client_file}")
 
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.

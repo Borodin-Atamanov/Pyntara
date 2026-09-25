@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from string import Template
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -47,6 +46,7 @@ from pyntara.models import TaskResult
 from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     move_paths_to_trash,
+    render_client_file,
     run_command,
     session_bus_address,
     substituted_command,
@@ -85,37 +85,36 @@ def _home_env() -> dict[str, str]:
     return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
-def _client_source(script_path: Path) -> str:
-    """The client of the clone with the names of the section substituted in.
+def _client_names() -> dict[str, str]:
+    """The names the wallet client of the clone receives filled in.
 
     The names of the wallet service, the constants of the key derivation and
     the words of the answer protocol are values, so the client carries
     placeholders and every name reaches it from one place.
     """
 
-    template = Template(script_path.read_text(encoding="utf-8"))
-    return template.substitute(
-        wallet_bus_name=values.WALLET_BUS_NAME,
-        wallet_object_path=values.WALLET_OBJECT_PATH,
-        wallet_interface_name=values.WALLET_INTERFACE_NAME,
-        wallet_name_method_name=values.WALLET_NAME_METHOD_NAME,
-        daemon_bus_name=values.DAEMON_BUS_NAME,
-        daemon_object_path=values.DAEMON_OBJECT_PATH,
-        daemon_open_method_name=values.DAEMON_OPEN_METHOD_NAME,
-        daemon_open_signature=values.DAEMON_OPEN_SIGNATURE,
-        key_algorithm=values.KEY_ALGORITHM,
-        key_iterations=values.KEY_ITERATIONS,
-        key_length_bytes=values.KEY_LENGTH_BYTES,
-        salt_length_bytes=values.SALT_LENGTH_BYTES,
-        wallet_directory_relative_path=values.WALLET_DIRECTORY_RELATIVE_PATH,
-        wallet_file_suffix=values.WALLET_FILE_SUFFIX,
-        wallet_salt_suffix=values.WALLET_SALT_SUFFIX,
-        outcome_key=values.OUTCOME_KEY,
-        detail_key=values.DETAIL_KEY,
-        outcome_created=values.OUTCOME_CREATED,
-        outcome_exists=values.OUTCOME_EXISTS,
-        outcome_error=values.OUTCOME_ERROR,
-    )
+    return {
+        "wallet_bus_name": values.WALLET_BUS_NAME,
+        "wallet_object_path": values.WALLET_OBJECT_PATH,
+        "wallet_interface_name": values.WALLET_INTERFACE_NAME,
+        "wallet_name_method_name": values.WALLET_NAME_METHOD_NAME,
+        "daemon_bus_name": values.DAEMON_BUS_NAME,
+        "daemon_object_path": values.DAEMON_OBJECT_PATH,
+        "daemon_open_method_name": values.DAEMON_OPEN_METHOD_NAME,
+        "daemon_open_signature": values.DAEMON_OPEN_SIGNATURE,
+        "key_algorithm": values.KEY_ALGORITHM,
+        "key_iterations": str(values.KEY_ITERATIONS),
+        "key_length_bytes": str(values.KEY_LENGTH_BYTES),
+        "salt_length_bytes": str(values.SALT_LENGTH_BYTES),
+        "wallet_directory_relative_path": values.WALLET_DIRECTORY_RELATIVE_PATH,
+        "wallet_file_suffix": values.WALLET_FILE_SUFFIX,
+        "wallet_salt_suffix": values.WALLET_SALT_SUFFIX,
+        "outcome_key": values.OUTCOME_KEY,
+        "detail_key": values.DETAIL_KEY,
+        "outcome_created": values.OUTCOME_CREATED,
+        "outcome_exists": values.OUTCOME_EXISTS,
+        "outcome_error": values.OUTCOME_ERROR,
+    }
 
 
 def _parse_answer(stdout: str) -> dict[str, str]:
@@ -138,18 +137,17 @@ def _run_client(
 ) -> tuple[dict[str, str], str | None]:
     """Run the client as the desktop user; return (answer, error text)."""
 
-    try:
-        source = _client_source(script_path)
-    except OSError as exc:
-        return {}, f"cannot read the wallet client {script_path}: {exc}"
+    rendered_client = render_client_file(script_path, _client_names())
+    if isinstance(rendered_client, str):
+        return {}, rendered_client
     command = [
         *substituted_command(
             values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
         ),
         *substituted_command(
-            values.PYTHON_SCRIPT_COMMAND, {"python": engine_values.SYSTEM_PYTHON}
+            values.PYTHON_SCRIPT_COMMAND,
+            {"python": engine_values.SYSTEM_PYTHON, "client_file": str(rendered_client)},
         ),
-        source,
     ]
     try:
         result = run_command(

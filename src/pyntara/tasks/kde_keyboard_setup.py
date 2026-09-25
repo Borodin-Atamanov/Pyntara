@@ -29,7 +29,6 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
-from string import Template
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -38,6 +37,7 @@ from pyntara.utils import (
     install_package_once,
     kglobalaccel_names,
     package_is_installed,
+    render_client_file,
     run_command,
     session_bus_address,
     substituted_command,
@@ -362,20 +362,17 @@ def _apply_hotkeys_live(
             ]
         }
     )
-    try:
-        client_text = Template(script_path.read_text(encoding="utf-8")).substitute(
-            **kglobalaccel_names
-        )
-    except OSError as exc:
-        return f"cannot read the hotkey script {script_path}: {exc}", False
+    rendered_client = render_client_file(script_path, kglobalaccel_names)
+    if isinstance(rendered_client, str):
+        return rendered_client, False
     try:
         result = run_command(
             _as_user_command(
                 [
                     *substituted_command(
-                        values.PYTHON_SCRIPT_COMMAND, {"python": system_python}
+                        values.PYTHON_SCRIPT_COMMAND,
+                        {"python": system_python, "client_file": str(rendered_client)},
                     ),
-                    client_text,
                     payload,
                 ],
             ),

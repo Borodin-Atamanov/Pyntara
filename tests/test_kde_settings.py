@@ -10,6 +10,7 @@ autouse fixture points them at the temporary tree of the test.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,19 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # action holds it and gives it to a configured action; both the script
 # hotkeys and the configured shortcut records are applied through it.
 _SHARED_CLIENT = _REPO_ROOT / "task_data" / "kde_keyboard_setup" / "apply_hotkeys.py"
+
+
+def _shared_client(tmp_path: Path) -> Path:
+    """The shared client copied into the temporary tree of the test.
+
+    The task renders the client it runs next to the file it read, so a test
+    hands over a copy of its own: the shipped client of the repository is
+    read and never written.
+    """
+
+    path = tmp_path / _SHARED_CLIENT.name
+    path.write_text(_SHARED_CLIENT.read_text(encoding="utf-8"), encoding="utf-8")
+    return path
 
 # Shortcut records as the config carries them: the description field is not
 # read, the absent word and an empty field mean no combination, and a record
@@ -89,6 +103,25 @@ def _point_the_values_at_the_temporary_tree(
         monkeypatch.setattr(common_values, name, getattr(common_values, name))
 
 
+def _temporary_clone(tmp_path: Path) -> Path:
+    """A clone tree of the test carrying the task data the task reads.
+
+    The task renders the client it runs next to the file it read, so a test
+    that runs the whole task hands it a clone of its own: the shipped task
+    data of the sections the task reads is copied into the temporary
+    directory of the test, and the repository is only read.
+    """
+
+    clone_root = tmp_path / "clone"
+    for section in ("kde_settings", "kde_keyboard_setup"):
+        shutil.copytree(
+            _REPO_ROOT / "task_data" / section,
+            clone_root / "task_data" / section,
+            dirs_exist_ok=True,
+        )
+    return clone_root
+
+
 def _ctx(
     tmp_path: Path,
     *,
@@ -126,7 +159,7 @@ def _ctx(
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
-        repo_root=repo_root if repo_root is not None else _REPO_ROOT,
+        repo_root=repo_root if repo_root is not None else _temporary_clone(tmp_path),
     )
 
 
@@ -1251,7 +1284,7 @@ def test_apply_shortcuts_live_runs_the_shared_client(
     calls: list[list[str]] = []
     _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1260,9 +1293,13 @@ def test_apply_shortcuts_live_runs_the_shared_client(
     assert changed is True
     assert len(calls) == 1
     assert calls[0][0] == engine_values.SYSTEM_PYTHON
-    client_text = next(part for part in calls[0] if "import dbus" in part)
+    client_path = Path(calls[0][1])
+    assert client_path.name.endswith(engine_values.RENDERED_CLIENT_SUFFIX)
+    assert client_path != _SHARED_CLIENT
+    client_text = client_path.read_text(encoding="utf-8")
     assert engine_values.KGLOBALACCEL_BUS_NAME in client_text
     assert "$kglobalaccel_bus_name" not in client_text
+    assert all("\n" not in part for part in calls[0])
     request = json.loads(calls[0][-1])
     assert request["changes"] == [
         {
@@ -1317,7 +1354,7 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
         ],
     )
     changed = task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1348,7 +1385,7 @@ def test_apply_shortcuts_live_asks_again_for_an_action_the_daemon_learns(
         ],
     )
     changed = task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1381,7 +1418,7 @@ def test_apply_shortcuts_live_stops_at_once_for_a_combination_it_cannot_read(
         assign_unsupported={"MinimizeAll": ["meta+u"]},
     )
     task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1413,7 +1450,7 @@ def test_apply_shortcuts_live_writes_an_action_the_daemon_never_learns(
         assign_missing=frozenset({"manage activities"}),
     )
     task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1449,7 +1486,7 @@ def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
         assign_after={"MinimizeAll": []},
     )
     changed = task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1485,7 +1522,7 @@ def test_apply_shortcuts_live_clears_a_foreign_record_holding_a_key(
     calls: list[list[str]] = []
     _, _, _, _, writes, _, _ = _install_fakes(monkeypatch, assign_calls=calls)
     changed = task_module._apply_shortcuts_live(
-        client_path=_SHARED_CLIENT,
+        client_path=_shared_client(tmp_path),
         timeout=5,
         env=None,
         system_python=engine_values.SYSTEM_PYTHON,
@@ -1689,7 +1726,11 @@ def test_touchpad_clickareas_writes_two(
 ) -> None:
     # The clickareas method maps to the ClickMethod value 2.
     values.TOUCHPAD_CLICK_METHOD = "clickareas"
-    ctx = make_context(install_mode="desktop", task_data_root=tmp_path)
+    ctx = make_context(
+        install_mode="desktop",
+        task_data_root=tmp_path,
+        repo_root=_temporary_clone(tmp_path),
+    )
     config_dir = tmp_path / ".config"
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "kcminputrc").write_text(TOUCHPAD_RC, encoding="utf-8")
@@ -1750,6 +1791,7 @@ def _kconfig_ctx(
         install_mode="desktop",
         force_tasks=frozenset({"kde_settings"}) if force else frozenset(),
         task_data_root=tmp_path,
+        repo_root=_temporary_clone(tmp_path),
     )
 
 
@@ -1908,14 +1950,23 @@ def _is_desktop_count_call(command: list[str]) -> bool:
 def _write_desktop_ids_client(tmp_path: Path) -> Path:
     """Write the python desktop id client the task runs, return its path.
 
-    The task reads the client text from the file the config names and
-    passes it to the interpreter, so the test hands over a file of its own
-    and recognises the call by that exact text.
+    The task reads the client text from the file the config names, renders it
+    next to that file and passes the path to the interpreter, so the test
+    hands over a file of its own and reads back what the task rendered.
     """
 
     path = tmp_path / "list_desktop_ids.py"
     path.write_text("import dbus\nprint('id')\n", encoding="utf-8")
     return path
+
+
+def _rendered_client_path(command: list[str]) -> Path | None:
+    """The rendered client a command runs, or None for another command."""
+
+    for part in command:
+        if part.endswith(f".{engine_values.RENDERED_CLIENT_SUFFIX}"):
+            return Path(part)
+    return None
 
 
 def test_desktop_count_live_removes_extra_desktops(
@@ -1926,8 +1977,7 @@ def test_desktop_count_live_removes_extra_desktops(
     # and removes the trailing extras.
     records = (KconfigRecord("kwinrc", ("Desktops",), "Number", "4", "string", False),)
     _kconfig_ctx(tmp_path, records)
-    ids_client_path = _write_desktop_ids_client(tmp_path)
-    ids_client = ids_client_path.read_text(encoding="utf-8")
+    _write_desktop_ids_client(tmp_path)
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -1935,7 +1985,7 @@ def test_desktop_count_live_removes_extra_desktops(
         joined = " ".join(command)
         if _is_desktop_count_call(command):
             return _FakeProc(0, "6")
-        if ids_client in command:
+        if _rendered_client_path(command) is not None:
             return _FakeProc(0, "id1\nid2\nid3\nid4\nid5\nid6\n")
         if "removeDesktop" in joined:
             return _FakeProc(0, "")
@@ -1987,8 +2037,9 @@ def test_the_desktop_dbus_names_come_from_the_config(
         joined = " ".join(command)
         if _is_desktop_count_call(command):
             return _FakeProc(0, "4")
-        if command and "import dbus" in command[-1]:
-            client_texts.append(command[-1])
+        rendered_client = _rendered_client_path(command)
+        if rendered_client is not None:
+            client_texts.append(rendered_client.read_text(encoding="utf-8"))
             return _FakeProc(0, "id1\nid2\nid3\nid4\n")
         if "removeDesktop" in joined:
             return _FakeProc(0, "")

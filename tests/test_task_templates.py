@@ -16,6 +16,11 @@ The value of a name ending in _SCRIPT_FILE_NAME is a client the task runs,
 a file under task_data/<section>/ of the same module, because a body longer
 than five lines belongs in a file and not in the code.
 
+The value of a name ending in PYTHON_SCRIPT_COMMAND runs such a client, so it
+names the rendered client as {client_file} and never the -c flag of the
+interpreter: the program text of a client stays in its file, and one call of
+it keeps one line in the log of a run.
+
 A string value that starts with task_data/ is a path from the clone root,
 the shape a module uses when the template of a whole file tree is named
 rather than a single file.
@@ -37,10 +42,10 @@ VALUES_DIR = REPO_ROOT / "src" / "pyntara" / "values"
 TASK_DATA_DIR = REPO_ROOT / "task_data"
 
 
-def _declared_strings() -> list[tuple[str, str, str]]:
-    """The module, the value name and the string of every declared string."""
+def _declared_nodes() -> list[tuple[str, str, ast.expr]]:
+    """The module, the value name and the node of every declared value."""
 
-    declared: list[tuple[str, str, str]] = []
+    declared: list[tuple[str, str, ast.expr]] = []
     for path in sorted(VALUES_DIR.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in tree.body:
@@ -54,12 +59,48 @@ def _declared_strings() -> list[tuple[str, str, str]]:
                 and isinstance(node.targets[0], ast.Name)
             ):
                 name, value_node = node.targets[0].id, node.value
-            if not name or not isinstance(value_node, ast.Constant):
-                continue
-            if not isinstance(value_node.value, str):
-                continue
-            declared.append((path.stem, name, value_node.value))
+            if name and value_node is not None:
+                declared.append((path.stem, name, value_node))
     return declared
+
+
+def _declared_strings() -> list[tuple[str, str, str]]:
+    """The module, the value name and the string of every declared string."""
+
+    return [
+        (module, name, value_node.value)
+        for module, name, value_node in _declared_nodes()
+        if isinstance(value_node, ast.Constant) and isinstance(value_node.value, str)
+    ]
+
+
+def _declared_command_parts() -> list[tuple[str, str, tuple[str, ...]]]:
+    """The module, the value name and the parts of every declared command."""
+
+    declared: list[tuple[str, str, tuple[str, ...]]] = []
+    for module, name, value_node in _declared_nodes():
+        if not isinstance(value_node, ast.Tuple):
+            continue
+        parts = [
+            element.value
+            for element in value_node.elts
+            if isinstance(element, ast.Constant) and isinstance(element.value, str)
+        ]
+        if len(parts) == len(value_node.elts):
+            declared.append((module, name, tuple(parts)))
+    return declared
+
+
+def test_every_declared_client_command_runs_a_file_and_not_a_program() -> None:
+    offenders: list[str] = []
+    for module, name, parts in _declared_command_parts():
+        if not name.endswith("PYTHON_SCRIPT_COMMAND"):
+            continue
+        if "-c" in parts or "{client_file}" not in parts:
+            offenders.append(f"{module}.{name} = {parts!r}")
+    assert not offenders, (
+        "client commands that would run the text of a program: " f"{offenders}"
+    )
 
 
 def test_every_declared_template_exists_in_its_task_data_directory() -> None:

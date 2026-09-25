@@ -1415,3 +1415,55 @@ def test_substituted_text_fills_named_placeholders_and_keeps_other_braces() -> N
         == "/home/kubuntu/Downloads -f=${Status}"
     )
     assert utils.substituted_text("plain", values) == "plain"
+
+
+def test_render_client_file_writes_the_client_next_to_itself(tmp_path: Path) -> None:
+    # The client of the clone keeps its program text to itself: the task
+    # renders the names into a file next to it and runs that file, so the
+    # text never travels as an argument of a command line. The mode lets the
+    # desktop user read a file the run writes as root.
+    client = tmp_path / "client.py"
+    client.write_text('bus = "$bus_name"\n', encoding="utf-8")
+
+    rendered = utils.render_client_file(client, {"bus_name": "org.example.Bus"})
+
+    assert isinstance(rendered, Path)
+    assert rendered.parent == tmp_path
+    assert rendered.name == f"client.{engine_values.RENDERED_CLIENT_SUFFIX}"
+    assert rendered.read_text(encoding="utf-8") == 'bus = "org.example.Bus"\n'
+    assert rendered.stat().st_mode & 0o777 == engine_values.RENDERED_CLIENT_FILE_MODE
+
+
+def test_render_client_file_replaces_the_file_of_an_earlier_call(
+    tmp_path: Path,
+) -> None:
+    # The rendered file belongs to the call that writes it: no content and no
+    # version of it is compared or kept.
+    client = tmp_path / "client.py"
+    client.write_text('bus = "$bus_name"\n', encoding="utf-8")
+    utils.render_client_file(client, {"bus_name": "org.first.Bus"})
+
+    rendered = utils.render_client_file(client, {"bus_name": "org.second.Bus"})
+
+    assert isinstance(rendered, Path)
+    assert rendered.read_text(encoding="utf-8") == 'bus = "org.second.Bus"\n'
+
+
+def test_render_client_file_reports_a_client_it_cannot_read(tmp_path: Path) -> None:
+    error = utils.render_client_file(tmp_path / "missing.py", {})
+
+    assert isinstance(error, str)
+    assert str(tmp_path / "missing.py") in error
+
+
+def test_render_client_file_reports_a_name_the_client_does_not_carry(
+    tmp_path: Path,
+) -> None:
+    client = tmp_path / "client.py"
+    client.write_text('bus = "$bus_name"\n', encoding="utf-8")
+
+    error = utils.render_client_file(client, {})
+
+    assert isinstance(error, str)
+    assert str(client) in error
+
