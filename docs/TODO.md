@@ -74,3 +74,20 @@ gate passed, because pytest-xdist spreads the modules over worker processes, so
 the defect hides there too. The goal is a fast gate that fails only for the code
 under test: either the logger gives its identifier back at the end of a test, or
 the port tests stop depending on how many times the clock is read.
+
+## Создавать файл подкачки и в btrfs системах
+
+## Настроить btrfs системы, чтобы появились нужные параметры при загрузке системы
+
+## Install at through cli_tools_lite_setup
+
+Add the at package to PACKAGES of cli_tools_lite_setup
+(src/pyntara/values/cli_tools_lite_setup.py), so every mode receives the at and
+batch commands with the rest of the console set, and make the task ensure the
+atd service is enabled and running, because batch does nothing without it. The
+reason is the btrfs maintenance of a desktop: batch runs a queued command when
+the average system load is low, which is the idle trigger a background
+recompression or deduplication needs, while a systemd timer has no idle
+condition and cron misses its window on a machine that is often off. Requested
+by the user on 2026-09-25.
+
