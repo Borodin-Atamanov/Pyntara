@@ -60,6 +60,9 @@ SYSTEMD_RUN_JOB_COMMAND: tuple[str, ...] = (
     "--collect",
     "--description={description}",
 )
+
+# The time a systemd call of this section may take: asking for a unit, asking
+# the state of the window of the job.
 SYSTEMD_RUN_TIMEOUT_SECONDS: float = 60.0
 
 # The window that shows the journal of the job. It runs in the service manager
@@ -67,6 +70,20 @@ SYSTEMD_RUN_TIMEOUT_SECONDS: float = 60.0
 # the environment of the session does not have to be passed by hand.
 TERMINAL_COMMAND: str = "konsole"
 WINDOW_UNIT_NAME: str = "pyntara-btrfs-recompress-window"
+
+# The state of the window is asked in the service manager of the desktop user,
+# the same manager the window is started in: a plain --user call from root
+# reaches no session. A run that finds the window active keeps that window,
+# because a unit of the same name is still loaded and the manager refuses a
+# second unit of a loaded name.
+WINDOW_IS_ACTIVE_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "--user",
+    "--machine",
+    "{username}@.host",
+    "is-active",
+    "{unit_name}",
+)
 SYSTEMD_RUN_WINDOW_COMMAND: tuple[str, ...] = (
     "systemd-run",
     "--machine",
@@ -109,6 +126,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMD_RUN_TIMEOUT_SECONDS",
     "TERMINAL_COMMAND",
     "WINDOW_UNIT_NAME",
+    "WINDOW_IS_ACTIVE_COMMAND",
     "SYSTEMD_RUN_WINDOW_COMMAND",
     "JOB_WAIT_POLL_SECONDS",
     "JOB_WAIT_LIMIT_SECONDS",

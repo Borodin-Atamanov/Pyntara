@@ -6,7 +6,9 @@ so the freed space is collected. The work takes minutes on a real filesystem,
 so it runs as a transient systemd unit in the background while the rest of the
 provisioning continues, and a window on the desktop of the user follows the
 journal of that unit, which is how the user sees the progress without waiting
-in front of the installer.
+in front of the installer. A run that finds that window open keeps it, because
+the unit of a window that is still shown is loaded and the service manager
+refuses a second unit of the same name.
 
 The program of the section does the rewriting itself and writes a marker file
 when every step succeeded. The marker is what makes the work one-off: a later
@@ -252,6 +254,12 @@ def _open_window(warnings: list[str]) -> None:
     if not username:
         warnings.append(NO_WINDOW_WARNING.format(unit=values.JOB_UNIT_NAME))
         return
+    if _window_is_open(username, values.SYSTEMD_RUN_TIMEOUT_SECONDS):
+        _log(
+            f"the window {values.WINDOW_UNIT_NAME} is already open and follows "
+            f"{values.JOB_UNIT_NAME}, so the run keeps it"
+        )
+        return
     command = substituted_command(
         values.SYSTEMD_RUN_WINDOW_COMMAND,
         {
@@ -279,3 +287,25 @@ def _open_window(warnings: list[str]) -> None:
         )
         return
     _log(f"window {values.WINDOW_UNIT_NAME} shows the journal of {values.JOB_UNIT_NAME}")
+
+
+def _window_is_open(username: str, timeout: float) -> bool:
+    """Answer whether the window of an earlier run is still on the desktop.
+
+    The window runs in the session of the desktop user, so its state is asked
+    with --machine: a plain --user call from root reaches no session. An active
+    unit is the open window, and a loaded unit of that name is why the service
+    manager refuses a second one, so the run keeps the window it finds.
+    """
+
+    command = substituted_command(
+        values.WINDOW_IS_ACTIVE_COMMAND,
+        {"username": username, "unit_name": values.WINDOW_UNIT_NAME},
+    )
+    try:
+        result = run_command(
+            command, check=False, capture=True, timeout=timeout, log_command=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.stdout.strip() == engine_values.SYSTEMD_ACTIVE_STATE

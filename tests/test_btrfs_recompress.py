@@ -80,10 +80,12 @@ def _commands_fake(
     root_answer: str = BTRFS_ROOT_ANSWER,
     job_rc: int = 0,
     terminal: str | None = None,
+    window_active: bool = False,
 ) -> list[list[str]]:
     """Answer every command of the task; record the calls.
 
     findmnt answers with the given mount line, systemd-run answers with job_rc,
+    the state query of the window answers with the state the caller asks for,
     every other command succeeds. shutil.which answers with the terminal the
     caller names, so a test decides whether the machine has a desktop window.
     """
@@ -94,6 +96,8 @@ def _commands_fake(
         calls.append(list(command))
         if command[0] == "findmnt":
             return _FakeProc(0, root_answer)
+        if command[0] == "systemctl" and "is-active" in command:
+            return _FakeProc(0, "active\n" if window_active else "inactive\n")
         if command[0] == "systemd-run" and job_rc != 0:
             if kwargs.get("check", False):
                 raise subprocess.CalledProcessError(job_rc, command, "")
@@ -259,6 +263,34 @@ def test_recompress_opens_a_window_when_the_machine_has_one(
         "-u",
         values.JOB_UNIT_NAME,
     ]
+
+
+def test_recompress_keeps_the_window_an_earlier_run_opened(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A window that is still on the desktop is a loaded unit, and the service
+    # manager of the user refuses a second unit of a loaded name, so a run that
+    # finds the window open keeps it: the window follows the journal of the job
+    # unit name, so it shows the messages of this run as well.
+    _use_values(monkeypatch, tmp_path)
+    calls = _commands_fake(
+        monkeypatch, terminal="/usr/bin/konsole", window_active=True
+    )
+
+    result = btrfs_recompress.task(_ctx())
+
+    window = [
+        command
+        for command in calls
+        if command[0] == "systemd-run" and f"--unit={values.WINDOW_UNIT_NAME}" in command
+    ]
+    state = next(command for command in calls if "is-active" in command)
+    assert result.success is True
+    assert result.changed is True
+    assert window == []
+    assert result.warnings == ()
+    assert state[1:3] == ["--user", "--machine"]
+    assert state[-1] == values.WINDOW_UNIT_NAME
 
 
 def test_recompress_reports_a_machine_without_a_desktop_session(

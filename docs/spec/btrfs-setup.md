@@ -77,6 +77,7 @@ program_deploy_path - the path the program of the section is deployed to
 done_marker_path - the file whose presence means the one-off work is done
 job_unit_name - the unit the job runs as, pyntara-btrfs-recompress
 window_unit_name - the unit of the console window that shows the journal of the job
+window_is_active_command - the query that asks the service manager of the desktop user for the state of that window
 job_wait_poll_seconds, job_wait_limit_seconds - how often and how long the points section waits for the job
 
 point_name, work_copy_name - the names of the save point and of its writable copy, Pyntara-permanent and Pyntara-work
