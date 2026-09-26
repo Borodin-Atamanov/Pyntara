@@ -219,8 +219,11 @@ install_uv() {
     # leak into this shell. UV_CACHE_DIR is set for the child explicitly.
     env UV_CACHE_DIR="$CACHE_DIR" bash "$installer" 2>&1 | tee -a "$LOG_FILE"
     # The Astral installer places uv into $HOME/.local/bin, which is not on
-    # root's PATH by default, so add it explicitly for later phases.
-    export PATH="$HOME/.local/bin:$PATH"
+    # root's PATH by default, so add it explicitly for later phases. HOME can
+    # be unset when the installer runs without a login environment, and the uv
+    # installer then writes to the root home, so the same directory is named
+    # here instead of stopping the run on an unset variable.
+    export PATH="${HOME:-/root}/.local/bin:$PATH"
     log "uv installed: $(command -v uv)"
 }
 fi
