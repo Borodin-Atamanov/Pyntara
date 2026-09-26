@@ -2,6 +2,18 @@
 
 Planned future work. После реализации - удаляем из этого файла.
 
+## The port-forwarding key of a fresh machine does not match the vault passphrase
+
+Fresh-machine runs of 2026-09-25 (clean003) and 2026-09-26 (clean004), both with
+the default vault, report the warning of src/pyntara/tasks/port_forwarding_setup.py:
+"the passphrase of the vault entry 'ssh_passphase_for_port_forwarding' does not
+decrypt the port-forwarding key /root/.ssh/id_ed25519_pf, so the machine forwards
+no ports". The unit auto_port_forwarding.service is deployed and active, so the
+machine looks provisioned while it forwards nothing. Not investigated yet: whether
+the deployed key was generated with another passphrase, or whether that vault entry
+belongs to a different machine. Neither run used the production vault, so a machine
+provisioned with it has not been checked either.
+
 ## Bring the desktop settings to the running session
 
 The desktop tasks write config files, and a running KDE component that owns such
