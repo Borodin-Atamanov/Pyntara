@@ -747,6 +747,41 @@ def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
     return groups
 
 
+def _restart_panel(warnings: list[str], *, timeout: float) -> None:
+    """Make the Plasma panel of the desktop user read its configuration again.
+
+    The service manager refuses to start a unit that failed too many times
+    until its failed state is cleared, which is what systemd names in that
+    answer, so the failed state is cleared first: clearing a healthy unit
+    changes nothing. The restart is what makes a freshly pinned launcher
+    appear in the running session instead of after the next login.
+    """
+
+    placeholders = {"username": common_values.DESKTOP_USERNAME}
+    try:
+        run_command(
+            substituted_command(values.PANEL_RESET_FAILED_COMMAND, placeholders),
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        # A unit without a failed state answers this call with an error, and
+        # that is no reason to skip the restart.
+        pass
+    try:
+        run_command(
+            substituted_command(values.PANEL_RESTART_COMMAND, placeholders),
+            timeout=timeout,
+        )
+    except (
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+        OSError,
+    ) as exc:
+        warnings.append(f"cannot restart the Plasma panel: {exc}")
+        return
+    _log("restarted the Plasma panel")
+
+
 def _pin_chrome_launcher(*, timeout: float) -> tuple[bool, str | None]:
     """Pin the CDP Chrome launcher to the Plasma taskbars; (changed, note).
 
@@ -937,21 +972,7 @@ def task(ctx: Context) -> TaskResult:
     if pin_changed:
         messages.append("pinned the Chrome launcher to the Plasma taskbar")
         changed = True
-        try:
-            run_command(
-                substituted_command(
-                    values.PANEL_RESTART_COMMAND,
-                    {"username": common_values.DESKTOP_USERNAME},
-                ),
-                timeout=timeout,
-            )
-            _log("restarted the Plasma panel")
-        except (
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-            OSError,
-        ) as exc:
-            warnings.append(f"cannot restart the Plasma panel: {exc}")
+        _restart_panel(warnings, timeout=timeout)
 
     if port_listener_pid(values.CDP_PORT, timeout) is None:
         if _chrome_is_running(timeout):

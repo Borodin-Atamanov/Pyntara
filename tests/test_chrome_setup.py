@@ -801,6 +801,14 @@ def test_full_flow_pins_launcher_and_restarts_panel(
     assert any("kwriteconfig6" in call for call in calls)
     restarts = [call for call in calls if call[0] == "systemctl"]
     assert any("plasma-plasmashell.service" in call for call in restarts)
+    # The failed state is cleared before the restart, which is the call the
+    # service manager names when it refuses to start a unit that failed too
+    # often; without it a run that follows a failed panel start cannot make
+    # the pinned launcher appear.
+    verbs = [call[4] for call in restarts if len(call) > 4]
+    assert "reset-failed" in verbs
+    assert "restart" in verbs
+    assert verbs.index("reset-failed") < verbs.index("restart")
 
 
 def test_second_run_changes_nothing_when_target_reached(

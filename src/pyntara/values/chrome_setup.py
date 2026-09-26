@@ -92,6 +92,19 @@ CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
 # the XDG applications directories.
 PANEL_LAUNCHER_ID: str = "applications:google-chrome.desktop"
 
+# Command that clears the failed state of the Plasma panel unit of the desktop
+# user. The service manager refuses to start a unit that failed too many times
+# and names this call in its own answer, so a run that follows a failed panel
+# start can still restart the panel.
+PANEL_RESET_FAILED_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "--user",
+    "--machine",
+    "{username}@.host",
+    "reset-failed",
+    "plasma-plasmashell.service",
+)
+
 # Command that restarts the Plasma panel of the desktop user, so a newly pinned
 # launcher appears without a re-login; {username} is the account of the machine.
 PANEL_RESTART_COMMAND: tuple[str, ...] = (
@@ -277,6 +290,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "CONFIG_GROUP_FLAG",
     "CONFIG_KEY_FLAG",
     "PANEL_LAUNCHER_ID",
+    "PANEL_RESET_FAILED_COMMAND",
     "PANEL_RESTART_COMMAND",
     "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
     "PREFERENCES_RELATIVE_PATH",
