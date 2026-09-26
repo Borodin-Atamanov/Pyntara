@@ -456,7 +456,7 @@ def test_the_two_cli_package_lists_hold_the_toolset_once() -> None:
     lite = cli_tools_lite_values.PACKAGES
     heavy = cli_tools_heavy_values.PACKAGES
     assert not set(lite) & set(heavy)
-    assert (len(lite), len(heavy)) == (55, 23)
+    assert (len(lite), len(heavy)) == (56, 23)
 
 
 def test_the_parallel_marker_is_part_of_the_parallel_write_out() -> None:

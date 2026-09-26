@@ -27,6 +27,8 @@ PACKAGE_SUCCESS_THRESHOLD_PERCENT: int = 70
 # because dpkg-query cannot see a virtual name: a virtual name would look
 # missing forever and be reinstalled on every run.
 PACKAGES: tuple[str, ...] = (
+    # deferred commands: at queues one, batch runs it when the load is low
+    "at",  # queues commands to run later, batch runs them when the system is idle
     # shell completion
     "bash-completion",  # programmable completion for the bash shell
     "hstr",  # better history in console
