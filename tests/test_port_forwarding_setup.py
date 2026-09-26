@@ -77,12 +77,14 @@ def _install_fake(
     enabled: bool = False,
     active: bool = False,
     failed: bool = False,
+    last_result: str = "success",
     venv_version: str | None = __version__,
 ) -> list[list[str]]:
     """Install the systemctl fake; return the recorded command calls.
 
     venv_version is the pyntara version the deployed interpreter reports;
     None makes that call fail, which is a deployment the task cannot read.
+    last_result is the word systemd reports for the last run of the unit.
     """
 
     calls: list[list[str]] = []
@@ -96,6 +98,8 @@ def _install_fake(
             return FakeProc(0, "active\n") if active else FakeProc(1, "inactive")
         if command[0] == "systemctl" and command[1] == "is-failed":
             return FakeProc(0, "failed\n") if failed else FakeProc(1, "inactive")
+        if command[0] == "systemctl" and command[1] == "show":
+            return FakeProc(0, f"{last_result}\n")
         if command[0].endswith("/python") and command[1] == "-c":
             if venv_version is None:
                 return FakeProc(1)
@@ -383,6 +387,21 @@ def test_inactive_clean_exit_is_ok(
     _install_fake(monkeypatch, active=False, failed=False)
     result = port_forwarding_setup.task(ctx)
     assert result.success
+    assert result.warnings == ()
+
+
+def test_a_service_that_keeps_restarting_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A service that exited nonzero is neither active nor failed while systemd
+    # waits for the next attempt, so only the result of the last run shows the
+    # loop; the run must report it instead of passing a deployment off as
+    # working while the machine forwards nothing.
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, active=False, failed=False, last_result="exit-code")
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert any("did not stay up" in warning for warning in result.warnings)
 
 
 def test_missing_template_is_a_warning(

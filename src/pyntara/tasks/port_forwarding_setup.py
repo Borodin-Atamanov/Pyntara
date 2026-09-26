@@ -11,7 +11,11 @@ server group and the passphrase. The unit is enabled and started
 immediately, so a broken deployment fails the task and shows in the
 install log instead of surfacing at the first reboot; on a vault
 without the port-forwarding data the service exits cleanly right after
-the start, which is the intended no-op state, not a failure. The unit
+the start, which is the intended no-op state, not a failure. A service
+that exited nonzero is neither active nor failed while systemd waits for
+the next attempt, so the result of its last run is read as well and a
+service that keeps restarting is a warning of the completed task, because
+the machine then forwards nothing while the deployment looks done. The unit
 carries the version of the deployed code, taken from the deployed
 interpreter, so an update of that code makes the unit differ from the
 one on the machine and the service is restarted with the new code. The
@@ -135,6 +139,32 @@ def _started_ok(
             return False
         time.sleep(values.START_CHECK_RETRY_DELAY_SECONDS)
     return True
+
+
+def _last_run_result(service_name: str, timeout: float) -> str:
+    """The result word of the last run of the unit; "unknown" when unreadable.
+
+    A service that exited nonzero makes systemd schedule the next attempt, and
+    the unit is then neither active nor failed while that attempt is pending,
+    so the start check cannot see the loop; the result of the last run is what
+    names it (measured 2026-09-25: one unit restarted 64 times while the run
+    reported a successful deployment).
+    """
+
+    try:
+        result = run_command(
+            substituted_command(
+                values.SYSTEMCTL_SHOW_RESULT_COMMAND,
+                {"service_unit_name": service_name},
+            ),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        _log(f"cannot read the result of the last run of {service_name}: {exc}")
+        return "unknown"
+    return result.stdout.strip().lower() or "unknown"
 
 
 def task(ctx: Context) -> TaskResult:
@@ -265,7 +295,18 @@ def task(ctx: Context) -> TaskResult:
                 f"service {service_name} entered the failed state after start"
             )
         else:
-            _log(f"service {service_name} is running or cleanly exited")
+            last_result = _last_run_result(service_name, timeout)
+            if last_result != values.SUCCESSFUL_SERVICE_RESULT:
+                # The service did not stay up: systemd keeps scheduling the next
+                # attempt, so the machine forwards nothing and the run has to
+                # say it instead of reporting a deployment that works.
+                warnings.append(
+                    f"service {service_name} did not stay up after the start: its "
+                    f"last run ended with {last_result}, the journal of the unit "
+                    "names the reason"
+                )
+            else:
+                _log(f"service {service_name} is running or cleanly exited")
     message = f"service {service_name} deployed"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"

@@ -129,6 +129,24 @@ SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = (
     "{service_unit_name}",
 )
 
+# Query of the result of the last run of the unit. A service that exited nonzero
+# and waits for the next systemd attempt is neither active nor failed, so the
+# two questions above cannot see it; this word is the one that shows the loop
+# (measured 2026-09-25: one unit restarted 64 times while the run reported a
+# successful deployment).
+SYSTEMCTL_SHOW_RESULT_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "show",
+    "--property",
+    "Result",
+    "--value",
+    "{service_unit_name}",
+)
+
+# The word systemd reports for a unit whose last run ended cleanly. Every other
+# word (exit-code, signal, timeout, oom-kill and the rest) means the run failed.
+SUCCESSFUL_SERVICE_RESULT: str = "success"
+
 # Readiness loop of the service after a start: attempts and pause between two
 # checks. An inactive service is not a failure, because the service exits
 # cleanly on a machine whose vault carries no port-forwarding data; only the
@@ -251,6 +269,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_ENABLE_COMMAND",
     "SYSTEMCTL_RESTART_COMMAND",
     "SYSTEMCTL_IS_FAILED_COMMAND",
+    "SYSTEMCTL_SHOW_RESULT_COMMAND",
+    "SUCCESSFUL_SERVICE_RESULT",
     "START_CHECK_ATTEMPTS",
     "START_CHECK_RETRY_DELAY_SECONDS",
     "ERROR_PRIORITY",
