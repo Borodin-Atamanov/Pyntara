@@ -438,7 +438,7 @@ def test_keep_debs_dropin_created_even_when_sources_satisfied(
     assert result.success is True
     assert result.changed is True
     assert "already satisfied" in (result.message or "")
-    assert "enabled" in (result.message or "")
+    assert "keeps the downloaded .deb files" in (result.message or "")
     assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(True)
 
 
@@ -488,7 +488,7 @@ def test_keep_debs_dropin_switched_to_delete_when_the_run_deletes_downloads(
 ) -> None:
     # The run deletes the downloads: the existing drop-in is rewritten with the
     # answer of this run, so apt stops keeping the packages it downloaded, and
-    # the result reports the disabled state.
+    # the result says in plain words what the run asked for.
     keep_debs = _install_keep_debs(monkeypatch, tmp_path, create=True)
     _install_sources(monkeypatch, tmp_path, {"ubuntu.sources": _satisfied_ubuntu()})
     result = add_extra_repos.task(
@@ -497,7 +497,7 @@ def test_keep_debs_dropin_switched_to_delete_when_the_run_deletes_downloads(
     assert result.success is True
     assert result.changed is True
     assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(False)
-    assert "disabled" in (result.message or "")
+    assert "deletes the downloaded .deb files" in (result.message or "")
 
 
 def test_keep_debs_dropin_written_when_the_run_deletes_downloads(
@@ -514,7 +514,7 @@ def test_keep_debs_dropin_written_when_the_run_deletes_downloads(
     assert result.success is True
     assert result.changed is True
     assert keep_debs.read_text(encoding="utf-8") == _keep_debs_body(False)
-    assert "disabled" in (result.message or "")
+    assert "deletes the downloaded .deb files" in (result.message or "")
 
 
 def test_keep_debs_dropin_write_error_is_a_warning(

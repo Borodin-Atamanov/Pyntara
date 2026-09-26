@@ -33,11 +33,12 @@ published password of the default vault, and a user who knows the production vau
 replaces it before the run; the production password is never committed and never written to
 a log. The installer runs non-interactively and never asks the user anything: the vault
 source is auto-detected from the password, production when it opens production.vault and
-default when it matches default.password. While the line keeps the shipped value, and also
-when a password opens no vault, the installer shows a short countdown notice and falls back
-to the default vault; the installer writes a WARNING line for that fallback into the run log
-and the run reports it as a warning of its own, so a run that took the secrets of the machine
-from the repository test vault never passes silently.
+default when it matches default.password, which the shipped value does. A password that
+opens no vault, and a run without a password at all, cannot use the production secrets:
+for those the installer shows a short countdown notice, so the user can interrupt with
+Ctrl-C, and falls back to the default vault; the installer writes a WARNING line for that
+fallback into the run log and the run reports it as a warning of its own, so a run that
+took the secrets of the machine from the repository test vault never passes silently.
 
 PYNTARA_INSTALL_MODE — one of the mode names declared in the task catalog
 (src/pyntara/values/tasks.py). The names in use are minimal, server, desktop and

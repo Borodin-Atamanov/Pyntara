@@ -217,11 +217,16 @@ def _process_file(path: Path) -> _FileRewrite:
 
 
 def _keep_debs_state_note(keep_downloaded_debs: bool) -> str:
-    """User note for the keep-debs state applied to the apt drop-in."""
+    """User note for the keep-debs state applied to the apt drop-in.
+
+    The note is read in the log and in the result of the task, so it is a
+    sentence about what this run asked apt to do and not the name of an apt
+    option: a user who reads it does not know apt options.
+    """
 
     if keep_downloaded_debs:
-        return "keep downloaded .deb files after install enabled"
-    return "keep downloaded .deb files after install disabled"
+        return "the run keeps the downloaded .deb files after the install"
+    return "the run deletes the downloaded .deb files after the install"
 
 
 def _keep_debs_dropin_content(keep_downloaded_debs: bool) -> str:

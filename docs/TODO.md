@@ -45,50 +45,21 @@ recompression or deduplication needs, while a systemd timer has no idle
 condition and cron misses its window on a machine that is often off. Requested
 by the user on 2026-09-25.
 
-## The console window of the recompression cannot be opened on a second run
-
-Run of 2026-09-25 19:31:52: "systemd-run --machine i@.host --user
---unit=pyntara-btrfs-recompress-window --collect /usr/bin/konsole -e journalctl -f
--u pyntara-btrfs-recompress" exited 1 with "Failed to start transient service unit:
-Unit pyntara-btrfs-recompress-window.service was already loaded or has a fragment
-file." The section reported it as the warning "the window that shows the
-recompression could not be opened: ...". The job itself kept running, so the user
-loses the visible progress window while the work goes on unseen.
-
-## Telegram Desktop is skipped without a retry when a single 15 s probe fails
+## Telegram Desktop is skipped when a single 15 s probe gets no answer
 
 Clean-machine run of 2026-09-25 17:56 with the default vault: the section resolved
-the release and then skipped the download, warning "cannot resolve
-https://telegram.org/dl/desktop/linux: the host did not answer within 15 s (curl
-exit 28), so the download is skipped instead of retrying for up to 7777 s". The
-message is built in src/pyntara/tasks/telegram_setup.py (lines 167-170), the probe
-budget is REACHABILITY_PROBE_TIMEOUT_SECONDS = 15 in
-src/pyntara/values/telegram_setup.py, the retry budget is
-CURL_RETRY_MAX_TIME_SECONDS = 7777 in src/pyntara/values/engine.py. The machine
-stayed without the program the mode asks for.
-
-## The countdown notice of the default vault promised by the README does not appear for the shipped password
-
-README.md lines 36-38 promise: "While the line keeps the shipped value, and also
-when a password opens no vault, the installer shows a short countdown notice and
-falls back to the default vault". inst.sh treats the shipped password as an
-auto-detected source and prints no notice ("Vault password from environment,
-auto-detected source: default", inst.sh lines 434-441); the countdown appears only
-for a password that matches no vault (inst.sh line 443) and for a missing password
-(inst.sh line 452). The clean-machine run of 2026-09-25 kept the shipped password
-and its log carried no countdown.
-
-## The keep-debs note of add_extra_repos reads as a sentence fragment
-
-src/pyntara/tasks/add_extra_repos.py line 224 returns the note "keep downloaded
-.deb files after install disabled" for the run log; the enabled form next to it is
-"keep downloaded .deb files after install enabled". Both read as fragments rather
-than as a sentence about the state that was applied.
-
-## The shortcut warning of kde_settings names no component and no reason
-
-src/pyntara/tasks/kde_settings.py lines 1241-1249 build the warning "the daemon
-does not hold the configured shortcuts: [(action, after, requested), ...], they are
-written into the shortcut file for the next login". The tuples carry the action
-code and the two key lists, while the component and the friendly name are dropped
-by the zip unpacking, and no reason for the refusal is reported.
+the release and then skipped the download and the installation, warning "cannot
+resolve https://telegram.org/dl/desktop/linux: the host did not answer within 15 s
+(curl exit 28), so the download is skipped instead of retrying for up to 7777 s", so
+the machine stayed without the program the mode asks for. The message is built in
+src/pyntara/tasks/telegram_setup.py. The behaviour is deliberate and written down in
+docs/spec/telegram-setup.md: a host that does not answer within
+reachability_probe_timeout_seconds (15, src/pyntara/values/telegram_setup.py) counts
+as a blocked destination, and its reason is reported at once instead of spending the
+retry budget of the resolve (curl_retry_max_time_seconds 7777,
+src/pyntara/values/engine.py), which is what a network that drops the packets would
+turn into one connect timeout per attempt. So this is not a defect but a choice of
+behaviour, and the choice is the user's: keep the short probe, raise its budget, or
+probe a silent host again before it is called blocked. The cost of the present choice
+is visible in the run above, where one silence of 15 s left the machine without the
+program.
