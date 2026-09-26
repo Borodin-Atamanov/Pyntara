@@ -119,6 +119,7 @@ class SystemMetricsFixtures(TypedDict):
 
     repo: Path
     venv_dir: Path
+    venv_damaged_path: Path
     venv_python: Path
     command_path: Path
     spool_dir: Path
@@ -168,6 +169,7 @@ def _install_fixtures(
     command_template = task_data / "commit_system_metrics.sh"
     command_template.write_text(COMMAND_TEMPLATE, encoding="utf-8")
     venv_dir = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv"
+    venv_damaged_path = tmp_path / "usr" / "local" / "lib" / "pyntara" / "venv.damaged"
     venv_python = venv_dir / "bin" / "python"
     if venv_ok:
         venv_python.parent.mkdir(parents=True)
@@ -177,11 +179,13 @@ def _install_fixtures(
     systemd_dir = tmp_path / "systemd"
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", systemd_dir)
     monkeypatch.setattr(values, "VENV_DIR", venv_dir)
+    monkeypatch.setattr(values, "VENV_DAMAGED_PATH", venv_damaged_path)
     monkeypatch.setattr(values, "COMMAND_PATH", command_path)
     monkeypatch.setattr(values, "SPOOL_DIR", spool_dir)
     return {
         "repo": repo,
         "venv_dir": venv_dir,
+        "venv_damaged_path": venv_damaged_path,
         "venv_python": venv_python,
         "command_path": command_path,
         "spool_dir": spool_dir,
@@ -708,6 +712,69 @@ def test_uv_sync_failure_is_a_warning(
     assert result.success is True
     assert any("cannot install" in w for w in result.warnings)
     assert any(call[:2] == ["systemctl", "enable"] for call in calls)
+
+
+def test_a_venv_that_cannot_be_refreshed_is_built_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A crash leaves files of the installed package empty, and uv then refuses
+    # to read the metadata it should replace. The venv is moved to the rescue
+    # path and built again from the lockfile, and the repair is a warning.
+    sync_calls = 0
+
+    def fail_the_first_sync(command: list[str]) -> bool:
+        nonlocal sync_calls
+        if command[0] == "uv" and command[1] == "sync":
+            sync_calls += 1
+            return sync_calls == 1
+        return False
+
+    fixtures, calls = _deploy_fixture(
+        monkeypatch, tmp_path, fail=fail_the_first_sync
+    )
+    result = system_metrics_setup.task(_ctx(tmp_path))
+    assert result.success is True
+    assert result.changed is True
+    warning = next(w for w in result.warnings if "built again" in w)
+    assert "venv.damaged" in warning
+    assert fixtures["venv_damaged_path"].is_dir()
+    assert fixtures["venv_python"].is_file()
+    assert [call[:2] for call in calls].count(["uv", "venv"]) == 2
+    assert [call[:2] for call in calls].count(["uv", "sync"]) == 2
+
+
+def test_a_venv_that_cannot_be_built_again_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A repair that fails too must name both failures instead of passing the
+    # machine off as configured.
+    def fail_every_sync(command: list[str]) -> bool:
+        return command[0] == "uv" and command[1] == "sync"
+
+    _fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_every_sync)
+    result = system_metrics_setup.task(_ctx(tmp_path))
+    assert result.success is True
+    assert any("could not be refreshed" in w for w in result.warnings)
+    assert any("still fails" in w for w in result.warnings)
+
+
+def test_the_rescue_copy_of_the_venv_is_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The rescue copy is one bounded directory, not a growing archive: the
+    # next repair replaces the copy it left behind.
+    def fail_every_sync(command: list[str]) -> bool:
+        return command[0] == "uv" and command[1] == "sync"
+
+    fixtures, _ = _deploy_fixture(monkeypatch, tmp_path, fail=fail_every_sync)
+    damaged_path = fixtures["venv_damaged_path"]
+    damaged_path.mkdir(parents=True)
+    marker = damaged_path / "left-over"
+    marker.write_text("old rescue copy", encoding="utf-8")
+    result = system_metrics_setup.task(_ctx(tmp_path))
+    assert result.success is True
+    assert not marker.exists()
+    assert (damaged_path / "bin" / "python").is_file()
 
 
 def test_only_service_disabled_starts_it(

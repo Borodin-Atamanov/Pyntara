@@ -10,7 +10,11 @@ dependency versions as the repository and never need the clone
 afterwards.
 The venv is refreshed whenever its installed pyntara version differs
 from the repository version, so deployed services run the current code
-after every installer run.
+after every installer run. A venv that cannot be refreshed, because a
+crash left the files of the installed package empty and uv refuses to
+read the metadata it should replace, is moved to the rescue path and
+built again from the lockfile, so the deployment repairs itself on a
+machine where nobody can.
 Values reach the machine as the pyntara package itself: the deployed
 services import the same values modules the installer uses, so no config
 file is copied and no service reads one. The long-running service
@@ -74,6 +78,88 @@ def _uv_path() -> str | None:
     return shutil.which("uv")
 
 
+def _create_venv(
+    uv: str, timeout: float, venv_dir: Path, python_version: str
+) -> str | None:
+    """Create the venv at the configured path; the error text, or None."""
+
+    _log(f"creating venv: uv venv {venv_dir}")
+    try:
+        run_command(
+            substituted_command(
+                values.VENV_CREATE_COMMAND,
+                {
+                    "uv": uv,
+                    "venv_dir": str(venv_dir),
+                    "python_version": python_version,
+                },
+            ),
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"cannot create venv: {exc}"
+    _log("venv created")
+    return None
+
+
+def _install_package_into_venv(
+    repo_root: Path,
+    uv: str,
+    timeout: float,
+    venv_dir: Path,
+    *,
+    reinstall: bool,
+) -> str | None:
+    """Install the repository lockfile into the venv; the error text, or None.
+
+    The package and its dependencies come from the lockfile of the clone, so
+    the deployed venv runs the same versions as the repository. The pyntara
+    package itself is reinstalled from the clone whenever the caller asks for
+    it, because uv sync does not rebuild a local project whose lockfile entry
+    carries no version.
+    """
+
+    sync = substituted_command(
+        values.VENV_SYNC_COMMAND, {"uv": uv, "repo_root": str(repo_root)}
+    )
+    if reinstall:
+        sync += list(values.VENV_REINSTALL_FLAGS)
+    _log(f"installing pyntara into the venv from the lockfile of {repo_root}")
+    try:
+        run_command(
+            sync,
+            timeout=timeout,
+            extra_env={"VIRTUAL_ENV": str(venv_dir)},
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return f"cannot install pyntara into the venv: {exc}"
+    _log("pyntara installed into the venv")
+    return None
+
+
+def _keep_damaged_venv() -> str:
+    """Move the venv to the rescue path; the sentence that reports it.
+
+    The environment is kept instead of being deleted, so what broke stays
+    available for a look at a machine that no developer can inspect. One copy
+    is enough: the previous rescue copy is replaced by this one, so the rescue
+    copies stay bounded. Nothing is lost by the move, because the venv is
+    built again from the repository lockfile.
+    """
+
+    damaged_path = values.VENV_DAMAGED_PATH
+    try:
+        damaged_path.parent.mkdir(parents=True, exist_ok=True)
+        if damaged_path.exists():
+            shutil.rmtree(damaged_path)
+        os.replace(values.VENV_DIR, damaged_path)
+    except OSError as exc:
+        _log(f"cannot keep the damaged venv: {exc}")
+        return f"the damaged environment could not be kept: {exc}"
+    _log(f"damaged venv kept at {damaged_path}")
+    return f"the damaged environment is kept at {damaged_path}"
+
+
 def _ensure_venv(
     repo_root: Path,
     uv: str,
@@ -86,55 +172,56 @@ def _ensure_venv(
     """Ensure the venv runs the repository pyntara version; (changed, error).
 
     A venv is up to date when its python imports pyntara and reports the
-    repository version. Without force an up-to-date venv is left
-    untouched; a stale or broken venv is updated even without force,
-    because the deployed services must run the current code. The venv is
-    created when missing with the configured python version; the package
-    and its dependencies are installed from the repository lockfile with
-    uv sync, so the deployed venv runs the same versions as the
-    repository. The pyntara package itself is reinstalled from the clone
-    when the update refreshes an existing venv or force asks for it,
-    because uv sync does not rebuild a local project whose lockfile entry
-    carries no version.
+    repository version. Without force an up-to-date venv is left untouched; a
+    stale or broken venv is updated even without force, because the deployed
+    services must run the current code. The venv is created when missing with
+    the configured python version, and the package with its dependencies is
+    installed from the repository lockfile, so the deployed venv runs the same
+    versions as the repository.
+
+    A refresh can also fail because the venv itself is damaged: a crash while
+    it was written leaves files of the installed package empty, and uv then
+    refuses to read the metadata it was meant to replace, so a plain retry
+    never makes progress (measured 2026-09-25 on a machine whose kernel died
+    while the venv was written: 123 files of the venv were empty and 123
+    another install could not repair). The venv is then moved to the rescue
+    path and built again from the lockfile, because the deployed services
+    cannot run from an environment that cannot be refreshed, and the repair is
+    reported as a warning. The error text carries the exit status of the step
+    that failed; the text of the tool itself stands above it in the run log,
+    because every command streams its output there.
     """
 
     if venv_up_to_date and not force:
         return False, None
     created = False
     if not venv_dir.is_dir():
-        _log(f"creating venv: uv venv {venv_dir}")
-        try:
-            run_command(
-                substituted_command(
-                    values.VENV_CREATE_COMMAND,
-                    {
-                        "uv": uv,
-                        "venv_dir": str(venv_dir),
-                        "python_version": python_version,
-                    },
-                ),
-                timeout=timeout,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return False, f"cannot create venv: {exc}"
-        _log("venv created")
+        error = _create_venv(uv, timeout, venv_dir, python_version)
+        if error is not None:
+            return False, error
         created = True
-    sync = substituted_command(
-        values.VENV_SYNC_COMMAND, {"uv": uv, "repo_root": str(repo_root)}
+    reinstall = force or (not venv_up_to_date and not created)
+    error = _install_package_into_venv(
+        repo_root, uv, timeout, venv_dir, reinstall=reinstall
     )
-    if force or (not venv_up_to_date and not created):
-        sync += list(values.VENV_REINSTALL_FLAGS)
-    _log(f"installing pyntara into the venv from the lockfile of {repo_root}")
-    try:
-        run_command(
-            sync,
-            timeout=timeout,
-            extra_env={"VIRTUAL_ENV": str(venv_dir)},
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot install pyntara into the venv: {exc}"
-    _log("pyntara installed into the venv")
-    return True, None
+    if error is None:
+        return True, None
+
+    _log(error, priority=values.ERROR_PRIORITY)
+    kept = _keep_damaged_venv()
+    warning = (
+        f"the venv could not be refreshed ({error}), so it was built again "
+        f"from the lockfile of {repo_root}; {kept}"
+    )
+    error = _create_venv(uv, timeout, venv_dir, python_version)
+    if error is not None:
+        return False, f"{warning}; cannot build the venv again: {error}"
+    error = _install_package_into_venv(
+        repo_root, uv, timeout, venv_dir, reinstall=True
+    )
+    if error is not None:
+        return False, f"{warning}; the venv built again still fails: {error}"
+    return True, warning
 
 
 def _render_service_unit(

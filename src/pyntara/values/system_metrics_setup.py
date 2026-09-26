@@ -46,6 +46,12 @@ ERROR_PRIORITY: int = 3
 PYTHON_VERSION: str = "3.14"
 VENV_DIR: Path = Path("/usr/local/lib/pyntara/venv")
 
+# Rescue path of a venv whose refresh failed: the damaged environment is moved
+# here before it is built again, so it stays available for a look at what broke
+# and the deployed path is never left half-written. One copy is kept; the next
+# repair replaces it, so the rescue copies stay bounded.
+VENV_DAMAGED_PATH: Path = Path("/usr/local/lib/pyntara/venv.damaged")
+
 # Layout of the interpreter inside that directory: the path of the python
 # binary relative to VENV_DIR, so every module that runs the deployed code
 # composes it the same way.
@@ -525,6 +531,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "ERROR_PRIORITY",
     "PYTHON_VERSION",
     "VENV_DIR",
+    "VENV_DAMAGED_PATH",
     "VENV_PYTHON_RELATIVE_PATH",
     "COMMAND_PATH",
     "COMMIT_COMMAND",
