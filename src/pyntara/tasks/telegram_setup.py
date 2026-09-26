@@ -39,6 +39,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from string import Template
 from typing import NamedTuple
@@ -133,7 +134,7 @@ def _resolve_latest_url() -> str:
 
 
 def _probe_download_host() -> tuple[bool, str]:
-    """Ask the download host to answer within one short attempt.
+    """Ask the download host to answer within a few short attempts.
 
     A host that is blocked never answers, and the retry settings of the
     resolve below turn that silence into one connect timeout per attempt,
@@ -150,26 +151,32 @@ def _probe_download_host() -> tuple[bool, str]:
         values.REACHABILITY_PROBE_COMMAND,
         {"timeout_seconds": str(values.REACHABILITY_PROBE_TIMEOUT_SECONDS)},
     )
-    try:
-        result = run_command(
-            [*command, values.LATEST_URL],
-            check=False,
-            capture=True,
-            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return False, (
-            f"cannot resolve {values.LATEST_URL}: the reachability probe could "
-            f"not be run: {exc}"
-        )
-    if result.returncode != 0:
-        return False, (
-            f"cannot resolve {values.LATEST_URL}: the host did not answer "
-            f"within {values.REACHABILITY_PROBE_TIMEOUT_SECONDS} s (curl exit "
-            f"{result.returncode}), so the download is skipped instead of "
-            f"retrying for up to {engine_values.CURL_RETRY_MAX_TIME_SECONDS} s"
-        )
-    return True, ""
+    last_exit = 0
+    for attempt in range(1, values.REACHABILITY_PROBE_ATTEMPTS + 1):
+        try:
+            result = run_command(
+                [*command, values.LATEST_URL],
+                check=False,
+                capture=True,
+                timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            return False, (
+                f"cannot resolve {values.LATEST_URL}: the reachability probe "
+                f"could not be run: {exc}"
+            )
+        if result.returncode == 0:
+            return True, ""
+        last_exit = result.returncode
+        if attempt < values.REACHABILITY_PROBE_ATTEMPTS:
+            time.sleep(values.REACHABILITY_PROBE_PAUSE_SECONDS)
+    return False, (
+        f"cannot resolve {values.LATEST_URL}: the host did not answer within "
+        f"{values.REACHABILITY_PROBE_TIMEOUT_SECONDS} s in "
+        f"{values.REACHABILITY_PROBE_ATTEMPTS} attempts (last curl exit "
+        f"{last_exit}), so the download is skipped instead of retrying for "
+        f"up to {engine_values.CURL_RETRY_MAX_TIME_SECONDS} s"
+    )
 
 
 def _download_archive(

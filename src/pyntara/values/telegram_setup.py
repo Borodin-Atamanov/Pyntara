@@ -68,6 +68,13 @@ REACHABILITY_PROBE_COMMAND: tuple[str, ...] = (
 # blocked.
 REACHABILITY_PROBE_TIMEOUT_SECONDS: int = 15
 
+# A silent host is probed a few times before it counts as blocked. One silence
+# can be a moment of an unstable link, while a blocked destination stays silent
+# through every attempt, so both are bounded: three attempts of fifteen seconds
+# with two pauses of five seconds cost at most fifty five seconds.
+REACHABILITY_PROBE_ATTEMPTS: int = 3
+REACHABILITY_PROBE_PAUSE_SECONDS: int = 5
+
 # Official Telegram icon downloaded for the launcher entry.
 ICON_URL: str = (
     "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/"
@@ -122,6 +129,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "LATEST_URL_COMMAND",
     "REACHABILITY_PROBE_COMMAND",
     "REACHABILITY_PROBE_TIMEOUT_SECONDS",
+    "REACHABILITY_PROBE_ATTEMPTS",
+    "REACHABILITY_PROBE_PAUSE_SECONDS",
     "ICON_URL",
     "INSTALL_DIR_RELATIVE_PATH",
     "LAUNCHER_RELATIVE_PATH",

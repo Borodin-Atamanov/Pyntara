@@ -61,3 +61,11 @@ tar_extract_command - the command that extracts the downloaded archive into the 
 launcher_file_mode - the mode of the written launcher entry
 icon_file_mode - the mode of the downloaded icon
 executable_file_mode - the mode of the installed binaries
+
+The probe runs reachability_probe_attempts times with
+reachability_probe_pause_seconds between the attempts, because one silence can
+be a moment of an unstable link while a blocked destination stays silent through
+every attempt. Three attempts of fifteen seconds with two pauses of five seconds
+cost at most fifty five seconds, so a run that cannot download anything at all
+gives up inside a minute and names the attempts it made, and a host that answers
+any attempt is served with the full retry budget of the resolve.

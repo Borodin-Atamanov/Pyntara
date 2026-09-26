@@ -352,7 +352,7 @@ def test_the_probe_budget_comes_from_the_values(
     calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
     result = telegram_setup.task(_ctx(tmp_path))
     probes = [call for call in calls if call[0] == "curl" and "--retry" not in call]
-    assert len(probes) == 1
+    assert len(probes) == values.REACHABILITY_PROBE_ATTEMPTS
     assert probes[0][probes[0].index("--connect-timeout") + 1] == "45"
     assert any("within 45 s" in warning for warning in result.warnings)
 
@@ -440,3 +440,27 @@ def test_icon_failure_is_a_warning_when_install_is_current(
     # The install is current, so nothing is extracted and no archive is
     # downloaded; only the icon curl is attempted and fails.
     assert not any(call[0] == "tar" for call in calls)
+
+
+@pytest.fixture(autouse=True)
+def _no_probe_pause(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The pause between the probe attempts is a value, and no test waits for
+    # it: the loop is what the tests cover, not the clock.
+    monkeypatch.setattr(values, "REACHABILITY_PROBE_PAUSE_SECONDS", 0)
+
+
+def test_the_probe_tries_again_before_it_calls_the_host_blocked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # One silence is not a blocked destination: only a host that stays silent
+    # through every attempt is reported as blocked, and the reason names how
+    # many attempts were made.
+    calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
+
+    reachable, reason = telegram_setup._probe_download_host()
+
+    probe_length = len(calls[0])
+    probes = [call for call in calls if len(call) == probe_length]
+    assert reachable is False
+    assert len(probes) == values.REACHABILITY_PROBE_ATTEMPTS
+    assert str(values.REACHABILITY_PROBE_ATTEMPTS) in reason
