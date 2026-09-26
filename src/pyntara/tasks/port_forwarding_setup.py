@@ -32,7 +32,7 @@ import time
 from pathlib import Path
 from string import Template
 
-from pyntara import __version__, deployment
+from pyntara import __version__, deployment, metrics, port_forwarding
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -45,6 +45,7 @@ from pyntara.utils import (
 )
 from pyntara.values import engine as engine_values
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
 from pyntara.values import system_metrics_setup as metrics_values
 
 # Module-level path constants are monkeypatched by the tests, which run
@@ -165,6 +166,40 @@ def _last_run_result(service_name: str, timeout: float) -> str:
         _log(f"cannot read the result of the last run of {service_name}: {exc}")
         return "unknown"
     return result.stdout.strip().lower() or "unknown"
+
+
+def _forwarding_readiness_warning() -> str | None:
+    """The warning that names why the machine forwards nothing, or None.
+
+    The service connects to the servers of the vault group when the passphrase
+    of the machine vault decrypts the deployed key. A vault whose passphrase
+    decrypts no deployed key (the default vault carries a freshly generated one
+    by design) leaves the machine with a service that connects to nothing, and
+    the run says so instead of reporting a deployment that works; the key
+    check answers in a moment and never uses ssh-add, which keeps asking the
+    askpass helper on a wrong passphrase. Nothing is reported when the vault
+    cannot be read or carries no server group, because a machine without
+    port-forwarding data has nothing to connect to by design.
+    """
+
+    kp = metrics.open_runtime_vault()
+    if kp is None:
+        return None
+    servers = port_forwarding.read_server_addresses(kp, values.VAULT_GROUP_TITLE)
+    passphrase = port_forwarding.read_passphrase(kp, values.PASSPHRASE_ENTRY_TITLE)
+    key_path = (
+        ssh_daemon_values.ROOT_SSH_DIR
+        / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
+    )
+    if not servers or not passphrase or not key_path.is_file():
+        return None
+    if port_forwarding.passphrase_decrypts_key(passphrase, key_path):
+        return None
+    return (
+        f"the passphrase of the vault entry {values.PASSPHRASE_ENTRY_TITLE!r} does "
+        f"not decrypt the port-forwarding key {key_path}, so the machine forwards "
+        "no ports"
+    )
 
 
 def task(ctx: Context) -> TaskResult:
@@ -295,18 +330,25 @@ def task(ctx: Context) -> TaskResult:
                 f"service {service_name} entered the failed state after start"
             )
         else:
-            last_result = _last_run_result(service_name, timeout)
-            if last_result != values.SUCCESSFUL_SERVICE_RESULT:
-                # The service did not stay up: systemd keeps scheduling the next
-                # attempt, so the machine forwards nothing and the run has to
-                # say it instead of reporting a deployment that works.
-                warnings.append(
-                    f"service {service_name} did not stay up after the start: its "
-                    f"last run ended with {last_result}, the journal of the unit "
-                    "names the reason"
-                )
+            # A service that exited nonzero is neither active nor failed while
+            # systemd waits for the next attempt, so the result of the last run
+            # is read for the case it is not running; a running service is the
+            # reached state and needs no question about an older run.
+            if not service_is_active(service_name, timeout):
+                last_result = _last_run_result(service_name, timeout)
+                if last_result != values.SUCCESSFUL_SERVICE_RESULT:
+                    warnings.append(
+                        f"service {service_name} did not stay up after the start: "
+                        f"its last run ended with {last_result}, the journal of the "
+                        "unit names the reason"
+                    )
+                else:
+                    _log(f"service {service_name} exited cleanly")
             else:
-                _log(f"service {service_name} is running or cleanly exited")
+                _log(f"service {service_name} is running")
+        readiness_warning = _forwarding_readiness_warning()
+        if readiness_warning is not None:
+            warnings.append(readiness_warning)
     message = f"service {service_name} deployed"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"

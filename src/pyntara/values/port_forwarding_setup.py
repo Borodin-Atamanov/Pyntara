@@ -72,6 +72,26 @@ OWN_ADDRESSES_TIMEOUT_SECONDS: int = 15
 AGENT_START_TIMEOUT_SECONDS: int = 15
 KEY_UNLOCK_TIMEOUT_SECONDS: int = 30
 
+# Check that the passphrase of the vault decrypts the port-forwarding key, run
+# before the unlock: ssh-keygen prints the public key of a private key whose
+# passphrase is right and reports an incorrect passphrase in a moment. The check
+# does not use ssh-add, because a wrong passphrase there does not fail fast:
+# ssh-add keeps asking the askpass helper until the caller gives up, which cost
+# about thirty seconds of processor time per attempt in an endless systemd
+# restart loop (measured 2026-09-25 on a machine provisioned from the default
+# vault, whose passphrase unlocks no deployed key: 67 restarts of the unit). The
+# command carries the passphrase in its argument list, so every caller runs it
+# with command logging switched off.
+KEY_CHECK_COMMAND: tuple[str, ...] = (
+    "ssh-keygen",
+    "-y",
+    "-P",
+    "{passphrase}",
+    "-f",
+    "{key_path}",
+)
+KEY_CHECK_TIMEOUT_SECONDS: int = 10
+
 # Display the askpass helper of the key unlock is given. ssh-add needs a display
 # to run the helper at all, even when the helper answers without a dialog; the
 # value is the display name of the machine's desktop session.
@@ -254,6 +274,10 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "OWN_ADDRESSES_TIMEOUT_SECONDS",
     "AGENT_START_TIMEOUT_SECONDS",
     "KEY_UNLOCK_TIMEOUT_SECONDS",
+    "KEY_CHECK_COMMAND",
+    "KEY_CHECK_TIMEOUT_SECONDS",
+    "KEY_CHECK_COMMAND",
+    "KEY_CHECK_TIMEOUT_SECONDS",
     "ASKPASS_DISPLAY",
     "BACKOFF_BASE_SECONDS",
     "BACKOFF_MULTIPLIER",

@@ -350,6 +350,40 @@ class TestBuildSshCommand:
         assert "ConnectTimeout=9" in command
 
 
+class TestPassphraseDecryptsKey:
+    def test_the_check_runs_the_declared_command_without_journaling_it(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The check answers with ssh-keygen alone, because a wrong passphrase
+        # through ssh-add keeps asking the askpass helper instead of failing;
+        # the command carries the passphrase, so the module runs it directly.
+        calls: list[list[str]] = []
+
+        def fake_run(command: list[str], **kwargs: object) -> FakeProc:
+            calls.append(list(command))
+            return FakeProc(0, "ssh-ed25519 AAAA\n")
+
+        monkeypatch.setattr(pf.subprocess, "run", fake_run)
+        key = tmp_path / "key"
+        key.write_text("key", encoding="utf-8")
+        assert pf.passphrase_decrypts_key("passphrase", key) is True
+        assert calls[0] == [
+            part.format(passphrase="passphrase", key_path=str(key))
+            for part in values.KEY_CHECK_COMMAND
+        ]
+
+    def test_a_wrong_passphrase_is_false(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # ssh-keygen reports an incorrect passphrase with a nonzero exit code.
+        monkeypatch.setattr(
+            pf.subprocess, "run", lambda command, **kwargs: FakeProc(255, "")
+        )
+        key = tmp_path / "key"
+        key.write_text("key", encoding="utf-8")
+        assert pf.passphrase_decrypts_key("wrong", key) is False
+
+
 class TestStartAgent:
     def test_env_names_helper_and_command_come_from_the_values(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -789,6 +823,29 @@ class TestMain:
             pf.main()
         assert exc.value.code == 1
 
+    def test_exits_cleanly_when_the_passphrase_does_not_decrypt_the_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # A passphrase that decrypts no deployed key fails at every restart, so
+        # the service stops cleanly instead of looping: the ssh-add path spends
+        # about thirty seconds of processor time on a wrong passphrase because
+        # it keeps asking the askpass helper (measured 2026-09-25: 67 restarts
+        # of the unit on a machine provisioned from the default vault).
+        started: list[str] = []
+        monkeypatch.setattr(
+            pf.metrics,
+            "open_runtime_vault",
+            lambda: self._kp(group=True, passphrase=True),
+        )
+        monkeypatch.setattr(
+            pf, "passphrase_decrypts_key", lambda *args, **kwargs: False
+        )
+        monkeypatch.setattr(
+            pf, "_start_agent", lambda *args, **kwargs: started.append("agent")
+        )
+        pf.main()
+        assert started == []
+
     def test_starts_one_loop_per_server(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -814,6 +871,9 @@ class TestMain:
             pf.metrics,
             "open_runtime_vault",
             lambda: self._kp(group=True, passphrase=True),
+        )
+        monkeypatch.setattr(
+            pf, "passphrase_decrypts_key", lambda *args, **kwargs: True
         )
         monkeypatch.setattr(
             pf, "_start_agent", lambda *args, **kwargs: {"PATH": "/bin"}

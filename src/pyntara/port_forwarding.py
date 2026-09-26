@@ -165,6 +165,33 @@ def read_passphrase(kp: PyKeePass, entry_title: str) -> str | None:
     return password
 
 
+def passphrase_decrypts_key(passphrase: str, key_path: Path) -> bool:
+    """True when the passphrase decrypts the private key at the key path.
+
+    ssh-keygen prints the public key of a private key when the passphrase is
+    right and reports an incorrect passphrase in a moment, so the answer costs
+    one fast call. The command carries the passphrase in its argument list and
+    is run directly instead of through the shared command helper, which would
+    journal the command line, because journaling a secret is forbidden.
+    """
+
+    try:
+        done = subprocess.run(
+            substituted_command(
+                values.KEY_CHECK_COMMAND,
+                {"passphrase": passphrase, "key_path": str(key_path)},
+            ),
+            capture_output=True,
+            text=True,
+            timeout=values.KEY_CHECK_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _log(f"cannot check the passphrase of {key_path}: {exc}")
+        return False
+    return done.returncode == 0
+
+
 def _start_agent(
     passphrase: str,
     key_path: Path,
@@ -635,6 +662,18 @@ def main() -> None:
             priority=values.ERROR_PRIORITY,
         )
         raise SystemExit(1)
+    if not passphrase_decrypts_key(passphrase, key_path):
+        # The passphrase comes from the vault and the key comes from the
+        # repository, so the same unlock fails at every restart: the service
+        # stops cleanly and says why, instead of leaving an endless restart loop
+        # that spends about thirty seconds of processor time per attempt in the
+        # ssh-add askpass path.
+        _log(
+            f"the passphrase of {values.PASSPHRASE_ENTRY_TITLE!r} does not decrypt "
+            f"{key_path}: connecting to nothing",
+            priority=values.ERROR_PRIORITY,
+        )
+        return
     env = _start_agent(passphrase, key_path)
     if env is None:
         _log("cannot unlock the port-forwarding key", priority=values.ERROR_PRIORITY)

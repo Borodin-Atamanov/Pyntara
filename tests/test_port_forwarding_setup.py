@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from string import Template
+from types import SimpleNamespace
 
 import pytest
 from support import FakeProc, make_context
@@ -20,6 +21,7 @@ from pyntara.context import Context
 from pyntara.tasks import port_forwarding_setup
 from pyntara.values import engine as engine_values
 from pyntara.values import port_forwarding_setup as values
+from pyntara.values import ssh_daemon_setup as ssh_daemon_values
 from pyntara.values import system_metrics_setup as metrics_values
 
 UNIT_TEMPLATE = """\
@@ -402,6 +404,71 @@ def test_a_service_that_keeps_restarting_is_a_warning(
     result = port_forwarding_setup.task(ctx)
     assert result.success
     assert any("did not stay up" in warning for warning in result.warnings)
+
+
+def test_a_passphrase_that_decrypts_no_key_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine whose vault passphrase decrypts no deployed key forwards
+    # nothing: the service connects to nothing at every start, so the run must
+    # say it instead of reporting a deployment that works.
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, active=True)
+    root_ssh = tmp_path / "root-ssh"
+    root_ssh.mkdir(parents=True)
+    key = root_ssh / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
+    key.write_text("dummy", encoding="utf-8")
+    monkeypatch.setattr(ssh_daemon_values, "ROOT_SSH_DIR", root_ssh)
+    monkeypatch.setattr(
+        port_forwarding_setup.metrics,
+        "open_runtime_vault",
+        lambda: SimpleNamespace(
+            find_groups=lambda name, first: SimpleNamespace(
+                entries=[SimpleNamespace(url="169.58.51.98")]
+            ),
+            find_entries=lambda title, first: SimpleNamespace(password="a-passphrase"),
+        ),
+    )
+    monkeypatch.setattr(
+        port_forwarding_setup.port_forwarding,
+        "passphrase_decrypts_key",
+        lambda *args, **kwargs: False,
+    )
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert any("does not decrypt" in warning for warning in result.warnings)
+
+
+def test_a_passphrase_that_decrypts_the_key_is_not_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The healthy machine ends the task without that warning, so the message
+    # keeps its meaning for the machines where it appears.
+    _, _, ctx = _install_fixtures(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, active=True)
+    root_ssh = tmp_path / "root-ssh"
+    root_ssh.mkdir(parents=True)
+    key = root_ssh / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
+    key.write_text("dummy", encoding="utf-8")
+    monkeypatch.setattr(ssh_daemon_values, "ROOT_SSH_DIR", root_ssh)
+    monkeypatch.setattr(
+        port_forwarding_setup.metrics,
+        "open_runtime_vault",
+        lambda: SimpleNamespace(
+            find_groups=lambda name, first: SimpleNamespace(
+                entries=[SimpleNamespace(url="169.58.51.98")]
+            ),
+            find_entries=lambda title, first: SimpleNamespace(password="a-passphrase"),
+        ),
+    )
+    monkeypatch.setattr(
+        port_forwarding_setup.port_forwarding,
+        "passphrase_decrypts_key",
+        lambda *args, **kwargs: True,
+    )
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert not any("does not decrypt" in warning for warning in result.warnings)
 
 
 def test_missing_template_is_a_warning(
