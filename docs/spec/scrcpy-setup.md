@@ -179,3 +179,10 @@ archive_extract_command - the unpacking command, with {archive} and {extract_dir
 launcher_file_mode and executable_file_mode - the modes of the deployed files
 
 package_status_timeout_seconds and package_install_retries - the bounds of the fallback path
+
+The section also enables and starts the atd service of the at package, because
+batch is a front end of that service and a machine that leaves it down would
+accept a batch request and never run it. The service is enabled, which starts it
+after a reboot as well, and its state is read back; every failure of those calls,
+including a state query that cannot answer, is a warning of a completed task and
+never a failure of the run.
