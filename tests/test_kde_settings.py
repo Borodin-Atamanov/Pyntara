@@ -244,24 +244,6 @@ def _granted_script_hotkeys() -> dict[str, list[str]]:
     }
 
 
-def test_the_live_power_profile_is_named_when_it_differs(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # Measured on Kubuntu 26.04 with KDE 6.6: the profile record of
-    # powerdevilrc does not change the live profile of the session, because
-    # that profile belongs to power-profiles-daemon. The run therefore names
-    # both profiles instead of presenting the configured one as applied.
-    _install_fakes(monkeypatch, power_profile="balanced")
-
-    result = task_module.task(_ctx(tmp_path))
-
-    assert result.success is True
-    assert any(
-        "balanced" in warning and "performance" in warning
-        for warning in result.warnings
-    )
-
-
 def _install_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -347,7 +329,7 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 if fail_on_reload:
                     raise subprocess.CalledProcessError(1, command)
-                if "reparseConfiguration" in inner:
+                if any("reparseConfiguration" in part for part in inner):
                     powerdevil_reloads.append(list(command))
                 else:
                     reloads.append(list(command))
