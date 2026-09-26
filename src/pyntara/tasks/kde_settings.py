@@ -1239,18 +1239,36 @@ def _apply_shortcuts_live(
     # The combinations the daemon still refuses are reported, and the work
     # done on the remaining actions is reported as well: a difference is
     # often partial, and hiding the part that took would make the next run
-    # start from a wrong idea of the machine.
+    # start from a wrong idea of the machine. An action the daemon does not
+    # know at all is named apart, because no combination reaches it in the
+    # running session and the entry in the shortcut file alone does not make
+    # it work: the desktop has to carry the action (measured 2026-09-26 on
+    # Kubuntu 26.04: the daemon knows only the two switcher actions of the
+    # keyboard layout switcher, so a per-layout action can never be reached).
+    unknown_actions = [
+        action
+        for (_component, _friendly, action, _keys), report in zip(changes, reports)
+        if report.get("missing") and not _report_is_confirmed(report)
+    ]
     difference = [
         (action, report.get("after"), report.get("requested"))
         for (_component, _friendly, action, _keys), report in zip(changes, reports)
-        if not _report_is_confirmed(report)
+        if not _report_is_confirmed(report) and not report.get("missing")
     ]
-    report_and_write_for_next_login(
-        unconfirmed,
-        "the daemon does not hold the configured shortcuts:"
-        f" {difference}, they are written into the shortcut file for the"
-        " next login",
-    )
+    reasons: list[str] = []
+    if unknown_actions:
+        reasons.append(
+            f"the daemon does not know these actions: {unknown_actions}, so no"
+            " combination reaches them in this session and their entries are"
+            " written into the shortcut file for the next login"
+        )
+    if difference:
+        reasons.append(
+            "the daemon does not hold the configured shortcuts:"
+            f" {difference}, they are written into the shortcut file for the"
+            " next login"
+        )
+    report_and_write_for_next_login(unconfirmed, "; ".join(reasons))
     return changed
 
 

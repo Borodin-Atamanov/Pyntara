@@ -1468,6 +1468,36 @@ def test_apply_shortcuts_live_writes_an_action_the_daemon_never_learns(
     assert written["manage activities"] == "none,none,manage activities"
 
 
+def test_an_action_the_daemon_never_learns_is_named_apart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An action the daemon does not know at all is reached by no combination in
+    # the running session, and the entry in the shortcut file alone does not
+    # make it work, so the warning says that instead of promising the next
+    # login alone (measured 2026-09-26: the daemon of Kubuntu 26.04 knows only
+    # the two switcher actions of the keyboard layout switcher, so a per-layout
+    # action can never be reached).
+    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
+    warnings: list[str] = []
+    monkeypatch.setattr(task_module.time, "sleep", lambda seconds: None)
+    _install_fakes(
+        monkeypatch,
+        assign_missing=frozenset({"manage activities"}),
+    )
+    task_module._apply_shortcuts_live(
+        client_path=_shared_client(tmp_path),
+        timeout=5,
+        env=_shortcut_env(ctx),
+        system_python=engine_values.SYSTEM_PYTHON,
+        kglobalaccel_names=kglobalaccel_names(),
+        warnings=warnings,
+    )
+    assert len(warnings) == 1
+    assert "does not know these actions" in warnings[0]
+    assert "manage activities" in warnings[0]
+    assert "no combination reaches them in this session" in warnings[0]
+
+
 def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
