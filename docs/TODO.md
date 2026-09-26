@@ -63,11 +63,3 @@ behaviour, and the choice is the user's: keep the short probe, raise its budget,
 probe a silent host again before it is called blocked. The cost of the present choice
 is visible in the run above, where one silence of 15 s left the machine without the
 program.
-
-## Enable the atd service for the at and batch commands
-
-The at package is part of cli_tools_lite_setup now, but atd must also be enabled
-and started, because batch does nothing without it. The console section is a
-package-only section today: it carries no service step at all, so the step
-either belongs to a section that already owns services or the package section
-receives a service step with its own tests and its own specification line.

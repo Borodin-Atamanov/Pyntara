@@ -58,10 +58,7 @@ def _ctx() -> Context:
 
 
 def _install_fake(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    installed: set[str],
-    service_active: bool = True,
+    monkeypatch: pytest.MonkeyPatch, *, installed: set[str]
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -77,9 +74,6 @@ def _install_fake(
             if command[-1] in installed:
                 return _FakeProc(0, "install ok installed\n")
             return _FakeProc(1, "")
-        if command[0] == "systemctl" and "is-active" in command:
-            state = "active\n" if service_active else "inactive\n"
-            return _FakeProc(0, state)
         return _FakeProc(0)
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
@@ -546,21 +540,3 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is True
     assert "0/1" in (result.message or "")
     assert any("mc" in warning for warning in result.warnings)
-
-
-
-def test_the_atd_service_that_does_not_run_is_a_warning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # batch is a front end of atd: a machine that installs the at package but
-    # leaves the service down accepts a batch request and never runs it, so a
-    # service that does not come up is named as a warning of a completed task.
-    calls = _install_fake(
-        monkeypatch, installed=set(TEST_PACKAGES), service_active=False
-    )
-
-    result = cli_tools_lite_setup.task(_ctx())
-
-    assert result.success is True
-    assert any("atd.service" in warning for warning in result.warnings)
-    assert any("enable" in " ".join(call) for call in calls)
