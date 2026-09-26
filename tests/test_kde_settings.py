@@ -181,6 +181,7 @@ def _assign_reply(
     assign_after: dict[str, list[str]] | None,
     assign_missing: frozenset[str] | None = None,
     assign_unsupported: dict[str, list[str]] | None = None,
+    assign_held_elsewhere: dict[str, list[list[Any]]] | None = None,
 ) -> _FakeProc:
     """The answer of the shortcut client: the state before and after.
 
@@ -193,10 +194,13 @@ def _assign_reply(
     state before and after the call and nothing changes. assign_after
     replaces the state an action holds after the call, so a test can make
     the client report another combination or none at all. assign_missing
-    names actions the daemon does not know, which the client reports
-    without touching them, and assign_unsupported names combinations Qt
-    cannot read. The call is
-    recorded as it ran, so a test reads the request the task passed to
+    names actions the daemon lists no such name for: the client gives them
+    their combinations anyway and only says so in the report, which is what
+    a per-layout action of the keyboard layout switcher does. assign_unsupported
+    names combinations Qt cannot read, and assign_held_elsewhere names, per
+    action, the action that kept one of its combinations, as [code, component
+    unique, action unique, component friendly, action friendly] tuples. The
+    call is recorded as it ran, so a test reads the request the task passed to
     the interpreter.
     """
 
@@ -206,21 +210,10 @@ def _assign_reply(
     held = assign_state or {}
     missing = assign_missing or frozenset()
     unsupported = assign_unsupported or {}
+    held_elsewhere = assign_held_elsewhere or {}
     results = []
     for change in request["changes"]:
         action = change["action"]
-        if action in missing:
-            results.append(
-                {
-                    "action": action,
-                    "requested": [],
-                    "before": [],
-                    "after": [],
-                    "unsupported": [],
-                    "missing": True,
-                }
-            )
-            continue
         unreadable = list(unsupported.get(action, []))
         keys = [text for text in change["keys"] if text not in unreadable]
         after = keys
@@ -233,7 +226,8 @@ def _assign_reply(
                 "before": list(held.get(action, [])),
                 "after": after,
                 "unsupported": unreadable,
-                "missing": False,
+                "held_elsewhere": list(held_elsewhere.get(action, [])),
+                "missing": action in missing,
             }
         )
     return _FakeProc(0, json.dumps({"results": results}))
@@ -268,6 +262,7 @@ def _install_fakes(
     assign_missing: frozenset[str] | None = None,
     assign_missing_sequence: list[frozenset[str]] | None = None,
     assign_unsupported: dict[str, list[str]] | None = None,
+    assign_held_elsewhere: dict[str, list[list[Any]]] | None = None,
 ):
     """Replace run_command, the session environment and package state.
 
@@ -355,6 +350,7 @@ def _install_fakes(
                         after,
                         missing,
                         assign_unsupported,
+                        assign_held_elsewhere,
                     )
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
@@ -1365,41 +1361,6 @@ def test_apply_shortcuts_live_asks_again_until_the_state_takes(
     assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
 
 
-def test_apply_shortcuts_live_asks_again_for_an_action_the_daemon_learns(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # kwin registers the actions of a script it just enabled when it
-    # re-reads its configuration, so the daemon can report those actions as
-    # unknown on the first call and know them on the next one; the task then
-    # grants the combination instead of writing it for the next login.
-    ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
-    calls: list[list[str]] = []
-    pauses: list[float] = []
-    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
-    _, _, _, _, writes, _, _ = _install_fakes(
-        monkeypatch,
-        assign_calls=calls,
-        assign_missing_sequence=[
-            frozenset({"Grow Window by 5px", "Shrink Window by 5px"}),
-            frozenset(),
-        ],
-    )
-    changed = task_module._apply_shortcuts_live(
-        client_path=_shared_client(tmp_path),
-        timeout=5,
-        env=_shortcut_env(ctx),
-        system_python=engine_values.SYSTEM_PYTHON,
-        kglobalaccel_names=kglobalaccel_names(),
-        warnings=[],
-    )
-    assert changed is True
-    assert len(calls) == 2
-    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS]
-    written = {command[command.index("--key") + 1] for command in writes}
-    assert "Grow Window by 5px" not in written
-    assert "Shrink Window by 5px" not in written
-
-
 def test_apply_shortcuts_live_stops_at_once_for_a_combination_it_cannot_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1433,23 +1394,24 @@ def test_apply_shortcuts_live_stops_at_once_for_a_combination_it_cannot_read(
     assert written["MinimizeAll"] == "Meta+D,none,MinimizeAll"
 
 
-def test_apply_shortcuts_live_writes_an_action_the_daemon_never_learns(
+def test_apply_shortcuts_live_assigns_an_action_the_daemon_does_not_list(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An action the daemon does not know after every attempt cannot be
-    # reached by waiting, so the task reports it and writes its record for
-    # the next login, where the action exists after kwin starts.
+    # The daemon lists no per-layout action of the keyboard layout switcher,
+    # and the client applies it anyway: measured on Kubuntu 26.04, the daemon
+    # stores the combination of an action it does not list, and kwin reads it
+    # when it starts. Nothing is refused, so nothing is written for a later
+    # login and the task reports the work it did.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
     calls: list[list[str]] = []
     warnings: list[str] = []
-    pauses: list[float] = []
-    monkeypatch.setattr(task_module.time, "sleep", pauses.append)
+    monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
     _, _, _, _, writes, _, _ = _install_fakes(
         monkeypatch,
         assign_calls=calls,
         assign_missing=frozenset({"manage activities"}),
     )
-    task_module._apply_shortcuts_live(
+    changed = task_module._apply_shortcuts_live(
         client_path=_shared_client(tmp_path),
         timeout=5,
         env=_shortcut_env(ctx),
@@ -1457,32 +1419,28 @@ def test_apply_shortcuts_live_writes_an_action_the_daemon_never_learns(
         kglobalaccel_names=kglobalaccel_names(),
         warnings=warnings,
     )
-    assert len(calls) == values.SHORTCUT_APPLY_ATTEMPTS
-    assert pauses == [values.SHORTCUT_APPLY_RETRY_DELAY_SECONDS] * (
-        values.SHORTCUT_APPLY_ATTEMPTS - 1
-    )
-    assert len(warnings) == 1
-    assert "manage activities" in warnings[0]
-    written = {command[command.index("--key") + 1]: command[-1] for command in writes}
-    assert set(written) == {"manage activities"}
-    assert written["manage activities"] == "none,none,manage activities"
+    assert changed is True
+    assert len(calls) == 1
+    assert warnings == []
+    assert writes == []
 
 
-def test_an_action_the_daemon_never_learns_is_named_apart(
+def test_the_shortcut_warning_names_the_component_the_action_and_the_holder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # An action the daemon does not know at all is reached by no combination in
-    # the running session, and the entry in the shortcut file alone does not
-    # make it work, so the warning says that instead of promising the next
-    # login alone (measured 2026-09-26: the daemon of Kubuntu 26.04 knows only
-    # the two switcher actions of the keyboard layout switcher, so a per-layout
-    # action can never be reached).
+    # A combination that stays with another action is a refusal, and the
+    # warning names the component, the action, the state and the action that
+    # kept the combination, so a user reads what to act on instead of a list
+    # of key codes and a promise about the next login.
     ctx = _ctx(tmp_path, kconfig=_SHORTCUT_RECORDS)
     warnings: list[str] = []
-    monkeypatch.setattr(task_module.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(task_module.time, "sleep", lambda _seconds: None)
     _install_fakes(
         monkeypatch,
-        assign_missing=frozenset({"manage activities"}),
+        assign_after={"MinimizeAll": []},
+        assign_held_elsewhere={
+            "MinimizeAll": [[285212672, "kwin", "Cube", "KWin", "Toggle Cube"]]
+        },
     )
     task_module._apply_shortcuts_live(
         client_path=_shared_client(tmp_path),
@@ -1493,9 +1451,11 @@ def test_an_action_the_daemon_never_learns_is_named_apart(
         warnings=warnings,
     )
     assert len(warnings) == 1
-    assert "does not know these actions" in warnings[0]
-    assert "manage activities" in warnings[0]
-    assert "no combination reaches them in this session" in warnings[0]
+    message = warnings[0]
+    assert "kwin (kwin), action MinimizeAll" in message
+    assert "asked for Meta+D" in message
+    assert "the action holds nothing" in message
+    assert "it stays with KWin (kwin), action Cube" in message
 
 
 def test_apply_shortcuts_live_warns_and_writes_what_the_daemon_refuses(

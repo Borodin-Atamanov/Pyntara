@@ -21,10 +21,17 @@ configuration changed. Missing packages (the kwriteconfig6 provider and the
 DBus client) are installed first.
 
 Optional per-layout hotkeys (layout_switch_shortcuts) are written to
-kglobalshortcutsrc the same way; when a desktop session is running, the
-supported shortcuts are also applied through the kglobalaccel daemon with
-python3-dbus, which frees the key from its current owner and makes the
-shortcut work immediately without a session restart.
+kglobalshortcutsrc the same way, and when a desktop session is running they
+are applied through the kglobalaccel daemon with python3-dbus as well: the
+client takes each configured combination from every action that holds it
+and gives it to the configured action, so the key works without a session
+restart and without a KDE settings dialog. kwin is what switches the layout
+by that key, and it reads the combinations of the layout actions when it
+starts, so the task restarts the compositor after the keys are assigned
+whenever the layout configuration or a hotkey changed. An action the daemon
+does not list is applied like any other: measured on Kubuntu 26.04, the
+daemon stores the combination of such an action, and kwin takes it when it
+starts.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
@@ -433,11 +441,33 @@ def _sync_hotkey_file(
 # The python3-dbus client that applies hotkeys through the running
 # kglobalaccel daemon. It runs as the target user on the desktop session
 # bus. The payload is one JSON argument: the component names and a list
-# of [action unique name, combined key code] pairs. The script frees each
-# key from its current owner, assigns it to the configured action and
-# prints the before and after state as JSON. The actionId field order is
-# [component unique, action unique, component friendly, action friendly];
-# the daemon silently ignores a wrong order, so it must not change.
+# of [action unique name, combined key code] pairs. The script works in
+# two phases: it takes every requested key from every action that holds
+# it, then gives each action the keys it was asked for, and it prints the
+# before and after state of every action as JSON. The actionId field order
+# is [component unique, action unique, component friendly, action
+# friendly]; the daemon silently ignores a wrong order, so it must not
+# change.
+
+
+def _hotkey_refusal_reason(report: dict[str, Any]) -> str:
+    """Why one action does not hold the combinations it was asked for.
+
+    The action that keeps a combination is the reason a refusal has, and an
+    action the daemon lists no such name for is the other one, so the warning
+    names what to act on instead of a bare list of codes.
+    """
+
+    holders = [
+        f"{entry[3]} ({entry[1]}), action {entry[2]}"
+        for entry in report.get("held_elsewhere") or []
+        if len(entry) >= 4
+    ]
+    if holders:
+        return "it stays with " + ", ".join(holders)
+    if report.get("missing"):
+        return "the daemon answers to no action of that name"
+    return f"the daemon holds {report.get('after')} instead"
 
 
 def _apply_hotkeys_live(
@@ -454,11 +484,14 @@ def _apply_hotkeys_live(
 
     Runs the python3-dbus script named by script_path, which ships under
     task_data/ of the clone, as the target user on the desktop session bus;
-    the script frees each key from its current owner and assigns it to the
-    configured action, so the shortcut works without a session restart.
-    Shortcuts the parser does not support are skipped here (they were
-    already written to kglobalaccutsrc). Returns error text or None and
-    whether a shortcut actually changed.
+    the script takes each key from every action that holds it and assigns it
+    to the configured action, so the shortcut works without a session
+    restart. An action the daemon does not list is applied the same way, and
+    kwin, which switches the layout, takes such a combination when it starts
+    again, which is why the caller restarts the compositor after this call.
+    Shortcuts the parser does not support are skipped here (they were already
+    written to kglobalshortcutsrc). Returns error text or None and whether a
+    shortcut actually changed.
     """
 
     changes: list[tuple[str, str]] = []
@@ -519,11 +552,6 @@ def _apply_hotkeys_live(
         )
     changed = False
     for (action, shortcut), item in zip(changes, results):
-        if item.get("missing"):
-            return (
-                f"cannot apply hotkey {action}: the daemon does not know it",
-                False,
-            )
         if item.get("unsupported"):
             return (
                 f"cannot apply hotkey {action}: {shortcut} is unreadable",
@@ -531,8 +559,16 @@ def _apply_hotkeys_live(
             )
         if item.get("after") != item.get("requested"):
             return (
-                f"cannot apply hotkey {action}: daemon reports {item.get('after')}",
+                f"cannot apply hotkey {action}: {_hotkey_refusal_reason(item)}",
                 False,
+            )
+        if item.get("missing"):
+            # The combination is held although the daemon lists no such action,
+            # which is the normal state of a per-layout action of the keyboard
+            # layout switcher: the log says so instead of looking wrong.
+            _log(
+                f"hotkey {action} is held although the daemon lists no such"
+                " action, which is what the layout switcher does"
             )
         if item.get("before") != item.get("after"):
             changed = True
@@ -727,7 +763,7 @@ def task(ctx: Context) -> TaskResult:
                 hotkeys_changed |= applied
     changed |= hotkeys_changed
 
-    if layout_changed:
+    if layout_changed or hotkeys_changed:
         reload_error = _reload_kwin(timeout=timeout, home_env=home_env, bus_env=bus_env)
         if reload_error is not None:
             warnings.append(reload_error)

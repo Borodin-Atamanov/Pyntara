@@ -121,9 +121,16 @@ SESSION_MANAGER_START_COMMAND: tuple[str, ...] = (
 KWIN_RESTART_WAIT_SECONDS: int = 180
 KWIN_RESTART_POLL_SECONDS: float = 2.0
 
-# Per-layout hotkeys are managed by the kde_settings task through its kconfig
-# records, not here. Empty by default: no hotkeys.
-LAYOUT_SWITCH_SHORTCUTS: dict[str, str] = {}
+# The combination that switches straight to one layout, keyed by the action of
+# the KDE keyboard layout switcher. The action name is the one the keyboard
+# module of the desktop builds out of the long name of the layout, and kwin
+# reads the combination of that action when it starts, so the key works in a
+# running session after the task restarts the compositor. The combination is
+# taken from whichever action holds it: Meta+E is the packaged default of the
+# Dolphin launcher on Kubuntu, so the launcher loses that key.
+LAYOUT_SWITCH_SHORTCUTS: dict[str, str] = {
+    "Switch keyboard layout to Spanish": "Meta+E",
+}
 
 # The group of kxkbrc that carries the layout settings and the group of the
 # appletsrc applet that carries its configuration.

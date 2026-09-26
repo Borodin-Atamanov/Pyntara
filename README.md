@@ -1,4 +1,4 @@
-# Pyntara 0.3.788
+# Pyntara 0.3.789
 
 Pyntara is an automated Kubuntu provisioning system.
 Primary target platform: Kubuntu 26.04 and newer with KDE, Wayland.
@@ -130,3 +130,5 @@ Architecture decisions:
 Plans:
 
 [docs/TODO.md](docs/TODO.md) — planned future work, ideas for new tasks
+
+[docs/kde-settings-plan.md](docs/kde-settings-plan.md) — plan for the KDE settings bugs: the layout switching keys, the shortcut warning and the owners that overwrite the configured files

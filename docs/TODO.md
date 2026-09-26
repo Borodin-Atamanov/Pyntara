@@ -13,16 +13,19 @@ written. A read-only audit of 335 configured desktop values on a provisioned
 machine found ten that did not match: six were wrong paths inside the values
 themselves (the home of the recording machine; fixed with the home_dir
 placeholder), one was a tab box layout name this KDE no longer ships, and the
-rest were that overwrite. The plan: after the desktop tasks write their config,
-make the owners read it, that is restart the compositor through
-org.kde.KWin.replace, restart plasmashell for appletsrc and powerdevil for
-powerdevilrc, start the session services that stay inactive, and give the
-KGlobalAccel combinations again, because the actions that switch a keyboard
-layout exist only once kwin holds the layouts; then decide how a written file
-survives its owner, and wait by polling the real state instead of sleeping,
-because the restart takes minutes on a weak machine. The recipe measured so far
-is in docs/spec/kde-keyboard-setup.md. Needs a live KDE stand: the machine used
-for these measurements is gone.
+rest were that overwrite.
+
+The plan for the remaining work is docs/kde-settings-plan.md. The per-layout
+switching key is finished (2026-09-26): the hotkey client works in two phases, it
+takes every claimed combination from the action that holds it, registers the
+target action (the call the KGlobalAccel client library makes) and gives it the
+combinations, and the keyboard task does that before its compositor restart,
+because kwin reads the combination of a layout action when it starts. Measured
+with the same code on a configured machine and on a fresh one: the run reports no
+shortcut warning, pressing Meta+E switches the layout to Spanish, and the setting
+survives a reboot. What remains open is the overwrite by the other owners
+(plasmashell over appletsrc, powerdevil over powerdevilrc) and the reload of the
+appearance into the running session.
 
 ## Install antivirus antirootkit.
 

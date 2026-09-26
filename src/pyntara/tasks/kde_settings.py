@@ -937,8 +937,11 @@ class _ShortcutReport(TypedDict):
 
     requested holds the combined codes the client read from the configured
     combinations, before and after the codes the action held around the
-    call, unsupported the combinations Qt could not read, and missing
-    marks an action the daemon does not know.
+    call, unsupported the combinations Qt could not read, held_elsewhere
+    per requested code the action does not hold the action that keeps it,
+    as [code, component unique, action unique, component friendly, action
+    friendly], and missing marks a change whose action the daemon lists no
+    such name for, which the client applies all the same.
     """
 
     action: str
@@ -946,21 +949,56 @@ class _ShortcutReport(TypedDict):
     before: list[int]
     after: list[int]
     unsupported: list[str]
+    held_elsewhere: list[list[int | str]]
     missing: bool
 
 
 def _report_is_confirmed(report: _ShortcutReport) -> bool:
     """True when the daemon holds exactly the requested combinations.
 
-    An action the daemon does not know and a combination the client cannot
-    read are never confirmed, whatever the daemon reports, because the
+    Only the state decides: an action the daemon lists no such name for is
+    confirmed when it holds what was asked for, because measured on Kubuntu
+    26.04 the daemon stores the combination of such an action and kwin reads
+    it when it starts, so the keyboard layout switcher reaches it. A
+    combination the client cannot read is never confirmed, because then the
     requested state was not reached.
     """
 
+    return not report.get("unsupported") and report.get("after") == report.get(
+        "requested"
+    )
+
+
+def _shortcut_refusal(
+    change: tuple[str, str, str, tuple[str, ...]], report: _ShortcutReport
+) -> str:
+    """Why one configured combination is not held by its action.
+
+    The message names the component, the action, the combinations that were
+    asked for, the state the daemon answered and the reason: the action that
+    keeps the combination is the reason a refusal has, and an action the
+    daemon lists no such name for is the other one, so a user reads what to
+    act on instead of a bare list of codes.
+    """
+
+    component, friendly, action, keys = change
+    wanted = ", ".join(keys) if keys else "no combination"
+    holders = [
+        f"{entry[3]} ({entry[1]}), action {entry[2]}"
+        for entry in report.get("held_elsewhere") or []
+        if len(entry) >= 4
+    ]
+    if holders:
+        reason = "it stays with " + ", ".join(holders)
+    elif report.get("missing"):
+        reason = "the daemon answers to no action of that name"
+    else:
+        reason = "the daemon answered with other combinations"
+    held = report.get("after") or []
+    state = f"the action holds {held}" if held else "the action holds nothing"
     return (
-        not report.get("missing")
-        and not report.get("unsupported")
-        and report.get("after") == report.get("requested")
+        f"{friendly} ({component}), action {action}: asked for {wanted},"
+        f" {state}, because {reason}"
     )
 
 
@@ -1236,39 +1274,22 @@ def _apply_shortcuts_live(
     if not unconfirmed:
         _log(f"applied {len(changes)} configured shortcuts in the running daemon")
         return changed
-    # The combinations the daemon still refuses are reported, and the work
-    # done on the remaining actions is reported as well: a difference is
-    # often partial, and hiding the part that took would make the next run
-    # start from a wrong idea of the machine. An action the daemon does not
-    # know at all is named apart, because no combination reaches it in the
-    # running session and the entry in the shortcut file alone does not make
-    # it work: the desktop has to carry the action (measured 2026-09-26 on
-    # Kubuntu 26.04: the daemon knows only the two switcher actions of the
-    # keyboard layout switcher, so a per-layout action can never be reached).
-    unknown_actions = [
-        action
-        for (_component, _friendly, action, _keys), report in zip(changes, reports)
-        if report.get("missing") and not _report_is_confirmed(report)
-    ]
-    difference = [
-        (action, report.get("after"), report.get("requested"))
-        for (_component, _friendly, action, _keys), report in zip(changes, reports)
-        if not _report_is_confirmed(report) and not report.get("missing")
-    ]
-    reasons: list[str] = []
-    if unknown_actions:
-        reasons.append(
-            f"the daemon does not know these actions: {unknown_actions}, so no"
-            " combination reaches them in this session and their entries are"
-            " written into the shortcut file for the next login"
-        )
-    if difference:
-        reasons.append(
-            "the daemon does not hold the configured shortcuts:"
-            f" {difference}, they are written into the shortcut file for the"
-            " next login"
-        )
-    report_and_write_for_next_login(unconfirmed, "; ".join(reasons))
+    # The combinations the daemon still refuses are reported one by one with
+    # the component, the action, the state the daemon answered and the reason,
+    # and the work done on the remaining actions is reported as well: a
+    # difference is often partial, and hiding the part that took would make the
+    # next run start from a wrong idea of the machine.
+    refusals = "; ".join(
+        _shortcut_refusal(change, report)
+        for change, report in zip(changes, reports)
+        if not _report_is_confirmed(report)
+    )
+    report_and_write_for_next_login(
+        unconfirmed,
+        "the running session does not hold these configured shortcuts:"
+        f" {refusals}. Their records are in the shortcut file, and a run after"
+        " the next login asks the daemon for them again",
+    )
     return changed
 
 

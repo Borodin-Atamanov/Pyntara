@@ -105,6 +105,7 @@ def _install_fakes(
     fail_live_apply: bool = False,
     live_apply_error_stderr: str = "",
     hotkey_state: dict[str, list[str]] | None = None,
+    order: list[str] | None = None,
 ):
     """Replace run_command and package state; return captured command lists.
 
@@ -124,7 +125,8 @@ def _install_fakes(
     installs: list[str] = []
     live_applies: list[list[str]] = []
     # The compositor pid the fake reports; the restart replaces it, which is
-    # what the task waits for.
+    # what the task waits for. order records the two calls a test compares,
+    # the live hotkey apply and the compositor restart, in the order they ran.
     compositor_pid = [bus_pid]
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -143,10 +145,14 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 session_applies.append(list(command))
                 if "org.kde.KWin.replace" in inner:
+                    if order is not None:
+                        order.append("compositor-restart")
                     compositor_pid[0] = "5999" if bus_pid else ""
                 return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 live_applies.append(list(command))
+                if order is not None:
+                    order.append("hotkeys")
                 if fail_live_apply:
                     raise subprocess.CalledProcessError(
                         1, command, stderr=live_apply_error_stderr
@@ -687,6 +693,37 @@ def test_unsupported_shortcut_is_written_not_applied_live(
         command for command in writes if "kglobalshortcutsrc" in " ".join(command)
     ]
     assert any(SPANISH_ACTION in " ".join(command) for command in hotkey_writes)
+
+
+def test_session_applies_a_hotkey_before_restarting_the_compositor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # kwin reads the combination of a layout action when it starts, so the task
+    # gives the key to the daemon first and restarts the compositor afterwards:
+    # the order is what makes the key work in the running session. The layout
+    # values already match here, so the restart happens because of the hotkey
+    # alone, which is the case a run that only gave a combination must not
+    # leave dead until the next compositor start.
+    monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", HOTKEYS)
+    ctx = _ctx(tmp_path)
+    currents = {
+        "LayoutList": "us,ru,es",
+        "DisplayNames": ",,",
+        "VariantList": ",,",
+        "Options": "grp:caps_select",
+        "ResetOldOptions": "true",
+        "SwitchMode": "WinClass",
+        "Use": "true",
+    }
+    order: list[str] = []
+    _, session_applies, _, live_applies = _install_fakes(
+        monkeypatch, currents=currents, order=order
+    )
+    result = task_module.task(ctx)
+    assert result.success is True
+    assert len(live_applies) == 1
+    assert order == ["hotkeys", "compositor-restart"]
+    assert any("org.kde.KWin.replace" in command for command in session_applies)
 
 
 def test_user_command_prefix_comes_from_the_values(

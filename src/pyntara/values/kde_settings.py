@@ -512,12 +512,10 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "manage activities",
         "none,none,Show Activity Switcher",
     ),
-    KconfigRecord(
-        "kglobalshortcutsrc",
-        ("KDE Keyboard Layout Switcher",),
-        "Switch keyboard layout to Spanish",
-        "Meta+E,none,Switch keyboard layout to Spanish",
-    ),
+    # The per-layout switching combinations are configured by the keyboard task
+    # (layout_switch_shortcuts of kde_keyboard_setup) instead of a record here:
+    # kwin reads them when it starts, so that task must restart the compositor
+    # after giving them to the daemon.
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
