@@ -89,27 +89,3 @@ does not hold the configured shortcuts: [(action, after, requested), ...], they 
 written into the shortcut file for the next login". The tuples carry the action
 code and the two key lists, while the component and the friendly name are dropped
 by the zip unpacking, and no reason for the refusal is reported.
-
-## A venv damaged by a crash is not repaired, and the warning hides the tool output
-
-Run of 2026-09-25 20:13 on the test machine clean002 (launcher path, branch code,
-default vault): system_metrics_setup warned "cannot install pyntara into the venv:
-Command '['/root/.local/bin/uv', 'sync', '--project', '/var/cache/pyntara/repo',
-'--active', '--locked', '--no-dev', '--no-editable', '--reinstall-package',
-'pyntara']' returned non-zero exit status 2."
-
-The same command with --dry-run answers "Would use project environment at:
-/usr/local/lib/pyntara/venv", "Resolved 42 packages in 3ms", then "error: Failed to
-read metadata from:
-`/usr/local/lib/pyntara/venv/lib/python3.14/site-packages/pyntara-0.3.780.dist-info`
-cause: EOF while parsing a value at line 1 column 0". In that directory INSTALLER,
-REQUESTED, direct_url.json, uv_build.json and uv_cache.json are 0 bytes while
-METADATA (11538 bytes) and RECORD (12108 bytes) are complete, and the venv holds
-123 zero-length files in total: the host kernel failed at 19:51:41 while the
-section wrote that venv, so the data of those files never reached the disk.
-
-Two facts follow. The refresh step of the section cannot repair such a venv,
-because uv refuses to read the metadata it was meant to replace. And the warning
-carries only the exit status of the command (src/pyntara/tasks/system_metrics_setup.py
-line 135 formats the exception), not the text the tool printed, so neither the
-machine's user nor a developer can see the reason.
