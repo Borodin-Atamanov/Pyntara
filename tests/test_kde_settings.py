@@ -1085,6 +1085,32 @@ def test_theme_cursor_overrides_idempotent(
     assert changed2 is False
 
 
+def test_the_theme_copy_hands_the_user_theme_directory_to_the_desktop_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The copy creates the user theme directories when they are missing, and a
+    # directory owned by root leaves the user unable to manage their own
+    # themes, so the handover covers the directory that holds them and not the
+    # copied theme alone.
+    system = tmp_path / "system-look-and-feel"
+    _make_system_theme(system, "org.kubuntudark.desktop")
+    _ctx(tmp_path, system_look_and_feel_dir=system)
+    commands: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        commands.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+
+    task_module._apply_theme_cursor_overrides(timeout=5, force=False)
+
+    handovers = [
+        " ".join(command) for command in commands if "chown" in " ".join(command)
+    ]
+    assert any(line.endswith("/plasma") for line in handovers)
+
+
 def test_user_dirs_merged_replaces_in_place_and_keeps_others() -> None:
     # A matching directive keeps the line, a differing one is replaced in
     # place, missing directives are appended, comments and foreign keys
@@ -2370,7 +2396,9 @@ def test_recursive_owner_command_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The owner writer of a copied theme tree is a value: another program in
-    # the values is the argv the task runs on the copy.
+    # the values is the argv the task runs on the copy. The handover covers the
+    # user theme directory that holds the copy, so the copy and the directories
+    # created around it all belong to the desktop user.
     system = tmp_path / "system"
     values.SYSTEM_LOOK_AND_FEEL_DIR = system
     values.CHOWN_RECURSIVE_COMMAND = (
@@ -2380,10 +2408,9 @@ def test_recursive_owner_command_comes_from_the_values(
         "{path}",
     )
     (system / values.LOOK_AND_FEEL).mkdir(parents=True)
-    target = (
+    user_theme_dir = (
         Path(common_values.DESKTOP_HOME_DIR)
-        / values.USER_LOOK_AND_FEEL_DIR
-        / values.LOOK_AND_FEEL
+        / Path(values.USER_LOOK_AND_FEEL_DIR).parent
     )
     seen: list[list[str]] = []
 
@@ -2397,7 +2424,7 @@ def test_recursive_owner_command_comes_from_the_values(
         "mychown",
         "--recursive",
         (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
-        str(target),
+        str(user_theme_dir),
     ] in seen
 
 

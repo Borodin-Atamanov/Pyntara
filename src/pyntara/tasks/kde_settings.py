@@ -720,13 +720,16 @@ def _apply_theme_cursor_overrides(
             if not source.is_dir():
                 _log(f"no system theme {look_and_feel}, cursor override skipped")
                 continue
-            target = (
-                Path(common_values.DESKTOP_HOME_DIR)
-                / values.USER_LOOK_AND_FEEL_DIR
-                / look_and_feel
+            user_look_and_feel_dir = (
+                Path(common_values.DESKTOP_HOME_DIR) / values.USER_LOOK_AND_FEEL_DIR
             )
+            target = user_look_and_feel_dir / look_and_feel
             if not target.is_dir():
                 shutil.copytree(source, target)
+                # The copy creates the user theme directories when they are
+                # missing, and the whole user theme tree belongs to the
+                # desktop user, so the handover covers the directory that
+                # holds the copied theme and not the theme alone.
                 run_command(
                     substituted_command(
                         values.CHOWN_RECURSIVE_COMMAND,
@@ -735,7 +738,7 @@ def _apply_theme_cursor_overrides(
                                 f"{common_values.DESKTOP_USERNAME}:"
                                 f"{common_values.DESKTOP_USERNAME}"
                             ),
-                            "path": str(target),
+                            "path": str(user_look_and_feel_dir.parent),
                         },
                     ),
                     timeout=timeout,

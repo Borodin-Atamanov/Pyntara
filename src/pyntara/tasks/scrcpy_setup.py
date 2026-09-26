@@ -417,6 +417,9 @@ def _deploy_release(
         except OSError as exc:
             _log(f"cannot set the mode of {path}: {exc}")
     _own_to_user(target, recursive=True)
+    # The install directory is created above when it was missing, and it
+    # belongs to the desktop user like the tree inside it.
+    _own_to_user(_install_dir())
 
     client = target / values.BINARY_FILE_NAME
     answer = _probe_client_answer(client, timeout)

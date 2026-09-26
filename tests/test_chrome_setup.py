@@ -1047,3 +1047,35 @@ def test_kconfig_calls_come_from_the_values(
         "--entry",
         "launchers",
     ]
+
+
+def test_the_merge_hands_the_new_profile_directories_to_the_desktop_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A fresh machine has no Chrome profile, so the merge creates the profile
+    # directory and the Default directory itself. Both belong to the desktop
+    # user: a profile owned by root leaves the user unable to write it, and
+    # Chrome then cannot work for that user.
+    settings_dir = tmp_path / "settings"
+    preferences = settings_dir / values.PREFERENCES_RELATIVE_PATH
+    preferences.parent.mkdir(parents=True)
+    preferences.write_text('{"configured": true}\n', encoding="utf-8")
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(values, "SETTINGS_DIR", settings_dir)
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", home)
+    monkeypatch.setattr(chrome_setup, "_chrome_is_running", lambda timeout: False)
+    owned: list[Path] = []
+    monkeypatch.setattr(
+        chrome_setup,
+        "_own_to_user",
+        lambda username, path: owned.append(Path(path)),
+    )
+
+    changed, note = chrome_setup._apply_profile_preferences(timeout=5)
+
+    assert changed is True
+    assert note is None
+    profile_dir = home / values.PROFILE_DIR_RELATIVE_PATH
+    assert profile_dir in owned
+    assert profile_dir / preferences.parent.name in owned

@@ -268,6 +268,21 @@ def test_install_from_release_points_the_command_at_the_new_version(
     assert any(ASSET_URL in " ".join(call) for call in calls)
 
 
+def test_the_install_directory_belongs_to_the_desktop_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The install step creates the install directory itself when it is
+    # missing, and it belongs to the desktop user like the tree inside it:
+    # otherwise the user cannot manage their own installation.
+    _fake_run_factory(monkeypatch, tmp_path)
+    scrcpy_setup.task(_ctx())
+    install_dir = _install_dir()
+
+    assert install_dir.is_dir()
+    assert install_dir.stat().st_uid == os.getuid()
+    assert install_dir.stat().st_gid == os.getgid()
+
+
 def test_the_cached_archive_is_removed_when_the_run_deletes_downloads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -377,6 +377,11 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
         return False, None
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
+        # The merge creates the profile directory and the Default directory
+        # when the profile is new, and the desktop user owns the whole
+        # profile, so the created directories change hands with the file.
+        _own_to_user(common_values.DESKTOP_USERNAME, _profile_dir())
+        _own_to_user(common_values.DESKTOP_USERNAME, target.parent)
         target.write_text(
             json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
