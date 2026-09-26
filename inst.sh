@@ -236,7 +236,7 @@ SOURCE_DIR="${PYNTARA_SOURCE_DIR:-$CACHE_DIR/repo}"
 # step (hooks/land_version_commit.sh). The value is informational, and it
 # is a literal because this line is printed before anything exists on the
 # machine: no clone, no python, no git to derive it from.
-PYNTARA_VERSION="0.3.793"
+PYNTARA_VERSION="0.3.794"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f fetch_source &>/dev/null; then
