@@ -79,3 +79,12 @@ kwin_scripts_dir_name, desktop_ids_script_file_name, konsole_profile_file_name, 
 The interpreter that runs the rendered DBus client is system_python of the engine values module, the Python of the managed system, because the python3-dbus bindings install into the system Python only.  
 The live session reaches the task through the engine values module: desktop_username is the account whose live session the run reads, session_environment_command is the command that prints that session's environment (systemctl --machine=<user>@.host --user show-environment by default), session_environment_keys are the session variables the run exports to every task and every child process, and session_bus_key with session_display_keys decide whether a session counts as live.  
 kconfig, the array of records that apply arbitrary KConfig values.
+
+The power records of powerdevilrc and the live power profile were measured
+on Kubuntu 26.04 with KDE 6.6: writing the record and asking powerdevil to
+read its configuration again with the reparseConfiguration call of its own
+interface does not change the profile the session runs, because that profile
+belongs to power-profiles-daemon. The section therefore calls that owner
+reload after the records and reads the live profile back, and it names both
+profiles when they differ, instead of presenting the configured one as
+applied.

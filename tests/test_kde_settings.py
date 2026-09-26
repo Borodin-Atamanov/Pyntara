@@ -244,6 +244,57 @@ def _granted_script_hotkeys() -> dict[str, list[str]]:
     }
 
 
+def test_the_live_power_profile_is_named_when_it_differs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Measured on Kubuntu 26.04 with KDE 6.6: the profile record of
+    # powerdevilrc does not change the live profile of the session, because
+    # that profile belongs to power-profiles-daemon. The step therefore names
+    # both profiles instead of presenting the configured one as applied.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        if command[-1] == "get":
+            return _FakeProc(0, "balanced\n")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    task_module._reload_powerdevil(
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        warnings=warnings,
+    )
+
+    assert any("reparseConfiguration" in " ".join(call) for call in calls)
+    assert any(
+        "balanced" in warning and "performance" in warning for warning in warnings
+    )
+
+
+def test_the_power_settings_are_left_to_the_next_login_without_a_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A machine without a session has no owner to ask and no live profile to
+    # read, so the step makes no call and reports nothing: the values are in
+    # the file and apply at the next login.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    task_module._reload_powerdevil(timeout=5, env=None, warnings=warnings)
+
+    assert calls == []
+    assert warnings == []
+
+
 def _install_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
