@@ -358,6 +358,16 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
         )
     target = _profile_preferences_path()
     try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # The profile directory and its Default directory belong to the
+        # desktop user, whether this run creates them or an earlier run left
+        # them behind, so the handover comes before the merge can decide that
+        # nothing has to be written.
+        _own_to_user(common_values.DESKTOP_USERNAME, _profile_dir())
+        _own_to_user(common_values.DESKTOP_USERNAME, target.parent)
+    except OSError as exc:
+        return False, f"cannot prepare the profile directory: {exc}"
+    try:
         try:
             current: object = (
                 json.loads(target.read_text(encoding="utf-8"))
@@ -376,12 +386,6 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     if merged == current:
         return False, None
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        # The merge creates the profile directory and the Default directory
-        # when the profile is new, and the desktop user owns the whole
-        # profile, so the created directories change hands with the file.
-        _own_to_user(common_values.DESKTOP_USERNAME, _profile_dir())
-        _own_to_user(common_values.DESKTOP_USERNAME, target.parent)
         target.write_text(
             json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
