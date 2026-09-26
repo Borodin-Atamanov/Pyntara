@@ -21,6 +21,16 @@ LOCAL_VAULT_PATH: Path = Path("/var/lib/pyntara/secrets/pyntara.vault")
 # its directory and PASS_FILE_MODE on the file.
 PASS_FILE_PATH: Path = Path("/etc/pyntara/pass")
 
+# Suffix of the temporary file the runtime vault is written to before it is
+# moved onto the runtime path, so an interrupted write leaves the previous file
+# or the complete new one, never a truncated vault where the machine reads it.
+LOCAL_VAULT_TEMPORARY_SUFFIX: str = ".writing"
+
+# Rescue path of a runtime vault that does not open with any known password:
+# the unreadable file is renamed here before the vault is built again, so
+# nothing is destroyed and an operator can still recover it by hand.
+LOCAL_VAULT_RESCUE_PATH: Path = Path("/var/lib/pyntara/secrets/pyntara.vault.damaged")
+
 # Title of the source vault entry that carries the future local vault password.
 # The entry must exist in the vault structure of pyntara.values.vault_structure;
 # a guard in tests/test_values.py refuses a title that is not listed there.
@@ -47,6 +57,8 @@ ERROR_PRIORITY: int = 3
 READ_VALUE_NAMES: tuple[str, ...] = (
     "LOCAL_VAULT_PATH",
     "PASS_FILE_PATH",
+    "LOCAL_VAULT_TEMPORARY_SUFFIX",
+    "LOCAL_VAULT_RESCUE_PATH",
     "VAULT_PASSWORD_ENTRY_TITLE",
     "SECRETS_DIR_MODE",
     "LOCAL_VAULT_FILE_MODE",

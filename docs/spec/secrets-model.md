@@ -56,7 +56,8 @@ some values are one-time-use and must only live in memory during execution
 The runtime secret database and its password live on the target machine in fixed locations, so services that start after install can decrypt the database without user input.
 
 The runtime secret database lives at /var/lib/pyntara/secrets/pyntara.vault. The directory /var/lib/pyntara/secrets/ has mode 0700, the file has mode 0640.  
-The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.
+The vault password lives in a plain file /etc/pyntara/pass with mode 0400 and owner root:root.  
+The rescue copy of a runtime vault that does not open with any known password lives at /var/lib/pyntara/secrets/pyntara.vault.damaged, in the same directory and with the mode of the runtime vault. It exists for manual recovery and is replaced by the next rescue copy, so the rescue files stay bounded.
 
 The file modes are declared in src/pyntara/values/local_vault_setup.py as integers: SECRETS_DIR_MODE, LOCAL_VAULT_FILE_MODE, PASS_DIR_MODE and PASS_FILE_MODE.
 
@@ -68,8 +69,10 @@ The local_vault_setup task creates the runtime vault from a source vault on the 
 
 The source vault is not fixed: the task tries the production vault first, then the default vault, both with the vault password from the run (PYNTARA_VAULT_PASSWORD). When neither opens, the task journals a serious error at syslog level 3 and fails without stopping the run.
 
-The future local vault password comes from the pyntara_local_vault_password entry of the source vault, declared in src/pyntara/values/vault_structure.py. The task copies the source vault and re-encrypts the copy with that password, so the source vault password never opens the runtime vault. The copy is written to /var/lib/pyntara/secrets/pyntara.vault (mode 0640, directory 0700) and the password to /etc/pyntara/pass (mode 0400), both owned by root:root.
+The future local vault password comes from the pyntara_local_vault_password entry of the source vault, declared in src/pyntara/values/vault_structure.py. The task copies the source vault and re-encrypts the copy with that password, so the source vault password never opens the runtime vault. The copy is written to /var/lib/pyntara/secrets/pyntara.vault (mode 0640, directory 0700) and the password to /etc/pyntara/pass (mode 0400), both owned by root:root. The default vault carries a well-known test value for this entry, mirroring its well-known vault password.
 
-The task is idempotent: without force an existing runtime vault is left as it is, except that the source vault root entries missing from it are copied in, so a vault created by an older run gains the entries the structure gained later, the telemetry password among them; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file. A sync that cannot run, because no source vault opens, the password file is missing or the runtime vault does not open with the local password, leaves the runtime vault exactly as it was.
+The task is idempotent: without force an existing runtime vault is kept, and the source vault root entries and subgroups missing from it are copied in, so a vault created by an older run gains the entries the structure gained later, the telemetry password among them; force mode (PYNTARA_FORCE_TASKS) rewrites the vault and the password file.
 
-The default vault carries a well-known test value for this entry, mirroring its well-known vault password.
+A runtime vault the machine cannot open is repaired instead of being left behind, because the services that read it start without a user who could repair it. A password file that is missing, empty or out of step with the vault that opens is written again with the password that opens the vault, so the records the tasks added to the runtime vault survive. A vault that no known password opens has lost its secrets: the file is renamed to the rescue path and the vault is built again from the source vault, which leaves the unreadable file recoverable by hand. Every repair, and every reason a repair could not run, is reported as a warning of the task, so a machine left without a usable runtime vault never appears as a plain success; the reasons are a source vault that does not open, a local password entry that is missing or empty, and a vault or a password file that cannot be written.
+
+The runtime vault is written to a temporary file next to its target and moved onto the target afterwards, so an interrupted write leaves either the previous file or the complete new one, never a truncated vault in the place the machine reads.

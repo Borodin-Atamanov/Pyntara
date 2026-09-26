@@ -3,8 +3,8 @@
 The tests create real KeePass databases in temporary directories with
 pykeepass, so the re-encryption path is exercised for real: the runtime
 vault must open with the local password and must not open with the source
-password. All four paths are values of the task, so one autouse fixture points
-them at the temporary directory of the test and the repository root is
+password. All vault paths are values of the task, so one autouse fixture
+points them at the temporary directory of the test and the repository root is
 monkeypatched to the same directory, which keeps the real vault files and
 system paths untouched.
 """
@@ -47,15 +47,21 @@ def _point_the_values_at_the_temporary_directory(
 ) -> None:
     """Give every test of this file its own vault paths under tmp_path.
 
-    The four paths are values of the task: the two source vaults, the runtime
-    vault and the password file. The fixture points them at the temporary
-    directory of the test and the shipped values come back afterwards.
+    The vault paths are values of the task: the two source vaults, the runtime
+    vault, its temporary file and rescue copy, and the password file. The
+    fixture points them at the temporary directory of the test and the shipped
+    values come back afterwards.
     """
 
     monkeypatch.setattr(common_values, "SOURCE_VAULT_PRODUCTION", "production.vault")
     monkeypatch.setattr(common_values, "SOURCE_VAULT_DEFAULT", "default.vault")
     monkeypatch.setattr(
         values, "LOCAL_VAULT_PATH", tmp_path / "secrets" / "pyntara.vault"
+    )
+    monkeypatch.setattr(
+        values,
+        "LOCAL_VAULT_RESCUE_PATH",
+        tmp_path / "secrets" / "pyntara.vault.damaged",
     )
     monkeypatch.setattr(values, "PASS_FILE_PATH", tmp_path / "etc" / "pass")
 
@@ -418,3 +424,197 @@ def test_owner_comes_from_the_engine_config(
     assert result.success is True
     assert (tmp_path / "secrets" / "pyntara.vault", 7, 11) in chowned
     assert (tmp_path / "etc" / "pass", 7, 11) in chowned
+
+
+def _create_runtime_vault(
+    path: Path, password: str, extra_entries: dict[str, str] | None = None
+) -> None:
+    """Create a runtime vault that opens with the given password.
+
+    The local password entry mirrors what a run writes, and extra entries
+    stand for the machine-specific records the tasks add to the runtime vault.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    create_database(str(path), password=password)
+    kp = PyKeePass(str(path), password=password)
+    kp.add_entry(kp.root_group, ENTRY_TITLE, "pyntara", password)
+    for title, secret in (extra_entries or {}).items():
+        kp.add_entry(kp.root_group, title, "pyntara", secret)
+    kp.save()
+
+
+def _create_password_file(path: Path, password: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(password, encoding="utf-8")
+
+
+def test_rebuilds_the_runtime_vault_when_the_file_is_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A crash can leave the runtime vault empty, and the machine then holds no
+    # secrets at all. The emptied file is kept as a rescue copy and the vault
+    # is built again from the source vault; the loss is reported as a warning
+    # instead of the run passing the empty file off as an existing vault.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    local_vault.parent.mkdir(parents=True)
+    local_vault.write_bytes(b"")
+    _create_password_file(tmp_path / "etc" / "pass", LOCAL_PASSWORD)
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert "rebuilt" in (result.message or "")
+    assert any(
+        "does not open with any known password" in warning
+        for warning in result.warnings
+    )
+    assert _opens_with(local_vault, LOCAL_PASSWORD)
+    assert values.LOCAL_VAULT_RESCUE_PATH.is_file()
+    assert values.LOCAL_VAULT_RESCUE_PATH.read_bytes() == b""
+
+
+def test_rebuilds_the_runtime_vault_when_the_file_is_truncated(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A truncated vault is as unusable as an empty one, so it is kept and
+    # built again, and the machine ends the run with a vault it can open.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    _create_runtime_vault(local_vault, LOCAL_PASSWORD)
+    truncated = local_vault.read_bytes()[: len(local_vault.read_bytes()) // 2]
+    local_vault.write_bytes(truncated)
+    _create_password_file(tmp_path / "etc" / "pass", LOCAL_PASSWORD)
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings
+    assert values.LOCAL_VAULT_RESCUE_PATH.read_bytes() == truncated
+    assert _opens_with(local_vault, LOCAL_PASSWORD)
+
+
+def test_restores_the_password_file_when_it_is_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The password file is what the services read. A vault that is intact and
+    # a password file that is gone is repaired by writing the file again from
+    # the source vault entry, without touching the vault and its records.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    _create_runtime_vault(local_vault, LOCAL_PASSWORD, {"rustdesk_password": "rd-1"})
+    before = local_vault.read_bytes()
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings == ()
+    pass_file = tmp_path / "etc" / "pass"
+    assert pass_file.read_text(encoding="utf-8") == LOCAL_PASSWORD
+    assert local_vault.read_bytes() == before
+    assert not values.LOCAL_VAULT_RESCUE_PATH.exists()
+
+
+def test_restores_the_password_file_when_it_is_out_of_step(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A password file left behind by an older run must not cost the machine
+    # its records: the vault that opens is kept and the file takes the
+    # password that opens it.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    _create_runtime_vault(local_vault, LOCAL_PASSWORD, {"rustdesk_password": "rd-1"})
+    pass_file = tmp_path / "etc" / "pass"
+    _create_password_file(pass_file, "stale-pass")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert result.warnings == ()
+    assert pass_file.read_text(encoding="utf-8") == LOCAL_PASSWORD
+    reopened = PyKeePass(str(local_vault), password=LOCAL_PASSWORD)
+    assert reopened.find_entries(title="rustdesk_password", first=True) is not None
+
+
+def test_keeps_a_runtime_vault_the_machine_can_open(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The password file is the password the machine uses, so a vault that
+    # opens with it is kept as it is even when the source entry differs.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    _create_runtime_vault(local_vault, "machine-pass", {"rustdesk_password": "rd-1"})
+    pass_file = tmp_path / "etc" / "pass"
+    _create_password_file(pass_file, "machine-pass")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert result.warnings == ()
+    assert pass_file.read_text(encoding="utf-8") == "machine-pass"
+    assert _opens_with(local_vault, "machine-pass")
+
+
+def test_warns_when_the_runtime_vault_cannot_be_checked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Without a source vault the task can neither check nor repair the runtime
+    # vault, so the unchecked state is reported and the file is left alone.
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    local_vault.parent.mkdir(parents=True)
+    local_vault.write_bytes(b"")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert any("not checked" in warning for warning in result.warnings)
+    assert local_vault.read_bytes() == b""
+    assert not values.LOCAL_VAULT_RESCUE_PATH.exists()
+
+
+def test_warns_when_the_runtime_vault_cannot_be_rebuilt(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A rebuild that cannot write the vault leaves the machine without a
+    # usable vault, so it is reported as a warning and never as a plain
+    # success.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    local_vault.parent.mkdir(parents=True)
+    local_vault.write_bytes(b"")
+    _create_password_file(tmp_path / "etc" / "pass", LOCAL_PASSWORD)
+
+    def _failing_write(*args: object, **kwargs: object) -> None:
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(local_vault_setup, "_write_local_vault", _failing_write)
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is False
+    assert any(
+        "cannot write runtime vault" in warning for warning in result.warnings
+    )
+
+
+def test_write_local_vault_keeps_the_previous_file_when_the_save_fails(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The vault is written through a temporary file next to the target, so a
+    # failure inside the save leaves the previous file in place and never a
+    # truncated vault where the machine reads it.
+    source = tmp_path / "source.vault"
+    create_database(str(source), password="source-pass")
+    kp = PyKeePass(str(source), password="source-pass")
+    target = tmp_path / "pyntara.vault"
+    target.write_bytes(b"previous-content")
+
+    def _failing_save(self: PyKeePass, filename: str | None = None) -> None:
+        assert filename is not None
+        Path(filename).write_bytes(b"half-written")
+        raise OSError("no space left on device")
+
+    monkeypatch.setattr(PyKeePass, "save", _failing_save)
+    with pytest.raises(OSError):
+        local_vault_setup._write_local_vault(kp, "local-pass", target, 0o700, 0o640)
+    assert target.read_bytes() == b"previous-content"
