@@ -93,10 +93,3 @@ Every mechanism above was verified on a live Kubuntu 26.04 machine before the co
 The swap area in a subvolume of its own was verified the same way. In an isolated btrfs image: with the swap file inside the root subvolume the snapshot of that subvolume is refused while the swap is active ("Could not create subvolume: Text file busy") and the same swap file cannot be activated again once a snapshot shares its extents ("swapon failed: Invalid argument", with "swapfile must not be copy-on-write" in the journal), while a freshly created swap file in the same subvolume activates and deleting the snapshot makes the shared file activatable again; with the swap area in a subvolume of its own the snapshot of the root succeeds while the swap stays active, the snapshot carries an empty stub directory at the swap path, the swap file deactivates and activates again after the snapshot, and btrfs filesystem defragment -r walks the root without naming the swap file. On a machine whose swap file lay inside the root subvolume the move was observed live: the swap service stopped, the file removed, the subvolume created and mounted, a fresh file created and activated, and the root snapshotted while that swap was active.
 
 One limitation is known and stated rather than hidden: a kernel that changes inside a work copy does not reach the boot menu through the daemon, so the forced run of the points section is the way to refresh the menu after such a change.
-
-The section also enables and starts the atd service of the at package, because
-batch is a front end of that service and a machine that leaves it down would
-accept a batch request and never run it. The service is enabled, which starts it
-after a reboot as well, and its state is read back; every failure of those calls,
-including a state query that cannot answer, is a warning of a completed task and
-never a failure of the run.
