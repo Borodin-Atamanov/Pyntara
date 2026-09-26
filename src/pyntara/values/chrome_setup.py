@@ -71,10 +71,13 @@ TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
 
 # The appletsrc key that carries the pinned launchers of a task manager applet
 # and the group below such an applet that holds them, written as the group
-# segments Plasma nests the file with. A desktop whose panel keeps its launchers
-# elsewhere is answered here.
+# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6:
+# the running shell reads and writes the pinned list in the own config group of
+# the applet, [Containments][N][Applets][M][Configuration], which is also the
+# group the shipped Kubuntu layout template writes through the shell; a list
+# written into a deeper group appears in the file and never reaches the panel.
 APPLETSRC_LAUNCHERS_KEY: str = "launchers"
-APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
+APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration",)
 
 # Vocabulary of the KConfig tools the task reads and writes the appletsrc with:
 # the two calls carry the file as {file_name}, a group is selected with

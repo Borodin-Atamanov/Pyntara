@@ -69,7 +69,6 @@ ICON_TASKS_GROUP = (
     "Applets",
     "5",
     "Configuration",
-    "General",
 )
 TASKMANAGER_GROUP = (
     "Containments",
@@ -77,10 +76,10 @@ TASKMANAGER_GROUP = (
     "Applets",
     "9",
     "Configuration",
-    "General",
 )
 # A Plasma appletsrc with one icons-only and one classic task manager in
-# two different panels, mirroring the real pinned launcher layout.
+# two different panels, mirroring the real pinned launcher layout: the
+# running shell keeps the pinned list in the own config group of the applet.
 APPLETSRC_TEXT = (
     "[Containments][2]\n"
     "plugin=org.kde.panel\n"
@@ -88,7 +87,7 @@ APPLETSRC_TEXT = (
     "[Containments][2][Applets][5]\n"
     "plugin=org.kde.plasma.icontasks\n"
     "\n"
-    "[Containments][2][Applets][5][Configuration][General]\n"
+    "[Containments][2][Applets][5][Configuration]\n"
     "launchers=applications:org.kde.dolphin.desktop\n"
     "\n"
     "[Containments][7]\n"
@@ -97,7 +96,7 @@ APPLETSRC_TEXT = (
     "[Containments][7][Applets][9]\n"
     "plugin=org.kde.plasma.taskmanager\n"
     "\n"
-    "[Containments][7][Applets][9][Configuration][General]\n"
+    "[Containments][7][Applets][9][Configuration]\n"
     "launchers=applications:org.kde.konsole.desktop\n"
 )
 

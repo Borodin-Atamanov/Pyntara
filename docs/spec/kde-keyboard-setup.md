@@ -14,7 +14,7 @@ kglobalshortcutsrc, the global shortcuts file. Each entry of layout_switch_short
 
 ## Write mechanism
 
-kwriteconfig6 and kreadconfig6 run as the configured user through runuser, with HOME set to the configured home_dir, so the files land in the user config directory and keep the user ownership. The kxkbrc group is fixed; the applet configuration group is discovered from the appletsrc text: the section that declares plugin=<applet_plugin> holds its configuration in [Configuration][General] below that section. The Plasma applet ids are assigned at first panel start, so the group is never hardcoded. The hotkey entries are written into the [KDE Keyboard Layout Switcher] group of kglobalshortcutsrc, one entry per action: the shortcut, the default key none and the action name.
+kwriteconfig6 and kreadconfig6 run as the configured user through runuser, with HOME set to the configured home_dir, so the files land in the user config directory and keep the user ownership. The kxkbrc group is fixed; the applet configuration group is discovered from the appletsrc text: the section that declares plugin=<applet_plugin> holds its configuration in the own config group [Configuration] below that section. The Plasma applet ids are assigned at first panel start, so the group is never hardcoded. The hotkey entries are written into the [KDE Keyboard Layout Switcher] group of kglobalshortcutsrc, one entry per action: the shortcut, the default key none and the action name.
 
 ## Applying the settings
 

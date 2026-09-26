@@ -135,7 +135,13 @@ LAYOUT_SWITCH_SHORTCUTS: dict[str, str] = {
 # The group of kxkbrc that carries the layout settings and the group of the
 # appletsrc applet that carries its configuration.
 KXKBRC_GROUP: tuple[str, ...] = ("Layout",)
-APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration", "General")
+# The own config group of a Plasma applet inside the appletsrc, as the group
+# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6:
+# the running shell reads and writes the settings of an applet in
+# [Containments][N][Applets][M][Configuration], which is the group the shipped
+# Kubuntu layout template writes through the shell; a value written into a
+# deeper group appears in the file and never reaches the panel.
+APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration",)
 
 # The keys the task writes in kxkbrc, in the order KDE writes them.
 KXKBRC_KEY_LAYOUT_LIST: str = "LayoutList"

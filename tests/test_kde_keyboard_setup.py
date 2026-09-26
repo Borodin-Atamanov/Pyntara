@@ -407,8 +407,8 @@ def test_write_failure_is_warning(
 
 
 def test_keyboard_layout_config_group_finds_nested_applet() -> None:
-    # The Configuration/General group of the keyboard layout applet is
-    # derived from the nested group that declares the plugin.
+    # The own config group of the keyboard layout applet is derived from the
+    # nested group that declares the plugin.
     group = task_module._keyboard_layout_config_group(
         SAMPLE_APPLETSRC, "org.kde.plasma.keyboardlayout"
     )
@@ -420,7 +420,6 @@ def test_keyboard_layout_config_group_finds_nested_applet() -> None:
         "Applets",
         "19",
         "Configuration",
-        "General",
     )
 
 
