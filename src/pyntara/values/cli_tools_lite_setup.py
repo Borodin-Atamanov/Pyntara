@@ -103,7 +103,15 @@ PACKAGES: tuple[str, ...] = (
 # task reads it from here and reports the names this module does not declare,
 # instead of stopping on a Python error. The pair of package install values
 # comes from the shared module common.
+# The service the at package installs. batch is a front end of it, so a
+# machine that leaves the service down accepts a batch request and never
+# runs it, and the call that enables and starts it in one step.
+ATD_UNIT_NAME: str = "atd.service"
+ENABLE_AND_START_SERVICE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "--now", "{unit}")
+
 READ_VALUE_NAMES: tuple[str, ...] = (
+    "ATD_UNIT_NAME",
+    "ENABLE_AND_START_SERVICE_COMMAND",
     "PACKAGES",
     "PACKAGE_SUCCESS_THRESHOLD_PERCENT",
 )
