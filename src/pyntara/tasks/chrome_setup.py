@@ -61,6 +61,7 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
     download_command,
+    hand_to_user,
     install_package_once,
     package_is_installed,
     port_listener_pid,
@@ -317,25 +318,6 @@ def _chrome_is_running(timeout: float) -> bool:
     return result.returncode == 0
 
 
-def _own_to_user(username: str, path: Path) -> None:
-    """Chown a file under the user home to the desktop user.
-
-    The provisioning engine runs as root, so profile files must belong to
-    the desktop user; a non-root test run and an unknown configured user
-    leave the ownership untouched.
-    """
-
-    if os.geteuid() != 0:
-        return
-    try:
-        import pwd
-
-        entry = pwd.getpwnam(username)
-    except KeyError:
-        return
-    os.chown(path, entry.pw_uid, entry.pw_gid)
-
-
 def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     """Merge the repository profile over the live profile; (changed, note).
 
@@ -358,13 +340,13 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
         )
     target = _profile_preferences_path()
     try:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        # The profile directory and its Default directory belong to the
-        # desktop user, whether this run creates them or an earlier run left
-        # them behind, so the handover comes before the merge can decide that
-        # nothing has to be written.
-        _own_to_user(common_values.DESKTOP_USERNAME, _profile_dir())
-        _own_to_user(common_values.DESKTOP_USERNAME, target.parent)
+        # The profile directory and everything in it belong to the desktop
+        # user, whether this run creates them or an earlier run left them
+        # behind, so the handover comes before the merge can decide that
+        # nothing has to be written. Both calls also make the directory they
+        # name, so the merge finds the place it writes into.
+        hand_to_user(_profile_dir())
+        hand_to_user(target.parent)
     except OSError as exc:
         return False, f"cannot prepare the profile directory: {exc}"
     try:
@@ -391,7 +373,7 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
             encoding="utf-8",
         )
         target.chmod(common_values.LAUNCHER_FILE_MODE)
-        _own_to_user(common_values.DESKTOP_USERNAME, target)
+        hand_to_user(target)
     except OSError as exc:
         return False, f"cannot write the profile preferences: {exc}"
     return True, None
@@ -479,9 +461,7 @@ def _ensure_profile_mirror(
     mirror_path = values.PROFILE_MIRROR_PATH
     unit_name = values.MOUNT_SERVICE_UNIT_NAME
     try:
-        if not profile_dir.is_dir():
-            profile_dir.mkdir(parents=True, exist_ok=True)
-            _own_to_user(username, profile_dir)
+        hand_to_user(profile_dir)
     except OSError as exc:
         return (
             False,

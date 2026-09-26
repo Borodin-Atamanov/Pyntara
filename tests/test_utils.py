@@ -1363,6 +1363,60 @@ def test_apply_owner_skips_outside_root(
     assert chowned == []
 
 
+def test_hand_to_user_gives_the_tree_to_the_desktop_user(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # As root the shared helper hands the directory and every entry below it
+    # to the desktop user and sets the directory mode, so a task needs no
+    # existence check and no ownership call of its own.
+    class _Entry:
+        pw_uid = 1000
+        pw_gid = 1000
+
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(utils.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(
+        utils.os,
+        "chown",
+        lambda path, uid, gid, **kwargs: chowned.append((path, uid, gid)),
+    )
+    monkeypatch.setattr(utils.pwd, "getpwnam", lambda name: _Entry())
+    tree = tmp_path / "tree"
+    inner = tree / "inner"
+    inner.mkdir(parents=True)
+    file_path = inner / "file.txt"
+    file_path.write_text("x", encoding="utf-8")
+
+    utils.hand_to_user(tree)
+
+    assert chowned == [
+        (tree, 1000, 1000),
+        (inner, 1000, 1000),
+        (file_path, 1000, 1000),
+    ]
+    assert inner.stat().st_mode & 0o777 == 0o755
+
+
+def test_hand_to_user_creates_a_missing_directory_outside_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A non-root test run cannot give a directory away, but the directory is
+    # still created, so a task keeps no existence check of its own.
+    chowned: list[tuple[object, int, int]] = []
+    monkeypatch.setattr(utils.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(
+        utils.os,
+        "chown",
+        lambda path, uid, gid, **kwargs: chowned.append((path, uid, gid)),
+    )
+
+    path = tmp_path / "nested" / "directory"
+    utils.hand_to_user(path)
+
+    assert path.is_dir()
+    assert chowned == []
+
+
 def test_version_from_output_reads_the_first_three_part_version() -> None:
     # The version command of an installed tool prints the version next to
     # its own words, so the shared reader searches the whole text and

@@ -10,6 +10,7 @@ counts on a hardcoded default (architecture contract, Configuration).
 from __future__ import annotations
 
 import os
+import pwd
 import re
 import shutil
 import signal
@@ -21,6 +22,7 @@ from string import Template
 
 from pyntara import logger
 from pyntara.context import Context
+from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 
 
@@ -921,6 +923,42 @@ def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
 
     if os.geteuid() == 0:
         os.chown(path, owner_uid, owner_gid)
+
+
+def hand_to_user(
+    path: Path,
+    *,
+    username: str | None = None,
+    directory_mode: int = 0o755,
+    file_mode: int | None = None,
+) -> None:
+    """Create a path if it is missing and give it to a user, with everything below.
+
+    The owner and the group of the path and of every entry under it become
+    the user's, so a directory a task creates as root never stays root-owned
+    and the user can write it. Directories take the given mode; files keep
+    their own mode unless one is given, because an installed program must
+    keep the mode that makes it executable. The user defaults to the desktop
+    user of the run. A missing path is created as a directory, so a caller
+    needs no existence check of its own. A non-root run skips the ownership,
+    like apply_owner: a test process has no privileges to give away.
+    """
+
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+    if os.geteuid() != 0:
+        return
+    entry = pwd.getpwnam(username or common_values.DESKTOP_USERNAME)
+    paths = [path]
+    for current, directory_names, file_names in os.walk(path):
+        paths.extend(Path(current) / name for name in directory_names)
+        paths.extend(Path(current) / name for name in file_names)
+    for current_path in paths:
+        os.chown(current_path, entry.pw_uid, entry.pw_gid, follow_symlinks=False)
+        if current_path.is_dir():
+            current_path.chmod(directory_mode)
+        elif file_mode is not None:
+            current_path.chmod(file_mode)
 
 
 def move_paths_to_trash(
