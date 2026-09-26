@@ -41,36 +41,6 @@ the average system load is low, which is the idle trigger a background
 recompression or deduplication needs, while a systemd timer has no idle
 condition and cron misses its window on a machine that is often off. Requested
 by the user on 2026-09-25.
-## A machine can run without disk swap while the swap section reports itself configured
-
-Machine: Kubuntu 26.04 test machine clean001, kernel 7.0.0-30-generic, btrfs-progs
-6.17.1, root btrfs /dev/vda2[@]. State before the run: /swap was a plain directory
-inside the root subvolume with a 13.2 GiB swap file, the save point
-Pyntara-permanent was stored, and the swap file had been part of that point's
-snapshot because the storage step released the swap before taking the snapshot.
-
-Run of 2026-09-25 19:31 with the branch code (swapfile_service_install btrfs_setup
-btrfs_points_setup):
-- the swap program answered {"changed": false, "skipped_reason": null, "error":
-  "activating the swap file failed: swapon: /swap/swapfile: swapon failed: Invalid
-  argument"};
-- the task warned "the swap program failed: activating the swap file failed: ..."
-  and "the boot service could not be started: Command '['systemctl', 'start',
-  'swapfile.service']' returned non-zero exit status 1";
-- the summary line of the same task said "already configured";
-- swapfile.service stayed failed and the machine kept no active swap except the
-  eight zram devices;
-- the kernel named the cause: "BTRFS warning (device vda2): swapfile must not be
-  copy-on-write", because the file's extents are shared with the point's snapshot;
-- the points section finished in 0.039 s and did not mention the swap at all;
-- the run exited 1 with two warnings.
-
-Measured the same day in an isolated btrfs image inside a loop file: once a
-subvolume that holds a swap file has been snapshotted, swapon refuses that same
-file; a freshly created swap file in the same subvolume activates; deleting the
-snapshot makes the old file activatable again. So a machine can be left without
-disk swap for good, and the only text its user sees is a util-linux message that
-names neither the cause nor a way out.
 
 ## The console window of the recompression cannot be opened on a second run
 
@@ -81,20 +51,6 @@ Unit pyntara-btrfs-recompress-window.service was already loaded or has a fragmen
 file." The section reported it as the warning "the window that shows the
 recompression could not be opened: ...". The job itself kept running, so the user
 loses the visible progress window while the work goes on unseen.
-
-## The recompression job fails on a swap file inside the root subvolume and leaves no marker
-
-Journal of pyntara-btrfs-recompress, run of 2026-09-25 18:55:52: "run: btrfs
-filesystem defragment -r -czstd -L 15 -f /" ended after 756.660 s with "ERROR:
-defrag failed on /swap/swapfile: Text file busy" and exit status 1, the swap file
-being active at that moment. The program then rewrote /home (7.495 s), balanced the
-chunks ("Done, had to relocate 3 out of 26 chunks"), reported "the one-off work did
-not finish, so no marker was left: rewrite of / failed with status 1" and exited 1.
-/var/lib/pyntara/btrfs-recompress-done is absent, so the next run repeats the whole
-rewrite and the balance: measured 12 min 52 s of wall clock and 1 GiB peak memory
-for that attempt, on a filesystem that carried the swap file inside the root
-subvolume. The points section waits for that job up to its declared limit of
-10800 s.
 
 ## Telegram Desktop is skipped without a retry when a single 15 s probe fails
 
@@ -133,3 +89,27 @@ does not hold the configured shortcuts: [(action, after, requested), ...], they 
 written into the shortcut file for the next login". The tuples carry the action
 code and the two key lists, while the component and the friendly name are dropped
 by the zip unpacking, and no reason for the refusal is reported.
+
+## A venv damaged by a crash is not repaired, and the warning hides the tool output
+
+Run of 2026-09-25 20:13 on the test machine clean002 (launcher path, branch code,
+default vault): system_metrics_setup warned "cannot install pyntara into the venv:
+Command '['/root/.local/bin/uv', 'sync', '--project', '/var/cache/pyntara/repo',
+'--active', '--locked', '--no-dev', '--no-editable', '--reinstall-package',
+'pyntara']' returned non-zero exit status 2."
+
+The same command with --dry-run answers "Would use project environment at:
+/usr/local/lib/pyntara/venv", "Resolved 42 packages in 3ms", then "error: Failed to
+read metadata from:
+`/usr/local/lib/pyntara/venv/lib/python3.14/site-packages/pyntara-0.3.780.dist-info`
+cause: EOF while parsing a value at line 1 column 0". In that directory INSTALLER,
+REQUESTED, direct_url.json, uv_build.json and uv_cache.json are 0 bytes while
+METADATA (11538 bytes) and RECORD (12108 bytes) are complete, and the venv holds
+123 zero-length files in total: the host kernel failed at 19:51:41 while the
+section wrote that venv, so the data of those files never reached the disk.
+
+Two facts follow. The refresh step of the section cannot repair such a venv,
+because uv refuses to read the metadata it was meant to replace. And the warning
+carries only the exit status of the command (src/pyntara/tasks/system_metrics_setup.py
+line 135 formats the exception), not the text the tool printed, so neither the
+machine's user nor a developer can see the reason.
