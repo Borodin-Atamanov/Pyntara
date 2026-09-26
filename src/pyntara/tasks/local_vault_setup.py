@@ -35,6 +35,7 @@ from pathlib import Path
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
+from pyntara import runtime_vault
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -275,7 +276,7 @@ def _merge_source_structure_into_runtime_vault(
     changed = _copy_missing_groups(source_kp, runtime_kp) or changed
     if not changed:
         return False
-    runtime_kp.save(filename=str(values.LOCAL_VAULT_PATH))
+    runtime_vault.save_runtime_vault(runtime_kp)
     return True
 
 
@@ -385,35 +386,6 @@ def _repair_or_sync_existing_runtime_vault(
     return bool(done), tuple(warnings), message
 
 
-def _write_local_vault(
-    kp: PyKeePass,
-    password: str,
-    local_vault_path: Path,
-    secrets_dir_mode: int,
-    local_vault_file_mode: int,
-) -> None:
-    """Re-encrypt the opened source vault with the local password.
-
-    The copy is written to the configured runtime path, so the source
-    password never opens the runtime vault (the local password does). The
-    directory is created and forced to the configured secrets directory
-    mode, the file carries the configured vault file mode. The copy goes to
-    a temporary file next to the target and is moved onto it, so an
-    interruption inside the write leaves the previous file or the complete
-    new one, never a truncated vault where the machine reads it.
-    """
-
-    kp.password = password
-    local_vault_path.parent.mkdir(parents=True, exist_ok=True)
-    os.chmod(local_vault_path.parent, secrets_dir_mode)
-    temporary_path = local_vault_path.with_name(
-        local_vault_path.name + values.LOCAL_VAULT_TEMPORARY_SUFFIX
-    )
-    kp.save(filename=str(temporary_path))
-    os.chmod(temporary_path, local_vault_file_mode)
-    os.replace(temporary_path, local_vault_path)
-
-
 def _write_password_file(
     password: str,
     pass_file_path: Path,
@@ -501,13 +473,7 @@ def _write_runtime_vault_and_password_file(
 
     try:
         _log(f"writing runtime vault {values.LOCAL_VAULT_PATH} with local password")
-        _write_local_vault(
-            source_kp,
-            local_password,
-            values.LOCAL_VAULT_PATH,
-            values.SECRETS_DIR_MODE,
-            values.LOCAL_VAULT_FILE_MODE,
-        )
+        runtime_vault.write_runtime_vault(source_kp, local_password)
     except (OSError, ValueError) as exc:
         warning = f"cannot write runtime vault: {exc}"
         _log(warning, priority=values.ERROR_PRIORITY)

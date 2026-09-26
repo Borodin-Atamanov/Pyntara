@@ -61,6 +61,8 @@ The rescue copy of a runtime vault that does not open with any known password li
 
 The file modes are declared in src/pyntara/values/local_vault_setup.py as integers: SECRETS_DIR_MODE, LOCAL_VAULT_FILE_MODE, PASS_DIR_MODE and PASS_FILE_MODE.
 
+Every writer of the runtime vault goes through src/pyntara/runtime_vault.py, which applies LOCAL_VAULT_FILE_MODE right after the write. The reason is a measured behaviour of the KeePass library: a save writes the database as a new file and gives it the umask of the process, so the declared mode was silently replaced by 0664, or 0644 on a machine with the usual umask, as soon as any task stored a secret in the vault; the secret database of the machine then became readable by every user, with the RustDesk password, the panel credentials and the telemetry password inside (fresh run of 2026-09-25). The same module writes the vault of a fresh run through a temporary file next to the target, so an interrupted write never leaves a truncated secret database in the place the machine reads.
+
 Passwords are written to files strictly without a trailing newline: the file holds only the password itself, with surrounding whitespace trimmed.
 
 ## Runtime vault creation

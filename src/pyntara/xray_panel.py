@@ -22,7 +22,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pyntara import metrics
+from pyntara import metrics, runtime_vault
 from pyntara import xui as xui_client
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -35,7 +35,6 @@ from pyntara.utils import (
     substituted_command,
     version_from_output,
 )
-from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import three_x_ui_xray_setup as panel_values
 
 
@@ -360,7 +359,7 @@ def _stage2(
         )
         _log("stage 2: creating new vault entry")
 
-    kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
+    runtime_vault.save_runtime_vault(kp)
     _log("stage 2: vault entry saved")
     return None
 

@@ -38,7 +38,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from pyntara import metrics
+from pyntara import metrics, runtime_vault
 from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
@@ -59,7 +59,6 @@ from pyntara.utils import (
     version_without_tag_prefix,
 )
 from pyntara.values import engine as engine_values
-from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import missing_value_names
 from pyntara.values import rustdesk_setup as values
 
@@ -332,7 +331,7 @@ def _ensure_vault_credentials(
         _log(f"storing rustdesk machine ID {machine_id} in the vault entry")
         changed = True
     if changed:
-        kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
+        runtime_vault.save_runtime_vault(kp)
     return password, None, changed
 
 

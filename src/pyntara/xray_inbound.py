@@ -14,13 +14,12 @@ from __future__ import annotations
 
 import os
 
-from pyntara import metrics, xray_panel
+from pyntara import metrics, runtime_vault, xray_panel
 from pyntara import xui as xui_client
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import proquint_encode, task_data_dir
-from pyntara.values import local_vault_setup as local_vault_values
 from pyntara.values import three_x_ui_xray_setup as panel_values
 from pyntara.xray_facts import _bare_address, _RunFacts, _server_share_address
 
@@ -371,7 +370,7 @@ def _stage_connection(
             url=link,
             notes=notes,
         )
-    kp.save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
+    runtime_vault.save_runtime_vault(kp)
     _log(f"connection profile stored in {panel_values.CONNECTION_VAULT_ENTRY_TITLE}")
     return TaskResult(
         success=True,

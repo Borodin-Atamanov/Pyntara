@@ -21,7 +21,7 @@ from unittest.mock import Mock
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_context
+from support import make_context, stub_runtime_vault_writer
 
 from pyntara import routing_policy, xray_client
 from pyntara import xui as xui_client
@@ -44,6 +44,18 @@ xray_inbound = importlib.import_module("pyntara.xray_inbound")
 xray_local_proxy = importlib.import_module("pyntara.xray_local_proxy")
 
 TAG = "3.7.0"
+
+
+@pytest.fixture(autouse=True)
+def _keep_the_machine_vault_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand-in vaults of this module never reach the machine vault path.
+
+    The mode the real writer applies belongs to the machine secret database,
+    so a stand-in vault of a test is saved through a stub; the mode rule itself
+    is covered by tests/test_runtime_vault.py.
+    """
+
+    stub_runtime_vault_writer(monkeypatch)
 
 
 def _addresses(

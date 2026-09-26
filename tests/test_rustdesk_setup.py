@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from support import FakeProc as _FakeProc
-from support import make_context
+from support import make_context, stub_runtime_vault_writer
 
 from pyntara import task_catalog
 from pyntara.context import Context
@@ -106,6 +106,7 @@ def _vault(
 
     fake = _FakeVault(password, username)
     monkeypatch.setattr(rustdesk_setup.metrics, "open_runtime_vault", lambda: fake)
+    stub_runtime_vault_writer(monkeypatch)
     return fake
 
 

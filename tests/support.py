@@ -12,11 +12,35 @@ import base64
 import hashlib
 from pathlib import Path
 
+import pytest
+
 from pyntara.context import Context
+from pyntara.values import local_vault_setup as local_vault_values
 
 # Root of the clone the tests run from: the tests directory sits one level
 # under it. The suite names it itself, exactly as the composition root does.
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+def stub_runtime_vault_writer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the runtime vault writer with a save on the stand-in vault.
+
+    Tests that drive a task with a stand-in vault never write a real secret
+    database, so the mode the writer applies to the machine path must not run:
+    the machine path of a test suite belongs to the machine, not to the test.
+    The writer is stubbed with the save alone, so a test still observes that the
+    step wrote the vault; the mode rule itself is covered by
+    tests/test_runtime_vault.py against a real database in a temporary tree.
+    """
+
+    def _save_on_the_stand_in(kp: object) -> None:
+        save = getattr(kp, "save", None)
+        if callable(save):
+            save(filename=str(local_vault_values.LOCAL_VAULT_PATH))
+
+    monkeypatch.setattr(
+        "pyntara.runtime_vault.save_runtime_vault", _save_on_the_stand_in
+    )
 
 
 class FakeProc:

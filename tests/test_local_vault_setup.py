@@ -19,6 +19,7 @@ from pykeepass import PyKeePass, create_database
 from pykeepass.exceptions import CredentialsError
 from support import make_context
 
+from pyntara import runtime_vault
 from pyntara.context import Context
 from pyntara.tasks import local_vault_setup
 from pyntara.values import common as common_values
@@ -587,7 +588,7 @@ def test_warns_when_the_runtime_vault_cannot_be_rebuilt(
     def _failing_write(*args: object, **kwargs: object) -> None:
         raise OSError("no space left on device")
 
-    monkeypatch.setattr(local_vault_setup, "_write_local_vault", _failing_write)
+    monkeypatch.setattr(runtime_vault, "write_runtime_vault", _failing_write)
     ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
     result = local_vault_setup.task(ctx)
     assert result.success is True
@@ -597,24 +598,38 @@ def test_warns_when_the_runtime_vault_cannot_be_rebuilt(
     )
 
 
-def test_write_local_vault_keeps_the_previous_file_when_the_save_fails(
+def test_the_runtime_vault_carries_the_declared_mode(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The vault is written through a temporary file next to the target, so a
-    # failure inside the save leaves the previous file in place and never a
-    # truncated vault where the machine reads it.
-    source = tmp_path / "source.vault"
-    create_database(str(source), password="source-pass")
-    kp = PyKeePass(str(source), password="source-pass")
-    target = tmp_path / "pyntara.vault"
-    target.write_bytes(b"previous-content")
+    # The vault and the password file of a run carry the declared modes. A save
+    # through the KeePass library gives a new file the umask of the process, so
+    # every writer applies the declared mode again.
+    _create_source_vault(tmp_path / "production.vault", "prod-pass")
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert _file_mode(tmp_path / "secrets" / "pyntara.vault") == 0o640
+    assert _file_mode(tmp_path / "secrets") == 0o700
+    assert _file_mode(tmp_path / "etc" / "pass") == 0o400
 
-    def _failing_save(self: PyKeePass, filename: str | None = None) -> None:
-        assert filename is not None
-        Path(filename).write_bytes(b"half-written")
-        raise OSError("no space left on device")
 
-    monkeypatch.setattr(PyKeePass, "save", _failing_save)
-    with pytest.raises(OSError):
-        local_vault_setup._write_local_vault(kp, "local-pass", target, 0o700, 0o640)
-    assert target.read_bytes() == b"previous-content"
+def test_the_merge_restores_the_declared_mode_of_the_vault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A runtime vault that gained its mode from an older run or from a save is
+    # put back to the declared mode whenever the run merges the source entries
+    # into it, because the secret database must never stay readable by others.
+    source = tmp_path / "production.vault"
+    _create_source_vault(source, "prod-pass")
+    source_kp = PyKeePass(str(source), password="prod-pass")
+    source_kp.add_entry(source_kp.root_group, "telemetry_password", "", "tele-secret")
+    source_kp.save()
+    local_vault = tmp_path / "secrets" / "pyntara.vault"
+    _create_runtime_vault(local_vault, LOCAL_PASSWORD)
+    local_vault.chmod(0o644)
+    _create_password_file(tmp_path / "etc" / "pass", LOCAL_PASSWORD)
+    ctx = _ctx(monkeypatch, tmp_path, vault_password="prod-pass")
+    result = local_vault_setup.task(ctx)
+    assert result.success is True
+    assert result.changed is True
+    assert _file_mode(local_vault) == 0o640
