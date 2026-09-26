@@ -297,6 +297,44 @@ def test_skips_when_already_configured(
     assert not any(command[1] == "restart" for command in calls)
 
 
+def test_the_skip_path_reports_a_passphrase_that_decrypts_no_key(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A unit that is already in place still leaves the machine forwarding
+    # nothing when the passphrase of its vault decrypts no deployed key, so the
+    # readiness of the machine is checked before the task decides to skip.
+    systemd_dir, venv_python, ctx = _install_fixtures(monkeypatch, tmp_path)
+    systemd_dir.mkdir(parents=True)
+    (systemd_dir / values.SERVICE_UNIT_NAME).write_text(
+        _expected_unit(venv_python), encoding="utf-8"
+    )
+    _install_fake(monkeypatch, enabled=True, active=True)
+    root_ssh = tmp_path / "root-ssh"
+    root_ssh.mkdir(parents=True)
+    key = root_ssh / ssh_daemon_values.PORT_FORWARDING_PRIVATE_KEY_FILE_NAME
+    key.write_text("dummy", encoding="utf-8")
+    monkeypatch.setattr(ssh_daemon_values, "ROOT_SSH_DIR", root_ssh)
+    monkeypatch.setattr(
+        port_forwarding_setup.metrics,
+        "open_runtime_vault",
+        lambda: SimpleNamespace(
+            find_groups=lambda name, first: SimpleNamespace(
+                entries=[SimpleNamespace(url="169.58.51.98")]
+            ),
+            find_entries=lambda title, first: SimpleNamespace(password="a-passphrase"),
+        ),
+    )
+    monkeypatch.setattr(
+        port_forwarding_setup.port_forwarding,
+        "passphrase_decrypts_key",
+        lambda *args, **kwargs: False,
+    )
+    result = port_forwarding_setup.task(ctx)
+    assert result.success
+    assert not result.changed
+    assert any("does not decrypt" in warning for warning in result.warnings)
+
+
 def test_restarts_when_deployed_but_inactive(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

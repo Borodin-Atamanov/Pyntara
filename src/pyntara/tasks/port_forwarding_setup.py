@@ -256,6 +256,12 @@ def task(ctx: Context) -> TaskResult:
     _log(f"checking autorun {service_name}: {'enabled' if enabled else 'disabled'}")
     active = service_is_active(service_name, timeout)
     _log(f"checking activity {service_name}: {'active' if active else 'inactive'}")
+    # The readiness of the machine belongs to both results: a unit that is
+    # already in place still leaves the machine forwarding nothing when the
+    # passphrase of its vault decrypts no deployed key.
+    readiness_warning = _forwarding_readiness_warning()
+    if readiness_warning is not None:
+        warnings.append(readiness_warning)
 
     if not force and unit_ok and enabled and active:
         _log("target state already reached, skipping")
@@ -346,9 +352,6 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"service {service_name} exited cleanly")
             else:
                 _log(f"service {service_name} is running")
-        readiness_warning = _forwarding_readiness_warning()
-        if readiness_warning is not None:
-            warnings.append(readiness_warning)
     message = f"service {service_name} deployed"
     if warnings:
         message = f"{message}; warnings: {'; '.join(warnings)}"
