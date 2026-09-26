@@ -244,6 +244,24 @@ def _granted_script_hotkeys() -> dict[str, list[str]]:
     }
 
 
+def test_the_live_power_profile_is_named_when_it_differs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Measured on Kubuntu 26.04 with KDE 6.6: the profile record of
+    # powerdevilrc does not change the live profile of the session, because
+    # that profile belongs to power-profiles-daemon. The run therefore names
+    # both profiles instead of presenting the configured one as applied.
+    _install_fakes(monkeypatch, power_profile="balanced")
+
+    result = task_module.task(_ctx(tmp_path))
+
+    assert result.success is True
+    assert any(
+        "balanced" in warning and "performance" in warning
+        for warning in result.warnings
+    )
+
+
 def _install_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -263,6 +281,7 @@ def _install_fakes(
     assign_missing_sequence: list[frozenset[str]] | None = None,
     assign_unsupported: dict[str, list[str]] | None = None,
     assign_held_elsewhere: dict[str, list[list[Any]]] | None = None,
+    power_profile: str = "",
 ):
     """Replace run_command, the session environment and package state.
 
@@ -290,6 +309,7 @@ def _install_fakes(
     installs: list[str] = []
     writes: list[list[str]] = []
     reloads: list[list[str]] = []
+    powerdevil_reloads: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         if command[:4] == ["runuser", "-u", "i", "--"]:
@@ -327,8 +347,13 @@ def _install_fakes(
             if inner[0] == "qdbus6":
                 if fail_on_reload:
                     raise subprocess.CalledProcessError(1, command)
-                reloads.append(list(command))
+                if "reparseConfiguration" in inner:
+                    powerdevil_reloads.append(list(command))
+                else:
+                    reloads.append(list(command))
                 return _FakeProc(0, "")
+            if inner[0] == "powerprofilesctl":
+                return _FakeProc(0, f"{power_profile}\n")
             if inner[0] == "/usr/bin/python3":
                 if _is_assign_call(inner):
                     index = attempt[0]

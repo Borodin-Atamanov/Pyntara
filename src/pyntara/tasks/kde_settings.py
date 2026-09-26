@@ -1165,6 +1165,87 @@ def _write_shortcut_records_to_file(
                 warnings.append(warning)
 
 
+def _reload_powerdevil(
+    *,
+    timeout: float,
+    env: dict[str, str] | None,
+    warnings: list[str] | None = None,
+) -> bool:
+    """Let powerdevil read its file again and name the live power profile.
+
+    The profile record of powerdevilrc does not change the live profile by
+    itself (measured), so the owner is asked to re-read its configuration and
+    the profile the session really uses is read back and compared with the
+    configured one. A run whose configuration asks for a profile the session
+    does not run says so instead of reporting the value as applied. Returns
+    False, because the step carries no change of its own.
+    """
+
+    if env is None:
+        _log("no desktop session found, the power settings apply after the next login")
+        return False
+    try:
+        run_command(
+            _as_user_command(list(values.POWERDEVIL_REPARSE_COMMAND)),
+            extra_env=env,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        if warnings is not None:
+            warnings.append(
+                f"cannot ask powerdevil to read its configuration again: {exc}"
+            )
+        return False
+    _log("powerdevil read its configuration again")
+    configured = _configured_power_profile()
+    running = _running_power_profile(timeout=timeout, env=env)
+    if configured and running and configured != running:
+        message = (
+            f"the session runs the power profile {running} while the configuration "
+            f"asks for {configured}: the live profile belongs to "
+            "power-profiles-daemon and is not switched by writing the file"
+        )
+        _log(message, priority=engine_values.ERROR_PRIORITY)
+        if warnings is not None:
+            warnings.append(message)
+    elif running:
+        _log(f"the session runs the power profile {running}")
+    return False
+
+
+def _configured_power_profile() -> str | None:
+    """The power profile the configured records ask for, or None."""
+
+    for record in _substituted_records():
+        if record.key == values.POWER_PROFILE_KEY_NAME:
+            return record.value
+    return None
+
+
+def _running_power_profile(
+    *, timeout: float, env: dict[str, str]
+) -> str | None:
+    """The power profile of the running session, or None when unreadable.
+
+    The reader is a program of the session and may be absent on a machine
+    without power profiles, which is not an error: the answer is then None
+    and no comparison is made.
+    """
+
+    command = list(values.POWER_PROFILE_READ_COMMAND)
+    try:
+        result = run_command(
+            _as_user_command(command),
+            extra_env=env,
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+        return None
+    return result.stdout.strip() or None
+
+
 def _apply_shortcuts_live(
     *,
     client_path: Path,
@@ -2129,6 +2210,12 @@ def task(ctx: Context) -> TaskResult:
         "apply the configured kdeclared values",
         lambda: _apply_kconfig_records(
             timeout=timeout, force=force, env=apply_env, warnings=warnings
+        ),
+    )
+    step(
+        "ask powerdevil to read its configuration",
+        lambda: _reload_powerdevil(
+            timeout=timeout, env=apply_env, warnings=warnings
         ),
     )
     settings_changed |= step(

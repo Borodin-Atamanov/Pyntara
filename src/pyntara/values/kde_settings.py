@@ -109,6 +109,21 @@ KWIN_RELOAD_COMMAND: tuple[str, ...] = (
     "org.kde.KWin.reconfigure",
 )
 
+# The owner call that makes powerdevil read its configuration again and the
+# call that reads the live power profile of the session. Measured on Kubuntu
+# 26.04 with KDE 6.6: the profile record of powerdevilrc does not change the
+# live profile by itself, because the live profile belongs to
+# power-profiles-daemon, so the task reports the profile the session really
+# uses instead of presenting the configured one as applied.
+POWERDEVIL_REPARSE_COMMAND: tuple[str, ...] = (
+    "qdbus6",
+    "org.kde.Solid.PowerManagement",
+    "/org/kde/Solid/PowerManagement",
+    "org.kde.Solid.PowerManagement.reparseConfiguration",
+)
+POWER_PROFILE_READ_COMMAND: tuple[str, ...] = ("powerprofilesctl", "get")
+POWER_PROFILE_KEY_NAME: str = "PowerProfile"
+
 # Prefix of the calls that run a rendered python client with the system
 # interpreter of the engine and the path of the rendered client as the next
 # argument of the call.
