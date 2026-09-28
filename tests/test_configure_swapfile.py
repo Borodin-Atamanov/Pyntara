@@ -78,6 +78,22 @@ def test_a_tool_the_machine_does_not_carry_is_named() -> None:
 MEMINFO_TEXT = "MemTotal:       16777216 kB\n"
 RAM_KIB = 16 * 1024 * 1024
 
+# The first lines of a real filefrag listing of the swap file of this machine,
+# so the parse of the physical block of the first extent is checked against the
+# output the tool really writes, trailing dot pair and unwritten extents
+# included.
+FILEFRAG_ANSWER = (
+    "Filesystem type is: ef53\n"
+    "File size of /swap/swapfile is 23926407168 (5841408 blocks of 4096 bytes)\n"
+    " ext:     logical_offset:        physical_offset: length:   expected: flags:\n"
+    "   0:        0..       0:   51615744..  51615744:      1:            \n"
+    "   1:        1..    4095:   51615745..  51619839:   4095:             "
+    "unwritten\n"
+)
+
+# The offset the btrfs tool printed for the swap file of the btrfs test machine.
+BTRFS_OFFSET_ANSWER = "533760\n"
+
 
 def _answered(
     command: list[str], returncode: int, stdout: str = "", stderr: str = ""
@@ -201,7 +217,112 @@ def test_an_active_swapfile_at_the_target_size_changes_nothing(
     outcome = program.configure_swapfile(config)
     assert outcome.changed is False
     assert outcome.skipped_reason is None
-    assert [command[0] for command in calls] == ["swapon"]
+    # The filesystem type is asked for the offset, which a double that answers
+    # nothing does not give, so the swap work stands and no offset is reported.
+    assert outcome.resume_offset_pages is None
+    assert [command[0] for command in calls] == ["swapon", "findmnt"]
+
+
+def test_the_resume_offset_of_a_btrfs_swapfile_comes_from_the_btrfs_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The blocks a btrfs swap file appears to have are not the blocks the kernel
+    # resumes with, so the btrfs tool answers this filesystem and the block
+    # listing of the file is never asked.
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt":
+            return _answered(command, 0, "btrfs\n")
+        if command[0] == "btrfs":
+            return _answered(command, 0, BTRFS_OFFSET_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.changed is False
+    assert outcome.resume_offset_pages == 533760
+    assert [
+        "btrfs",
+        "inspect-internal",
+        "map-swapfile",
+        "-r",
+        str(config.swapfile_path),
+    ] in calls
+    assert not any(command[0] == "filefrag" for command in calls)
+
+
+def test_the_resume_offset_of_another_filesystem_comes_from_the_first_extent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt":
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_offset_pages == 51615744
+    assert ["filefrag", "-v", str(config.swapfile_path)] in calls
+    assert [
+        "findmnt",
+        "--noheadings",
+        "--output",
+        "FSTYPE",
+        "--target",
+        str(config.swapfile_path.parent),
+    ] in calls
+
+
+def test_an_offset_that_cannot_be_read_does_not_stop_the_swap_work(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _config(tmp_path)
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt":
+            return _answered(command, 1, "", "findmnt: no such path")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.changed is True
+    assert outcome.resume_offset_pages is None
+    assert ["mkswap", str(config.swapfile_path)] in calls
+    assert ["swapon", str(config.swapfile_path)] in calls
+    assert "the resume offset was not read" in capsys.readouterr().err
+
+
+def test_an_offset_that_is_not_a_whole_number_is_reported_as_unread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    config = _config(tmp_path)
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt":
+            return _answered(command, 0, "btrfs\n")
+        if command[0] == "btrfs":
+            return _answered(command, 0, "not-a-number\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double([], handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_offset_pages is None
 
 
 def test_a_swapfile_at_the_target_size_is_activated_when_inactive(
@@ -273,9 +394,18 @@ def test_the_creation_sequence_runs_on_accepted_storage(
 ) -> None:
     config = _config(tmp_path)
     calls: list[list[str]] = []
-    monkeypatch.setattr(program, "_run", _run_double(calls, None))
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt":
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
     outcome = program.configure_swapfile(config)
     assert outcome.changed is True
+    assert outcome.resume_offset_pages == 51615744
     probe_path = config.swapfile_path.with_name(config.swapfile_path.name + ".probe")
     assert calls == [
         ["swapon", "--show", "--noheadings"],
@@ -290,6 +420,15 @@ def test_the_creation_sequence_runs_on_accepted_storage(
         ["chmod", "0600", str(config.swapfile_path)],
         ["mkswap", str(config.swapfile_path)],
         ["swapon", str(config.swapfile_path)],
+        [
+            "findmnt",
+            "--noheadings",
+            "--output",
+            "FSTYPE",
+            "--target",
+            str(config.swapfile_path.parent),
+        ],
+        ["filefrag", "-v", str(config.swapfile_path)],
     ]
 
 
@@ -404,7 +543,12 @@ def test_an_unchanged_run_prints_its_result_line(
     assert exit_code == 0
     printed = capsys.readouterr().out
     result = json.loads(printed.strip().splitlines()[-1])
-    assert result == {"changed": False, "skipped_reason": None, "error": None}
+    assert result == {
+        "changed": False,
+        "skipped_reason": None,
+        "error": None,
+        "resume_offset": None,
+    }
     assert "target state already reached" in printed
 
 
@@ -439,6 +583,17 @@ def test_the_command_line_runs_the_creation_path_with_stub_commands(
         path = stub_directory / name
         path.write_text(stub, encoding="utf-8")
         path.chmod(0o755)
+    # The offset tools answer the way the machine answers: the filesystem type
+    # and the block listing of the file that was just created.
+    findmnt_stub = stub_directory / "findmnt"
+    findmnt_stub.write_text('#!/bin/sh\nprintf "ext4\\n"\n', encoding="utf-8")
+    findmnt_stub.chmod(0o755)
+    filefrag_stub = stub_directory / "filefrag"
+    filefrag_stub.write_text(
+        f'#!/bin/sh\ncat <<\'ANSWER\'\n{FILEFRAG_ANSWER}ANSWER\n',
+        encoding="utf-8",
+    )
+    filefrag_stub.chmod(0o755)
     swapfile_path = tmp_path / "swapfile"
     environment = dict(os.environ)
     environment["PATH"] = f"{stub_directory}:{environment['PATH']}"
@@ -452,6 +607,7 @@ def test_the_command_line_runs_the_creation_path_with_stub_commands(
     )
     assert result.returncode == 0
     assert json.loads(result.stdout.strip().splitlines()[-1])["changed"] is True
+    assert json.loads(result.stdout.strip().splitlines()[-1])["resume_offset"] == 51615744
     calls = call_log.read_text(encoding="utf-8")
     assert f"chattr +C {swapfile_path}.probe" in calls
     assert f"fallocate -l 512K {swapfile_path}.probe" in calls

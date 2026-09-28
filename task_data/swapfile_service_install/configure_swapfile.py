@@ -31,9 +31,21 @@ and activated, and only a probe the kernel accepts lets the real file be
 created. A swap file on storage that keeps its data in memory would occupy the
 memory it is meant to extend, and the kernel refuses to activate it in any case.
 
+The offset the kernel resumes a hibernation image from is read from the machine
+and reported in the result line, because it moves whenever the file is created
+again and the caller publishes it for the next boot. The tool that answers it
+follows the filesystem type of the swap file: a btrfs swap file is mapped by the
+btrfs command, and on a filesystem without copy-on-write the offset names the
+first block of the file.
+
 The last line this program prints is one JSON object for the caller:
 
-    {"changed": bool, "skipped_reason": str | null, "error": str | null}
+    {
+        "changed": bool,
+        "skipped_reason": str | null,
+        "error": str | null,
+        "resume_offset": int | null,
+    }
 
 The caller reads the result from that line and never parses the sentences. The
 exit code is 0 when the program did its work or decided that it must not, and 1
@@ -61,6 +73,9 @@ MKSWAP_TOOL: str = "mkswap"
 FALLOCATE_TOOL: str = "fallocate"
 CHMOD_TOOL: str = "chmod"
 CHATTR_TOOL: str = "chattr"
+BTRFS_TOOL: str = "btrfs"
+FINDMNT_TOOL: str = "findmnt"
+FILEFRAG_TOOL: str = "filefrag"
 
 # The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
 # without copy-on-write answers the request with "Operation not supported", so
@@ -70,6 +85,34 @@ NO_COW_ATTRIBUTE: str = "+C"
 # Suffix of the probe file. The probe is created next to the swap file, so it
 # runs on the filesystem that would hold the swap.
 PROBE_FILE_SUFFIX: str = ".probe"
+
+# Filesystem type whose swap file carries its own mapping tool. A btrfs swap
+# file is mapped by the btrfs command, and the block numbers the file listing
+# reports for it are not the ones the kernel resumes with.
+BTRFS_FILESYSTEM_TYPE: str = "btrfs"
+
+# Arguments of the calls that read the resume offset: the mapping of a btrfs
+# swap file, the filesystem type that holds a path, and the block listing of a
+# file.
+BTRFS_MAP_SWAPFILE_ARGUMENTS: tuple[str, ...] = (
+    "inspect-internal",
+    "map-swapfile",
+    "-r",
+)
+FINDMNT_ARGUMENTS: tuple[str, ...] = (
+    "--noheadings",
+    "--output",
+    "FSTYPE",
+    "--target",
+)
+FILEFRAG_ARGUMENTS: tuple[str, ...] = ("-v",)
+
+# The first word of the file listing line that carries the extent beginning at
+# the start of the file, and the word of that line that carries the physical
+# block of the extent, counted from zero. The block is written with a trailing
+# dot pair that is not part of the number.
+FIRST_EXTENT_FIRST_WORD: str = "0:"
+FILEFRAG_PHYSICAL_BLOCK_WORD: int = 3
 
 # Byte factors of the size formula: the kernel reports the installed memory in
 # kibibytes, the free space is measured in bytes and the file is created in
@@ -106,10 +149,16 @@ class Config:
 
 @dataclass(frozen=True)
 class Outcome:
-    """What the program did, as the caller reads it from the result line."""
+    """What the program did, as the caller reads it from the result line.
+
+    The resume offset is the number of pages into the device that holds the swap
+    file at which the kernel finds a hibernation image; None means the offset
+    was not read, which the caller is told by a printed sentence as well.
+    """
 
     changed: bool
     skipped_reason: str | None
+    resume_offset_pages: int | None
 
 
 def _tool_path(tool_name: str) -> str:
@@ -283,6 +332,114 @@ def _active_swap_paths(timeout_seconds: float) -> tuple[str, ...]:
     return tuple(paths)
 
 
+def _filesystem_type_of(path: Path, timeout_seconds: float) -> str:
+    """Filesystem type of the filesystem that holds a path.
+
+    The type decides which tool answers the resume offset, because the blocks a
+    btrfs swap file appears to have are not the blocks the kernel resumes with.
+    """
+
+    command = [_tool_path(FINDMNT_TOOL), *FINDMNT_ARGUMENTS, str(path)]
+    result = _run(command, timeout_seconds)
+    if result.returncode != 0:
+        raise SwapfileError(
+            f"cannot read the filesystem that holds {path}: "
+            f"{_failure_sentence(result)}"
+        )
+    filesystem_type = result.stdout.strip()
+    if not filesystem_type:
+        raise SwapfileError(f"the filesystem that holds {path} was not reported")
+    return filesystem_type
+
+
+def _offset_number(text: str, swapfile_path: Path) -> int:
+    """A whole number of pages, as the offset tools print it."""
+
+    try:
+        return int(text)
+    except ValueError as exc:
+        raise SwapfileError(
+            f"the resume offset of {swapfile_path} is not a whole number: {text}"
+        ) from exc
+
+
+def _btrfs_resume_offset_pages(swapfile_path: Path, timeout_seconds: float) -> int:
+    """Resume offset of a swap file on btrfs, in pages.
+
+    The btrfs tool maps the swap area of the file, and the number it prints is
+    the one the kernel resumes with.
+    """
+
+    command = [
+        _tool_path(BTRFS_TOOL),
+        *BTRFS_MAP_SWAPFILE_ARGUMENTS,
+        str(swapfile_path),
+    ]
+    result = _run(command, timeout_seconds)
+    if result.returncode != 0:
+        raise SwapfileError(
+            f"cannot read the resume offset of {swapfile_path}: "
+            f"{_failure_sentence(result)}"
+        )
+    return _offset_number(result.stdout.strip(), swapfile_path)
+
+
+def _filefrag_resume_offset_pages(swapfile_path: Path, timeout_seconds: float) -> int:
+    """Resume offset of a swap file on another filesystem, in pages.
+
+    The extent that begins at the start of the file stands on the block the
+    offset names, and it is the first line of the listing that starts with the
+    logical position zero.
+    """
+
+    command = [_tool_path(FILEFRAG_TOOL), *FILEFRAG_ARGUMENTS, str(swapfile_path)]
+    result = _run(command, timeout_seconds)
+    if result.returncode != 0:
+        raise SwapfileError(
+            f"cannot read the blocks of {swapfile_path}: {_failure_sentence(result)}"
+        )
+    for line in result.stdout.splitlines():
+        words = line.split()
+        if not words or words[0] != FIRST_EXTENT_FIRST_WORD:
+            continue
+        if len(words) <= FILEFRAG_PHYSICAL_BLOCK_WORD:
+            break
+        return _offset_number(
+            words[FILEFRAG_PHYSICAL_BLOCK_WORD].rstrip("."), swapfile_path
+        )
+    raise SwapfileError(
+        f"the first block of {swapfile_path} was not reported by {FILEFRAG_TOOL}"
+    )
+
+
+def _resume_offset_pages(config: Config) -> int | None:
+    """Resume offset of the swap file in pages, or None with the reason printed.
+
+    The offset is read from the machine rather than kept anywhere, because the
+    header of the swap file moves whenever the file is created again. A machine
+    whose offset cannot be read keeps a working swap file, so the reason is
+    printed and the swap work stands; the caller decides what to publish.
+    """
+
+    try:
+        filesystem_type = _filesystem_type_of(
+            config.swapfile_path.parent, config.command_timeout_seconds
+        )
+        if filesystem_type == BTRFS_FILESYSTEM_TYPE:
+            offset = _btrfs_resume_offset_pages(
+                config.swapfile_path, config.command_timeout_seconds
+            )
+        else:
+            offset = _filefrag_resume_offset_pages(
+                config.swapfile_path, config.command_timeout_seconds
+            )
+    except (SwapfileError, subprocess.TimeoutExpired) as exc:
+        print(f"the resume offset was not read: {exc}", file=sys.stderr)
+        return None
+    print(f"resume offset of {config.swapfile_path}: {offset} pages")
+    return offset
+
+
 def _storage_accepts_swap(config: Config) -> tuple[bool, str]:
     """Whether the filesystem of the swap file can hold swap at all.
 
@@ -407,7 +564,9 @@ def configure_swapfile(config: Config) -> Outcome:
     The target state is the file at the computed size and an active swap; where
     it is already reached nothing changes. The probe runs only when the file has
     to be created, because an active swap file is proof enough that the storage
-    can hold swap.
+    can hold swap. The offset of the active file is read last, because the
+    caller publishes it for the next boot and it moves whenever the file is
+    created again.
     """
 
     ram_kib = _read_total_ram_kib(config.meminfo_path, config.meminfo_total_key)
@@ -453,9 +612,17 @@ def configure_swapfile(config: Config) -> Outcome:
     if not config.force and size_is_right:
         if active:
             print("target state already reached, nothing to do")
-            return Outcome(changed=False, skipped_reason=None)
+            return Outcome(
+                changed=False,
+                skipped_reason=None,
+                resume_offset_pages=_resume_offset_pages(config),
+            )
         _activate_swap(config)
-        return Outcome(changed=True, skipped_reason=None)
+        return Outcome(
+            changed=True,
+            skipped_reason=None,
+            resume_offset_pages=_resume_offset_pages(config),
+        )
 
     if config.force:
         print("force mode, the swap file is created again")
@@ -471,12 +638,20 @@ def configure_swapfile(config: Config) -> Outcome:
     if not accepted:
         print(f"the storage cannot hold swap: {reason}")
         print("nothing was created; configure the swap file on a disk filesystem")
-        return Outcome(changed=False, skipped_reason=reason)
+        return Outcome(
+            changed=False,
+            skipped_reason=reason,
+            resume_offset_pages=None,
+        )
 
     _deactivate_swap_if_active(config, active)
     _prepare_swap_file(config, config.swapfile_path, f"{target_mb}M")
     _activate_swap(config)
-    return Outcome(changed=True, skipped_reason=None)
+    return Outcome(
+        changed=True,
+        skipped_reason=None,
+        resume_offset_pages=_resume_offset_pages(config),
+    )
 
 
 def _octal(text: str) -> int:
@@ -572,7 +747,16 @@ def main(argv: list[str]) -> int:
         outcome = configure_swapfile(config)
     except (SwapfileError, subprocess.TimeoutExpired) as exc:
         print(f"error: {exc}", file=sys.stderr)
-        print(json.dumps({"changed": False, "skipped_reason": None, "error": str(exc)}))
+        print(
+            json.dumps(
+                {
+                    "changed": False,
+                    "skipped_reason": None,
+                    "error": str(exc),
+                    "resume_offset": None,
+                }
+            )
+        )
         return 1
     print(
         json.dumps(
@@ -580,6 +764,7 @@ def main(argv: list[str]) -> int:
                 "changed": outcome.changed,
                 "skipped_reason": outcome.skipped_reason,
                 "error": None,
+                "resume_offset": outcome.resume_offset_pages,
             }
         )
     )
