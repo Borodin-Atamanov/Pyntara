@@ -68,9 +68,11 @@ the declared mode and writes the swap signature. That order is what a btrfs swap
 file requires, because the attribute can be set only while the file holds no data
 blocks; on a filesystem without copy-on-write the attribute step is refused, and
 the program reports that as a note and continues. The program does not detect the
-filesystem type, because the same recipe holds everywhere. The path of every tool
-is discovered at run time instead of being written down, so a machine that keeps
-its tools elsewhere is followed.
+filesystem type for the recipe, because the same recipe holds everywhere; the
+resume offset it reports is the one exception, because the blocks a btrfs swap
+file appears to have are not the blocks the kernel resumes with. The path of
+every tool is discovered at run time instead of being written down, so a machine
+that keeps its tools elsewhere is followed.
 
 The program refuses storage that cannot hold swap. A probe file of probe_size_kb
 is created next to the swap file by the same recipe, formatted and activated, and
@@ -96,10 +98,65 @@ block groups of that file during balance and scrub, which the upstream
 documentation calls especially undesirable on the root filesystem, and a subvolume
 that contains an active swap file cannot be snapshotted.
 
+The section also makes hibernation possible, because a swap file that no resume
+address names is a swap file the kernel can never resume from. The address has two
+halves, and they are published together: the device that holds the swap file and
+the offset of the swap file header inside that device. The kernel reads the device
+from the kernel command line of the boot entry and the offset from the same line,
+because it ignores the offset of the resume parameter and a device alone does not
+name a swap file. The device is read from the fstab line of the mount that holds
+the swap file, so it is written the way this machine reaches that filesystem,
+which is a UUID for a filesystem that is mounted directly and the mapper path of a
+root that is unlocked at boot; the offset is read by the program from the machine
+itself, because it moves whenever the swap file is created again. Both halves are
+written into the kernel command line of the boot menu and into the attributes of
+the running kernel, and the device is written into the file the initramfs reads as
+well, so a machine whose command line a person edited by hand still carries it.
+The snapshot entries of the btrfs menu copy the current command line when that
+menu is generated, so they carry the address as well.
+
+Both settings files are shell variable files, and the section edits them through
+augeas: the tool parses the file with the lens the values name, the program
+replaces the value of one node of the parsed tree and the tool writes the file
+back. Every other line, every comment and the quoting style of the machine
+therefore survive, and the section never spells the syntax of a machine file
+itself. The kernel command line is one node whose value carries the quotes of the
+file, so the words inside that quoting are what changes. The menu is rebuilt only
+when the value changed, and the program rebuilds it when it runs at boot as well,
+because a boot that created the swap file again carries a new offset. A machine
+without the augeas tool gets a warning and keeps its working swap file.
+
+Hibernation needs a permission that Ubuntu refuses to every user through a rule of
+its own, so the section writes a polkit rule for the desktop user of this machine
+alone. The rule file carries a name that sorts before the rule of that
+distribution, because polkit decides by the first rule file in name order that
+answers, and it allows the two actions the session menu asks for: the hibernation
+and its form for a machine with several open sessions. A machine without a desktop
+account gets no rule, because it has no session menu to offer hibernation in.
+
+The task then reads back what it published: the offset parameter of the generated
+boot menu, the resume file inside the rebuilt initial ramdisk, and the answer of
+the machine about hibernation, asked on behalf of the desktop user, because that
+answer is calculated for the account that asks. A step that cannot be read back is
+reported as a warning of a completed task, with the reason. The run tells the user
+that the item of the session menu appears after the next login, because the shell
+asks the machine once, when the session starts.
+
+No argument of the unit command line carries a space, because the unit renders the
+command line as words separated by spaces and an argument with a space inside
+would arrive at the boot service as two arguments.
+
 All parameter values live in the src/pyntara/values/swapfile_service_install.py:
 the swapfile path and mode, the packages of the tools, the size formula factors,
 the accepted deviation size_tolerance_mb, the probe size probe_size_kb, the kernel
 file the memory is read from, the name of the tool the unit stops the swap with,
-and the file name, deployed path and mode of the program.
+the file name, deployed path and mode of the program, the fstab and the settings
+files the resume address lives in, the key of the kernel command line and the two
+parameter names, the lens augeas parses those files with, the key the initramfs
+reads the device from, the mount point query, the commands and bounds that rebuild
+the boot artifacts, the permission rule file with its mode, its template and its
+two actions, the tool that asks the machine about hibernation, the answer that
+means it is offered, the command that runs a call as the desktop user, and the
+sentence that tells the user about the next login.
 
 These tasks create system services executed at system startup.
