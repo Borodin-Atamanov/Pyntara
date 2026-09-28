@@ -45,8 +45,32 @@ WantedBy=multi-user.target
 
 PROGRAM_TEXT = "#!/usr/bin/python3\nprint('program')\n"
 
-RESULT_LINE = json.dumps({"changed": True, "skipped_reason": None, "error": None})
-UNCHANGED_LINE = json.dumps({"changed": False, "skipped_reason": None, "error": None})
+# The resume offset the fake program reports and the parameter the fixture puts
+# into the boot menu file, so the address the task reads back is the address it
+# published.
+REPORTED_OFFSET = 1234
+
+RESULT_LINE = json.dumps(
+    {
+        "changed": True,
+        "skipped_reason": None,
+        "error": None,
+        "resume_offset": REPORTED_OFFSET,
+    }
+)
+UNCHANGED_LINE = json.dumps(
+    {
+        "changed": False,
+        "skipped_reason": None,
+        "error": None,
+        "resume_offset": REPORTED_OFFSET,
+    }
+)
+
+# The fstab line of the machine the tests describe: the root mount carries the
+# filesystem the swap file lives on, written the way a machine that is not
+# encrypted writes it.
+FSTAB_TEXT = "UUID=test-root / ext4 defaults 0 1\n"
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +80,10 @@ def _point_the_values_at_the_temporary_tree(
     """Give every test of this file its own swapfile, program and unit directory.
 
     The paths and the unit directory are values, so the tests never touch
-    /swapfile, /usr/local/bin or /etc/systemd/system.
+    /swapfile, /usr/local/bin or /etc/systemd/system. The files the resume
+    address lives in are pointed at the temporary tree as well, so no test reads
+    or writes the fstab, the boot menu, the initramfs file or the attributes of
+    the running kernel of the machine that runs the tests.
     """
 
     monkeypatch.setattr(values, "SWAPFILE_PATH", tmp_path / "swapfile")
@@ -65,6 +92,22 @@ def _point_the_values_at_the_temporary_tree(
     )
     monkeypatch.setattr(common_values, "MEMINFO_TOTAL_KEY", "MemTotal:")
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
+    monkeypatch.setattr(values, "FSTAB_PATH", tmp_path / "fstab")
+    values.FSTAB_PATH.write_text(FSTAB_TEXT, encoding="utf-8")
+    monkeypatch.setattr(values, "GRUB_DEFAULT_FILE_PATH", tmp_path / "default-grub")
+    monkeypatch.setattr(values, "GRUB_CONFIG_FILE_PATH", tmp_path / "grub.cfg")
+    values.GRUB_CONFIG_FILE_PATH.write_text(
+        f"linux /vmlinuz-1 root=UUID=test-root "
+        f"{values.RESUME_OFFSET_PARAMETER}={REPORTED_OFFSET}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        values, "INITRAMFS_RESUME_FILE_PATH", tmp_path / "conf.d" / "resume"
+    )
+    monkeypatch.setattr(values, "POWER_RESUME_FILE_PATH", tmp_path / "power-resume")
+    monkeypatch.setattr(
+        values, "POWER_RESUME_OFFSET_FILE_PATH", tmp_path / "power-resume-offset"
+    )
 
 
 # The path the tests answer the run-time lookup of swapoff with.
@@ -142,6 +185,14 @@ def _install_fake(
             if enabled:
                 return _FakeProc(0, "enabled\n")
             return _FakeProc(1, "disabled")
+        if command[0] == "findmnt":
+            return _FakeProc(0, "/\n")
+        if command[0] == "lsinitramfs":
+            return _FakeProc(
+                0,
+                f"{values.INITRAMFS_CONF_DIRECTORY_IN_IMAGE}/"
+                f"{values.INITRAMFS_RESUME_FILE_PATH.name}\n",
+            )
         if command[0] == program_path:
             if program_result is not None:
                 return program_result
@@ -207,7 +258,7 @@ def test_a_program_source_that_cannot_be_read_is_a_warning(
     assert result.changed is False
     assert "cannot read the program" in result.warnings[0]
     assert not (tmp_path / "systemd" / values.SERVICE_UNIT_NAME).exists()
-    assert calls == []
+    assert not any(call[0] == "systemctl" for call in calls)
 
 
 def test_the_unit_carries_the_command_line_of_the_program(
@@ -243,7 +294,9 @@ def test_a_configured_machine_reports_no_change(
     _write_data_files(tmp_path)
     unit_dir = tmp_path / "systemd"
     unit_dir.mkdir()
-    command = swapfile_service_install._program_command(force=False)
+    command = swapfile_service_install._program_command(
+        force=False, resume_device="UUID=test-root"
+    )
     (unit_dir / values.SERVICE_UNIT_NAME).write_text(
         swapfile_service_install._render_unit(
             tmp_path
@@ -258,12 +311,18 @@ def test_a_configured_machine_reports_no_change(
     )
     values.PROGRAM_DEPLOY_PATH.parent.mkdir(parents=True)
     values.PROGRAM_DEPLOY_PATH.write_text(PROGRAM_TEXT, encoding="utf-8")
+    values.INITRAMFS_RESUME_FILE_PATH.parent.mkdir(parents=True)
+    values.INITRAMFS_RESUME_FILE_PATH.write_text(
+        "RESUME=UUID=test-root\n", encoding="utf-8"
+    )
     calls = _install_fake(
         monkeypatch, enabled=True, program_result=_FakeProc(0, UNCHANGED_LINE + "\n")
     )
     result = swapfile_service_install.task(_ctx(tmp_path))
     assert result.changed is False
-    assert result.message == "already configured"
+    message = result.message or ""
+    assert message.startswith("already configured")
+    assert "hibernation resumes from UUID=test-root" in message
     assert ["systemctl", "daemon-reload"] not in calls
     assert ["systemctl", "enable", values.SERVICE_UNIT_NAME] not in calls
 
@@ -398,6 +457,119 @@ def test_force_passes_the_force_option(
     assert "--force" in _unit_text(tmp_path)
 
 
+def test_the_resume_device_comes_from_the_fstab_line_of_the_swap_mount(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The device is written the way this machine writes it, which is a UUID for
+    # a filesystem that is mounted directly, and the initramfs file carries the
+    # same device as the command line the program writes.
+    _write_data_files(tmp_path)
+    calls = _install_fake(monkeypatch, enabled=True)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    command = _program_call(calls)
+    assert command[command.index("--resume-device") + 1] == "UUID=test-root"
+    assert values.INITRAMFS_RESUME_FILE_PATH.read_text(encoding="utf-8") == (
+        "RESUME=UUID=test-root\n"
+    )
+    assert ["update-initramfs", "-u"] in calls
+    assert "hibernation resumes from UUID=test-root at offset" in (result.message or "")
+    assert not [
+        warning for warning in result.warnings if "resume address" in warning
+    ]
+
+
+def test_the_ramdisk_is_rebuilt_only_when_the_resume_file_changed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    second_calls = _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    assert ["update-initramfs", "-u"] not in second_calls
+
+
+def test_an_fstab_without_the_line_of_the_swap_mount_publishes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    values.FSTAB_PATH.write_text(
+        "UUID=other /boot ext4 defaults 0 2\n", encoding="utf-8"
+    )
+    calls = _install_fake(monkeypatch, enabled=True)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert any(
+        "carries no line for /" in warning for warning in result.warnings
+    ), result.warnings
+    assert not values.INITRAMFS_RESUME_FILE_PATH.exists()
+    assert ["update-initramfs", "-u"] not in calls
+    command = _program_call(calls)
+    assert command[command.index("--resume-device") + 1] == ""
+
+
+def test_a_boot_menu_without_the_offset_parameter_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    values.GRUB_CONFIG_FILE_PATH.write_text(
+        "linux /vmlinuz-1 root=UUID=test-root\n", encoding="utf-8"
+    )
+    _install_fake(monkeypatch, enabled=True)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert any(
+        f"carries no {values.RESUME_OFFSET_PARAMETER}={REPORTED_OFFSET}" in warning
+        for warning in result.warnings
+    ), result.warnings
+
+
+def test_an_initramfs_without_the_resume_file_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    program_path = str(values.PROGRAM_DEPLOY_PATH)
+
+    def without_the_file(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "findmnt":
+            return _FakeProc(0, "/\n")
+        if command[0] == "lsinitramfs":
+            return _FakeProc(0, "conf/conf.d/zz-resume-auto\n")
+        if command[0] == program_path:
+            return _FakeProc(0, RESULT_LINE + "\n")
+        if command[0] == "systemctl" and command[1] == "is-enabled":
+            return _FakeProc(0, "enabled\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", without_the_file)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert any(
+        "carries no conf/conf.d/resume" in warning for warning in result.warnings
+    ), result.warnings
+
+
+def test_a_program_that_reports_no_offset_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    line = json.dumps(
+        {
+            "changed": True,
+            "skipped_reason": None,
+            "error": None,
+            "resume_offset": None,
+        }
+    )
+    calls = _install_fake(
+        monkeypatch, enabled=True, program_result=_FakeProc(0, line + "\n")
+    )
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert any(
+        "the program reported no resume offset" in warning
+        for warning in result.warnings
+    ), result.warnings
+    assert not values.INITRAMFS_RESUME_FILE_PATH.exists()
+    assert ["update-initramfs", "-u"] not in calls
+
+
 def test_the_program_reads_the_command_line_the_task_builds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -429,7 +601,9 @@ def test_the_program_reads_the_command_line_the_task_builds(
 
     monkeypatch.setattr(program, "_run", fake_run)
     monkeypatch.setattr(program, "_tool_path", lambda tool_name: tool_name)
-    command = swapfile_service_install._program_command(force=False)
+    command = swapfile_service_install._program_command(
+        force=False, resume_device="UUID=test-root"
+    )
     exit_code = program.main(list(command[1:]))
     assert exit_code == 0
     assert recorded[0] == ["swapon", "--show", "--noheadings"]

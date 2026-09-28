@@ -32,17 +32,34 @@ that loses power in the middle of an in-place write would be left with a
 truncated program or unit and the next boot would fail on it. After the program
 has run, the unit itself is started, so the artifact the next boot uses is
 proved by this run instead of being trusted.
+
+The section also makes hibernation possible, because a swap file that no resume
+address names is a swap file the kernel can never resume from. The address has
+two halves: the device that holds the swap file and the offset of the swap file
+header inside that device. The device is read from the fstab line of the mount
+that holds the swap file, so it is written the way this machine reaches that
+filesystem, which is a UUID for a filesystem that is mounted directly and the
+mapper path of an encrypted root. The offset is read by the program from the
+machine itself, because it moves whenever the swap file is created again. Both
+halves are written into the kernel command line of the boot menu as well, since
+the kernel ignores the offset of the resume parameter alone, and the device is
+written into the file the initramfs reads as well, so a machine whose command
+line was edited by hand still carries it. The task reads both artifacts back and
+reports what does not hold, because an address that is published halfway leaves
+a machine whose hibernation fails without a word.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara import fstab
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -96,13 +113,15 @@ def _write_file_atomically(path: Path, content: bytes | str) -> None:
     os.replace(temporary, path)
 
 
-def _program_command(*, force: bool) -> tuple[str, ...]:
+def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
     """The command line of the deployed program, built from the values.
 
     The option names are the interface of the program, which parses exactly
     these names and reads no other source; the end to end test of the section
     runs the program with this command line, so a name that drifts on one side
-    fails the tests instead of failing on a target machine.
+    fails the tests instead of failing on a target machine. The device of the
+    resume address arrives with them, because the program writes that address
+    into the boot menu and an empty device means there is nothing to write.
     """
 
     command = [
@@ -127,6 +146,24 @@ def _program_command(*, force: bool) -> tuple[str, ...]:
         common_values.MEMINFO_TOTAL_KEY,
         "--command-timeout-seconds",
         str(engine_values.COMMAND_TIMEOUT_SECONDS),
+        "--resume-device",
+        resume_device,
+        "--grub-default-file",
+        str(values.GRUB_DEFAULT_FILE_PATH),
+        "--grub-command-line-key",
+        values.GRUB_COMMAND_LINE_KEY,
+        "--grub-comment-sign",
+        values.GRUB_COMMENT_SIGN,
+        "--resume-device-parameter",
+        values.RESUME_DEVICE_PARAMETER,
+        "--resume-offset-parameter",
+        values.RESUME_OFFSET_PARAMETER,
+        "--power-resume-file",
+        str(values.POWER_RESUME_FILE_PATH),
+        "--power-resume-offset-file",
+        str(values.POWER_RESUME_OFFSET_FILE_PATH),
+        "--update-grub-timeout-seconds",
+        str(values.UPDATE_GRUB_TIMEOUT_SECONDS),
     ]
     if force:
         command.append("--force")
@@ -217,6 +254,149 @@ def _parse_program_result(stdout: str) -> dict[str, object] | None:
     return None
 
 
+def _reported_offset_pages(outcome: dict[str, object]) -> int | None:
+    """The resume offset the program reported, or None.
+
+    The offset is a whole number of pages. A program that could not read it
+    leaves the key empty, which the caller reports instead of publishing an
+    address that names a place no image is written to.
+    """
+
+    reported = outcome.get("resume_offset")
+    if isinstance(reported, bool) or not isinstance(reported, int):
+        return None
+    return reported
+
+
+def _mount_point_of(path: Path, timeout: float) -> tuple[str | None, str | None]:
+    """Mount point that holds a path, and the reason it was not read."""
+
+    command = substituted_command(values.MOUNT_POINT_COMMAND, {"path": str(path)})
+    try:
+        result = run_command(command, check=False, capture=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return None, f"cannot read the mount point of {path}: {exc}"
+    for line in result.stdout.splitlines():
+        mount_point = line.strip()
+        if mount_point:
+            return mount_point, None
+    return None, f"the machine reported no mount point for {path}"
+
+
+def _resume_device_spec(
+    swapfile_directory: Path, timeout: float
+) -> tuple[str | None, list[str]]:
+    """Device the resume address names, in the spelling of this machine.
+
+    The fstab line of the mount that holds the swap file carries the device the
+    way this machine reaches that filesystem: a UUID for a filesystem that is
+    mounted directly, and the mapper path of an encrypted root, which is the
+    name the initramfs can use once it has unlocked that root. A machine whose
+    fstab carries no line for that mount is told about instead of being given an
+    address that names nothing.
+    """
+
+    mount_point, error = _mount_point_of(swapfile_directory, timeout)
+    if mount_point is None:
+        return None, [error or "the mount point of the swap file was not read"]
+    try:
+        text = values.FSTAB_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        return None, [f"cannot read {values.FSTAB_PATH}: {exc}"]
+    device_spec = fstab.spec_of_mount_point(text, mount_point)
+    if device_spec is None:
+        return None, [f"{values.FSTAB_PATH} carries no line for {mount_point}"]
+    _log(f"the resume address names {device_spec} for {mount_point}")
+    return device_spec, []
+
+
+def _write_initramfs_resume_file(resume_device: str) -> tuple[bool, list[str]]:
+    """Write the file the initramfs reads the device from; report a change.
+
+    The file carries the same device the kernel command line carries, so a
+    machine whose command line a person edited by hand still knows where the
+    image of the last hibernation is. The file is written only when its content
+    differs, so a rerun leaves it alone and does not rebuild the ramdisk again.
+    """
+
+    path = values.INITRAMFS_RESUME_FILE_PATH
+    content = (
+        Template(values.INITRAMFS_RESUME_LINE).substitute(resume_device=resume_device)
+        + "\n"
+    )
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            _log(f"the initramfs resume file is current: {path}")
+            return False, []
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_file_atomically(path, content)
+    except OSError as exc:
+        return False, [f"cannot write {path}: {exc}"]
+    _log(f"initramfs resume file written: {path}")
+    return True, []
+
+
+def _rebuild_initramfs() -> list[str]:
+    """Rebuild the initial ramdisk so that it carries the resume file."""
+
+    try:
+        run_command(
+            list(values.UPDATE_INITRAMFS_COMMAND),
+            timeout=values.UPDATE_INITRAMFS_TIMEOUT_SECONDS,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return [f"the initial ramdisk was not rebuilt: {exc}"]
+    _log("initial ramdisk rebuilt")
+    return []
+
+
+def _verify_resume_artifacts(offset_pages: int, warnings: list[str]) -> None:
+    """Read back what was published and report what does not hold.
+
+    The boot menu is what the next boot reads and the initial ramdisk is what
+    carries the resume file the initramfs reads before it mounts anything. Both
+    are read here instead of being trusted, because an address that is published
+    halfway leaves a machine whose hibernation fails without a word.
+    """
+
+    wanted_parameter = f"{values.RESUME_OFFSET_PARAMETER}={offset_pages}"
+    try:
+        menu_text = values.GRUB_CONFIG_FILE_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        warnings.append(f"cannot read {values.GRUB_CONFIG_FILE_PATH}: {exc}")
+    else:
+        if wanted_parameter in menu_text:
+            _log(f"the boot menu carries {wanted_parameter}")
+        else:
+            warnings.append(
+                f"{values.GRUB_CONFIG_FILE_PATH} carries no {wanted_parameter}"
+            )
+    wanted_file = (
+        f"{values.INITRAMFS_CONF_DIRECTORY_IN_IMAGE}/"
+        f"{values.INITRAMFS_RESUME_FILE_PATH.name}"
+    )
+    command = substituted_command(
+        values.INITRAMFS_IMAGE_LIST_COMMAND,
+        {"kernel_release": platform.release()},
+    )
+    try:
+        result = run_command(
+            command,
+            check=False,
+            capture=True,
+            timeout=values.UPDATE_INITRAMFS_TIMEOUT_SECONDS,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warnings.append(f"cannot list the initial ramdisk: {exc}")
+        return
+    if wanted_file in result.stdout:
+        _log(f"the initial ramdisk carries {wanted_file}")
+    else:
+        warnings.append(
+            f"the initial ramdisk of {platform.release()} carries no {wanted_file}"
+        )
+
+
 def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
     """Build the result of the task, carrying the warning of a skipped step."""
 
@@ -234,9 +414,11 @@ def task(ctx: Context) -> TaskResult:
     rendered command line, the service is enabled and the program reports the
     target state of the swap file as reached; the task then returns
     changed=False. Otherwise it deploys what differs, enables the service,
-    runs the program once and reports what the program did. A step that cannot
-    run is reported as a warning of a completed task, so the runner continues
-    with the remaining tasks and never stops here.
+    runs the program once and reports what the program did. The resume address
+    is then written and read back, because the machine offers hibernation only
+    while both halves of that address name the swap file that is really there.
+    A step that cannot run is reported as a warning of a completed task, so the
+    runner continues with the remaining tasks and never stops here.
     """
 
     absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
@@ -261,7 +443,6 @@ def task(ctx: Context) -> TaskResult:
     force = ctx.task_name in ctx.force_tasks
     service_name = values.SERVICE_UNIT_NAME
     data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
-    command = _program_command(force=force)
     warnings: list[str] = []
     changed = False
 
@@ -286,6 +467,12 @@ def task(ctx: Context) -> TaskResult:
             message="the swap tool is not installed",
             warnings=warnings,
         )
+
+    resume_device, device_warnings = _resume_device_spec(
+        values.SWAPFILE_PATH.parent, timeout
+    )
+    warnings.extend(device_warnings)
+    command = _program_command(force=force, resume_device=resume_device or "")
 
     _log(f"deploying the swap program to {values.PROGRAM_DEPLOY_PATH}")
     program_changed, program_error = _deploy_program(
@@ -350,6 +537,7 @@ def task(ctx: Context) -> TaskResult:
                 _log("service enabled")
                 changed = True
 
+    offset_pages: int | None = None
     try:
         result = run_command(list(command), check=False, capture=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError) as exc:
@@ -372,6 +560,24 @@ def task(ctx: Context) -> TaskResult:
                 warnings.append(f"no swap file was created: {skipped_reason}")
             if outcome.get("changed") is True:
                 changed = True
+            offset_pages = _reported_offset_pages(outcome)
+
+    if offset_pages is None or resume_device is None:
+        warnings.append(
+            "the resume address was not published: "
+            + (
+                "the device that holds the swap file was not read"
+                if resume_device is None
+                else "the program reported no resume offset"
+            )
+        )
+    else:
+        file_changed, file_warnings = _write_initramfs_resume_file(resume_device)
+        warnings.extend(file_warnings)
+        if file_changed:
+            changed = True
+            warnings.extend(_rebuild_initramfs())
+        _verify_resume_artifacts(offset_pages, warnings)
 
     if unit_ready:
         # The unit is the artifact the next boot runs, so it is started here as
@@ -395,4 +601,8 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         message = "already configured"
+    if offset_pages is not None and resume_device is not None:
+        message += (
+            f"; hibernation resumes from {resume_device} at offset {offset_pages}"
+        )
     return _result(changed=changed, message=message, warnings=warnings)

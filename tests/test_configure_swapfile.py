@@ -132,7 +132,10 @@ def _config(tmp_path: Path, **overrides: Any) -> Any:
     """A configuration with a one MiB target on the temporary filesystem.
 
     The RAM term is one mebibyte and the disk term is far larger, so the target
-    of a test never depends on the free space of the machine that runs it.
+    of a test never depends on the free space of the machine that runs it. The
+    resume address points at files of the temporary tree, so no test writes into
+    /etc/default/grub, into the boot menu or into the attributes of the running
+    kernel.
     """
 
     settings: dict[str, Any] = {
@@ -146,6 +149,15 @@ def _config(tmp_path: Path, **overrides: Any) -> Any:
         "meminfo_path": tmp_path / "meminfo",
         "meminfo_total_key": "MemTotal:",
         "command_timeout_seconds": 60.0,
+        "resume_device": "/dev/mapper/pyntara-test",
+        "grub_default_file_path": tmp_path / "grub",
+        "grub_command_line_key": "GRUB_CMDLINE_LINUX_DEFAULT",
+        "grub_comment_sign": "#",
+        "resume_device_parameter": "resume",
+        "resume_offset_parameter": "resume_offset",
+        "power_resume_file_path": tmp_path / "power-resume",
+        "power_resume_offset_file_path": tmp_path / "power-resume-offset",
+        "update_grub_timeout_seconds": 60.0,
         "force": False,
     }
     settings.update(overrides)
@@ -177,6 +189,24 @@ def _arguments(config: Any, *, force: bool = False) -> list[str]:
         config.meminfo_total_key,
         "--command-timeout-seconds",
         str(config.command_timeout_seconds),
+        "--resume-device",
+        config.resume_device,
+        "--grub-default-file",
+        str(config.grub_default_file_path),
+        "--grub-command-line-key",
+        config.grub_command_line_key,
+        "--grub-comment-sign",
+        config.grub_comment_sign,
+        "--resume-device-parameter",
+        config.resume_device_parameter,
+        "--resume-offset-parameter",
+        config.resume_offset_parameter,
+        "--power-resume-file",
+        str(config.power_resume_file_path),
+        "--power-resume-offset-file",
+        str(config.power_resume_offset_file_path),
+        "--update-grub-timeout-seconds",
+        str(config.update_grub_timeout_seconds),
     ]
     if force:
         arguments.append("--force")
@@ -325,6 +355,244 @@ def test_an_offset_that_is_not_a_whole_number_is_reported_as_unread(
     assert outcome.resume_offset_pages is None
 
 
+def test_the_resume_address_is_written_into_the_kernel_command_line(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The command line of this machine, with the words of the machine and of
+    # other sections in it: the two words of this section are added and every
+    # other word, the commented line above among them, stays as it was.
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "# a comment line\n"
+        "GRUB_CMDLINE_LINUX=\"\"\n"
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet cryptdevice=UUID=1:luks-1 "
+        "root=/dev/mapper/luks-1 splash'\n",
+        encoding="utf-8",
+    )
+    config = _config(
+        tmp_path,
+        grub_default_file_path=grub_file,
+        resume_device="/dev/mapper/luks-1",
+    )
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "findmnt":
+            return _answered(command, 0, "/dev/null[/@swap]\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_offset_pages == 51615744
+    lines = grub_file.read_text(encoding="utf-8").splitlines()
+    assert lines[0] == "# a comment line"
+    assert lines[1] == 'GRUB_CMDLINE_LINUX=""'
+    assert lines[2] == (
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet cryptdevice=UUID=1:luks-1 "
+        "root=/dev/mapper/luks-1 splash resume=/dev/mapper/luks-1 "
+        "resume_offset=51615744'"
+    )
+    assert ["update-grub"] in calls
+    # The attributes take the device by its major and minor number, and the
+    # subvolume a btrfs mount reports in brackets is not part of the device.
+    assert (tmp_path / "power-resume").read_text(encoding="utf-8") == "1:3\n"
+    assert (tmp_path / "power-resume-offset").read_text(encoding="utf-8") == (
+        "51615744\n"
+    )
+
+
+def test_a_stale_resume_address_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet root=UUID=1 resume=UUID=old "
+        "resume_offset=123 splash'\n",
+        encoding="utf-8",
+    )
+    config = _config(tmp_path, grub_default_file_path=grub_file)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "findmnt":
+            return _answered(command, 0, "/dev/null\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double([], handler))
+    program.configure_swapfile(config)
+    written = grub_file.read_text(encoding="utf-8")
+    assert written.count("resume=") == 1
+    assert written.count("resume_offset=") == 1
+    assert written.strip() == (
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet root=UUID=1 splash "
+        "resume=/dev/mapper/pyntara-test resume_offset=51615744'"
+    )
+
+
+def test_an_empty_device_publishes_nothing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet splash'\n", encoding="utf-8"
+    )
+    config = _config(tmp_path, grub_default_file_path=grub_file, resume_device="")
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_offset_pages == 51615744
+    assert grub_file.read_text(encoding="utf-8") == (
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet splash'\n"
+    )
+    assert ["update-grub"] not in calls
+    assert not (tmp_path / "power-resume").exists()
+    assert "no device was given" in capsys.readouterr().err
+
+
+def test_a_settings_file_without_the_command_line_key_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "# GRUB_CMDLINE_LINUX_DEFAULT='quiet splash'\nGRUB_TIMEOUT=0\n",
+        encoding="utf-8",
+    )
+    config = _config(tmp_path, grub_default_file_path=grub_file)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    program.configure_swapfile(config)
+    assert grub_file.read_text(encoding="utf-8") == (
+        "# GRUB_CMDLINE_LINUX_DEFAULT='quiet splash'\nGRUB_TIMEOUT=0\n"
+    )
+    assert ["update-grub"] not in calls
+    assert "carries no GRUB_CMDLINE_LINUX_DEFAULT line" in capsys.readouterr().err
+
+
+def test_an_address_that_is_already_published_rebuilds_no_menu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet splash "
+        "resume=/dev/mapper/pyntara-test resume_offset=51615744'\n",
+        encoding="utf-8",
+    )
+    config = _config(tmp_path, grub_default_file_path=grub_file)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "findmnt":
+            return _answered(command, 0, "/dev/null\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double(calls, handler))
+    program.configure_swapfile(config)
+    assert ["update-grub"] not in calls
+
+
+def test_a_boot_menu_that_cannot_be_rebuilt_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    grub_file = tmp_path / "grub"
+    grub_file.write_text(
+        "GRUB_CMDLINE_LINUX_DEFAULT='quiet splash'\n", encoding="utf-8"
+    )
+    config = _config(tmp_path, grub_default_file_path=grub_file)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "findmnt":
+            return _answered(command, 0, "/dev/null\n")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[0] == "update-grub":
+            return _answered(command, 1, "", "grub-mkconfig: /boot is full")
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double([], handler))
+    outcome = program.configure_swapfile(config)
+    assert outcome.changed is False
+    assert outcome.resume_offset_pages == 51615744
+    assert "/boot is full" in capsys.readouterr().err
+
+
+def test_a_device_that_cannot_be_read_is_reported(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+
+    def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:
+        if command[0] == "findmnt" and "FSTYPE" in command:
+            return _answered(command, 0, "ext4\n")
+        if command[0] == "findmnt":
+            return _answered(command, 0, "")
+        if command[0] == "filefrag":
+            return _answered(command, 0, FILEFRAG_ANSWER)
+        if command[:2] == ["swapon", "--show"]:
+            return _answered(command, 0, f"{config.swapfile_path} file 1M 0B -1\n")
+        return None
+
+    monkeypatch.setattr(program, "_run", _run_double([], handler))
+    program.configure_swapfile(config)
+    assert "reported no device" in capsys.readouterr().err
+    assert not (tmp_path / "power-resume").exists()
+
+
 def test_a_swapfile_at_the_target_size_is_activated_when_inactive(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -392,7 +660,7 @@ def test_a_probe_the_kernel_refuses_stops_the_creation(
 def test_the_creation_sequence_runs_on_accepted_storage(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    config = _config(tmp_path)
+    config = _config(tmp_path, resume_device="")
     calls: list[list[str]] = []
 
     def handler(command: list[str]) -> subprocess.CompletedProcess[str] | None:

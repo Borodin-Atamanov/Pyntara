@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -76,6 +77,7 @@ CHATTR_TOOL: str = "chattr"
 BTRFS_TOOL: str = "btrfs"
 FINDMNT_TOOL: str = "findmnt"
 FILEFRAG_TOOL: str = "filefrag"
+UPDATE_GRUB_TOOL: str = "update-grub"
 
 # The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
 # without copy-on-write answers the request with "Operation not supported", so
@@ -114,6 +116,22 @@ FILEFRAG_ARGUMENTS: tuple[str, ...] = ("-v",)
 FIRST_EXTENT_FIRST_WORD: str = "0:"
 FILEFRAG_PHYSICAL_BLOCK_WORD: int = 3
 
+# The source of the mount that holds the swap file, which is how this program
+# asks for the device node the kernel attribute takes its number from. A btrfs
+# mount is reported with its subvolume in brackets after the device, and the
+# attribute wants the device alone.
+FINDMNT_SOURCE_ARGUMENTS: tuple[str, ...] = (
+    "--noheadings",
+    "--output",
+    "SOURCE",
+    "--target",
+)
+
+# The signs a value of a settings line may be written with, and the bracket the
+# device of a btrfs mount carries its subvolume in.
+QUOTE_SIGNS: tuple[str, ...] = ("'", '"')
+SUBVOLUME_OPEN_SIGN: str = "["
+
 # Byte factors of the size formula: the kernel reports the installed memory in
 # kibibytes, the free space is measured in bytes and the file is created in
 # mebibytes.
@@ -131,7 +149,9 @@ class Config:
 
     The size formula factors, the file mode, the probe size and the kernel file
     the memory is read from are values of the task and arrive here as arguments;
-    the program itself carries no number a caller may want to change.
+    the program itself carries no number a caller may want to change. The paths
+    and the names of the resume address arrive the same way, because the caller
+    owns where the address is published and which kernel parameters carry it.
     """
 
     swapfile_path: Path
@@ -144,6 +164,15 @@ class Config:
     meminfo_path: Path
     meminfo_total_key: str
     command_timeout_seconds: float
+    resume_device: str
+    grub_default_file_path: Path
+    grub_command_line_key: str
+    grub_comment_sign: str
+    resume_device_parameter: str
+    resume_offset_parameter: str
+    power_resume_file_path: Path
+    power_resume_offset_file_path: Path
+    update_grub_timeout_seconds: float
     force: bool
 
 
@@ -558,21 +587,215 @@ def _deactivate_swap_if_active(config: Config, active: bool) -> None:
     _require_success(result, "deactivating the swap file", "swap deactivated")
 
 
+def _command_line_value(line: str) -> str:
+    """The value of one KEY=value line, without the quotes around it."""
+
+    value = line.split("=", 1)[1].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in QUOTE_SIGNS:
+        return value[1:-1]
+    return value
+
+
+def _value_written_like(line: str, value: str) -> str:
+    """The value written the way the line wrote it: quoted or bare."""
+
+    written = line.split("=", 1)[1].strip()
+    if len(written) >= 2 and written[0] == written[-1] and written[0] in QUOTE_SIGNS:
+        return f"{written[0]}{value}{written[0]}"
+    return value
+
+
+def _line_with_resume_address(line: str, config: Config, offset_pages: int) -> str:
+    """The kernel command line with the resume device and offset set.
+
+    Only the two words this section owns are replaced; every other word of the
+    line, the words of the machine and the words of other sections among them,
+    stays exactly as the machine wrote it.
+    """
+
+    owned = (
+        f"{config.resume_device_parameter}=",
+        f"{config.resume_offset_parameter}=",
+    )
+    words = [
+        word for word in _command_line_value(line).split() if not word.startswith(owned)
+    ]
+    words.append(f"{config.resume_device_parameter}={config.resume_device}")
+    words.append(f"{config.resume_offset_parameter}={offset_pages}")
+    return (
+        f"{config.grub_command_line_key}="
+        f"{_value_written_like(line, ' '.join(words))}"
+    )
+
+
+def _line_index_of_key(lines: list[str], config: Config) -> int | None:
+    """Index of the line that carries the kernel command line, or None."""
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith(config.grub_comment_sign):
+            continue
+        if stripped.split("=", 1)[0] == config.grub_command_line_key:
+            return index
+    return None
+
+
+def _rebuild_boot_menu(config: Config) -> None:
+    """Rebuild the boot menu from the settings file that was just written."""
+
+    command = [_tool_path(UPDATE_GRUB_TOOL)]
+    result = _run(command, config.update_grub_timeout_seconds)
+    if result.returncode != 0:
+        print(
+            f"the boot menu was not rebuilt: {_failure_sentence(result)}",
+            file=sys.stderr,
+        )
+        return
+    print("boot menu rebuilt")
+
+
+def _write_command_line(config: Config, offset_pages: int) -> None:
+    """Write the resume address into the settings file of the boot menu.
+
+    One line is replaced and every other line of the machine survives. The menu
+    is rebuilt from the file only when the line changed, so a machine whose
+    address is already published costs nothing but the read.
+    """
+
+    path = config.grub_default_file_path
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        print(
+            f"the resume address was not published: cannot read {path}: {exc}",
+            file=sys.stderr,
+        )
+        return
+    index = _line_index_of_key(lines, config)
+    if index is None:
+        print(
+            f"the resume address was not published: {path} carries no "
+            f"{config.grub_command_line_key} line",
+            file=sys.stderr,
+        )
+        return
+    wanted = _line_with_resume_address(lines[index], config, offset_pages)
+    if wanted == lines[index]:
+        print("the boot menu already carries the resume address")
+        return
+    lines[index] = wanted
+    try:
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    except OSError as exc:
+        print(
+            f"the resume address was not published: cannot write {path}: {exc}",
+            file=sys.stderr,
+        )
+        return
+    print(f"resume address written into {path}")
+    _rebuild_boot_menu(config)
+
+
+def _swap_device_node(config: Config) -> str | None:
+    """Device node that holds the swap file, as the machine names it."""
+
+    command = [
+        _tool_path(FINDMNT_TOOL),
+        *FINDMNT_SOURCE_ARGUMENTS,
+        str(config.swapfile_path.parent),
+    ]
+    result = _run(command, config.command_timeout_seconds)
+    if result.returncode != 0:
+        print(
+            "the running kernel was not told the resume device: "
+            f"{_failure_sentence(result)}",
+            file=sys.stderr,
+        )
+        return None
+    device_node = result.stdout.strip().split(SUBVOLUME_OPEN_SIGN, 1)[0].strip()
+    if not device_node:
+        print(
+            "the running kernel was not told the resume device: "
+            f"{FINDMNT_TOOL} reported no device",
+            file=sys.stderr,
+        )
+        return None
+    return device_node
+
+
+def _write_power_resume(config: Config, offset_pages: int) -> None:
+    """Hand this boot the device and the offset of the active swap file.
+
+    The attribute takes the major and minor number of the device, the way the
+    kernel prints them back, and the offset in pages. This is the state the
+    initramfs sets at every boot, so writing it here is what makes the session
+    that installed the swap file agree with the boots that follow.
+    """
+
+    device_node = _swap_device_node(config)
+    if device_node is None:
+        return
+    try:
+        device_numbers = os.stat(device_node).st_rdev
+    except OSError as exc:
+        print(
+            "the running kernel was not told the resume device: cannot read "
+            f"{device_node}: {exc}",
+            file=sys.stderr,
+        )
+        return
+    device_number = f"{os.major(device_numbers)}:{os.minor(device_numbers)}"
+    written = (
+        (config.power_resume_file_path, device_number, "device"),
+        (config.power_resume_offset_file_path, str(offset_pages), "offset"),
+    )
+    for path, text, what in written:
+        try:
+            path.write_text(f"{text}\n", encoding="utf-8")
+        except OSError as exc:
+            print(
+                f"the running kernel was not told the resume {what}: cannot "
+                f"write {path}: {exc}",
+                file=sys.stderr,
+            )
+            return
+    print(f"this boot resumes from {device_number} at offset {offset_pages} pages")
+
+
+def _publish_resume_address(config: Config, offset_pages: int) -> None:
+    """Make the resume address known to the boot menu and to this boot.
+
+    An empty device means the caller could not name the filesystem that holds
+    the swap file, so nothing is published and the reason is printed instead of
+    an address that names nothing being written.
+    """
+
+    if not config.resume_device:
+        print(
+            "the resume address was not published: no device was given",
+            file=sys.stderr,
+        )
+        return
+    _write_command_line(config, offset_pages)
+    _write_power_resume(config, offset_pages)
+
+
 def configure_swapfile(config: Config) -> Outcome:
     """Bring the swap file of this machine to the computed size and activate it.
 
     The target state is the file at the computed size and an active swap; where
     it is already reached nothing changes. The probe runs only when the file has
     to be created, because an active swap file is proof enough that the storage
-    can hold swap. The offset of the active file is read last, because the
-    caller publishes it for the next boot and it moves whenever the file is
-    created again.
+    can hold swap. The offset of the active file is read last and the address it
+    belongs to is published, because the caller hands the same address to the
+    kernel at every boot and it moves whenever the file is created again.
     """
 
     ram_kib = _read_total_ram_kib(config.meminfo_path, config.meminfo_total_key)
     _ensure_swap_directory(config.swapfile_path.parent)
     free_disk_kib = _free_disk_kib(config.swapfile_path.parent)
     target_mb = _calculate_target_size_mb(ram_kib, free_disk_kib, config)
+    changed = False
     print(
         f"reading installed memory from {config.meminfo_path}: "
         f"{ram_kib // BYTES_PER_KIB} MiB"
@@ -612,45 +835,45 @@ def configure_swapfile(config: Config) -> Outcome:
     if not config.force and size_is_right:
         if active:
             print("target state already reached, nothing to do")
+        else:
+            _activate_swap(config)
+            changed = True
+    else:
+        if config.force:
+            print("force mode, the swap file is created again")
+        elif current_mb is None:
+            print(f"creating the swap file at the target size {target_mb} MiB")
+        else:
+            print(
+                f"swapfile size {current_mb} MiB differs from the target "
+                f"{target_mb} MiB, recreating"
+            )
+
+        accepted, reason = _storage_accepts_swap(config)
+        if not accepted:
+            print(f"the storage cannot hold swap: {reason}")
+            print("nothing was created; configure the swap file on a disk filesystem")
             return Outcome(
                 changed=False,
-                skipped_reason=None,
-                resume_offset_pages=_resume_offset_pages(config),
+                skipped_reason=reason,
+                resume_offset_pages=None,
             )
+
+        _deactivate_swap_if_active(config, active)
+        _prepare_swap_file(config, config.swapfile_path, f"{target_mb}M")
         _activate_swap(config)
-        return Outcome(
-            changed=True,
-            skipped_reason=None,
-            resume_offset_pages=_resume_offset_pages(config),
-        )
+        changed = True
 
-    if config.force:
-        print("force mode, the swap file is created again")
-    elif current_mb is None:
-        print(f"creating the swap file at the target size {target_mb} MiB")
-    else:
-        print(
-            f"swapfile size {current_mb} MiB differs from the target "
-            f"{target_mb} MiB, recreating"
-        )
-
-    accepted, reason = _storage_accepts_swap(config)
-    if not accepted:
-        print(f"the storage cannot hold swap: {reason}")
-        print("nothing was created; configure the swap file on a disk filesystem")
-        return Outcome(
-            changed=False,
-            skipped_reason=reason,
-            resume_offset_pages=None,
-        )
-
-    _deactivate_swap_if_active(config, active)
-    _prepare_swap_file(config, config.swapfile_path, f"{target_mb}M")
-    _activate_swap(config)
+    offset_pages = _resume_offset_pages(config)
+    if offset_pages is not None:
+        try:
+            _publish_resume_address(config, offset_pages)
+        except (SwapfileError, subprocess.TimeoutExpired) as exc:
+            print(f"the resume address was not published: {exc}", file=sys.stderr)
     return Outcome(
-        changed=True,
+        changed=changed,
         skipped_reason=None,
-        resume_offset_pages=_resume_offset_pages(config),
+        resume_offset_pages=offset_pages,
     )
 
 
@@ -713,6 +936,52 @@ def _build_parser() -> argparse.ArgumentParser:
         help="bound of every command this program runs",
     )
     parser.add_argument(
+        "--resume-device",
+        required=True,
+        help="device the resume address names, empty to publish nothing",
+    )
+    parser.add_argument(
+        "--grub-default-file",
+        required=True,
+        help="machine settings file that carries the kernel command line",
+    )
+    parser.add_argument(
+        "--grub-command-line-key",
+        required=True,
+        help="key of the kernel command line inside that file",
+    )
+    parser.add_argument(
+        "--grub-comment-sign",
+        required=True,
+        help="sign that marks a commented line of that file",
+    )
+    parser.add_argument(
+        "--resume-device-parameter",
+        required=True,
+        help="name of the kernel parameter that names the resume device",
+    )
+    parser.add_argument(
+        "--resume-offset-parameter",
+        required=True,
+        help="name of the kernel parameter that names the resume offset",
+    )
+    parser.add_argument(
+        "--power-resume-file",
+        required=True,
+        help="kernel attribute that takes the resume device of this boot",
+    )
+    parser.add_argument(
+        "--power-resume-offset-file",
+        required=True,
+        help="kernel attribute that takes the resume offset of this boot",
+    )
+    parser.add_argument(
+        "--update-grub-timeout-seconds",
+        required=True,
+        type=float,
+        help="bound of the call that rebuilds the boot menu",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="create the swap file again even where the target size is reached",
@@ -735,6 +1004,15 @@ def _config_from_arguments(argv: list[str]) -> Config:
         meminfo_path=Path(arguments.meminfo),
         meminfo_total_key=arguments.meminfo_total_key,
         command_timeout_seconds=arguments.command_timeout_seconds,
+        resume_device=arguments.resume_device,
+        grub_default_file_path=Path(arguments.grub_default_file),
+        grub_command_line_key=arguments.grub_command_line_key,
+        grub_comment_sign=arguments.grub_comment_sign,
+        resume_device_parameter=arguments.resume_device_parameter,
+        resume_offset_parameter=arguments.resume_offset_parameter,
+        power_resume_file_path=Path(arguments.power_resume_file),
+        power_resume_offset_file_path=Path(arguments.power_resume_offset_file),
+        update_grub_timeout_seconds=arguments.update_grub_timeout_seconds,
         force=arguments.force,
     )
 

@@ -83,6 +83,66 @@ SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
 # step by hand and the boot service takes nothing from PATH.
 SWAPOFF_COMMAND_NAME: str = "swapoff"
 
+# The address a hibernation image is resumed from. The kernel reads the device
+# from the kernel command line of the boot entry and the offset of the swap file
+# header inside that device from the same line, because the kernel ignores the
+# offset of the resume parameter and a device alone does not name a swap file.
+# The device is written the way the fstab of this machine names the mount that
+# holds the swap file: a UUID for a filesystem that is mounted directly, and the
+# mapper path of a root that is unlocked at boot, which is the name the
+# initramfs can use once that root is there (docs/spec/users-and-host.md).
+FSTAB_PATH: Path = Path("/etc/fstab")
+GRUB_DEFAULT_FILE_PATH: Path = Path("/etc/default/grub")
+GRUB_CONFIG_FILE_PATH: Path = Path("/boot/grub/grub.cfg")
+GRUB_COMMAND_LINE_KEY: str = "GRUB_CMDLINE_LINUX_DEFAULT"
+GRUB_COMMENT_SIGN: str = "#"
+RESUME_DEVICE_PARAMETER: str = "resume"
+RESUME_OFFSET_PARAMETER: str = "resume_offset"
+
+# The mount point a path belongs to, which is how the task reaches the fstab
+# line whose device field names the filesystem that holds the swap file.
+MOUNT_POINT_COMMAND: tuple[str, ...] = (
+    "findmnt",
+    "--noheadings",
+    "--output",
+    "TARGET",
+    "--target",
+    "{path}",
+)
+
+# The file the initramfs reads the resume device from and the single line it
+# carries. The initramfs reads the files of this directory before it reads the
+# kernel command line, so the command line decides where the two disagree; the
+# file is written as well, so a machine whose command line a person edited by
+# hand still carries the device.
+INITRAMFS_RESUME_FILE_PATH: Path = Path("/etc/initramfs-tools/conf.d/resume")
+INITRAMFS_RESUME_LINE: str = "RESUME=$resume_device"
+
+# The directory the resume file is copied into inside the initial ramdisk, and
+# the command that lists what one image carries. The listing is how the task
+# reads back that the rebuilt image really holds the file, instead of trusting
+# that the tool copied it.
+INITRAMFS_CONF_DIRECTORY_IN_IMAGE: str = "conf/conf.d"
+INITRAMFS_IMAGE_LIST_COMMAND: tuple[str, ...] = (
+    "lsinitramfs",
+    "/boot/initrd.img-{kernel_release}",
+)
+
+# The attributes the running kernel takes the resume address through, which is
+# how the initramfs hands it over at boot. Writing them is what makes the
+# session that installs the swap file agree with the boots that follow instead
+# of waiting for the next boot, and they are the two values logind reads before
+# it offers hibernation.
+POWER_RESUME_FILE_PATH: Path = Path("/sys/power/resume")
+POWER_RESUME_OFFSET_FILE_PATH: Path = Path("/sys/power/resume_offset")
+
+# The commands that rebuild the artifacts of the boot, each with its bound: the
+# boot menu carries the address and the initial ramdisk carries the file the
+# initramfs reads.
+UPDATE_GRUB_TIMEOUT_SECONDS: int = 300
+UPDATE_INITRAMFS_COMMAND: tuple[str, ...] = ("update-initramfs", "-u")
+UPDATE_INITRAMFS_TIMEOUT_SECONDS: int = 600
+
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -104,4 +164,21 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_ENABLE_COMMAND",
     "SYSTEMCTL_START_COMMAND",
     "SWAPOFF_COMMAND_NAME",
+    "FSTAB_PATH",
+    "GRUB_DEFAULT_FILE_PATH",
+    "GRUB_CONFIG_FILE_PATH",
+    "GRUB_COMMAND_LINE_KEY",
+    "GRUB_COMMENT_SIGN",
+    "RESUME_DEVICE_PARAMETER",
+    "RESUME_OFFSET_PARAMETER",
+    "MOUNT_POINT_COMMAND",
+    "INITRAMFS_RESUME_FILE_PATH",
+    "INITRAMFS_RESUME_LINE",
+    "INITRAMFS_CONF_DIRECTORY_IN_IMAGE",
+    "INITRAMFS_IMAGE_LIST_COMMAND",
+    "POWER_RESUME_FILE_PATH",
+    "POWER_RESUME_OFFSET_FILE_PATH",
+    "UPDATE_GRUB_TIMEOUT_SECONDS",
+    "UPDATE_INITRAMFS_COMMAND",
+    "UPDATE_INITRAMFS_TIMEOUT_SECONDS",
 )
