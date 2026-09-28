@@ -646,6 +646,16 @@ def test_the_permission_rule_sorts_before_the_rule_of_ubuntu() -> None:
     assert values.POLKIT_RULE_FILE_PATH.name < "com.ubuntu.desktop.rules"
 
 
+def test_no_argument_of_the_command_line_carries_a_space(tmp_path: Path) -> None:
+    # The unit renders the command line as words separated by spaces, so an
+    # argument with a space inside arrives at the program as two arguments and
+    # the boot service fails to start. This guards the interface of the unit.
+    command = swapfile_service_install._program_command(
+        force=False, resume_device="UUID=test-root"
+    )
+    assert not [argument for argument in command if " " in argument]
+
+
 def test_the_hibernation_question_is_asked_as_the_desktop_user(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

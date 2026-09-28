@@ -179,8 +179,6 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
         str(values.INITRAMFS_RESUME_FILE_PATH),
         "--initramfs-resume-node",
         _initramfs_resume_node(),
-        "--augeas-command",
-        " ".join(engine_values.AUGTOOL_COMMAND),
         "--augeas-lens",
         values.AUGEAS_SHELL_LENS,
         "--resume-device-parameter",

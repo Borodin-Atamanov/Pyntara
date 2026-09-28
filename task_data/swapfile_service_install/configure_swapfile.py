@@ -84,6 +84,16 @@ UPDATE_GRUB_TOOL: str = "update-grub"
 # it, and nothing else, so no other file of the machine is read or written.
 AUGEAS_LOAD_TAG: str = "pyntara"
 
+# The augeas driver this program runs and the flag that keeps it from reading
+# the machine wide configuration: the load entry of the program names the one
+# file to parse, so the tool must parse nothing on its own. Both are the
+# implementation of this program, while the lens and the node it edits arrive
+# from the caller; the driver is not an argument, because the unit renders the
+# command line as words separated by spaces and an argument with a space inside
+# would arrive as two arguments at boot.
+AUGEAS_TOOL: str = "augtool"
+AUGEAS_NO_AUTOLOAD_ARGUMENT: str = "--noautoload"
+
 # The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
 # without copy-on-write answers the request with "Operation not supported", so
 # the refusal is reported and the work continues.
@@ -178,7 +188,6 @@ class Config:
     grub_command_line_node: str
     initramfs_resume_file_path: Path
     initramfs_resume_node: str
-    augeas_command: tuple[str, ...]
     augeas_lens: str
     resume_device_parameter: str
     resume_offset_parameter: str
@@ -604,6 +613,12 @@ def _deactivate_swap_if_active(config: Config, active: bool) -> None:
     _require_success(result, "deactivating the swap file", "swap deactivated")
 
 
+def _augeas_command() -> list[str]:
+    """The augeas driver of this program, with the flag that keeps it alone."""
+
+    return [_tool_path(AUGEAS_TOOL), AUGEAS_NO_AUTOLOAD_ARGUMENT]
+
+
 def _augeas_load_lines(config: Config) -> list[str]:
     """Lines of the augtool program that load the settings file alone.
 
@@ -643,7 +658,7 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
         + "\n"
     )
     result = _run(
-        list(config.augeas_command),
+        _augeas_command(),
         config.command_timeout_seconds,
         input_text=script,
     )
@@ -654,7 +669,7 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
         if separator and node.strip() == config.grub_command_line_node:
             return value.strip().strip('"'), None
     return None, (
-        f"{config.augeas_command[0]} reported no {config.grub_command_line_node}"
+        f"{AUGEAS_TOOL} reported no {config.grub_command_line_node}"
     )
 
 
@@ -712,7 +727,7 @@ def _write_command_line(config: Config, offset_pages: int) -> None:
         + "\n"
     )
     result = _run(
-        list(config.augeas_command),
+        _augeas_command(),
         config.command_timeout_seconds,
         input_text=script,
     )
@@ -797,7 +812,7 @@ def _write_initramfs_resume(config: Config) -> None:
         + "\n"
     )
     result = _run(
-        list(config.augeas_command),
+        _augeas_command(),
         config.command_timeout_seconds,
         input_text=script,
     )
@@ -1053,11 +1068,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="augeas node of the resume device inside that file",
     )
     parser.add_argument(
-        "--augeas-command",
-        required=True,
-        help="driver that edits the machine settings file, words separated by a space",
-    )
-    parser.add_argument(
         "--augeas-lens",
         required=True,
         help="lens augeas parses that settings file with",
@@ -1116,7 +1126,6 @@ def _config_from_arguments(argv: list[str]) -> Config:
         grub_command_line_node=arguments.grub_command_line_node,
         initramfs_resume_file_path=Path(arguments.initramfs_resume_file),
         initramfs_resume_node=arguments.initramfs_resume_node,
-        augeas_command=tuple(arguments.augeas_command.split()),
         augeas_lens=arguments.augeas_lens,
         resume_device_parameter=arguments.resume_device_parameter,
         resume_offset_parameter=arguments.resume_offset_parameter,
