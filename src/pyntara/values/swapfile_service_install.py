@@ -95,9 +95,18 @@ FSTAB_PATH: Path = Path("/etc/fstab")
 GRUB_DEFAULT_FILE_PATH: Path = Path("/etc/default/grub")
 GRUB_CONFIG_FILE_PATH: Path = Path("/boot/grub/grub.cfg")
 GRUB_COMMAND_LINE_KEY: str = "GRUB_CMDLINE_LINUX_DEFAULT"
-GRUB_COMMENT_SIGN: str = "#"
 RESUME_DEVICE_PARAMETER: str = "resume"
 RESUME_OFFSET_PARAMETER: str = "resume_offset"
+
+# The lens augeas parses the machine settings files with, and the key the
+# initramfs reads the resume device from. Both settings files are shell variable
+# files, so augeas parses each of them with the lens named here and the section
+# never edits the syntax of a machine file itself: it replaces one node of the
+# parsed tree and the tool writes the file back, which keeps every other line,
+# every comment and the quoting style of the file as the machine wrote them
+# (docs/spec/users-and-host.md).
+AUGEAS_SHELL_LENS: str = "Shellvars.lns"
+INITRAMFS_RESUME_KEY: str = "RESUME"
 
 # The mount point a path belongs to, which is how the task reaches the fstab
 # line whose device field names the filesystem that holds the swap file.
@@ -110,13 +119,11 @@ MOUNT_POINT_COMMAND: tuple[str, ...] = (
     "{path}",
 )
 
-# The file the initramfs reads the resume device from and the single line it
-# carries. The initramfs reads the files of this directory before it reads the
-# kernel command line, so the command line decides where the two disagree; the
-# file is written as well, so a machine whose command line a person edited by
-# hand still carries the device.
+# The file the initramfs reads the resume device from. The initramfs reads the
+# files of this directory before it reads the kernel command line, so the
+# command line decides where the two disagree; the file is written as well, so a
+# machine whose command line a person edited by hand still carries the device.
 INITRAMFS_RESUME_FILE_PATH: Path = Path("/etc/initramfs-tools/conf.d/resume")
-INITRAMFS_RESUME_LINE: str = "RESUME=$resume_device"
 
 # The directory the resume file is copied into inside the initial ramdisk, and
 # the command that lists what one image carries. The listing is how the task
@@ -143,6 +150,47 @@ UPDATE_GRUB_TIMEOUT_SECONDS: int = 300
 UPDATE_INITRAMFS_COMMAND: tuple[str, ...] = ("update-initramfs", "-u")
 UPDATE_INITRAMFS_TIMEOUT_SECONDS: int = 600
 
+# The permission hibernation needs. Ubuntu refuses it to every user through a
+# rule of its own, and polkit decides by the first rule file in name order that
+# answers, so this file has to sort before com.ubuntu.desktop.rules of that
+# distribution, which a name starting with a digit does. The rule names the
+# desktop user alone, so no other account of the machine gains the permission,
+# and it allows the two actions the session menu of that user asks for.
+POLKIT_RULE_FILE_PATH: Path = Path(
+    "/etc/polkit-1/rules.d/49-pyntara-hibernate.rules"
+)
+POLKIT_RULE_FILE_MODE: int = 0o644
+POLKIT_RULE_TEMPLATE_FILE_NAME: str = "hibernate.rules.in"
+POLKIT_HIBERNATE_ACTION: str = "org.freedesktop.login1.hibernate"
+POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION: str = (
+    "org.freedesktop.login1.hibernate-multiple-sessions"
+)
+
+# The question the task asks about hibernation on behalf of the desktop user,
+# and the answer that means the machine offers it. The answer is calculated for
+# the account that asks, which is why the call runs as that user instead of as
+# root: a machine that refuses the user answers root with yes, and that state is
+# exactly the one this section removes.
+LOGIND_HIBERNATE_QUERY_COMMAND: tuple[str, ...] = (
+    "busctl",
+    "--system",
+    "get-property",
+    "org.freedesktop.login1",
+    "/org/freedesktop/login1",
+    "org.freedesktop.login1.Manager",
+    "CanHibernate",
+)
+HIBERNATE_AVAILABLE_ANSWER: str = "yes"
+RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
+
+# The sentence the run leaves for the user. Plasma asks the machine once, when
+# the session starts, so a machine whose hibernation this run enabled shows the
+# item of its menu after the next login and not in the session that installed
+# it.
+SESSION_RELOAD_MESSAGE: str = (
+    "log in again for the hibernation item of the session menu to appear"
+)
+
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -168,12 +216,12 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GRUB_DEFAULT_FILE_PATH",
     "GRUB_CONFIG_FILE_PATH",
     "GRUB_COMMAND_LINE_KEY",
-    "GRUB_COMMENT_SIGN",
     "RESUME_DEVICE_PARAMETER",
     "RESUME_OFFSET_PARAMETER",
+    "AUGEAS_SHELL_LENS",
+    "INITRAMFS_RESUME_KEY",
     "MOUNT_POINT_COMMAND",
     "INITRAMFS_RESUME_FILE_PATH",
-    "INITRAMFS_RESUME_LINE",
     "INITRAMFS_CONF_DIRECTORY_IN_IMAGE",
     "INITRAMFS_IMAGE_LIST_COMMAND",
     "POWER_RESUME_FILE_PATH",
@@ -181,4 +229,13 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "UPDATE_GRUB_TIMEOUT_SECONDS",
     "UPDATE_INITRAMFS_COMMAND",
     "UPDATE_INITRAMFS_TIMEOUT_SECONDS",
+    "POLKIT_RULE_FILE_PATH",
+    "POLKIT_RULE_FILE_MODE",
+    "POLKIT_RULE_TEMPLATE_FILE_NAME",
+    "POLKIT_HIBERNATE_ACTION",
+    "POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION",
+    "LOGIND_HIBERNATE_QUERY_COMMAND",
+    "HIBERNATE_AVAILABLE_ANSWER",
+    "RUNUSER_COMMAND",
+    "SESSION_RELOAD_MESSAGE",
 )

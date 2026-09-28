@@ -108,6 +108,10 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(
         values, "POWER_RESUME_OFFSET_FILE_PATH", tmp_path / "power-resume-offset"
     )
+    monkeypatch.setattr(
+        values, "POLKIT_RULE_FILE_PATH", tmp_path / "rules.d" / "49-pyntara.rules"
+    )
+    monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "pyntara-test-user")
 
 
 # The path the tests answer the run-time lookup of swapoff with.
@@ -153,7 +157,11 @@ def _ctx(tmp_path: Path, *, force: bool = False) -> Context:
 
 
 def _write_data_files(tmp_path: Path, *, program_text: str = PROGRAM_TEXT) -> Path:
-    """Write the program and the unit template where the task reads them."""
+    """Write the program and the templates where the task reads them.
+
+    The permission rule template is copied from the repository, so a placeholder
+    the task does not fill in is caught here instead of on a target machine.
+    """
 
     data_dir = tmp_path / "task_data" / "swapfile_service_install"
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -161,7 +169,39 @@ def _write_data_files(tmp_path: Path, *, program_text: str = PROGRAM_TEXT) -> Pa
     (data_dir / values.UNIT_TEMPLATE_FILE_NAME).write_text(
         UNIT_TEMPLATE, encoding="utf-8"
     )
+    shipped_dir = REPO_ROOT / "task_data" / "swapfile_service_install"
+    (data_dir / values.POLKIT_RULE_TEMPLATE_FILE_NAME).write_text(
+        (shipped_dir / values.POLKIT_RULE_TEMPLATE_FILE_NAME).read_text(
+            encoding="utf-8"
+        ),
+        encoding="utf-8",
+    )
     return data_dir
+
+
+def _write_resume_file_like_the_program(command: list[str], stdout: str) -> None:
+    """Write the initramfs resume file the way the program writes it.
+
+    The program owns that file, so the fake stands for it: the file appears when
+    the command line carries a device and the result line carries an offset,
+    which is what the task reads around the run to decide about the ramdisk.
+    """
+
+    device = ""
+    if "--resume-device" in command:
+        device = command[command.index("--resume-device") + 1]
+    if not device:
+        return
+    try:
+        outcome = json.loads(stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return
+    if not isinstance(outcome, dict) or outcome.get("resume_offset") is None:
+        return
+    values.INITRAMFS_RESUME_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.INITRAMFS_RESUME_FILE_PATH.write_text(
+        f"{values.INITRAMFS_RESUME_KEY}={device}\n", encoding="utf-8"
+    )
 
 
 def _install_fake(
@@ -193,9 +233,13 @@ def _install_fake(
                 f"{values.INITRAMFS_CONF_DIRECTORY_IN_IMAGE}/"
                 f"{values.INITRAMFS_RESUME_FILE_PATH.name}\n",
             )
+        if command[0] == "runuser":
+            return _FakeProc(0, 's "yes"\n')
         if command[0] == program_path:
             if program_result is not None:
+                _write_resume_file_like_the_program(command, program_result.stdout)
                 return program_result
+            _write_resume_file_like_the_program(command, RESULT_LINE)
             return _FakeProc(0, RESULT_LINE + "\n")
         return _FakeProc(0)
 
@@ -313,7 +357,10 @@ def test_a_configured_machine_reports_no_change(
     values.PROGRAM_DEPLOY_PATH.write_text(PROGRAM_TEXT, encoding="utf-8")
     values.INITRAMFS_RESUME_FILE_PATH.parent.mkdir(parents=True)
     values.INITRAMFS_RESUME_FILE_PATH.write_text(
-        "RESUME=UUID=test-root\n", encoding="utf-8"
+        f"{values.INITRAMFS_RESUME_KEY}=UUID=test-root\n", encoding="utf-8"
+    )
+    swapfile_service_install._write_polkit_rule(
+        tmp_path / "task_data" / "swapfile_service_install"
     )
     calls = _install_fake(
         monkeypatch, enabled=True, program_result=_FakeProc(0, UNCHANGED_LINE + "\n")
@@ -534,6 +581,7 @@ def test_an_initramfs_without_the_resume_file_is_reported(
         if command[0] == "lsinitramfs":
             return _FakeProc(0, "conf/conf.d/zz-resume-auto\n")
         if command[0] == program_path:
+            _write_resume_file_like_the_program(command, RESULT_LINE)
             return _FakeProc(0, RESULT_LINE + "\n")
         if command[0] == "systemctl" and command[1] == "is-enabled":
             return _FakeProc(0, "enabled\n")
@@ -568,6 +616,93 @@ def test_a_program_that_reports_no_offset_is_reported(
     ), result.warnings
     assert not values.INITRAMFS_RESUME_FILE_PATH.exists()
     assert ["update-initramfs", "-u"] not in calls
+
+
+def test_the_hibernation_permission_rule_names_the_desktop_user(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The rule carries the account and the two actions the session menu asks
+    # for, and no other action of the machine is enabled by it.
+    _write_data_files(tmp_path)
+    _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    rule = values.POLKIT_RULE_FILE_PATH.read_text(encoding="utf-8")
+    assert 'subject.user != "pyntara-test-user"' in rule
+    assert f'action.id == "{values.POLKIT_HIBERNATE_ACTION}"' in rule
+    assert (
+        f'action.id == "{values.POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION}"' in rule
+    )
+    assert "polkit.Result.YES" in rule
+    assert rule.count("polkit.Result") == 1
+    assert "$" not in rule
+    assert values.POLKIT_RULE_FILE_PATH.stat().st_mode & 0o777 == (
+        values.POLKIT_RULE_FILE_MODE
+    )
+
+
+def test_the_permission_rule_sorts_before_the_rule_of_ubuntu() -> None:
+    # polkit decides by the first rule file in name order that answers, and the
+    # rule Ubuntu ships refuses hibernation to every user of the machine.
+    assert values.POLKIT_RULE_FILE_PATH.name < "com.ubuntu.desktop.rules"
+
+
+def test_the_hibernation_question_is_asked_as_the_desktop_user(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    calls = _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    query = [
+        call for call in calls if call[0] == "runuser"
+    ]
+    assert len(query) == 1
+    assert query[0][:4] == ["runuser", "-u", "pyntara-test-user", "--"]
+    assert query[0][4:] == list(values.LOGIND_HIBERNATE_QUERY_COMMAND)
+
+
+def test_a_machine_that_does_not_offer_hibernation_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_data_files(tmp_path)
+    program_path = str(values.PROGRAM_DEPLOY_PATH)
+
+    def refuses(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "findmnt":
+            return _FakeProc(0, "/\n")
+        if command[0] == "lsinitramfs":
+            return _FakeProc(
+                0,
+                f"{values.INITRAMFS_CONF_DIRECTORY_IN_IMAGE}/"
+                f"{values.INITRAMFS_RESUME_FILE_PATH.name}\n",
+            )
+        if command[0] == "runuser":
+            return _FakeProc(0, 's "no"\n')
+        if command[0] == program_path:
+            _write_resume_file_like_the_program(command, RESULT_LINE)
+            return _FakeProc(0, RESULT_LINE + "\n")
+        if command[0] == "systemctl" and command[1] == "is-enabled":
+            return _FakeProc(0, "enabled\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", refuses)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert any(
+        "does not offer hibernation to pyntara-test-user" in warning
+        for warning in result.warnings
+    ), result.warnings
+
+
+def test_a_machine_without_a_desktop_user_gets_no_permission_rule(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A server machine has no session menu to offer hibernation in, so the rule
+    # is not written and the question is not asked there.
+    _write_data_files(tmp_path)
+    monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "")
+    calls = _install_fake(monkeypatch, enabled=True)
+    swapfile_service_install.task(_ctx(tmp_path))
+    assert not values.POLKIT_RULE_FILE_PATH.exists()
+    assert not [call for call in calls if call[0] == "runuser"]
 
 
 def test_the_program_reads_the_command_line_the_task_builds(

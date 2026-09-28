@@ -113,6 +113,29 @@ def _write_file_atomically(path: Path, content: bytes | str) -> None:
     os.replace(temporary, path)
 
 
+def _grub_command_line_node() -> str:
+    """Augeas node that carries the kernel command line of this machine.
+
+    The node is the prefix of the values, the path of the settings file and the
+    key of the line, so the program replaces one node of the tree augeas parsed
+    instead of editing the syntax of a machine file itself.
+    """
+
+    return (
+        f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{values.GRUB_DEFAULT_FILE_PATH}/"
+        f"{values.GRUB_COMMAND_LINE_KEY}"
+    )
+
+
+def _initramfs_resume_node() -> str:
+    """Augeas node the initramfs reads the resume device from."""
+
+    return (
+        f"{engine_values.AUGEAS_FILES_NODE_PREFIX}"
+        f"{values.INITRAMFS_RESUME_FILE_PATH}/{values.INITRAMFS_RESUME_KEY}"
+    )
+
+
 def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
     """The command line of the deployed program, built from the values.
 
@@ -150,10 +173,16 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
         resume_device,
         "--grub-default-file",
         str(values.GRUB_DEFAULT_FILE_PATH),
-        "--grub-command-line-key",
-        values.GRUB_COMMAND_LINE_KEY,
-        "--grub-comment-sign",
-        values.GRUB_COMMENT_SIGN,
+        "--grub-command-line-node",
+        _grub_command_line_node(),
+        "--initramfs-resume-file",
+        str(values.INITRAMFS_RESUME_FILE_PATH),
+        "--initramfs-resume-node",
+        _initramfs_resume_node(),
+        "--augeas-command",
+        " ".join(engine_values.AUGTOOL_COMMAND),
+        "--augeas-lens",
+        values.AUGEAS_SHELL_LENS,
         "--resume-device-parameter",
         values.RESUME_DEVICE_PARAMETER,
         "--resume-offset-parameter",
@@ -310,30 +339,18 @@ def _resume_device_spec(
     return device_spec, []
 
 
-def _write_initramfs_resume_file(resume_device: str) -> tuple[bool, list[str]]:
-    """Write the file the initramfs reads the device from; report a change.
+def _initramfs_resume_file_text() -> str | None:
+    """Content of the file the initramfs reads, or None when it is not there.
 
-    The file carries the same device the kernel command line carries, so a
-    machine whose command line a person edited by hand still knows where the
-    image of the last hibernation is. The file is written only when its content
-    differs, so a rerun leaves it alone and does not rebuild the ramdisk again.
+    The task reads the file around the run of the program, because the program
+    is what writes it: a file that changed means the initial ramdisk carries an
+    older device and has to be rebuilt.
     """
 
-    path = values.INITRAMFS_RESUME_FILE_PATH
-    content = (
-        Template(values.INITRAMFS_RESUME_LINE).substitute(resume_device=resume_device)
-        + "\n"
-    )
     try:
-        if path.is_file() and path.read_text(encoding="utf-8") == content:
-            _log(f"the initramfs resume file is current: {path}")
-            return False, []
-        path.parent.mkdir(parents=True, exist_ok=True)
-        _write_file_atomically(path, content)
-    except OSError as exc:
-        return False, [f"cannot write {path}: {exc}"]
-    _log(f"initramfs resume file written: {path}")
-    return True, []
+        return values.INITRAMFS_RESUME_FILE_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def _rebuild_initramfs() -> list[str]:
@@ -395,6 +412,73 @@ def _verify_resume_artifacts(offset_pages: int, warnings: list[str]) -> None:
         warnings.append(
             f"the initial ramdisk of {platform.release()} carries no {wanted_file}"
         )
+
+
+def _write_polkit_rule(data_dir: Path) -> tuple[bool, list[str]]:
+    """Write the rule that lets the desktop user hibernate; report a change.
+
+    The rule is rendered from the template of the section with the desktop user
+    of this machine and the two actions the session menu asks for. A machine
+    without a desktop account has no session menu to offer hibernation in, so
+    nothing is written there.
+    """
+
+    username = common_values.DESKTOP_USERNAME
+    if not username:
+        return False, []
+    path = values.POLKIT_RULE_FILE_PATH
+    try:
+        template = Template(
+            (data_dir / values.POLKIT_RULE_TEMPLATE_FILE_NAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        content = template.substitute(
+            desktop_user=username,
+            hibernate_action=values.POLKIT_HIBERNATE_ACTION,
+            hibernate_multiple_sessions_action=(
+                values.POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION
+            ),
+        )
+    except (OSError, KeyError, ValueError) as exc:
+        return False, [f"cannot render the hibernation permission rule: {exc}"]
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            _log(f"the hibernation permission rule is current: {path}")
+            return False, []
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_file_atomically(path, content)
+        path.chmod(values.POLKIT_RULE_FILE_MODE)
+    except OSError as exc:
+        return False, [f"cannot write {path}: {exc}"]
+    _log(f"hibernation permission rule written: {path}")
+    return True, []
+
+
+def _hibernate_answer_for_desktop_user(
+    timeout: float,
+) -> tuple[bool | None, str | None]:
+    """Whether the machine offers hibernation to the desktop user.
+
+    The question is asked as that user, because the answer is calculated for the
+    account that asks and a machine that refuses the user answers root with yes.
+    None means the answer could not be read, and the reason is returned with it.
+    """
+
+    command = [
+        *substituted_command(
+            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
+        ),
+        *values.LOGIND_HIBERNATE_QUERY_COMMAND,
+    ]
+    try:
+        result = run_command(command, check=False, capture=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return None, f"cannot ask the machine about hibernation: {exc}"
+    answer = result.stdout.strip()
+    if values.HIBERNATE_AVAILABLE_ANSWER in answer:
+        return True, None
+    return False, answer or f"exit code {result.returncode}"
 
 
 def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
@@ -538,6 +622,7 @@ def task(ctx: Context) -> TaskResult:
                 changed = True
 
     offset_pages: int | None = None
+    resume_file_before = _initramfs_resume_file_text()
     try:
         result = run_command(list(command), check=False, capture=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError) as exc:
@@ -572,12 +657,26 @@ def task(ctx: Context) -> TaskResult:
             )
         )
     else:
-        file_changed, file_warnings = _write_initramfs_resume_file(resume_device)
-        warnings.extend(file_warnings)
-        if file_changed:
+        if _initramfs_resume_file_text() != resume_file_before:
             changed = True
             warnings.extend(_rebuild_initramfs())
         _verify_resume_artifacts(offset_pages, warnings)
+        rule_changed, rule_warnings = _write_polkit_rule(data_dir)
+        warnings.extend(rule_warnings)
+        if rule_changed:
+            changed = True
+        if common_values.DESKTOP_USERNAME:
+            available, description = _hibernate_answer_for_desktop_user(timeout)
+            if available is True:
+                _log(
+                    "hibernation is offered to "
+                    f"{common_values.DESKTOP_USERNAME}"
+                )
+            elif available is False:
+                warnings.append(
+                    "the machine does not offer hibernation to "
+                    f"{common_values.DESKTOP_USERNAME}: {description}"
+                )
 
     if unit_ready:
         # The unit is the artifact the next boot runs, so it is started here as
@@ -605,4 +704,5 @@ def task(ctx: Context) -> TaskResult:
         message += (
             f"; hibernation resumes from {resume_device} at offset {offset_pages}"
         )
+        message += f"; {values.SESSION_RELOAD_MESSAGE}"
     return _result(changed=changed, message=message, warnings=warnings)

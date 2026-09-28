@@ -79,6 +79,11 @@ FINDMNT_TOOL: str = "findmnt"
 FILEFRAG_TOOL: str = "filefrag"
 UPDATE_GRUB_TOOL: str = "update-grub"
 
+# Tag of the load entry the augtool program of this program builds. The load
+# entry is what makes augtool parse the file named in it with the lens named in
+# it, and nothing else, so no other file of the machine is read or written.
+AUGEAS_LOAD_TAG: str = "pyntara"
+
 # The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
 # without copy-on-write answers the request with "Operation not supported", so
 # the refusal is reported and the work continues.
@@ -132,6 +137,10 @@ FINDMNT_SOURCE_ARGUMENTS: tuple[str, ...] = (
 QUOTE_SIGNS: tuple[str, ...] = ("'", '"')
 SUBVOLUME_OPEN_SIGN: str = "["
 
+# Signs of an augtool string and of the line a printed node is written in.
+AUGEAS_ESCAPE_SIGNS: tuple[tuple[str, str], ...] = (("\\", "\\\\"), ('"', '\\"'))
+AUGEAS_ASSIGNMENT_SEPARATOR: str = " = "
+
 # Byte factors of the size formula: the kernel reports the installed memory in
 # kibibytes, the free space is measured in bytes and the file is created in
 # mebibytes.
@@ -166,8 +175,11 @@ class Config:
     command_timeout_seconds: float
     resume_device: str
     grub_default_file_path: Path
-    grub_command_line_key: str
-    grub_comment_sign: str
+    grub_command_line_node: str
+    initramfs_resume_file_path: Path
+    initramfs_resume_node: str
+    augeas_command: tuple[str, ...]
+    augeas_lens: str
     resume_device_parameter: str
     resume_offset_parameter: str
     power_resume_file_path: Path
@@ -247,12 +259,16 @@ def _mkswap_command(swapfile_path: Path) -> list[str]:
 
 
 def _run(
-    command: list[str], timeout_seconds: float
+    command: list[str],
+    timeout_seconds: float,
+    input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run one command and keep its output for the report.
 
     A program the machine does not carry is reported like any other failure, so
-    the caller sees one sentence instead of a traceback.
+    the caller sees one sentence instead of a traceback. The text handed in is
+    written to the standard input of the command, which is how the augtool
+    program of this program is fed.
     """
 
     try:
@@ -262,6 +278,7 @@ def _run(
             text=True,
             check=False,
             timeout=timeout_seconds,
+            input=input_text,
         )
     except FileNotFoundError as exc:
         raise SwapfileError(f"{command[0]} is not installed on this machine") from exc
@@ -587,57 +604,126 @@ def _deactivate_swap_if_active(config: Config, active: bool) -> None:
     _require_success(result, "deactivating the swap file", "swap deactivated")
 
 
-def _command_line_value(line: str) -> str:
-    """The value of one KEY=value line, without the quotes around it."""
+def _augeas_load_lines(config: Config) -> list[str]:
+    """Lines of the augtool program that load the settings file alone.
 
-    value = line.split("=", 1)[1].strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in QUOTE_SIGNS:
-        return value[1:-1]
-    return value
-
-
-def _value_written_like(line: str, value: str) -> str:
-    """The value written the way the line wrote it: quoted or bare."""
-
-    written = line.split("=", 1)[1].strip()
-    if len(written) >= 2 and written[0] == written[-1] and written[0] in QUOTE_SIGNS:
-        return f"{written[0]}{value}{written[0]}"
-    return value
-
-
-def _line_with_resume_address(line: str, config: Config, offset_pages: int) -> str:
-    """The kernel command line with the resume device and offset set.
-
-    Only the two words this section owns are replaced; every other word of the
-    line, the words of the machine and the words of other sections among them,
-    stays exactly as the machine wrote it.
+    The load entry names one file and the lens that parses it, so augtool parses
+    and writes that file and nothing else of the machine.
     """
 
+    return [
+        f"set /augeas/load/{AUGEAS_LOAD_TAG}/lens {config.augeas_lens}",
+        f"set /augeas/load/{AUGEAS_LOAD_TAG}/incl {config.grub_default_file_path}",
+        "load",
+    ]
+
+
+def _augeas_string(text: str) -> str:
+    """A text written as one string of the augtool program."""
+
+    quoted = text
+    for sign, escape in AUGEAS_ESCAPE_SIGNS:
+        quoted = quoted.replace(sign, escape)
+    return f'"{quoted}"'
+
+
+def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
+    """Value of the kernel command line node, and why it was not read.
+
+    The value arrives the way the settings file writes it, with the quotes of
+    that file around the words, because augeas models a shell value that way: the
+    tool parses the file and this program changes one node of the parsed tree
+    instead of the syntax of the file.
+    """
+
+    script = (
+        "\n".join(
+            (*_augeas_load_lines(config), f"print {config.grub_command_line_node}")
+        )
+        + "\n"
+    )
+    result = _run(
+        list(config.augeas_command),
+        config.command_timeout_seconds,
+        input_text=script,
+    )
+    if result.returncode != 0:
+        return None, _failure_sentence(result)
+    for line in result.stdout.splitlines():
+        node, separator, value = line.partition(AUGEAS_ASSIGNMENT_SEPARATOR)
+        if separator and node.strip() == config.grub_command_line_node:
+            return value.strip().strip('"'), None
+    return None, (
+        f"{config.augeas_command[0]} reported no {config.grub_command_line_node}"
+    )
+
+
+def _command_line_with_resume_address(
+    config: Config, current_value: str, offset_pages: int
+) -> str:
+    """The command line value with this section's two words set.
+
+    The words inside the quoting of the file are read and written back and the
+    quotes are kept, because they belong to the syntax of that file; every other
+    word, the words of the machine and of other sections among them, survives.
+    """
+
+    opening = current_value[:1] if current_value[:1] in QUOTE_SIGNS else ""
+    closing = current_value[-1:] if current_value[-1:] in QUOTE_SIGNS else ""
+    words_text = current_value[len(opening) : len(current_value) - len(closing)]
     owned = (
         f"{config.resume_device_parameter}=",
         f"{config.resume_offset_parameter}=",
     )
-    words = [
-        word for word in _command_line_value(line).split() if not word.startswith(owned)
-    ]
+    words = [word for word in words_text.split() if not word.startswith(owned)]
     words.append(f"{config.resume_device_parameter}={config.resume_device}")
     words.append(f"{config.resume_offset_parameter}={offset_pages}")
-    return (
-        f"{config.grub_command_line_key}="
-        f"{_value_written_like(line, ' '.join(words))}"
+    return f"{opening}{' '.join(words)}{closing}"
+
+
+def _write_command_line(config: Config, offset_pages: int) -> None:
+    """Set the resume address in the settings file of the boot menu.
+
+    Augeas parses the file, this program replaces the value of one node and the
+    tool writes the file back, so every other line, every comment and the
+    quoting style of the machine survive. The menu is rebuilt only when the value
+    changed, so a machine whose address is already published costs the read
+    alone.
+    """
+
+    current_value, reason = _augeas_command_line_value(config)
+    if current_value is None:
+        print(f"the resume address was not published: {reason}", file=sys.stderr)
+        return
+    wanted_value = _command_line_with_resume_address(
+        config, current_value, offset_pages
     )
-
-
-def _line_index_of_key(lines: list[str], config: Config) -> int | None:
-    """Index of the line that carries the kernel command line, or None."""
-
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith(config.grub_comment_sign):
-            continue
-        if stripped.split("=", 1)[0] == config.grub_command_line_key:
-            return index
-    return None
+    if wanted_value == current_value:
+        print("the boot menu already carries the resume address")
+        return
+    script = (
+        "\n".join(
+            (
+                *_augeas_load_lines(config),
+                f"set {config.grub_command_line_node} {_augeas_string(wanted_value)}",
+                "save",
+            )
+        )
+        + "\n"
+    )
+    result = _run(
+        list(config.augeas_command),
+        config.command_timeout_seconds,
+        input_text=script,
+    )
+    if result.returncode != 0:
+        print(
+            f"the resume address was not published: {_failure_sentence(result)}",
+            file=sys.stderr,
+        )
+        return
+    print(f"resume address written into {config.grub_default_file_path}")
+    _rebuild_boot_menu(config)
 
 
 def _rebuild_boot_menu(config: Config) -> None:
@@ -652,48 +738,6 @@ def _rebuild_boot_menu(config: Config) -> None:
         )
         return
     print("boot menu rebuilt")
-
-
-def _write_command_line(config: Config, offset_pages: int) -> None:
-    """Write the resume address into the settings file of the boot menu.
-
-    One line is replaced and every other line of the machine survives. The menu
-    is rebuilt from the file only when the line changed, so a machine whose
-    address is already published costs nothing but the read.
-    """
-
-    path = config.grub_default_file_path
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError as exc:
-        print(
-            f"the resume address was not published: cannot read {path}: {exc}",
-            file=sys.stderr,
-        )
-        return
-    index = _line_index_of_key(lines, config)
-    if index is None:
-        print(
-            f"the resume address was not published: {path} carries no "
-            f"{config.grub_command_line_key} line",
-            file=sys.stderr,
-        )
-        return
-    wanted = _line_with_resume_address(lines[index], config, offset_pages)
-    if wanted == lines[index]:
-        print("the boot menu already carries the resume address")
-        return
-    lines[index] = wanted
-    try:
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    except OSError as exc:
-        print(
-            f"the resume address was not published: cannot write {path}: {exc}",
-            file=sys.stderr,
-        )
-        return
-    print(f"resume address written into {path}")
-    _rebuild_boot_menu(config)
 
 
 def _swap_device_node(config: Config) -> str | None:
@@ -721,6 +765,50 @@ def _swap_device_node(config: Config) -> str | None:
         )
         return None
     return device_node
+
+
+def _write_initramfs_resume(config: Config) -> None:
+    """Set the resume device in the file the initramfs reads.
+
+    Augeas parses that file and creates it on a machine that does not carry it
+    yet, so this program never writes the syntax of a machine settings file
+    itself. The file carries the same device the kernel command line carries,
+    which is what a machine whose command line a person edited by hand needs.
+    """
+
+    if not config.resume_device:
+        return
+    script = (
+        "\n".join(
+            (
+                f"set /augeas/load/{AUGEAS_LOAD_TAG}/lens {config.augeas_lens}",
+                (
+                    f"set /augeas/load/{AUGEAS_LOAD_TAG}/incl "
+                    f"{config.initramfs_resume_file_path}"
+                ),
+                "load",
+                (
+                    f"set {config.initramfs_resume_node} "
+                    f"{_augeas_string(config.resume_device)}"
+                ),
+                "save",
+            )
+        )
+        + "\n"
+    )
+    result = _run(
+        list(config.augeas_command),
+        config.command_timeout_seconds,
+        input_text=script,
+    )
+    if result.returncode != 0:
+        print(
+            "the initramfs resume file was not written: "
+            f"{_failure_sentence(result)}",
+            file=sys.stderr,
+        )
+        return
+    print(f"initramfs resume file written: {config.initramfs_resume_file_path}")
 
 
 def _write_power_resume(config: Config, offset_pages: int) -> None:
@@ -763,11 +851,14 @@ def _write_power_resume(config: Config, offset_pages: int) -> None:
 
 
 def _publish_resume_address(config: Config, offset_pages: int) -> None:
-    """Make the resume address known to the boot menu and to this boot.
+    """Make the resume address known to the boot and to this session.
 
-    An empty device means the caller could not name the filesystem that holds
-    the swap file, so nothing is published and the reason is printed instead of
-    an address that names nothing being written.
+    The boot reads the device from the kernel command line of the boot menu and
+    from the file the initramfs parses before it mounts anything, and it reads
+    the offset from the kernel command line alone; this session takes both from
+    the attributes of the running kernel. An empty device means the caller could
+    not name the filesystem that holds the swap file, so nothing is published and
+    the reason is printed instead of an address that names nothing.
     """
 
     if not config.resume_device:
@@ -777,6 +868,7 @@ def _publish_resume_address(config: Config, offset_pages: int) -> None:
         )
         return
     _write_command_line(config, offset_pages)
+    _write_initramfs_resume(config)
     _write_power_resume(config, offset_pages)
 
 
@@ -946,14 +1038,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="machine settings file that carries the kernel command line",
     )
     parser.add_argument(
-        "--grub-command-line-key",
+        "--grub-command-line-node",
         required=True,
-        help="key of the kernel command line inside that file",
+        help="augeas node that carries the kernel command line",
     )
     parser.add_argument(
-        "--grub-comment-sign",
+        "--initramfs-resume-file",
         required=True,
-        help="sign that marks a commented line of that file",
+        help="file the initramfs reads the resume device from",
+    )
+    parser.add_argument(
+        "--initramfs-resume-node",
+        required=True,
+        help="augeas node of the resume device inside that file",
+    )
+    parser.add_argument(
+        "--augeas-command",
+        required=True,
+        help="driver that edits the machine settings file, words separated by a space",
+    )
+    parser.add_argument(
+        "--augeas-lens",
+        required=True,
+        help="lens augeas parses that settings file with",
     )
     parser.add_argument(
         "--resume-device-parameter",
@@ -1006,8 +1113,11 @@ def _config_from_arguments(argv: list[str]) -> Config:
         command_timeout_seconds=arguments.command_timeout_seconds,
         resume_device=arguments.resume_device,
         grub_default_file_path=Path(arguments.grub_default_file),
-        grub_command_line_key=arguments.grub_command_line_key,
-        grub_comment_sign=arguments.grub_comment_sign,
+        grub_command_line_node=arguments.grub_command_line_node,
+        initramfs_resume_file_path=Path(arguments.initramfs_resume_file),
+        initramfs_resume_node=arguments.initramfs_resume_node,
+        augeas_command=tuple(arguments.augeas_command.split()),
+        augeas_lens=arguments.augeas_lens,
         resume_device_parameter=arguments.resume_device_parameter,
         resume_offset_parameter=arguments.resume_offset_parameter,
         power_resume_file_path=Path(arguments.power_resume_file),
