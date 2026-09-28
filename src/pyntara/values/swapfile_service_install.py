@@ -167,14 +167,16 @@ POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION: str = (
 )
 
 # The question the task asks about hibernation on behalf of the desktop user,
-# and the answer that means the machine offers it. The answer is calculated for
-# the account that asks, which is why the call runs as that user instead of as
-# root: a machine that refuses the user answers root with yes, and that state is
-# exactly the one this section removes.
+# and the answer that means the machine offers it. The question is the
+# CanHibernate call of logind, whose answer is calculated for the account that
+# asks, which is why the call runs as that user instead of as root: a machine
+# that refuses the user answers root with yes, and that state is exactly the one
+# this section removes. The call is a method and not a property on systemd 259,
+# which is the version of the target distribution.
 LOGIND_HIBERNATE_QUERY_COMMAND: tuple[str, ...] = (
     "busctl",
     "--system",
-    "get-property",
+    "call",
     "org.freedesktop.login1",
     "/org/freedesktop/login1",
     "org.freedesktop.login1.Manager",
