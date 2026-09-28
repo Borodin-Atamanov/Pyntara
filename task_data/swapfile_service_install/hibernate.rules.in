@@ -1,0 +1,18 @@
+// Allow the desktop user of this machine to hibernate.
+//
+// Ubuntu refuses hibernation to every user through the rule "Disable hibernate
+// by default in Ubuntu" of /usr/share/polkit-1/rules.d/com.ubuntu.desktop.rules,
+// and polkit decides by the first rule file in name order that answers, which is
+// why this file carries a name that sorts before that one. The rule names the
+// desktop account alone, so no other account of the machine gains the
+// permission, and it allows the two actions the session menu asks for: the
+// hibernation itself and its form for a machine with several open sessions.
+polkit.addRule(function(action, subject) {
+    if (subject.user != "$desktop_user") {
+        return;
+    }
+    if (action.id == "$hibernate_action" ||
+        action.id == "$hibernate_multiple_sessions_action") {
+        return polkit.Result.YES;
+    }
+});
