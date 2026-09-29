@@ -782,13 +782,29 @@ def _swap_device_node(config: Config) -> str | None:
     return device_node
 
 
+def _initramfs_offset_node(config: Config) -> str:
+    """Node of a resume offset inside the initramfs settings file.
+
+    The offset belongs to the kernel command line alone, because that file is
+    baked into the initial ramdisk and rebuilding the image for every new offset
+    would be wasted work. A machine whose file carries an offset anyway, from an
+    older experiment or from a person editing by hand, would use it whenever the
+    command line carries none, so the node is removed here.
+    """
+
+    parent = config.initramfs_resume_node.rsplit("/", 1)[0]
+    return f"{parent}/{config.resume_offset_parameter}"
+
+
 def _write_initramfs_resume(config: Config) -> None:
     """Set the resume device in the file the initramfs reads.
 
     Augeas parses that file and creates it on a machine that does not carry it
     yet, so this program never writes the syntax of a machine settings file
     itself. The file carries the same device the kernel command line carries,
-    which is what a machine whose command line a person edited by hand needs.
+    which is what a machine whose command line a person edited by hand needs,
+    and a resume offset it may carry is removed, because that value belongs to
+    the command line alone.
     """
 
     if not config.resume_device:
@@ -806,6 +822,7 @@ def _write_initramfs_resume(config: Config) -> None:
                     f"set {config.initramfs_resume_node} "
                     f"{_augeas_string(config.resume_device)}"
                 ),
+                f"rm {_initramfs_offset_node(config)}",
                 "save",
             )
         )

@@ -123,8 +123,11 @@ therefore survive, and the section never spells the syntax of a machine file
 itself. The kernel command line is one node whose value carries the quotes of the
 file, so the words inside that quoting are what changes. The menu is rebuilt only
 when the value changed, and the program rebuilds it when it runs at boot as well,
-because a boot that created the swap file again carries a new offset. A machine
-without the augeas tool gets a warning and keeps its working swap file.
+because a boot that created the swap file again carries a new offset. A resume
+offset the initramfs settings file carries anyway, from an older experiment or
+from a person editing by hand, is removed there, because that value belongs to
+the kernel command line alone and the file is baked into the initial ramdisk. A
+machine without the augeas tool gets a warning and keeps its working swap file.
 
 Hibernation needs a permission that Ubuntu refuses to every user through a rule of
 its own, so the section writes a polkit rule for the desktop user of this machine

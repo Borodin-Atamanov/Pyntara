@@ -456,6 +456,10 @@ def test_the_resume_address_is_written_into_the_kernel_command_line(
         in scripts[0]
     )
     assert f'set {config.initramfs_resume_node} "/dev/mapper/luks-1"' in scripts[1]
+    assert (
+        f"rm {config.initramfs_resume_node.rsplit('/', 1)[0]}/"
+        f"{config.resume_offset_parameter}" in scripts[1]
+    )
     assert ["update-grub"] in calls
     # The attributes take the device by its major and minor number, and the
     # subvolume a btrfs mount reports in brackets is not part of the device.
