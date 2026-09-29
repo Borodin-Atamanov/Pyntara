@@ -101,6 +101,21 @@ PANEL_LAUNCHER_ID: str = "applications:google-chrome.desktop"
 # SYSTEM_ROOT with the relative paths preserved.
 SETTINGS_SYSTEM_TREE_RELATIVE_PATH: str = "system"
 
+# Paths of the settings repository that the task never applies to the machine:
+# the clone metadata, the repository bookkeeping files and the git hooks. Every
+# other file the repository carries outside the system/ tree is profile content
+# and is applied to the live profile with its relative path preserved, so a file
+# added to the repository reaches the machine without a code change, which is how
+# the first-run marker First Run of the profile root arrives
+# (docs/spec/chrome-setup.md).
+SETTINGS_REPO_BOOKKEEPING_PATHS: tuple[str, ...] = (
+    ".git",
+    ".gitignore",
+    "README.md",
+    "LICENSE",
+    "hooks",
+)
+
 # Relative path of the browser settings file inside the settings repository and
 # inside the live Chrome profile of the desktop user, and the profile directory
 # under the home of the user.
@@ -295,6 +310,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "CONFIG_KEY_FLAG",
     "PANEL_LAUNCHER_ID",
     "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
+    "SETTINGS_REPO_BOOKKEEPING_PATHS",
     "PREFERENCES_RELATIVE_PATH",
     "PROFILE_DIR_RELATIVE_PATH",
     "KEYRING_TEMP_DIR_PREFIX",

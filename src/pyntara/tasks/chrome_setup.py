@@ -8,8 +8,11 @@ Google apt source (a deb822 file with the keyring downloaded from Google),
 installs google-chrome-stable when missing, clones or updates the settings
 repository into the root cache, deploys its system/ tree (the machine
 policy and the external extension files) under the configured system root,
-merges its Default/Preferences over the live profile of the desktop user,
-and writes a desktop entry override that appends the launch flags to every
+applies the rest of its content to the live profile of the desktop user
+(its Default/Preferences is merged over the current profile file, every
+other file it carries is copied with its relative path preserved, the
+first-run marker First Run among them), and writes a desktop entry
+override that appends the launch flags to every
 Exec line of the packaged entry: the local proxy of the
 three_x_ui_xray_setup section when a listener answers on its port, the
 profile mirror, and the CDP listener. The mirror is a bind mount of the
@@ -27,13 +30,15 @@ the entry only when the mirror mount is confirmed, because a Chrome start
 on an empty directory would hide the live profile; a mirror that could not
 be mounted is reported as a warning too.
 
-The profile merge is identical in normal and force mode by design: the
-repository preferences are laid over the current profile, so the
-configured keys win on conflict and unrelated current settings are never
-deleted. When the profile merge would produce the current file, nothing is
-written. A running Chrome makes the profile merge wait: it warns and
-applies on the next Chrome start, because a live Chrome would rewrite the
-file from its own memory. The desktop override lives in
+The profile is applied as a whole, so the profile of the machine is what the
+repository declares and no file of it is named in code. The preferences merge
+is identical in normal and force mode by design: the repository preferences
+are laid over the current profile, so the configured keys win on conflict and
+unrelated current settings are never deleted, and a merge that would produce
+the current file writes nothing. A running Chrome makes the whole profile step
+wait: it warns and applies on the next Chrome start, because a live Chrome
+would rewrite its own profile files from memory, and one wait for the whole
+step costs one message instead of one per file. The desktop override lives in
 /usr/local/share/applications, ahead of the packaged entry in the XDG
 search order, and is re-derived from the packaged entry on every run, so a
 Chrome update that replaces the packaged file is followed on the next run
@@ -234,29 +239,37 @@ def _sync_settings_repo(*, timeout: float) -> tuple[bool, str | None]:
         return False, f"cannot update the browser settings repository: {exc}"
 
 
-def _deploy_system_tree(
+def _deploy_tree(
+    source_root: Path,
+    target_root: Path,
     *,
     force: bool,
-    owner_uid: int,
-    owner_gid: int,
+    skip_relative_paths: tuple[str, ...] = (),
+    owner_ids: tuple[int, int] | None = None,
 ) -> tuple[bool, list[str]]:
-    """Deploy the repository system/ tree under SYSTEM_ROOT; (changed, warnings).
+    """Copy one tree under another path; (changed, warnings).
 
-    Each file is copied to the values.SYSTEM_ROOT with its relative path
-    preserved, root-owned mode 0644, only when the target differs (or in
-    force mode). A per-file failure is a warning, never a fatal error.
+    Every file of source_root lands under target_root with its relative path
+    preserved, carrying the mode of every deployed file, and is written only
+    when its bytes differ (or in force mode). A relative path that equals a
+    skipped path or stands below it is left out, so one caller applies a
+    subtree of the settings repository and another caller the rest of it. The
+    owner pair is applied to every written file when it is given; a caller
+    whose target belongs to the desktop user hands the whole directory over
+    afterwards instead, because that user is not named by a pair of ids here.
+    A per-file failure is a warning, never a fatal error.
     """
 
-    source_root = values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
-    if not source_root.is_dir():
-        return False, ["the settings repository carries no system/ tree"]
+    skipped = [Path(name) for name in skip_relative_paths]
     changed = False
     warnings: list[str] = []
     for path in sorted(source_root.rglob("*")):
         if not path.is_file():
             continue
-        rel = path.relative_to(source_root)
-        target = values.SYSTEM_ROOT / rel
+        relative = path.relative_to(source_root)
+        if any(relative == name or name in relative.parents for name in skipped):
+            continue
+        target = target_root / relative
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             if (
@@ -267,11 +280,35 @@ def _deploy_system_tree(
                 continue
             shutil.copyfile(path, target)
             target.chmod(common_values.LAUNCHER_FILE_MODE)
-            apply_owner(target, owner_uid, owner_gid)
+            if owner_ids is not None:
+                apply_owner(target, owner_ids[0], owner_ids[1])
             changed = True
         except OSError as exc:
-            warnings.append(f"cannot deploy {rel}: {exc}")
+            warnings.append(f"cannot deploy {relative}: {exc}")
     return changed, warnings
+
+
+def _deploy_system_tree(
+    *,
+    force: bool,
+    owner_uid: int,
+    owner_gid: int,
+) -> tuple[bool, list[str]]:
+    """Deploy the repository system/ tree under SYSTEM_ROOT; (changed, warnings).
+
+    The files are root-owned, copied only when the target differs (or in force
+    mode); a repository without that tree is a note.
+    """
+
+    source_root = values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
+    if not source_root.is_dir():
+        return False, ["the settings repository carries no system/ tree"]
+    return _deploy_tree(
+        source_root,
+        values.SYSTEM_ROOT,
+        force=force,
+        owner_ids=(owner_uid, owner_gid),
+    )
 
 
 def _profile_dir() -> Path:
@@ -320,37 +357,22 @@ def _chrome_is_running(timeout: float) -> bool:
     return result.returncode == 0
 
 
-def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
-    """Merge the repository profile over the live profile; (changed, note).
+def _apply_profile_preferences() -> tuple[bool, str | None]:
+    """Merge the repository preferences over the live profile; (changed, note).
 
     The merge is identical in normal and force mode: the repository
-    preferences are laid over the current profile file, the configured
-    keys win and unrelated current settings are never deleted. A merge
-    that reproduces the current content writes nothing. A running Chrome
-    and an unreadable profile file leave the file untouched and report a
-    warning, because a live Chrome would overwrite the file from its own
-    memory.
+    preferences are laid over the current profile file, the configured keys win
+    and unrelated current settings are never deleted. A merge that reproduces
+    the current content writes nothing, and an unreadable profile file is left
+    untouched and reported. The caller has asked whether Chrome runs and has
+    handed the profile directory over, because both answers hold for every
+    other piece of the profile as well.
     """
 
     repo_prefs = values.SETTINGS_DIR / values.PREFERENCES_RELATIVE_PATH
     if not repo_prefs.is_file():
         return False, "the settings repository carries no preferences file"
-    if _chrome_is_running(timeout):
-        return (
-            False,
-            "Google Chrome is running; the profile settings apply on the next Chrome start",
-        )
     target = _profile_preferences_path()
-    try:
-        # The profile directory and everything in it belong to the desktop
-        # user, whether this run creates them or an earlier run left them
-        # behind, so the handover comes before the merge can decide that
-        # nothing has to be written. Both calls also make the directory they
-        # name, so the merge finds the place it writes into.
-        hand_to_user(_profile_dir())
-        hand_to_user(target.parent)
-    except OSError as exc:
-        return False, f"cannot prepare the profile directory: {exc}"
     try:
         try:
             current: object = (
@@ -379,6 +401,72 @@ def _apply_profile_preferences(*, timeout: float) -> tuple[bool, str | None]:
     except OSError as exc:
         return False, f"cannot write the profile preferences: {exc}"
     return True, None
+
+
+def _deploy_profile_content(*, force: bool) -> tuple[bool, list[str]]:
+    """Copy the repository content into the live profile; (changed, warnings).
+
+    Everything the settings repository carries is profile content except the
+    tree deployed under the system root, the bookkeeping entries of the
+    repository itself and the preferences file, which is merged instead of
+    copied. The copy walks the repository, so a file added there arrives in the
+    profile without a code change, which is how the first-run marker of the
+    profile root reaches the machine.
+    """
+
+    return _deploy_tree(
+        values.SETTINGS_DIR,
+        _profile_dir(),
+        force=force,
+        skip_relative_paths=(
+            values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH,
+            *values.SETTINGS_REPO_BOOKKEEPING_PATHS,
+            values.PREFERENCES_RELATIVE_PATH,
+        ),
+    )
+
+
+def _apply_profile(*, force: bool, timeout: float) -> tuple[bool, list[str]]:
+    """Apply the settings repository to the live browser profile; (changed, notes).
+
+    The repository is applied as a whole, so the profile carries what the
+    repository declares and the task names no file of it: the preferences file
+    is merged over the current profile, and every other file the repository
+    carries is copied with its relative path preserved. A running Chrome makes
+    the whole step wait, because a live Chrome rewrites its own profile files
+    from its memory, and one wait for the whole step costs one message instead
+    of one per file. The profile directory and everything in it belong to the
+    desktop user, so the handover comes before the merge can decide that
+    nothing has to be written, and it also takes the files the copy has just
+    written.
+    """
+
+    if _chrome_is_running(timeout):
+        running_note = (
+            "Google Chrome is running; the profile settings apply on the next "
+            "Chrome start"
+        )
+        return False, [running_note]
+    profile_dir = _profile_dir()
+    target = _profile_preferences_path()
+    notes: list[str] = []
+    try:
+        content_changed, warnings = _deploy_profile_content(force=force)
+    except OSError as exc:
+        return False, [f"cannot apply the repository content to the profile: {exc}"]
+    notes.extend(warnings)
+    try:
+        hand_to_user(profile_dir)
+        hand_to_user(target.parent)
+    except OSError as exc:
+        return content_changed, [
+            *notes,
+            f"cannot prepare the profile directory: {exc}",
+        ]
+    merged_changed, note = _apply_profile_preferences()
+    if note:
+        notes.append(note)
+    return content_changed or merged_changed, notes
 
 
 def _same_directory(left: Path, right: Path) -> bool:
@@ -985,11 +1073,11 @@ def task(ctx: Context) -> TaskResult:
 
     The target state is reached when google-chrome-stable is installed,
     the Google apt repository is registered, the settings repository is
-    current, its system/ tree and profile preferences are applied, the
+    current, its system/ tree and its profile content are applied, the
     desktop override with the CDP flags is in place and the Chrome
     launcher sits in the Plasma taskbar; the task then returns
     changed=False. Force mode reinstalls Chrome and rewrites the deployed
-    files; the profile merge itself is identical in both modes.
+    files; the profile preferences are merged identically in both modes.
     """
 
     absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
@@ -1061,13 +1149,11 @@ def task(ctx: Context) -> TaskResult:
         messages.append(f"deployed system browser settings to {values.SYSTEM_ROOT}")
         changed = True
 
-    profile_changed, profile_note = _apply_profile_preferences(timeout=timeout)
-    if profile_note:
-        warnings.append(profile_note)
+    _log("applying the browser profile settings")
+    profile_changed, profile_notes = _apply_profile(force=force, timeout=timeout)
+    warnings.extend(profile_notes)
     if profile_changed:
-        messages.append(
-            f"merged the browser profile settings over {_profile_preferences_path()}"
-        )
+        messages.append(f"applied the browser profile settings to {_profile_dir()}")
         changed = True
 
     _log("checking the local proxy of the Xray client")

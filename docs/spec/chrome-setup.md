@@ -23,9 +23,11 @@ The browser settings live in the git repository named by settings_repo_url on th
 
 The system/ subtree of the settings repository is deployed under system_root, which is "/" in production, with the relative paths preserved. This places the machine policy into /etc/opt/chrome/policies/managed and the external extension files into /opt/google/chrome/extensions, both root-owned mode 0644, copied only when the bytes differ. The policy disables the default browser check and the external extension files make Chrome install the listed extensions into every profile.
 
-## Profile merge
+## Profile
 
-The Default/Preferences file of the settings repository is merged over the live profile preferences of the desktop user at home_dir/.config/google-chrome/Default/Preferences. The merge is a deep dictionary merge in which the repository values win on conflict and current keys that the repository does not carry are kept, so local settings are never deleted and the repository settings land on top. The merge is identical in normal and force mode. A merge that reproduces the current content writes nothing. A running Chrome makes the merge wait with a warning and apply on the next Chrome start, because a live Chrome would rewrite the file from its own memory, and an unreadable profile file is left untouched.
+The settings repository is applied to the browser profile as a whole. Everything it carries outside the system/ tree, outside its own bookkeeping entries and outside the preferences file is profile content: it is copied into the live profile of the desktop user at home_dir/.config/google-chrome with its relative path preserved, mode 0644, owned by that user, and only when its bytes differ (or in force mode). A file added to the repository therefore reaches every machine on the next run without a code change, which is how the first-run marker First Run of the profile root arrives. An empty marker at the profile root records the first-run flow as done, so the browser opens without the terms of service dialog and without the welcome window that a browser of a machine which has never run shows (measured on 2026-09-29).
+
+The Default/Preferences file of the settings repository is merged instead of copied, over the live profile preferences at home_dir/.config/google-chrome/Default/Preferences. The merge is a deep dictionary merge in which the repository values win on conflict and current keys that the repository does not carry are kept, so local settings are never deleted and the repository settings land on top. The merge is identical in normal and force mode. A merge that reproduces the current content writes nothing. A running Chrome makes the whole profile step wait with a warning and apply on the next Chrome start, because a live Chrome would rewrite its own profile files from its own memory, and an unreadable profile file is left untouched.
 
 ## Local proxy
 
@@ -72,9 +74,9 @@ Without a running session, and when the shell cannot be reached, the launcher is
 
 ## Idempotency record
 
-The target state is reached when the apt source and keyring are present, google-chrome-stable is installed, the settings repository is up to date, the system/ tree bytes match, the merged profile equals the current profile, the mirror unit file matches, the mirror mount is in place, the desktop override matches and the Chrome launcher sits in the taskbar launchers; the task then changes nothing. Force mode reinstalls Chrome and rewrites the deployed files regardless of the current bytes, and the profile merge behaves exactly as in normal mode.
+The target state is reached when the apt source and keyring are present, google-chrome-stable is installed, the settings repository is up to date, the system/ tree bytes match, the merged profile equals the current profile, the profile files match the repository, the mirror unit file matches, the mirror mount is in place, the desktop override matches and the Chrome launcher sits in the taskbar launchers; the task then changes nothing. Force mode reinstalls Chrome and rewrites the deployed files regardless of the current bytes, and the profile preferences are merged exactly as in normal mode.
 
-When the task runs while Chrome is running, the profile merge waits with a warning, and a DevTools listener that does not answer on the configured port is reported as a warning asking for a Chrome restart from the menu, because a running Chrome keeps the flags it was started with. A machine that has never started Chrome gets a progress line instead: the listener opens with the first launch from the menu.
+When the task runs while Chrome is running, the whole profile step waits with a warning, and a DevTools listener that does not answer on the configured port is reported as a warning asking for a Chrome restart from the menu, because a running Chrome keeps the flags it was started with. A machine that has never started Chrome gets a progress line instead: the listener opens with the first launch from the menu.
 
 ## Parameters
 
@@ -92,7 +94,8 @@ settings_repo_url - the git repository of browser settings
 settings_repo_ref - the branch of that repository applied on every run
 settings_dir - the root cache that holds the clone of the settings repository
 settings_system_tree_relative_path - the tree inside the repository deployed under system_root
-preferences_relative_path - the settings file inside the repository and inside the profile
+settings_repo_bookkeeping_paths - the paths of the repository that are never applied to the machine, because they describe the repository itself; every other path the repository carries outside the system tree is profile content
+preferences_relative_path - the preferences file inside the repository and inside the profile, merged instead of copied
 profile_dir_relative_path - the live Chrome profile directory under home_dir
 keyring_temp_dir_prefix - the prefix of the temporary directory the key is downloaded into
 keyring_armored_file_name - the name of the armored key file inside that temporary directory

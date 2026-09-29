@@ -42,6 +42,24 @@ SYSTEM_FILES = {
         b'{"external_update_url": "https://example.invalid/update"}\n'
     ),
 }
+# The profile content of the repository: the first-run marker of the profile
+# root, a file of a nested directory and a file whose name no code of the task
+# knows, so a test can prove that the whole repository is applied and not a list
+# of names.
+FIRST_RUN_MARKER = "First Run"
+PROFILE_ROOT_FILES = {
+    FIRST_RUN_MARKER: b"",
+    "Some Future Setting": b"value\n",
+    "Default/Nested Setting": b"nested\n",
+}
+# Bookkeeping entries of the repository, which describe the repository itself
+# and never reach the machine.
+BOOKKEEPING_FILES = {
+    ".gitignore": b"/*\n",
+    "README.md": b"# Chromium Default Settings\n",
+    "LICENSE": b"MIT\n",
+    "hooks/pre-commit": b"#!/bin/sh\n",
+}
 # The packaged Chrome desktop entry used as the override source.
 DESKTOP_SOURCE = (
     "[Desktop Entry]\n"
@@ -189,6 +207,10 @@ def _write_repo() -> None:
     )
     for rel, data in SYSTEM_FILES.items():
         path = settings_dir / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    for rel, data in {**PROFILE_ROOT_FILES, **BOOKKEEPING_FILES}.items():
+        path = settings_dir / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
@@ -1093,6 +1115,62 @@ def test_merge_restores_repo_value_keeping_unrelated(
     assert after["extensions"] == PREFERENCES_CONTENT["extensions"]
 
 
+def test_profile_content_of_the_repository_is_applied_whole(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The repository is profile content as a whole: every file it carries lands
+    # in the profile with its relative path preserved, including the first-run
+    # marker of the profile root and a name no code of the task knows, so a file
+    # added to the repository needs no code change to reach the machine. The
+    # profile and everything in it belong to the desktop user.
+    ctx = _ctx(tmp_path)
+    _write_repo()
+    _write_desktop_source()
+    _fake_run_factory(monkeypatch, chrome_installed=True)
+    owned: list[Path] = []
+    monkeypatch.setattr(
+        chrome_setup, "hand_to_user", lambda path, **kwargs: owned.append(Path(path))
+    )
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    profile_dir = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.PROFILE_DIR_RELATIVE_PATH
+    )
+    for relative, data in PROFILE_ROOT_FILES.items():
+        target = profile_dir / relative
+        assert target.is_file(), relative
+        assert target.read_bytes() == data
+    assert profile_dir in owned
+
+
+def test_repository_bookkeeping_and_system_tree_stay_out_of_the_profile(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The bookkeeping entries describe the repository itself and the system/
+    # tree describes the machine root, so neither is profile content.
+    ctx = _ctx(tmp_path)
+    _write_repo()
+    _write_desktop_source()
+    _fake_run_factory(monkeypatch, chrome_installed=True)
+
+    assert chrome_setup.task(ctx).success
+
+    profile_dir = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.PROFILE_DIR_RELATIVE_PATH
+    )
+    for relative in (
+        *BOOKKEEPING_FILES,
+        ".git",
+        values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH,
+    ):
+        assert not (profile_dir / relative).exists(), relative
+    # The system tree reached the configured root instead.
+    system_file = next(iter(SYSTEM_FILES))
+    assert (values.SYSTEM_ROOT / system_file).is_file()
+
+
 def test_profile_left_untouched_when_chrome_running(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1105,6 +1183,10 @@ def test_profile_left_untouched_when_chrome_running(
 
     assert result.success
     assert not _profile_path().exists()
+    profile_dir = (
+        Path(common_values.DESKTOP_HOME_DIR) / values.PROFILE_DIR_RELATIVE_PATH
+    )
+    assert not (profile_dir / FIRST_RUN_MARKER).exists()
     assert any("Chrome is running" in warning for warning in result.warnings)
 
 
@@ -1313,10 +1395,10 @@ def test_the_merge_hands_the_new_profile_directories_to_the_desktop_user(
         lambda path, **kwargs: owned.append(Path(path)),
     )
 
-    changed, note = chrome_setup._apply_profile_preferences(timeout=5)
+    changed, note = chrome_setup._apply_profile(force=False, timeout=5)
 
     assert changed is True
-    assert note is None
+    assert not note
     profile_dir = home / values.PROFILE_DIR_RELATIVE_PATH
     assert profile_dir in owned
     assert profile_dir / preferences.parent.name in owned
@@ -1348,9 +1430,9 @@ def test_the_profile_directories_change_hands_when_no_setting_changes(
         lambda path, **kwargs: owned.append(Path(path)),
     )
 
-    changed, note = chrome_setup._apply_profile_preferences(timeout=5)
+    changed, note = chrome_setup._apply_profile(force=False, timeout=5)
 
     assert changed is False
-    assert note is None
+    assert not note
     profile_dir = home / values.PROFILE_DIR_RELATIVE_PATH
     assert profile_dir in owned
