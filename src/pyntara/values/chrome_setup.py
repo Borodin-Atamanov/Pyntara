@@ -71,13 +71,18 @@ TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
 
 # The appletsrc key that carries the pinned launchers of a task manager applet
 # and the group below such an applet that holds them, written as the group
-# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6:
-# the running shell reads and writes the pinned list in the own config group of
-# the applet, [Containments][N][Applets][M][Configuration], which is also the
-# group the shipped Kubuntu layout template writes through the shell; a list
-# written into a deeper group appears in the file and never reaches the panel.
+# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6
+# on 2026-09-26 and again on 2026-09-29 on another machine: the panel draws the
+# list of the nested group [Containments][N][Applets][M][Configuration][General]
+# while a list written into the parent [Configuration] group of the same applet
+# stands in the file and never reaches the panel, which is why the Chrome
+# button did not appear. The group is the same one the applet settings of
+# kde_settings use. A running shell never reads the appletsrc again, so the
+# task hands the launcher to the running panel through the scripting interface
+# and writes the file only for a machine without a session
+# (docs/spec/chrome-setup.md, Taskbar pinning).
 APPLETSRC_LAUNCHERS_KEY: str = "launchers"
-APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration",)
+APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
 
 # Vocabulary of the KConfig tools the task reads and writes the appletsrc with:
 # the two calls carry the file as {file_name}, a group is selected with
@@ -91,30 +96,6 @@ CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
 # Launcher id pinned to the panel; it resolves to the CDP desktop override in
 # the XDG applications directories.
 PANEL_LAUNCHER_ID: str = "applications:google-chrome.desktop"
-
-# Command that clears the failed state of the Plasma panel unit of the desktop
-# user. The service manager refuses to start a unit that failed too many times
-# and names this call in its own answer, so a run that follows a failed panel
-# start can still restart the panel.
-PANEL_RESET_FAILED_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "--user",
-    "--machine",
-    "{username}@.host",
-    "reset-failed",
-    "plasma-plasmashell.service",
-)
-
-# Command that restarts the Plasma panel of the desktop user, so a newly pinned
-# launcher appears without a re-login; {username} is the account of the machine.
-PANEL_RESTART_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "--user",
-    "--machine",
-    "{username}@.host",
-    "restart",
-    "plasma-plasmashell.service",
-)
 
 # Directory inside the settings repository whose tree is deployed under
 # SYSTEM_ROOT with the relative paths preserved.
@@ -290,8 +271,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "CONFIG_GROUP_FLAG",
     "CONFIG_KEY_FLAG",
     "PANEL_LAUNCHER_ID",
-    "PANEL_RESET_FAILED_COMMAND",
-    "PANEL_RESTART_COMMAND",
     "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
     "PREFERENCES_RELATIVE_PATH",
     "PROFILE_DIR_RELATIVE_PATH",

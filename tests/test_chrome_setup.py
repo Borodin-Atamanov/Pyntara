@@ -69,6 +69,7 @@ ICON_TASKS_GROUP = (
     "Applets",
     "5",
     "Configuration",
+    "General",
 )
 TASKMANAGER_GROUP = (
     "Containments",
@@ -76,10 +77,11 @@ TASKMANAGER_GROUP = (
     "Applets",
     "9",
     "Configuration",
+    "General",
 )
 # A Plasma appletsrc with one icons-only and one classic task manager in
 # two different panels, mirroring the real pinned launcher layout: the
-# running shell keeps the pinned list in the own config group of the applet.
+# panel draws the pinned list of the group below the applet.
 APPLETSRC_TEXT = (
     "[Containments][2]\n"
     "plugin=org.kde.panel\n"
@@ -87,7 +89,7 @@ APPLETSRC_TEXT = (
     "[Containments][2][Applets][5]\n"
     "plugin=org.kde.plasma.icontasks\n"
     "\n"
-    "[Containments][2][Applets][5][Configuration]\n"
+    "[Containments][2][Applets][5][Configuration][General]\n"
     "launchers=applications:org.kde.dolphin.desktop\n"
     "\n"
     "[Containments][7]\n"
@@ -96,8 +98,22 @@ APPLETSRC_TEXT = (
     "[Containments][7][Applets][9]\n"
     "plugin=org.kde.plasma.taskmanager\n"
     "\n"
-    "[Containments][7][Applets][9][Configuration]\n"
+    "[Containments][7][Applets][9][Configuration][General]\n"
     "launchers=applications:org.kde.konsole.desktop\n"
+)
+# What the scripting interface of a running panel answers when it pinned the
+# launcher on both taskbars, and when it already held it.
+LIVE_PIN_REPORT = (
+    "org.kde.plasma.icontasks|pinned|applications:org.kde.dolphin.desktop,"
+    f"{PINNED_LAUNCHER} ;; "
+    "org.kde.plasma.taskmanager|pinned|applications:org.kde.konsole.desktop,"
+    f"{PINNED_LAUNCHER}"
+)
+LIVE_PIN_ALREADY_REPORT = (
+    "org.kde.plasma.icontasks|held|applications:org.kde.dolphin.desktop,"
+    f"{PINNED_LAUNCHER} ;; "
+    "org.kde.plasma.taskmanager|held|applications:org.kde.konsole.desktop,"
+    f"{PINNED_LAUNCHER}"
 )
 
 
@@ -192,27 +208,46 @@ def _pin_run_fakes(
     monkeypatch: pytest.MonkeyPatch,
     *,
     current: str = "",
-    fail: bool = False,
+    report: str = LIVE_PIN_ALREADY_REPORT,
+    session: bool = True,
+    shell_fail: bool = False,
 ) -> list[list[str]]:
-    """Fake run_command for the pinning helpers; return the calls.
+    """Fake run_command and the session lookup; return the calls.
 
-    kreadconfig6 answers the configured current launchers, kwriteconfig6
-    records the write, so the helpers run without a real Plasma config.
+    The scripting call of the running panel answers the configured report, so
+    the live path runs without a Plasma shell; kreadconfig6 answers the
+    configured current launchers and kwriteconfig6 records the write, so the
+    appletsrc path runs without a real Plasma config. session=False answers no
+    session, and shell_fail=True makes the scripting call fail while the KConfig
+    tools keep working, which is a shell that cannot be reached.
     """
 
     calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        chrome_setup,
+        "session_environment",
+        lambda *args, **kwargs: (
+            {
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            }
+            if session
+            else {}
+        ),
+    )
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
         if command[:4] == ["runuser", "-u", "i", "--"]:
             inner = command[4:]
-            if inner and inner[0] == "kreadconfig6":
-                if fail:
+            if inner and inner[0] == "qdbus6":
+                if shell_fail:
                     raise subprocess.CalledProcessError(1, command)
+                return _FakeProc(0, report)
+            if inner and inner[0] == "kreadconfig6":
                 return _FakeProc(0, current)
             if inner and inner[0] == "kwriteconfig6":
-                if fail:
-                    raise subprocess.CalledProcessError(1, command)
                 return _FakeProc(0, "")
         return _FakeProc(0, "")
 
@@ -259,6 +294,8 @@ def _fake_run_factory(
     cdp_listening: bool = True,
     mirror_mounted: bool = True,
     mirror_source: str = "",
+    session: bool = True,
+    panel_report: str = LIVE_PIN_REPORT,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -271,10 +308,25 @@ def _fake_run_factory(
     raise CalledProcessError for curl, apt and git; the listening and
     mounting knobs answer the readiness questions. A mirror_source names
     another directory the mirror is mounted from, so the mount is a mount
-    point that is not the profile.
+    point that is not the profile. session answers whether a desktop session
+    was found and panel_report is the answer of its scripting interface: the
+    launcher pin runs through that call like every other applet setting.
     """
 
     calls: list[list[str]] = []
+
+    monkeypatch.setattr(
+        chrome_setup,
+        "session_environment",
+        lambda *args, **kwargs: (
+            {
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+            }
+            if session
+            else {}
+        ),
+    )
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
@@ -325,6 +377,9 @@ def _fake_run_factory(
                 return _FakeProc(0, f"{Path(command[-1]).parent}\n")
             return _FakeProc(0, f"{command[-1]}\n")
         if name == "runuser":
+            inner = command[4:]
+            if inner and inner[0] == "qdbus6":
+                return _FakeProc(0, panel_report)
             return _FakeProc(0, "")
         return _FakeProc(0, "")
 
@@ -711,31 +766,12 @@ def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
     assert TASKMANAGER_GROUP in groups
 
 
-def test_pin_appends_launcher_to_every_taskbar(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _write_appletsrc()
-    calls = _pin_run_fakes(monkeypatch, current="applications:org.kde.dolphin.desktop")
-
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
-
-    assert changed
-    assert note is None
-    writes = [call for call in calls if "kwriteconfig6" in call]
-    assert len(writes) == 2
-    write_groups = {_kwrite_group(call) for call in writes}
-    assert write_groups == {ICON_TASKS_GROUP, TASKMANAGER_GROUP}
-    expected_value = "applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER
-    assert all(call[-1] == expected_value for call in writes)
-
-
 def test_the_launcher_group_comes_from_the_values(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The group below a task manager applet that holds the pinned launchers is
     # a value of the foreign file the task edits: another group in the module
-    # is the group the task looks for, and the shipped one stops matching the
-    # fixture.
+    # is the group the task looks for.
     monkeypatch.setattr(values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers"))
     assert chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT) == [
         (
@@ -757,20 +793,104 @@ def test_the_launcher_group_comes_from_the_values(
     ]
 
 
-def test_pin_is_idempotent_when_launcher_already_pinned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_pin_gives_the_launcher_to_the_running_panel(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _write_appletsrc()
-    calls = _pin_run_fakes(
-        monkeypatch,
-        current="applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER,
-    )
+    calls = _pin_run_fakes(monkeypatch, report=LIVE_PIN_REPORT)
+
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+
+    assert changed
+    assert note is None
+    shell_calls = [call for call in calls if "qdbus6" in call]
+    assert len(shell_calls) == 1
+    script = shell_calls[0][-1]
+    assert PINNED_LAUNCHER in script
+    assert "org.kde.plasma.icontasks" in script
+    # The launcher reaches the panel through the shell and not through the
+    # file: a value written into the appletsrc of a running shell stays
+    # invisible to the applet that owns it.
+    assert not any("kwriteconfig6" in call for call in calls)
+
+
+def test_pin_is_idempotent_when_the_panel_already_holds_the_launcher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_appletsrc()
+    calls = _pin_run_fakes(monkeypatch, report=LIVE_PIN_ALREADY_REPORT)
 
     changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
 
     assert not changed
     assert note is None
     assert not any("kwriteconfig6" in call for call in calls)
+
+
+def test_pin_without_a_session_writes_the_group_below_the_applet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without a running session the appletsrc carries the launcher to the next
+    # login, and it must land in the group the panel reads, not in the parent
+    # group of the applet, where it would never be drawn.
+    _write_appletsrc()
+    calls = _pin_run_fakes(
+        monkeypatch,
+        session=False,
+        current="applications:org.kde.dolphin.desktop",
+    )
+
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+
+    assert changed
+    assert note is None
+    writes = [call for call in calls if "kwriteconfig6" in call]
+    assert len(writes) == 2
+    assert {_kwrite_group(call) for call in writes} == {
+        ICON_TASKS_GROUP,
+        TASKMANAGER_GROUP,
+    }
+    expected_value = "applications:org.kde.dolphin.desktop," + PINNED_LAUNCHER
+    assert all(call[-1] == expected_value for call in writes)
+
+
+def test_pin_warns_when_the_running_panel_does_not_take_the_launcher(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The panel answered and the list it holds does not carry the launcher: the
+    # task reports that instead of claiming a button it did not place, and it
+    # still writes the appletsrc for the next login.
+    _write_appletsrc()
+    calls = _pin_run_fakes(
+        monkeypatch,
+        report=(
+            "org.kde.plasma.icontasks|pinned|applications:org.kde.dolphin.desktop"
+            " ;; "
+            "org.kde.plasma.taskmanager|pinned|applications:org.kde.konsole.desktop"
+        ),
+        current="",
+    )
+
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+
+    assert changed
+    assert note is not None
+    assert "did not take the launcher" in note
+    assert any("kwriteconfig6" in call for call in calls)
+
+
+def test_pin_warns_when_the_shell_cannot_be_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_appletsrc()
+    calls = _pin_run_fakes(monkeypatch, shell_fail=True, current="")
+
+    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+
+    assert changed
+    assert note is not None
+    assert "cannot give the launcher" in note
+    assert any("kwriteconfig6" in call for call in calls)
 
 
 def test_pin_without_panel_config_changes_nothing(
@@ -785,7 +905,7 @@ def test_pin_without_panel_config_changes_nothing(
     assert not calls
 
 
-def test_full_flow_pins_launcher_and_restarts_panel(
+def test_full_flow_pins_launcher_without_restarting_the_panel(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     ctx = _ctx(tmp_path)
@@ -798,17 +918,10 @@ def test_full_flow_pins_launcher_and_restarts_panel(
 
     assert result.success
     assert "pinned the Chrome launcher to the Plasma taskbar" in (result.message or "")
-    assert any("kwriteconfig6" in call for call in calls)
-    restarts = [call for call in calls if call[0] == "systemctl"]
-    assert any("plasma-plasmashell.service" in call for call in restarts)
-    # The failed state is cleared before the restart, which is the call the
-    # service manager names when it refuses to start a unit that failed too
-    # often; without it a run that follows a failed panel start cannot make
-    # the pinned launcher appear.
-    verbs = [call[4] for call in restarts if len(call) > 4]
-    assert "reset-failed" in verbs
-    assert "restart" in verbs
-    assert verbs.index("reset-failed") < verbs.index("restart")
+    assert any("qdbus6" in call for call in calls)
+    # The panel is never restarted: the launcher reaches the running shell
+    # through its scripting interface, so no window and no panel state is lost.
+    assert not any("plasma-plasmashell.service" in call for call in calls)
 
 
 def test_second_run_changes_nothing_when_target_reached(

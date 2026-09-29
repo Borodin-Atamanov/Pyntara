@@ -56,9 +56,13 @@ After the override changes, the task rebuilds the KDE menu cache for the desktop
 
 ## Taskbar pinning
 
-The task pins the CDP desktop entry to the Plasma taskbar of the desktop user, so the button is one click away in the panel. Plasma keeps the pinned launchers in the appletsrc of the user, under the group named by appletsrc_launcher_group of every task manager applet (the own config group
-Configuration of the applet, measured on Kubuntu 26.04 with KDE 6.6, and the
-group the shipped Kubuntu layout template writes through the shell): the plugins named by taskbar_plugin_names (the icons-only task manager and the classic task manager in the shipped config). The task finds every applet that declares one of those plugins and appends the configured panel_launcher_id to the launchers list named by appletsrc_launchers_key when missing, so a desktop with either widget type, or with several panels, pins the button without detecting which variant is present. The launcher id resolves through the XDG applications dirs to the CDP desktop override. A missing appletsrc (the user has not logged into a Plasma session yet) is a note: the button pins on the first login. After a change the task restarts the Plasma panel through panel_restart_command, so the button appears immediately; when the restart fails the button still appears at the next login.
+The task pins the CDP desktop entry to the Plasma taskbar of the desktop user, so the button is one click away in the panel. Plasma keeps the pinned launchers in the appletsrc of the user, in the group below every task manager applet named by appletsrc_launcher_group, for the plugins named by taskbar_plugin_names (the icons-only task manager and the classic task manager in the shipped config). The task finds every applet that declares one of those plugins and appends the configured panel_launcher_id to the launchers list named by appletsrc_launchers_key when missing, so a desktop with either widget type, or with several panels, pins the button without detecting which variant is present. The launcher id resolves through the XDG applications dirs to the CDP desktop override.
+
+The launcher reaches the panel through the scripting interface of the running shell, the same call that applies the applet settings of kde_settings: a running shell never reads the appletsrc again, so a value written into the file stays invisible to the applet that owns it and the button does not appear. Measured on Kubuntu 26.04 with KDE 6.6 on 2026-09-26 and again on 2026-09-29 on another machine, after an earlier version of the task wrote the list into the parent Configuration group of the applet: the panel drew the list of the group below the applet, the file carried the launcher in the parent group, and no button appeared. The task verifies the answer of the shell, so a taskbar whose list still lacks the launcher is a warning of the run and never a reported pin.
+
+The task never restarts the Plasma panel. A restart of the shell is a state change that can drop the windows and the panel state of the user sitting in front of the machine, and it is unnecessary because the shell applies the setting itself.
+
+Without a running session, and when the shell cannot be reached, the launcher is written into the group below every task manager applet of the appletsrc, where the panel reads it at the next login; the run reports that the button appears at the next login. A missing appletsrc (the user has not logged into a Plasma session yet) is a note: the button pins on the first login.
 
 ## Idempotency record
 
@@ -74,11 +78,10 @@ package_name - the apt package of the browser
 process_name - the process name pgrep sees for a running browser
 appletsrc_file_name - the Plasma appletsrc name as the KConfig tools take it
 appletsrc_relative_path - the same file under home_dir
-appletsrc_launchers_key - the appletsrc key that carries the pinned launchers
-appletsrc_launcher_group - the appletsrc group below a task manager applet that holds those launchers, as the group segments Plasma nests the file with
 taskbar_plugin_names - the task manager plugin names whose launcher list receives the button
+appletsrc_launchers_key - the appletsrc key that carries the pinned launchers
+appletsrc_launcher_group - the appletsrc group below a task manager applet that holds those launchers, as the group segments Plasma nests the file with; Configuration/General on Kubuntu 26.04 with KDE 6.6
 panel_launcher_id - the launcher id pinned to the panel
-panel_restart_command - the command that restarts the Plasma panel, with {username}
 settings_repo_url - the git repository of browser settings
 settings_repo_ref - the branch of that repository applied on every run
 settings_dir - the root cache that holds the clone of the settings repository
