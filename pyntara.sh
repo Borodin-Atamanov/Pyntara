@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 # Pyntara launcher: downloads the bootstrap installer inst.sh and runs it as root.
-# The parameters of the run live in this file and nowhere else: the inherited
-# environment is ignored, so an exported PYNTARA_ name never reaches the
-# installer. Requirements source: docs/contracts/bootstrap.md.
+# The parameters of the run live in this file: a name the file sets is the value
+# of the run, and a name it leaves commented out is resolved by the installer or
+# the engine. Requirements source: docs/contracts/bootstrap.md.
 set -euo pipefail
-
-# Every PYNTARA_ name inherited from the caller is cleared before the values
-# below are set, so this file is the only source of the run parameters.
-for inherited_name in $(compgen -e PYNTARA_ 2>/dev/null || true); do
-    unset "$inherited_name"
-done
 
 # Repository and branch of the run: the branch selects both the installer
 # downloaded below and the checkout the installer clones.
@@ -125,9 +119,9 @@ fi
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f export_run_parameters &>/dev/null; then
 export_run_parameters() {
-    # Only the values of this file reach the installer. A name left commented
-    # out stays unset, so the installer and the engine resolve their own
-    # default instead of reading one from the caller.
+    # The values of this file reach the installer. A name the file leaves
+    # commented out is passed on as the caller left it, and the installer or
+    # the engine resolves its own default when nothing set it.
     export PYNTARA_REPO_URL PYNTARA_REPO_BRANCH
     export PYNTARA_LOG_DIR PYNTARA_LOG_FILE PYNTARA_JOURNAL_IDENTIFIER
     export PYNTARA_INSTALL_MODE PYNTARA_TASKS PYNTARA_FORCE_TASKS PYNTARA_SKIP_APT_UPDATE

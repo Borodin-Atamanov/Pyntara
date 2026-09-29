@@ -72,17 +72,8 @@ assert_not_contains() {
     fi
 }
 
-assert_unset() {
-    local variable_name="$1"
-    local detail="$2"
-    if declare -p "$variable_name" &>/dev/null; then
-        echo "expected [$variable_name] to be unset: $detail" >&2
-        return 1
-    fi
-}
-
 # Load the launcher the way a run does: the file is sourced, so its own
-# parameter block and the clearing of the inherited environment both run.
+# parameter block runs.
 source_launcher() {
     # shellcheck disable=SC1090
     source "$LAUNCHER"
@@ -175,15 +166,22 @@ test_launcher_replaced_password_is_passed_through() {
     assert_equals "a-replaced-password" "$passed" "a replaced password reaches the installer" || return 1
 }
 
-test_launcher_clears_the_inherited_environment() {
+test_launcher_keeps_an_inherited_value_of_a_name_it_leaves_commented_out() {
+    # A test run selects an install mode and a task list through the
+    # environment, so a name the file leaves commented out must reach the
+    # installer as the caller set it.
     export PYNTARA_TASKS="task-from-caller"
     export PYNTARA_INSTALL_MODE="server"
+    source_launcher
+    assert_equals "task-from-caller" "${PYNTARA_TASKS:-}" "an inherited task list reaches the installer" || return 1
+    assert_equals "server" "${PYNTARA_INSTALL_MODE:-}" "an inherited install mode reaches the installer" || return 1
+}
+
+test_launcher_replaces_an_inherited_value_of_a_name_it_sets() {
     export PYNTARA_REPO_BRANCH="branch-from-caller"
     export PYNTARA_VAULT_PASSWORD="password-from-caller"
     export PYNTARA_DELETE_PACKAGES_AFTER_INSTALL="keep-from-caller"
     source_launcher
-    assert_unset PYNTARA_TASKS "an inherited task list never reaches the installer" || return 1
-    assert_unset PYNTARA_INSTALL_MODE "an inherited install mode never reaches the installer" || return 1
     assert_equals "main" "$PYNTARA_REPO_BRANCH" "the branch of the run comes from the file" || return 1
     assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "an inherited password is replaced by the value of the file" || return 1
     assert_equals "1" "$PYNTARA_DELETE_PACKAGES_AFTER_INSTALL" "an inherited delete-packages value is replaced by the value of the file" || return 1
@@ -198,7 +196,7 @@ test_launcher_exports_the_delete_packages_flag() {
     assert_equals "1" "$passed" "the delete-packages flag of the file reaches the installer" || return 1
 }
 
-test_launcher_installer_receives_only_the_file_values() {
+test_launcher_installer_receives_the_file_values_and_the_inherited_rest() {
     local tmp dump stub
     tmp="$(mktemp -d)"
     dump="$tmp/environment.txt"
@@ -215,7 +213,7 @@ test_launcher_installer_receives_only_the_file_values() {
     child_environment="$(cat "$dump")"
     assert_contains "$child_environment" "PYNTARA_REPO_BRANCH=main" "the installer reads the branch of the file" || return 1
     assert_contains "$child_environment" "PYNTARA_LOG_FILE=$PYNTARA_LOG_FILE" "both halves agree on one log file" || return 1
-    assert_not_contains "$child_environment" "PYNTARA_TASKS=" "an inherited task list never reaches the installer" || return 1
+    assert_contains "$child_environment" "PYNTARA_TASKS=task-from-caller" "an inherited task list reaches the installer" || return 1
     assert_contains "$child_environment" "PYNTARA_VAULT_PASSWORD=$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "the password of the file reaches the installer" || return 1
 }
 
@@ -337,9 +335,10 @@ run_test test_launcher_never_names_the_production_password_file
 run_test test_launcher_hands_its_password_to_the_installer
 run_test test_launcher_passes_no_password_when_its_line_is_empty
 run_test test_launcher_replaced_password_is_passed_through
-run_test test_launcher_clears_the_inherited_environment
+run_test test_launcher_keeps_an_inherited_value_of_a_name_it_leaves_commented_out
+run_test test_launcher_replaces_an_inherited_value_of_a_name_it_sets
 run_test test_launcher_exports_the_delete_packages_flag
-run_test test_launcher_installer_receives_only_the_file_values
+run_test test_launcher_installer_receives_the_file_values_and_the_inherited_rest
 run_test test_launcher_download_follows_the_branch
 run_test test_launcher_reports_a_failed_download
 run_test test_launcher_returns_the_installer_exit_code

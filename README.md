@@ -25,8 +25,10 @@ sudo bash /dev/shm/pyntara.sh
 
 /dev/shm is a memory filesystem, so the launcher never reaches the disk and disappears at
 the next reboot, and a password written into the file is not left on the machine. The
-launcher ignores the environment of the caller: the parameters are the values of the file,
-and a variable left commented out is resolved by the installer or the engine itself.
+parameters are the values of the file, and a variable left commented out is resolved by the
+installer or the engine itself; a name the file leaves commented out keeps the value the
+caller exported, so a test run selects its install mode and its task list through the
+environment.
 
 The vault password is the PYNTARA_VAULT_PASSWORD line. The value shipped there is the
 published password of the default vault, and a user who knows the production vault password
