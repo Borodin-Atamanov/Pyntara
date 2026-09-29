@@ -61,7 +61,7 @@ The uv run pyntara process runs without any time limit. Provisioning tasks take 
 ## Logging
 
 Every own message of the installer (log) goes to the system journal as the primary destination, with the identifier pyntara-install and without the console timestamp: the journal stamps its own time. The Python engine mirrors its own messages under the journal_identifier value of the engine values module (src/pyntara/values/engine.py), handed to the logger before the first message ([Central logging](../guides/project-rules.md#central-logging)); the two identifiers stay distinct, so a journal query separates the bootstrap from the run it launched. Journal forwarding is best effort: a missing systemd-cat or a failed write never stops the run.
-The full stream is persisted to /var/log/pyntara/install.log as a residual copy: every command and its output are written there, and the same output is streamed to the terminal in real time.  
+The full stream is persisted to /var/log/pyntara/install-<timestamp>.log as a residual copy: every command and its output are written there, and the same output is streamed to the terminal in real time. The file is created with mode 0600, because the stream carries the output of third-party installers, and one of them prints the credentials of the panel it installs.  
 Timestamps use YYYY-MM-DD-HH-MM-SS format.  
 Logging is always verbose. There is no quiet mode.
 

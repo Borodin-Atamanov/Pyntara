@@ -206,6 +206,34 @@ inst_log_file_defaults_inside_log_dir() {
     rm -rf "$tmp"
 }
 
+inst_prepare_log_file_creates_the_file_private() {
+    # Bootstrap contract, Logging: the log file is created before its first line
+    # with a mode no other user of the machine can read, because the stream
+    # carries the output of third-party installers and one of them prints the
+    # credentials of the panel it installs. A file that already exists keeps
+    # its mode, because the launcher created it already.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prepare_log_file' _ "$INSTALLER"
+    local mode
+    mode="$(stat -c '%a' "$logfile")"
+    if [[ "$mode" != "600" ]]; then
+        echo "the fresh log file is not private: mode $mode" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    chmod 0644 "$logfile"
+    PYNTARA_LOG_FILE="$logfile" bash -c 'source "$1"; prepare_log_file' _ "$INSTALLER"
+    mode="$(stat -c '%a' "$logfile")"
+    if [[ "$mode" != "644" ]]; then
+        echo "an existing log file lost its mode: mode $mode" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 inst_log_forwards_to_system_journal() {
     # log must duplicate its message into the system journal under the
     # identifier from PYNTARA_JOURNAL_IDENTIFIER, without the timestamp.
@@ -387,9 +415,10 @@ inst_run_logged_streams_both_streams_and_preserves_exit_code() {
 
 inst_main_calls_root_then_dirs_then_log_in_order() {
     # main must echo the installer version first, then call check_root,
-    # ensure_fhs_dirs, log (install log started), install_dependencies,
-    # install_uv, fetch_source, setup_python, then run_pyntara and the final
-    # log. Mocks are declared before source so the guard keeps them.
+    # ensure_fhs_dirs, prepare_log_file, log (install log started),
+    # install_dependencies, install_uv, fetch_source, setup_python, then
+    # run_pyntara and the final log. Mocks are declared before source so the
+    # guard keeps them.
     local tmp
     tmp="$(mktemp -d)"
     local flags="$tmp/flags"
@@ -398,6 +427,7 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         flags_file="$2"
         check_root() { echo check_root >> "$flags_file"; }
         ensure_fhs_dirs() { echo ensure_fhs_dirs >> "$flags_file"; }
+        prepare_log_file() { echo prepare_log_file >> "$flags_file"; }
         log() { echo log >> "$flags_file"; }
         install_dependencies() { echo install_dependencies >> "$flags_file"; }
         install_uv() { echo install_uv >> "$flags_file"; }
@@ -409,7 +439,7 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nprepare_log_file\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -1764,6 +1794,7 @@ run_test inst_ensure_fhs_dirs_is_idempotent_on_second_run
 run_test inst_log_writes_timestamped_line_to_terminal_and_file
 run_test inst_log_appends_lines_instead_of_overwriting
 run_test inst_log_file_defaults_inside_log_dir
+run_test inst_prepare_log_file_creates_the_file_private
 run_test inst_log_forwards_to_system_journal
 run_test inst_log_empty_identifier_disables_journal
 run_test inst_log_identifier_follows_the_contract

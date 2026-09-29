@@ -21,6 +21,7 @@ from support import make_context
 
 from pyntara import runtime_vault
 from pyntara.context import Context
+from pyntara.logger import log_progress
 from pyntara.tasks import local_vault_setup
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
@@ -87,6 +88,12 @@ def _ctx(
 
 def _file_mode(path: Path) -> int:
     return stat.S_IMODE(path.stat().st_mode)
+
+
+def _report_through_the_logger(message: str) -> None:
+    """Log one line the way a task module does, from this module's frame."""
+
+    log_progress(message)
 
 
 def _opens_with(path: Path, password: str) -> bool:
@@ -633,3 +640,46 @@ def test_the_merge_restores_the_declared_mode_of_the_vault(
     assert result.success is True
     assert result.changed is True
     assert _file_mode(local_vault) == 0o640
+
+
+def test_the_shared_entry_point_reports_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The shared entry point stays silent on purpose: the progress logger names
+    # the module of the frame that logs, so a line logged here is signed with
+    # the name of this task while another task runs (the clean010 run of
+    # 2026-09-29 printed "local_vault_setup: cannot open source vault ..."
+    # inside nextdns_setup_system_wide and sotavpn_setup). Every caller reports
+    # its own outcome in its own words.
+    _create_source_vault(tmp_path / "default.vault", "default-pass")
+
+    opened = local_vault_setup.open_source_vault(
+        tmp_path, "production.vault", "default.vault", "wrong-pass"
+    )
+
+    assert opened is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_a_reported_line_carries_the_name_of_the_logging_module(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The name in the prefix is fixed by the module of the frame that calls the
+    # logger, which is why a shared helper cannot report under a task name and
+    # why the task itself logs the line.
+    _create_source_vault(tmp_path / "default.vault", "default-pass")
+
+    opened = local_vault_setup._open_source_vault(
+        tmp_path / "production.vault",
+        tmp_path / "default.vault",
+        "wrong-pass",
+        log=_report_through_the_logger,
+    )
+
+    assert opened is None
+    captured = capsys.readouterr()
+    assert captured.out.startswith(
+        "test_local_vault_setup: cannot open source vault"
+    )

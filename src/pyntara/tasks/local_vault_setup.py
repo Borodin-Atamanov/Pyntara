@@ -30,6 +30,7 @@ whitespace and strictly without a trailing newline.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from pykeepass import PyKeePass
@@ -61,7 +62,10 @@ def _resolve_source_vault(
 
 
 def _open_source_vault(
-    production_path: Path, default_path: Path, password: str | None
+    production_path: Path,
+    default_path: Path,
+    password: str | None,
+    log: Callable[[str], None] | None = None,
 ) -> tuple[PyKeePass, Path] | None:
     """Open the first source vault the password decrypts; None when neither.
 
@@ -69,24 +73,31 @@ def _open_source_vault(
     password does not match that vault, so the next candidate is tried; a
     missing file or any other open failure is logged the same way, because
     the goal is to produce the runtime vault from whatever source is
-    available.
+    available. The caller hands over the callable that reports the lines, and
+    the default is this module: the progress logger names the module of the
+    frame that calls it, so a line is attributed to whoever logs it.
     """
 
+    report = _log if log is None else log
     for path in (production_path, default_path):
         if password is None:
-            _log(f"cannot open source vault {path}: no password provided")
+            report(f"cannot open source vault {path}: no password provided")
             continue
         try:
             kp = PyKeePass(str(path), password=password)
         except CredentialsError:
-            _log(f"cannot open source vault {path}: password does not match")
+            report(f"cannot open source vault {path}: password does not match")
             continue
         except Exception as exc:  # noqa: BLE001 - any open failure moves to the next vault
-            _log(f"cannot open source vault {path}: {exc}")
+            report(f"cannot open source vault {path}: {exc}")
             continue
-        _log(f"source vault opened: {path}")
+        report(f"source vault opened: {path}")
         return kp, path
     return None
+
+
+def _report_nothing(_message: str) -> None:
+    """Accept one source-vault line and drop it; see open_source_vault."""
 
 
 def open_source_vault(
@@ -104,10 +115,22 @@ def open_source_vault(
     (nextdns_setup_system_wide) import this function
     instead of reimplementing the source selection
     (project rules, General engineering requirements).
+
+    The entry point reports nothing, and that is deliberate: the progress
+    logger prefixes every line with the name of the module whose frame calls
+    it, so a line logged here would be signed with the name of this task while
+    another task runs, and the run of clean010 on 2026-09-29 showed exactly
+    that happening (nextdns_setup_system_wide and sotavpn_setup printed
+    "local_vault_setup: cannot open source vault ...", which reads as a second
+    run of this task). Every caller already reports its own outcome in its own
+    words ("the source vaults are not available: the Sota pool stays off"), so
+    the detail of the refusal stays in the calling task where it belongs.
     """
 
     return _open_source_vault(
-        *_resolve_source_vault(repo_root, production, default), password
+        *_resolve_source_vault(repo_root, production, default),
+        password,
+        log=_report_nothing,
     )
 
 

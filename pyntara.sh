@@ -97,6 +97,20 @@ prepare_log_dir() {
 fi
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f prepare_log_file &>/dev/null; then
+prepare_log_file() {
+    # Bootstrap contract, Logging: the log file is created before its first
+    # line with a mode no other user of the machine can read, because the
+    # stream of a third-party installer carries credentials: the 3x-ui panel
+    # installer prints its own login, password and API token. A file that
+    # already exists keeps its mode, because its owner may have chosen it.
+    if [[ ! -e "$PYNTARA_LOG_FILE" ]]; then
+        install -m 0600 /dev/null "$PYNTARA_LOG_FILE"
+    fi
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f download_installer &>/dev/null; then
 download_installer() {
     # The installer is fetched from the branch of the run, so a branch run
@@ -157,6 +171,7 @@ if ! declare -f main &>/dev/null; then
 main() {
     check_root
     prepare_log_dir
+    prepare_log_file
     launcher_log "Pyntara launcher started, repository $PYNTARA_REPO_URL branch $PYNTARA_REPO_BRANCH"
     download_installer
     export_run_parameters

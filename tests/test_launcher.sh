@@ -320,6 +320,24 @@ test_launcher_log_file_is_named_after_the_run() {
     assert_equals "$(grep -m1 '^LOG_TIMESTAMP_FORMAT=' "$LAUNCHER")" "$(grep -m1 '^LOG_TIMESTAMP_FORMAT=' "$REPO_ROOT/inst.sh")" "the launcher and the installer declare one timestamp format" || return 1
 }
 
+test_launcher_creates_the_log_file_private() {
+    # The launcher creates the file before its first line with a mode no other
+    # user of the machine can read, because the stream carries the output of
+    # third-party installers, and the 3x-ui installer prints the credentials of
+    # the panel it installs.
+    local tmp
+    tmp="$(mktemp -d)"
+    source_launcher
+    use_test_log "$tmp"
+    rm -f "$PYNTARA_LOG_FILE"
+    prepare_log_file
+    assert_equals "600" "$(stat -c '%a' "$PYNTARA_LOG_FILE")" "the fresh log file is private" || return 1
+    chmod 0644 "$PYNTARA_LOG_FILE"
+    prepare_log_file
+    assert_equals "644" "$(stat -c '%a' "$PYNTARA_LOG_FILE")" "an existing log file keeps its mode" || return 1
+    rm -rf "$tmp"
+}
+
 test_launcher_download_path_is_shared_memory() {
     source_launcher
     assert_equals "/dev/shm" "$(dirname "$INSTALLER_PATH")" "the downloaded installer never reaches the disk" || return 1
@@ -362,6 +380,7 @@ run_test test_launcher_reports_a_failed_download
 run_test test_launcher_returns_the_installer_exit_code
 run_test test_launcher_logs_a_timestamped_line
 run_test test_launcher_log_file_is_named_after_the_run
+run_test test_launcher_creates_the_log_file_private
 run_test test_launcher_download_path_is_shared_memory
 run_test test_launcher_refuses_an_unprivileged_start
 

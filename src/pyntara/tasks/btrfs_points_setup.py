@@ -247,7 +247,10 @@ def _wait_for_recompression(warnings: list[str]) -> None:
         minute = int(elapsed // 60)
         if minute != reported_minute:
             reported_minute = minute
-            _log(f"the one-off recompression is still running ({minute} minutes)")
+            _log(
+                f"the one-off recompression is still running "
+                f"({minute} of {limit // 60} minutes)"
+            )
         time.sleep(recompress_values.JOB_WAIT_POLL_SECONDS)
     _log("the one-off recompression finished")
 

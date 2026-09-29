@@ -65,3 +65,60 @@ is visible in the run above, where one silence of 15 s left the machine without 
 program.
 
 ## Хром, исправить в репозитарии настроек хрома, чтобы вначале там окна лишние - принять правила хрома - лишнее и второе, с галочками, предлагающими сделать его браузером по-умолчанию, надо чтобы они не поялвлись эти окна.
+
+## A healthy desktop run ends with exit code 1
+
+Fresh run on clean010 of 2026-09-29, mode desktop auto-detected, default vault:
+36 of 36 tasks done, and the run exited 1, because kde_settings warns that the
+session runs the power profile balanced while the configuration asks for
+performance. The profile belongs to power-profiles-daemon and the task does not
+switch it, so the warning is present on any machine whose live profile is not
+already performance, and the task contract turns every warning into a nonzero
+exit code of the run. The machine is fully configured, yet the run reports
+failure to a script that watches the exit code, and the bootstrap prints
+"Pyntara installer finished with exit code 1" to the user.
+Not a defect of the task, which reports both names instead of claiming the
+configuration was applied: the open question is the severity. Options: the task
+switches the profile through power-profiles-daemon when it differs, or it
+reports the difference as a non-failing notice, or the run keeps exiting nonzero
+and the behaviour is documented as intended.
+
+## The local proxy message names the wrong object
+
+Clean010 run of 2026-09-29: three_x_ui_xray_setup logged "no vless link in
+xray_client_profile of default.vault: the local proxy is not configured" while
+the local proxy inbound on 127.0.0.1:10800 was created in the same stage and the
+task result says "local proxy on 127.0.0.1:10800 configured". What is missing is
+the remote link the machine would leave through, not the local proxy. The
+message is built in src/pyntara/xray_local_proxy.py (_remote_profile), and the
+same wording is used for a missing source vault and for an unusable link. The
+line misleads whoever reads the run log, so the sentence should name the missing
+remote path instead.
+
+## The save point writes one menu id for every kernel
+
+Clean010 run of 2026-09-29: /boot/grub/grub.cfg carried two menu entries of the
+save point, 'Pyntara-permanent' and 'Pyntara-permanent (7.0.0-30-generic)',
+because the point holds two kernels, and both carry the same --id
+pyntara-permanent (GRUB_D_ENTRY_ID of src/pyntara/values/btrfs_points_setup.py,
+rendered into task_data/btrfs_points_setup/permanent_entry_body.in by the entry
+writer of the task). GRUB requires a unique id per menu entry, and the id is the
+documented way to preselect the entry (set default=pyntara-permanent), so with
+two kernels the selection depends on entry order. The fix needs a decision about
+the id shape (a per-kernel suffix), and docs/spec/btrfs-setup.md has to be
+updated with it.
+
+## Third-party installers write credentials and noise into the run log
+
+Clean010 run of 2026-09-29, evidence from the log: the 3x-ui installer prints the
+panel login, the password, the port, the web base path and the API token in plain
+text, together with its own demand to keep them safe, so the run log carried the
+credentials of the panel and was protected by nothing but its file mode until the
+mode was fixed to 0600; the rustdesk deb prints a red "Failed to stop
+rustdesk.service: Unit rustdesk.service not loaded" on a fresh machine; apt prints
+"debconf: unable to initialize frontend" and pip prints the "Running pip as the
+'root' user" warning on package steps. None of these is produced by Pyntara, and
+the panel credentials are the only serious one: consider whether the task keeps
+the credential block of the installer out of the run log, or the file mode stays
+the protection.
+

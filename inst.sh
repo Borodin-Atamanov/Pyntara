@@ -60,6 +60,21 @@ LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install-$(date +"$LOG_TIMESTAMP_FORMAT").
 JOURNAL_IDENTIFIER="${PYNTARA_JOURNAL_IDENTIFIER-pyntara-install}"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f prepare_log_file &>/dev/null; then
+prepare_log_file() {
+    # Bootstrap contract, Logging: the log file is created before its first
+    # line with a mode no other user of the machine can read, because the
+    # stream of a third-party installer carries credentials: the 3x-ui panel
+    # installer prints its own login, password and API token. A file that
+    # already exists keeps its mode, because the launcher created it already
+    # and its owner may have chosen it.
+    if [[ ! -e "$LOG_FILE" ]]; then
+        install -m 0600 /dev/null "$LOG_FILE"
+    fi
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f log &>/dev/null; then
 log() {
     # Bootstrap contract, Logging: timestamped message written to log file
@@ -465,6 +480,7 @@ main() {
     echo "Pyntara installer version $PYNTARA_VERSION"
     check_root
     ensure_fhs_dirs
+    prepare_log_file
     log "Install log started: $LOG_FILE"
     install_dependencies
     install_uv
