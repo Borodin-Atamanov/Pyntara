@@ -1163,6 +1163,27 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
 # application launcher and the task manager that pins the launchers.
 APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
 APPLET_PLUGIN_KEY: str = "plugin"
+
+# The scripting interface of the running Plasma shell, by its parts: the bus
+# name, the object path, the interface and the method that runs a script inside
+# the running shell. A setting of a panel applet is applied through this call,
+# because a running shell never reads the appletsrc again: measured on Kubuntu
+# 26.04 with Plasma 6.6.6 on 2026-09-28, a value written into the appletsrc of a
+# running shell stayed invisible to the applet that owns it, while the same
+# value written through this call appeared at once and stood in the file
+# seconds later, because the shell stores what it applies itself.
+PLASMA_SHELL_BUS_NAME: str = "org.kde.plasmashell"
+PLASMA_SHELL_OBJECT_PATH: str = "/PlasmaShell"
+PLASMA_SHELL_SCRIPT_INTERFACE_NAME: str = "org.kde.PlasmaShell"
+PLASMA_SHELL_SCRIPT_METHOD_NAME: str = "evaluateScript"
+PLASMA_SHELL_SCRIPT_COMMAND: tuple[str, ...] = (
+    "qdbus6",
+    "{plasma_shell_bus_name}",
+    "{plasma_shell_object_path}",
+    "{plasma_shell_script_interface_name}.{plasma_shell_script_method_name}",
+    "{script}",
+)
+
 APPLET_CONFIG_RECORDS: tuple[AppletConfigRecord, ...] = (
     AppletConfigRecord(
         "org.kde.plasma.digitalclock",
@@ -1240,6 +1261,11 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
     "APPLETSRC_FILE_NAME",
     "APPLET_PLUGIN_KEY",
+    "PLASMA_SHELL_BUS_NAME",
+    "PLASMA_SHELL_OBJECT_PATH",
+    "PLASMA_SHELL_SCRIPT_INTERFACE_NAME",
+    "PLASMA_SHELL_SCRIPT_METHOD_NAME",
+    "PLASMA_SHELL_SCRIPT_COMMAND",
     "APPLET_CONFIG_RECORDS",
     "KCONFIG_BOOL_TYPE",
     "USERNAME_PLACEHOLDER_NAME",

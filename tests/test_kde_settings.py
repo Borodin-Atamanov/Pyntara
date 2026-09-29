@@ -2500,6 +2500,9 @@ use24hFormat=1
 [Containments][2][Applets][3]
 plugin=org.kde.plasma.kickoff
 
+[Containments][2][Applets][5]
+plugin=org.kde.plasma.icontasks
+
 [Containments][2][Applets][7]
 plugin=org.kde.plasma.systemtray
 
@@ -2622,3 +2625,71 @@ def test_an_applet_no_section_declares_is_reported_and_the_rest_applies(
     assert "org.kde.plasma.missing" in warnings[0]
     assert all(call[-1] != "x" for call in seen)
     assert any(call[-1] == "suspend,hibernate" for call in seen)
+
+
+def test_the_applet_script_names_every_configured_setting() -> None:
+    # The script the running panel receives names each applet by the plugin of
+    # its section and carries every key with the type its applet expects, so no
+    # value reaches an applet as text and no applet position is written down.
+    script = task_module._applet_script()
+
+    assert "org.kde.plasma.digitalclock" in script
+    assert "org.kde.plasma.kickoff" in script
+    assert '"key": "use24hFormat", "value": 2' in script
+    assert '"key": "showSeconds", "value": false' in script
+    assert '"key": "icon", "value": "love-amarok"' in script
+    assert "currentConfigGroup" in script
+    assert "writeConfig" in script
+
+
+def test_a_running_panel_gets_the_applet_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The appletsrc reaches the next start of the shell and never the running
+    # one, so the same settings go to the panel itself through the scripting
+    # interface of the shell.
+    _appletsrc_home(tmp_path, monkeypatch)
+    seen: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append((list(command), dict(kwargs)))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {"DISPLAY": ":0"}
+    warnings: list[str] = []
+
+    task_module._apply_applet_records(timeout=5, force=False, env=env, warnings=warnings)
+
+    live = [
+        (command, kwargs)
+        for command, kwargs in seen
+        if any("org.kde.plasmashell" in part for part in command)
+    ]
+    assert len(live) == 1
+    command, kwargs = live[0]
+    assert command[-2] == "org.kde.PlasmaShell.evaluateScript"
+    assert "org.kde.plasma.digitalclock" in command[-1]
+    assert kwargs["extra_env"] == env
+    assert warnings == []
+
+
+def test_without_a_session_the_applet_settings_wait_for_the_next_login(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A machine without a session has no panel to tell, and the settings that
+    # were written into the appletsrc apply at the next login.
+    _appletsrc_home(tmp_path, monkeypatch)
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    task_module._apply_applet_records(timeout=5, force=False, env=None, warnings=warnings)
+
+    assert not [call for call in seen if any("plasmashell" in part for part in call)]
+    assert warnings == []

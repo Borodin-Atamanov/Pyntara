@@ -823,16 +823,131 @@ def _applet_groups(text: str, plugin: str) -> tuple[tuple[str, ...], ...]:
     return tuple(groups)
 
 
+def _script_value(record: values.AppletConfigRecord) -> bool | int | str:
+    """The value of one applet setting in the type its applet expects.
+
+    The script writes the value through the applet and the applet stores the
+    type it is handed, so a flag travels as a boolean and a whole number as a
+    number instead of reaching the applet as text; anything else stays text.
+    """
+
+    if record.type == values.KCONFIG_BOOL_TYPE:
+        return record.value == common_values.KCONFIG_TRUE_VALUE
+    if record.value.isdigit():
+        return int(record.value)
+    return record.value
+
+
+def _applet_script() -> str:
+    """The Plasma script that writes every configured applet setting.
+
+    The script names each applet by the plugin its section declares, because
+    the position of an applet on the panel differs per machine, selects the
+    group below that applet and writes the key through the applet itself,
+    which applies the setting to the running panel at once and stores it in
+    the appletsrc. The settings travel as JSON, so a value keeps its type.
+    """
+
+    spec = json.dumps(
+        [
+            {
+                "plugin": record.plugin,
+                "group": list(record.group[1:]),
+                "key": record.key,
+                "value": _script_value(record),
+            }
+            for record in values.APPLET_CONFIG_RECORDS
+        ]
+    )
+    return (
+        f"var spec = {spec};"
+        "var applied = [];"
+        "var ps = panels();"
+        "for (var p = 0; p < ps.length; p++) {"
+        " var ws = ps[p].widgets();"
+        " for (var w = 0; w < ws.length; w++) {"
+        "  var t = String(ws[w].type);"
+        "  for (var i = 0; i < spec.length; i++) {"
+        "   if (spec[i].plugin !== t) continue;"
+        "   ws[w].currentConfigGroup = spec[i].group;"
+        "   ws[w].writeConfig(spec[i].key, spec[i].value);"
+        "   applied.push(t + ' ' + spec[i].key);"
+        "  }"
+        " }"
+        "}"
+        "print(applied.join(','));"
+    )
+
+
+def _apply_applet_records_live(
+    *,
+    timeout: float,
+    env: dict[str, str] | None,
+    warnings: list[str] | None = None,
+) -> None:
+    """Give the applet settings to the running panel; nothing when none runs.
+
+    The appletsrc reaches the next start of the shell and never the running
+    one, so the settings are applied through the scripting interface of the
+    running shell as well. The call runs while a session exists even when the
+    file already carried every value, because the panel that runs now can
+    still hold older ones. A failure is reported and never fails the task:
+    the file carries the settings to the next login.
+    """
+
+    if env is None:
+        _log("no desktop session, the applet settings apply at the next login")
+        return
+    command = _as_user_command(
+        substituted_command(
+            values.PLASMA_SHELL_SCRIPT_COMMAND,
+            {
+                "plasma_shell_bus_name": values.PLASMA_SHELL_BUS_NAME,
+                "plasma_shell_object_path": values.PLASMA_SHELL_OBJECT_PATH,
+                "plasma_shell_script_interface_name": (
+                    values.PLASMA_SHELL_SCRIPT_INTERFACE_NAME
+                ),
+                "plasma_shell_script_method_name": (
+                    values.PLASMA_SHELL_SCRIPT_METHOD_NAME
+                ),
+                "script": _applet_script(),
+            },
+        )
+    )
+    try:
+        answer = run_command(command, extra_env=env, timeout=timeout, capture=True)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warning = (
+            "cannot apply the applet settings to the running panel, they are set"
+            f" for the next login: {exc}"
+        )
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        return
+    _log(
+        "applied the applet settings to the running panel:"
+        f" {trim_whitespace(str(answer))}"
+    )
+
+
 def _apply_applet_records(
-    *, timeout: float, force: bool, warnings: list[str] | None = None
+    *,
+    timeout: float,
+    force: bool,
+    env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
 ) -> bool:
     """Apply the configured panel applet settings; True when any changed.
 
     The appletsrc of the desktop user is read to find the group of every
     applet a record names, and each key is written into the group below that
-    applet with the same read-then-write step as every other record. An applet
-    no section declares is reported and the remaining applets still apply,
-    because one absent applet must not stop the settings of the others.
+    applet with the same read-then-write step as every other record, which
+    covers the next start of the shell and a machine without a session. The
+    running panel is then given the same settings through its own scripting
+    interface, because a running shell never reads the appletsrc again. An
+    applet no section declares is reported and the remaining applets still
+    apply, because one absent applet must not stop the settings of the others.
     """
 
     path = (
@@ -879,6 +994,7 @@ def _apply_applet_records(
                 _log(warning)
                 if warnings is not None:
                     warnings.append(warning)
+    _apply_applet_records_live(timeout=timeout, env=env, warnings=warnings)
     return changed
 
 
@@ -2378,7 +2494,9 @@ def task(ctx: Context) -> TaskResult:
     )
     settings_changed |= step(
         "apply the panel applet settings",
-        lambda: _apply_applet_records(timeout=timeout, force=force, warnings=warnings),
+        lambda: _apply_applet_records(
+            timeout=timeout, force=force, env=apply_env, warnings=warnings
+        ),
     )
     changed |= settings_changed
 
