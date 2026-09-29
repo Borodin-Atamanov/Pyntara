@@ -49,6 +49,7 @@ Use a different format only when integration requirements make this format incom
 No pseudographics, ASCII art, or decorative separators in comments or output.  
 No decorative bullets or box-drawing characters. Use plain text for lists.  
 Tables or box-drawn layouts are allowed only on explicit user request.  
+The command line interface turns typer's rich rendering off (TYPER_USE_RICH in src/pyntara/__init__.py), because rich frames a help panel and rules a traceback with box-drawing characters.  
 Comments must be concise and explain intent, not decorate. Every unnecessary character wastes tokens.
 
 ## General engineering requirements

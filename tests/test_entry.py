@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -31,6 +32,10 @@ REAL_TASKS = tasks_values.CATALOG
 
 # Process names that mark a desktop session in the mode detection tests.
 DEFAULT_DESKTOP_PROCESSES = ("kwin_wayland", "kwin_x11", "plasmashell", "gnome-shell")
+
+# Box drawing and block glyphs: the shapes typer draws around a help panel and
+# rich draws above a traceback.
+BOX_DRAWING_CHARACTER = re.compile(r"[\u2500-\u259f]")
 
 
 @pytest.fixture(autouse=True)
@@ -885,3 +890,29 @@ def test_run_reports_when_the_task_catalog_is_empty(
     result = runner.invoke(app, [])
     assert result.exit_code == 1
     assert "the task catalog is empty" in result.output
+
+
+def test_the_help_text_draws_no_box_characters() -> None:
+    # The project forbids decorative formatting, and typer draws its help
+    # through rich, which frames every panel with box characters, so the help
+    # of the program must be plain text (project-rules.md, output style).
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert BOX_DRAWING_CHARACTER.search(result.output) is None
+
+
+def test_the_command_help_text_draws_no_box_characters() -> None:
+    # A subcommand has its own help page and renders through the same renderer
+    # as the help of the program.
+    result = runner.invoke(app, ["run", "--help"])
+    assert result.exit_code == 0
+    assert BOX_DRAWING_CHARACTER.search(result.output) is None
+
+
+def test_the_typer_renderer_is_not_rich() -> None:
+    # typer chooses rich for help, docstring markup and tracebacks when it is
+    # imported, and the imported value is what both renderers read, so the
+    # plain renderer being in use is asserted here rather than assumed.
+    import typer.core
+
+    assert typer.core.HAS_RICH is False
