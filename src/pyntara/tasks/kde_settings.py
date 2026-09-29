@@ -879,6 +879,87 @@ def _applet_script() -> str:
     )
 
 
+def _applet_removal_script(plugins: tuple[str, ...]) -> str:
+    """The Plasma script that removes every configured applet from the panel.
+
+    The script walks the panels of the running shell and removes every applet
+    whose plugin the value names. The plugin name is the only identifier: the
+    id and the position of an applet differ per machine, so neither is written
+    down. The widget list is walked backwards, because remove() takes the
+    applet off the live list and a forward walk would skip the applet that
+    follows. The shell stores the removal in the appletsrc itself, so it
+    survives the next login without a restart of the shell. The script reports
+    the number of removed applets, so the caller knows whether anything
+    changed.
+    """
+
+    return (
+        f"var targets = {json.dumps(list(plugins))};"
+        "var removed = 0;"
+        "var ps = panels();"
+        "for (var p = 0; p < ps.length; p++) {"
+        " var ws = ps[p].widgets();"
+        " for (var w = ws.length - 1; w >= 0; w--) {"
+        "  if (targets.indexOf(String(ws[w].type)) === -1) continue;"
+        "  ws[w].remove();"
+        "  removed++;"
+        " }"
+        "}"
+        "print(removed);"
+    )
+
+
+def _run_plasma_script(
+    script: str,
+    *,
+    no_session_message: str,
+    warning_prefix: str,
+    timeout: float,
+    env: dict[str, str] | None,
+    warnings: list[str] | None = None,
+) -> str | None:
+    """Run one script inside the running Plasma shell; None when it did not run.
+
+    The shell is reached through its scripting interface, and the whole command
+    is built from the values of the section, so no name of the interface stands
+    in code. None means the script did not run: there is no live session, or the
+    call failed. A session that is absent is reported with the message the
+    caller gives, a failed call is reported as a warning, and neither fails the
+    task, because a caller must never die on one setting. The report of the
+    script is returned as text: a script that reports through print() puts its
+    text there.
+    """
+
+    if env is None:
+        _log(no_session_message)
+        return None
+    command = _as_user_command(
+        substituted_command(
+            values.PLASMA_SHELL_SCRIPT_COMMAND,
+            {
+                "plasma_shell_bus_name": values.PLASMA_SHELL_BUS_NAME,
+                "plasma_shell_object_path": values.PLASMA_SHELL_OBJECT_PATH,
+                "plasma_shell_script_interface_name": (
+                    values.PLASMA_SHELL_SCRIPT_INTERFACE_NAME
+                ),
+                "plasma_shell_script_method_name": (
+                    values.PLASMA_SHELL_SCRIPT_METHOD_NAME
+                ),
+                "script": script,
+            },
+        )
+    )
+    try:
+        answer = run_command(command, extra_env=env, timeout=timeout, capture=True)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warning = f"{warning_prefix}: {exc}"
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        return None
+    return answer.stdout
+
+
 def _apply_applet_records_live(
     *,
     timeout: float,
@@ -895,40 +976,78 @@ def _apply_applet_records_live(
     the file carries the settings to the next login.
     """
 
-    if env is None:
-        _log("no desktop session, the applet settings apply at the next login")
-        return
-    command = _as_user_command(
-        substituted_command(
-            values.PLASMA_SHELL_SCRIPT_COMMAND,
-            {
-                "plasma_shell_bus_name": values.PLASMA_SHELL_BUS_NAME,
-                "plasma_shell_object_path": values.PLASMA_SHELL_OBJECT_PATH,
-                "plasma_shell_script_interface_name": (
-                    values.PLASMA_SHELL_SCRIPT_INTERFACE_NAME
-                ),
-                "plasma_shell_script_method_name": (
-                    values.PLASMA_SHELL_SCRIPT_METHOD_NAME
-                ),
-                "script": _applet_script(),
-            },
-        )
-    )
-    try:
-        answer = run_command(command, extra_env=env, timeout=timeout, capture=True)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        warning = (
+    answer = _run_plasma_script(
+        _applet_script(),
+        no_session_message=(
+            "no desktop session, the applet settings apply at the next login"
+        ),
+        warning_prefix=(
             "cannot apply the applet settings to the running panel, they are set"
-            f" for the next login: {exc}"
-        )
-        _log(warning)
-        if warnings is not None:
-            warnings.append(warning)
+            " for the next login"
+        ),
+        timeout=timeout,
+        env=env,
+        warnings=warnings,
+    )
+    if answer is None:
         return
     _log(
         "applied the applet settings to the running panel:"
-        f" {trim_whitespace(str(answer))}"
+        f" {trim_whitespace(answer)}"
     )
+
+
+def _apply_applet_removals(
+    *,
+    timeout: float,
+    env: dict[str, str] | None = None,
+    warnings: list[str] | None = None,
+) -> bool:
+    """Remove the configured panel applets from the running panel.
+
+    The configured plugins are taken off the panel through the scripting
+    interface of the running shell, which applies the removal at once and
+    stores it in the appletsrc itself, so the removal survives the next login
+    and needs no restart of the shell. Nothing is removed without a live
+    session, because the shell that owns the panel is not running then; that is
+    reported and never fails the task. Returns True when at least one applet
+    was removed, so a run that finds none reports no change and a rerun is
+    idempotent.
+    """
+
+    if not values.APPLET_REMOVE_PLUGINS:
+        return False
+    answer = _run_plasma_script(
+        _applet_removal_script(values.APPLET_REMOVE_PLUGINS),
+        no_session_message=(
+            "no desktop session, the panel applets stay on the panel"
+        ),
+        warning_prefix="cannot remove the panel applets, they stay on the panel",
+        timeout=timeout,
+        env=env,
+        warnings=warnings,
+    )
+    if answer is None:
+        return False
+    report = trim_whitespace(answer)
+    if not report.isdigit():
+        # A shell that answered without a count leaves the panel unchanged as
+        # far as this step can tell, so it reports no change. A report that
+        # says something and is still not a count is a surprise and becomes a
+        # warning, so a silent wrong answer never hides.
+        if report:
+            warning = f"the panel applet removal reported {report!r}, not a count"
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+        return False
+    removed_count = int(report)
+    if removed_count:
+        _log(
+            f"removed {removed_count} panel applet(s):"
+            f" {', '.join(values.APPLET_REMOVE_PLUGINS)}"
+        )
+    return removed_count > 0
 
 
 def _apply_applet_records(
@@ -2268,7 +2387,9 @@ def task(ctx: Context) -> TaskResult:
     target user: the global theme first, then the color scheme so the
     configured scheme wins, then the NumLock state, the touchpad click
     method, the Wayland virtual keyboard, the configured kconfig
-    values, the theme cursor overrides that let the day and night switch
+    values, the panel applet settings and the removal of the configured panel
+    applets from the panel, the theme cursor overrides that let the day and
+    night switch
     apply the configured cursors, and the cursor theme last, so it wins
     over the theme default the switch writes. When automatic_look_and_feel
     is set, the theme is not applied directly: the task enables the native
@@ -2496,6 +2617,12 @@ def task(ctx: Context) -> TaskResult:
         "apply the panel applet settings",
         lambda: _apply_applet_records(
             timeout=timeout, force=force, env=apply_env, warnings=warnings
+        ),
+    )
+    settings_changed |= step(
+        "remove the configured panel applets",
+        lambda: _apply_applet_removals(
+            timeout=timeout, env=apply_env, warnings=warnings
         ),
     )
     changed |= settings_changed

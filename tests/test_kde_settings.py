@@ -378,6 +378,14 @@ def _install_fakes(
                 writes.append(list(command))
                 return _FakeProc(0, "")
             if inner[0] == "qdbus6":
+                if any("evaluateScript" in part for part in inner):
+                    # The scripting interface of the running shell answers the
+                    # panel applet steps: the settings call reports the keys it
+                    # wrote and the removal call reports how many applets it
+                    # removed. It is neither the kwin reload nor the powerdevil
+                    # reparse, so it is not recorded as one; a count of zero
+                    # means no applet was removed.
+                    return _FakeProc(0, "0")
                 if fail_on_reload:
                     raise subprocess.CalledProcessError(1, command)
                 if any("reparseConfiguration" in part for part in inner):
@@ -2693,3 +2701,146 @@ def test_without_a_session_the_applet_settings_wait_for_the_next_login(
 
     assert not [call for call in seen if any("plasmashell" in part for part in call)]
     assert warnings == []
+
+
+def test_the_applet_removal_script_names_every_configured_plugin() -> None:
+    # The script removes an applet by the plugin its section declares, because
+    # the id and the position of an applet differ per machine, and it reports
+    # the number of removals so the caller knows whether anything changed.
+    script = task_module._applet_removal_script(values.APPLET_REMOVE_PLUGINS)
+
+    assert values.APPLET_REMOVE_PLUGINS == ("org.kde.plasma.pager",)
+    assert "org.kde.plasma.pager" in script
+    assert "panels()" in script
+    assert "remove()" in script
+    assert "print(removed)" in script
+
+
+def test_a_running_panel_gets_the_applet_removal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The removal goes to the panel itself through the scripting interface of
+    # the running shell, which applies it at once and stores it, so the shell is
+    # never restarted and the removal survives the next login.
+    seen: list[tuple[list[str], dict[str, Any]]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append((list(command), dict(kwargs)))
+        return _FakeProc(0, "1")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    env = {"DISPLAY": ":0"}
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_removals(timeout=5, env=env, warnings=warnings)
+
+    assert changed is True
+    assert warnings == []
+    assert len(seen) == 1
+    command, kwargs = seen[0]
+    assert command[-2] == "org.kde.PlasmaShell.evaluateScript"
+    assert "org.kde.plasma.pager" in command[-1]
+    assert kwargs["extra_env"] == env
+
+
+def test_applet_removal_is_idempotent_when_no_applet_is_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A panel without the configured applet reports zero removals, so the step
+    # changes nothing and a rerun reaches the target state.
+    monkeypatch.setattr(
+        task_module, "run_command", lambda command, **kwargs: _FakeProc(0, "0")
+    )
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_removals(
+        timeout=5, env={"DISPLAY": ":0"}, warnings=warnings
+    )
+
+    assert changed is False
+    assert warnings == []
+
+
+def test_without_a_session_the_applet_removal_is_skipped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A machine without a session runs no shell that owns the panel, so nothing
+    # is removed and nothing is reported as an error.
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "0")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_removals(timeout=5, env=None, warnings=warnings)
+
+    assert changed is False
+    assert warnings == []
+    assert not [call for call in seen if any("plasmashell" in part for part in call)]
+
+
+def test_applet_removal_failure_is_a_warning_not_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A shell call that fails must not fail the task: the removal is reported
+    # and the remaining steps of the run still apply.
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_removals(
+        timeout=5, env={"DISPLAY": ":0"}, warnings=warnings
+    )
+
+    assert changed is False
+    assert len(warnings) == 1
+    assert "cannot remove the panel applets" in warnings[0]
+
+
+def test_an_empty_removal_list_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The value is the switch: an empty list turns the removal off without a
+    # call to the shell.
+    monkeypatch.setattr(values, "APPLET_REMOVE_PLUGINS", ())
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "0")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+
+    changed = task_module._apply_applet_removals(timeout=5, env={"DISPLAY": ":0"})
+
+    assert changed is False
+    assert seen == []
+
+
+def test_the_task_removes_the_configured_panel_applets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The removal is one step of the task, so a run of the task removes the
+    # configured panel applets from the running panel.
+    ctx = _ctx(tmp_path)
+    _install_fakes(monkeypatch)
+    calls: list[str | None] = []
+
+    def fake_removals(
+        *, timeout: float, env: dict[str, str] | None = None, warnings: Any = None
+    ) -> bool:
+        calls.append(None if env is None else "session")
+        return True
+
+    monkeypatch.setattr(task_module, "_apply_applet_removals", fake_removals)
+
+    result = task_module.task(ctx)
+
+    assert calls == ["session"]
+    assert result.changed is True

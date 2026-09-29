@@ -1254,6 +1254,17 @@ APPLET_CONFIG_RECORDS: tuple[AppletConfigRecord, ...] = (
     ),
 )
 
+# The panel applets the task removes from the panel, named by the plugin their
+# appletsrc section declares. The pager is the desktop display widget, the strip
+# of virtual desktops on the panel. A removal goes through the scripting
+# interface of the running shell, because a running shell never reads the
+# appletsrc again: measured on Kubuntu 26.04 with Plasma 6.6.6 on 2026-09-29, the
+# applet object of the running shell has a remove() method that takes the applet
+# off the panel at once, and the shell stores the removal in the appletsrc
+# itself, so the change needs no restart of the shell and survives the next
+# login. An empty list turns the removal off.
+APPLET_REMOVE_PLUGINS: tuple[str, ...] = ("org.kde.plasma.pager",)
+
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
@@ -1267,6 +1278,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PLASMA_SHELL_SCRIPT_METHOD_NAME",
     "PLASMA_SHELL_SCRIPT_COMMAND",
     "APPLET_CONFIG_RECORDS",
+    "APPLET_REMOVE_PLUGINS",
     "KCONFIG_BOOL_TYPE",
     "USERNAME_PLACEHOLDER_NAME",
     "HOME_PLACEHOLDER_NAME",
