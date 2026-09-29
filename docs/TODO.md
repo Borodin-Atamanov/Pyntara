@@ -63,3 +63,5 @@ behaviour, and the choice is the user's: keep the short probe, raise its budget,
 probe a silent host again before it is called blocked. The cost of the present choice
 is visible in the run above, where one silence of 15 s left the machine without the
 program.
+
+## Хром, исправить в репозитарии настроек хрома, чтобы вначале там окна лишние - принять правила хрома - лишнее и второе, с галочками, предлагающими сделать его браузером по-умолчанию, надо чтобы они не поялвлись эти окна.
