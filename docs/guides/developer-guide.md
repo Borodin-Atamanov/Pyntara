@@ -30,6 +30,10 @@ Secrets store must have a test proving that reloading an existing store returns 
 
 Testing MUST cover both the Python application and the bootstrap installer.
 
+Recommended, not required: a run on a virtual machine, because a task must reach its goal on a real machine and no unit test shows that.  
+Keep an image of a machine that answers ssh on port 22 with a password login, has every package already installed, carries the guest agent so commands run from the host without a console, and holds no configuration from Pyntara, so every test starts from an unconfigured machine.  
+Make a cheap copy of that image as an overlay, which leaves the image itself untouched and keeps only what the run writes, start the copy and run the installer there the way a user runs it, with PYNTARA_REPO_URL pointing at a local clone and PYNTARA_REPO_BRANCH at the branch under test, so the code and the packages come from the local disk and the run stays quick.
+
 ## CI requirements
 
 Project must enforce ruff, mypy --strict, and full pytest.  
