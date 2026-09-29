@@ -1395,10 +1395,11 @@ def test_the_merge_hands_the_new_profile_directories_to_the_desktop_user(
         lambda path, **kwargs: owned.append(Path(path)),
     )
 
-    changed, note = chrome_setup._apply_profile(force=False, timeout=5)
+    changed, messages, notes = chrome_setup._apply_profile(force=False, timeout=5)
 
     assert changed is True
-    assert not note
+    assert messages == [f"merged the browser preferences over {profile_preferences}"]
+    assert not notes
     profile_dir = home / values.PROFILE_DIR_RELATIVE_PATH
     assert profile_dir in owned
     assert profile_dir / preferences.parent.name in owned
@@ -1430,9 +1431,10 @@ def test_the_profile_directories_change_hands_when_no_setting_changes(
         lambda path, **kwargs: owned.append(Path(path)),
     )
 
-    changed, note = chrome_setup._apply_profile(force=False, timeout=5)
+    changed, messages, notes = chrome_setup._apply_profile(force=False, timeout=5)
 
     assert changed is False
-    assert not note
+    assert not messages
+    assert not notes
     profile_dir = home / values.PROFILE_DIR_RELATIVE_PATH
     assert profile_dir in owned

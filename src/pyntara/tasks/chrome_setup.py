@@ -426,8 +426,16 @@ def _deploy_profile_content(*, force: bool) -> tuple[bool, list[str]]:
     )
 
 
-def _apply_profile(*, force: bool, timeout: float) -> tuple[bool, list[str]]:
-    """Apply the settings repository to the live browser profile; (changed, notes).
+def _apply_profile(
+    *, force: bool, timeout: float
+) -> tuple[bool, list[str], list[str]]:
+    """Apply the settings repository to the live browser profile.
+
+    Returns whether anything was applied, one message per applied piece (the
+    copied repository content and the merged preferences file, reported apart
+    because a machine whose browser rewrites its preferences on every start
+    would otherwise hide an unchanged repository behind one line) and the notes
+    of the run.
 
     The repository is applied as a whole, so the profile carries what the
     repository declares and the task names no file of it: the preferences file
@@ -446,27 +454,38 @@ def _apply_profile(*, force: bool, timeout: float) -> tuple[bool, list[str]]:
             "Google Chrome is running; the profile settings apply on the next "
             "Chrome start"
         )
-        return False, [running_note]
+        return False, [], [running_note]
     profile_dir = _profile_dir()
     target = _profile_preferences_path()
     notes: list[str] = []
+    messages: list[str] = []
     try:
         content_changed, warnings = _deploy_profile_content(force=force)
     except OSError as exc:
-        return False, [f"cannot apply the repository content to the profile: {exc}"]
+        return (
+            False,
+            [],
+            [f"cannot apply the repository content to the profile: {exc}"],
+        )
     notes.extend(warnings)
+    if content_changed:
+        messages.append(
+            f"copied the repository browser settings to {profile_dir}"
+        )
     try:
         hand_to_user(profile_dir)
         hand_to_user(target.parent)
     except OSError as exc:
-        return content_changed, [
+        return bool(messages), messages, [
             *notes,
             f"cannot prepare the profile directory: {exc}",
         ]
     merged_changed, note = _apply_profile_preferences()
     if note:
         notes.append(note)
-    return content_changed or merged_changed, notes
+    if merged_changed:
+        messages.append(f"merged the browser preferences over {target}")
+    return bool(messages), messages, notes
 
 
 def _same_directory(left: Path, right: Path) -> bool:
@@ -1150,10 +1169,12 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     _log("applying the browser profile settings")
-    profile_changed, profile_notes = _apply_profile(force=force, timeout=timeout)
+    profile_changed, profile_messages, profile_notes = _apply_profile(
+        force=force, timeout=timeout
+    )
     warnings.extend(profile_notes)
+    messages.extend(profile_messages)
     if profile_changed:
-        messages.append(f"applied the browser profile settings to {_profile_dir()}")
         changed = True
 
     _log("checking the local proxy of the Xray client")
