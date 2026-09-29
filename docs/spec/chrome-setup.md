@@ -48,7 +48,13 @@ The KDE menu launches Chrome through the packaged desktop entry at desktop_sourc
 --user-data-dir on profile_mirror_path, left out while the mirror mount is not confirmed  
 --remote-debugging-port on the configured cdp_port and --remote-debugging-address on the configured cdp_address, which binds the listener to the loopback only  
 
-The flags are appended in that order to every Exec line, so the main entry, the new window action and the incognito action all start the same browser. The override directory precedes the packaged one in the XDG search order, so the flags apply to the menu launch and survive Chrome package updates; when an update replaces the packaged entry, the next run re-derives the override from the new content. A missing packaged entry leaves the override unwritten and is reported as a warning.
+The flags are appended in that order to every Exec line, so the main entry, the new window action and the incognito action all start the same browser. Every such line also starts through the command of exec_prefix, which runs the browser with XDG_CACHE_HOME on the cache home under the home of the desktop user described by chrome_cache_home_relative_path, so the browser keeps its font cache in a directory of its own instead of the shared cache directory of the user.
+
+The reason is measured (2026-09-29). Branded Google Chrome carries its own static fontconfig, whose cache format differs from the format of the system library: Chrome cannot reuse the cache of /var/cache, and a normal user cannot write there either, so without the prefix the browser writes its font cache into home_dir/.cache/fontconfig. The system library reads those files through the compatibility links fontconfig itself writes (it names the file of the new format for the older formats as well), and while it does so the records of the container fonts of the fonts-katex package (the WOFF and WOFF2 files of that package, the only ones of the machine) decode without family, style and charset: 40 records of 862 on the measured machine. A record without properties matches every request, so the font match of the machine answers one math web font to any query, and Qt crashes inside libfontconfig in FcCharSetHasChar while it asks that record for the glyph of a flag. Because the panel applets run inside the process of plasmashell, that crash took the whole Plasma shell down with it: seventeen shell crashes at one boot, an exhausted restart limit and a desktop without a panel, which reads as a hung machine.
+
+The prefix stands inside the Exec line itself, so every launch of the entry carries it, from the menu and from the panel alike, and it does not depend on the environment of the session. It is all or nothing: a value the run cannot resolve drops the whole prefix, so no line starts a program without its variable or a variable without its program. The variable moves the whole XDG cache home of that process, so the disk cache of the browser lands under the same directory and is rebuilt once.
+
+The override directory precedes the packaged one in the XDG search order, so the flags apply to the menu launch and survive Chrome package updates; when an update replaces the packaged entry, the next run re-derives the override from the new content. A missing packaged entry leaves the override unwritten and is reported as a warning.
 
 ## Menu refresh
 
@@ -91,6 +97,8 @@ profile_dir_relative_path - the live Chrome profile directory under home_dir
 keyring_temp_dir_prefix - the prefix of the temporary directory the key is downloaded into
 keyring_armored_file_name - the name of the armored key file inside that temporary directory
 apt_source_template_file_name - the apt source template under task_data/chrome_setup/, rendered with $keyring_path
+chrome_cache_home_relative_path - the XDG cache home the browser is started with, under home_dir; it keeps the font cache of the browser out of the shared cache directory of the user
+exec_prefix - the command every Exec line starts through, in order, each part with its placeholders; an unresolvable placeholder drops the whole prefix
 launch_flags - the flags appended to every Exec line, in order, each with its placeholders; a flag whose value is empty is left out
 desktop_entry_exec_key - the key of the desktop entry line that starts the program, which receives the flags; every line carrying it is appended to, so the main entry and the window actions start the same browser
 keyring_dearmor_command - the command that dearmors the key, with {armored} and {output}

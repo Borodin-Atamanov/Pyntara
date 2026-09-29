@@ -55,6 +55,11 @@ DESKTOP_SOURCE = (
     "Exec=/usr/bin/google-chrome-stable\n"
 )
 CDP_FLAGS = " --remote-debugging-port=19222 --remote-debugging-address=127.0.0.1"
+# The cache home the override starts the browser with and the prefix every Exec
+# line carries because of it: the browser keeps its own font cache out of the
+# shared cache directory of the desktop user (values.EXEC_PREFIX).
+CACHE_HOME = "/home/i/.cache/google-chrome"
+EXEC_PREFIX_TEXT = f"/usr/bin/env XDG_CACHE_HOME={CACHE_HOME} "
 # The local proxy of the repository [three_x_ui_xray_setup] section and the
 # flag the override receives while a listener answers on its port.
 LOCAL_PROXY_PORT = 10800
@@ -441,16 +446,79 @@ def test_desktop_content_appends_flags_to_each_exec() -> None:
         DESKTOP_SOURCE,
         proxy_server=f"socks5://127.0.0.1:{LOCAL_PROXY_PORT}",
         user_data_dir="/home/i/.config/google-chrome-cdp",
+        chrome_cache_home=CACHE_HOME,
     )
     exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
     assert len(exec_lines) == 2
     for line in exec_lines:
+        assert line.startswith("Exec=" + EXEC_PREFIX_TEXT)
         assert line.endswith(
             PROXY_FLAG
             + " --user-data-dir=/home/i/.config/google-chrome-cdp"
             + CDP_FLAGS
         )
+    assert "Exec=" + EXEC_PREFIX_TEXT + "/usr/bin/google-chrome-stable %U" in content
     assert "Name=Google Chrome" in content
+
+
+def test_desktop_content_prefix_carries_the_home_of_any_desktop_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The cache home sits under the home of the desktop user, so a machine
+    # whose desktop account is not the one the package was written for sends
+    # the font cache of its browser into the cache directory of that account.
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", "/home/otheruser")
+    content = chrome_setup._desktop_content(
+        DESKTOP_SOURCE,
+        proxy_server="",
+        user_data_dir="",
+        chrome_cache_home=chrome_setup._chrome_cache_home(),
+    )
+    assert chrome_setup._chrome_cache_home() == "/home/otheruser/.cache/google-chrome"
+    for line in content.splitlines():
+        if line.startswith("Exec="):
+            assert line.startswith(
+                "Exec=/usr/bin/env XDG_CACHE_HOME=/home/otheruser/.cache/google-chrome "
+            )
+
+
+def test_desktop_content_leaves_the_prefix_out_without_a_cache_home() -> None:
+    # The prefix is all or nothing: a missing value drops the whole prefix
+    # instead of leaving a program without its variable.
+    content = chrome_setup._desktop_content(
+        DESKTOP_SOURCE,
+        proxy_server="",
+        user_data_dir="",
+        chrome_cache_home="",
+    )
+    exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
+    assert len(exec_lines) == 2
+    for line in exec_lines:
+        assert line == line.replace("/usr/bin/env", "")
+        assert line.startswith("Exec=/usr/bin/google-chrome-stable")
+        assert line.endswith(CDP_FLAGS)
+
+
+def test_the_exec_prefix_comes_from_the_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The prefix is a value of the section like the flag list: another program
+    # and another variable are what the Exec lines carry.
+    monkeypatch.setattr(
+        values,
+        "EXEC_PREFIX",
+        ("/usr/bin/env", "HOME={user_data_dir}"),
+    )
+    content = chrome_setup._desktop_content(
+        DESKTOP_SOURCE,
+        proxy_server="",
+        user_data_dir="/home/i",
+        chrome_cache_home=CACHE_HOME,
+    )
+    for line in content.splitlines():
+        if line.startswith("Exec="):
+            assert line.startswith("Exec=/usr/bin/env HOME=/home/i ")
+            assert "XDG_CACHE_HOME" not in line
 
 
 def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
@@ -458,10 +526,12 @@ def test_desktop_content_leaves_out_a_flag_that_is_not_ready() -> None:
         DESKTOP_SOURCE,
         proxy_server="",
         user_data_dir="",
+        chrome_cache_home=CACHE_HOME,
     )
     exec_lines = [line for line in content.splitlines() if line.startswith("Exec=")]
     assert len(exec_lines) == 2
     for line in exec_lines:
+        assert line.startswith("Exec=" + EXEC_PREFIX_TEXT)
         assert line.endswith(CDP_FLAGS)
         assert "--proxy-server" not in line
         assert "--user-data-dir" not in line
@@ -485,9 +555,11 @@ def test_desktop_content_follows_the_launch_flags(
         DESKTOP_SOURCE,
         proxy_server="socks5://127.0.0.1:10808",
         user_data_dir="",
+        chrome_cache_home=CACHE_HOME,
     )
     for line in content.splitlines():
         if line.startswith("Exec="):
+            assert line.startswith("Exec=" + EXEC_PREFIX_TEXT)
             assert line.endswith(
                 " --proxy-server=socks5://127.0.0.1:10808 --remote-debugging-port=31337"
             )
@@ -506,12 +578,60 @@ def test_the_desktop_entry_key_comes_from_the_values(
         renamed,
         proxy_server="",
         user_data_dir="",
+        chrome_cache_home=CACHE_HOME,
     )
     starts_lines = [line for line in content.splitlines() if line.startswith("Starts=")]
     assert len(starts_lines) == 2
     for line in starts_lines:
+        assert line.startswith("Starts=" + EXEC_PREFIX_TEXT)
         assert line.endswith(CDP_FLAGS)
     assert not any(line.startswith("Exec=") for line in content.splitlines())
+
+
+def test_the_override_starts_the_browser_with_its_own_cache_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The browser of the machine carries its own fontconfig, whose cache format
+    # the system library misreads, so every Exec line of the written override
+    # sends the browser into a cache home of its own under the home of the
+    # desktop user (docs/spec/chrome-setup.md).
+    ctx = _ctx(tmp_path)
+    _write_repo()
+    _write_desktop_source()
+    _fake_run_factory(monkeypatch, chrome_installed=True)
+
+    result = chrome_setup.task(ctx)
+
+    assert result.success
+    prefix = f"/usr/bin/env XDG_CACHE_HOME={chrome_setup._chrome_cache_home()} "
+    assert prefix == f"/usr/bin/env XDG_CACHE_HOME={tmp_path}/home/.cache/google-chrome "
+    override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
+    exec_lines = [
+        line for line in override_text.splitlines() if line.startswith("Exec=")
+    ]
+    assert len(exec_lines) == 2
+    for line in exec_lines:
+        assert line.startswith("Exec=" + prefix)
+
+
+def test_the_override_is_written_once_and_kept_on_the_next_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ctx = _ctx(tmp_path)
+    _write_repo()
+    _write_desktop_source()
+    _fake_run_factory(monkeypatch, chrome_installed=True)
+
+    assert chrome_setup.task(ctx).success
+    override_path = values.DESKTOP_OVERRIDE_PATH
+    written_once = override_path.read_text(encoding="utf-8")
+    stamp = override_path.stat().st_mtime_ns
+
+    second = chrome_setup.task(ctx)
+
+    assert second.success
+    assert override_path.stat().st_mtime_ns == stamp
+    assert override_path.read_text(encoding="utf-8") == written_once
 
 
 def test_local_proxy_server_reads_the_three_x_ui_values(
@@ -584,6 +704,10 @@ def test_full_flow_mounts_the_profile_mirror_and_enables_it(
     override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
     assert PROXY_FLAG in override_text
     assert f" --user-data-dir={values.PROFILE_MIRROR_PATH}" in override_text
+    assert (
+        f"/usr/bin/env XDG_CACHE_HOME={chrome_setup._chrome_cache_home()} "
+        in override_text
+    )
 
 
 def test_mirror_that_is_not_mounted_keeps_the_user_data_dir_flag_out(

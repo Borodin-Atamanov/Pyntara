@@ -117,6 +117,29 @@ KEYRING_ARMORED_FILE_NAME: str = "google-chrome-key.pub"
 # clone, rendered with $keyring_path.
 APT_SOURCE_TEMPLATE_FILE_NAME: str = "google-chrome.sources"
 
+# XDG cache home the browser is started with, under the home of the desktop
+# user, and the command every Exec line starts through with that variable.
+# Google Chrome carries its own static fontconfig, whose cache format differs
+# from the format of the system library: Chrome cannot reuse the system cache
+# under /var/cache, and a normal user cannot write there either, so without
+# this variable Chrome writes its font cache into the shared cache directory of
+# the user (home_dir/.cache/fontconfig). The system library then reads those
+# files through the compatibility links fontconfig itself writes and decodes
+# the records of the container fonts of the fonts-katex package without family,
+# style and charset; such a record matches every request, so the font match of
+# the machine answers a math web font to any query, and Qt crashes inside
+# libfontconfig while it asks that record for a glyph, which takes the whole
+# Plasma shell down with it (measured on 2026-09-29, docs/spec/chrome-setup.md).
+# The variable stands inside the Exec line itself, so it holds for every launch
+# of the entry, from the menu and from the panel alike, and does not depend on
+# the environment of the session. The directory name is the one Chrome uses for
+# its own caches anyway, so the browser keeps them where it always kept them.
+CHROME_CACHE_HOME_RELATIVE_PATH: str = ".cache/google-chrome"
+EXEC_PREFIX: tuple[str, ...] = (
+    "/usr/bin/env",
+    "XDG_CACHE_HOME={chrome_cache_home}",
+)
+
 # Flags appended to every Exec line of the packaged desktop entry, in order,
 # each with the placeholders it needs. A flag whose placeholder has no value is
 # left out, so a piece that is not in place costs the browser that one flag and
@@ -277,6 +300,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KEYRING_TEMP_DIR_PREFIX",
     "KEYRING_ARMORED_FILE_NAME",
     "APT_SOURCE_TEMPLATE_FILE_NAME",
+    "CHROME_CACHE_HOME_RELATIVE_PATH",
+    "EXEC_PREFIX",
     "LAUNCH_FLAGS",
     "KEYRING_DEARMOR_COMMAND",
     "SETTINGS_CLONE_COMMAND",

@@ -525,11 +525,46 @@ def _local_proxy_server(
     return f"socks5://{address}:{port}", None
 
 
+def _chrome_cache_home() -> str:
+    """The XDG cache home the browser is started with.
+
+    The path sits under the home of the desktop user, so a machine whose
+    desktop account is not the one this package was written for sends the font
+    cache of its browser into the cache directory of that account.
+    """
+
+    return str(
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.CHROME_CACHE_HOME_RELATIVE_PATH
+    )
+
+
+def _exec_prefix(placeholders: dict[str, str]) -> str:
+    """The command every Exec line starts through, with a trailing space.
+
+    The prefix is all or nothing: it carries the program that runs the browser
+    with a variable of its own, so a placeholder without a value drops the
+    whole prefix instead of leaving a program without its variable or a
+    variable without its program.
+    """
+
+    names = [
+        name
+        for part in values.EXEC_PREFIX
+        for name in FLAG_PLACEHOLDER_PATTERN.findall(part)
+    ]
+    if any(not placeholders[name] for name in names):
+        return ""
+    rendered = " ".join(part.format(**placeholders) for part in values.EXEC_PREFIX)
+    return rendered + " "
+
+
 def _desktop_content(
     source_text: str,
     *,
     proxy_server: str,
     user_data_dir: str,
+    chrome_cache_home: str,
 ) -> str:
     """The packaged desktop entry with the launch flags on every Exec line.
 
@@ -538,15 +573,20 @@ def _desktop_content(
     makes the DevTools listener work with the live profile, and the DevTools
     listener itself. A flag whose placeholder has no value is left out, so a
     piece that is not in place costs the browser that one flag instead of the
-    whole start.
+    whole start. The prefix of EXEC_PREFIX stands in front of the program of
+    every such line, so the browser receives a cache home of its own on every
+    launch of the entry, the ones from the menu and the ones from the panel
+    alike.
     """
 
     placeholders = {
         "proxy_server": proxy_server,
         "user_data_dir": user_data_dir,
+        "chrome_cache_home": chrome_cache_home,
         "cdp_port": str(values.CDP_PORT),
         "cdp_address": values.CDP_ADDRESS,
     }
+    prefix = _exec_prefix(placeholders)
     flags = ""
     for flag in values.LAUNCH_FLAGS:
         names = FLAG_PLACEHOLDER_PATTERN.findall(flag)
@@ -556,7 +596,9 @@ def _desktop_content(
     lines: list[str] = []
     for line in source_text.splitlines(keepends=True):
         if line.startswith(values.DESKTOP_ENTRY_EXEC_KEY):
-            lines.append(line.rstrip("\n") + flags + "\n")
+            key = values.DESKTOP_ENTRY_EXEC_KEY
+            body = line[len(key) :].rstrip("\n")
+            lines.append(f"{key}{prefix}{body}{flags}\n")
         else:
             lines.append(line)
     return "".join(lines)
@@ -582,6 +624,7 @@ def _ensure_desktop_override(
         source.read_text(encoding="utf-8"),
         proxy_server=proxy_server,
         user_data_dir=user_data_dir,
+        chrome_cache_home=_chrome_cache_home(),
     )
     target = values.DESKTOP_OVERRIDE_PATH
     try:
