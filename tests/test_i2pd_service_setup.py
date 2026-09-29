@@ -185,6 +185,8 @@ def _install_fake(
     fail_install: int = 0,
     active_becomes: bool = True,
     missing_binary: bool = False,
+    active_after_install: bool = False,
+    identity_after_restart: bool = False,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -196,14 +198,22 @@ def _install_fake(
     after the first start or restart; without it, the readiness loop
     runs out. With missing_binary, the i2pd call raises
     FileNotFoundError like a real missing executable.
+    active_after_install models the package postinst, which starts the
+    daemon itself with invoke-rc.d: the state read before the install then
+    says inactive while the daemon already runs with the packaged
+    configuration. identity_after_restart writes the tunnel identity file
+    when the service is restarted, as i2pd creates it when it reads the
+    tunnels configuration; a start on an already running daemon re-reads
+    nothing and so creates nothing.
     """
 
     calls: list[list[str]] = []
     install_attempts = 0
     started = False
+    package_installed = False
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
-        nonlocal install_attempts, started
+        nonlocal install_attempts, started, package_installed
         del kwargs
         calls.append(list(command))
         if command[0] == "dpkg" and command[1] == "--print-architecture":
@@ -225,6 +235,7 @@ def _install_fake(
                 install_attempts += 1
                 if install_attempts <= fail_install:
                     raise subprocess.CalledProcessError(100, command)
+                package_installed = True
             return _FakeProc(0)
         if command[0] == "systemctl":
             if command[1] == "is-enabled":
@@ -232,11 +243,18 @@ def _install_fake(
                     return _FakeProc(0, "enabled\n")
                 return _FakeProc(1, "disabled\n")
             if command[1] == "is-active":
-                if active or (active_becomes and started):
+                if (
+                    active
+                    or (active_after_install and package_installed)
+                    or (active_becomes and started)
+                ):
                     return _FakeProc(0, "active\n")
                 return _FakeProc(1, "inactive\n")
             if command[1] in ("start", "restart"):
                 started = True
+                if command[1] == "restart" and identity_after_restart:
+                    values.TUNNEL_KEYS_PATH.parent.mkdir(parents=True, exist_ok=True)
+                    values.TUNNEL_KEYS_PATH.write_bytes(i2pd_keys_file_bytes())
             return _FakeProc(0)
         return _FakeProc(0)
 
@@ -654,12 +672,74 @@ def test_render_tunnels_config_uses_ssh_port(tmp_path: Path) -> None:
     assert f"keys = {values.TUNNEL_KEYS_PATH.name}\n" in config
 
 
+def test_package_started_daemon_is_restarted_and_creates_the_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The real package postinst starts the daemon itself with invoke-rc.d, so
+    # the state read before the install says inactive while the daemon already
+    # runs with the packaged configuration. The action must therefore come
+    # from a state read AFTER the install and the configuration writes: a
+    # start on the running unit does nothing, the daemon never reads the
+    # owned tunnels file, the tunnel identity never appears and the run
+    # reports no address. That is the defect measured on 2026-09-29.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
+    calls = _install_fake(
+        monkeypatch,
+        installed_version=None,
+        enabled=False,
+        active=False,
+        active_after_install=True,
+        identity_after_restart=True,
+    )
+
+    result = i2pd_service_setup.task(ctx)
+
+    assert result.success is True
+    assert ["systemctl", "restart", "i2pd.service"] in calls
+    assert ["systemctl", "start", "i2pd.service"] not in calls
+    install_index = next(
+        index
+        for index, call in enumerate(calls)
+        if call[0] == "apt-get" and call[1] == "install"
+    )
+    assert any(
+        call[:2] == ["systemctl", "is-active"] for call in calls[install_index:]
+    )
+    assert i2pd_keys_b32_address() in (result.message or "")
+    assert values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip() == (
+        i2pd_keys_b32_address()
+    )
+
+
+def test_missing_identity_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The identity never appears: the task completes with a warning that
+    # names the file and the consequence, so the run summary and the exit
+    # code show that the tunnel is not usable yet instead of claiming a
+    # success that the machine does not have.
+    _install_fixtures(monkeypatch, tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
+    _install_fake(monkeypatch, installed_version=None, enabled=False, active=False)
+
+    result = i2pd_service_setup.task(ctx)
+
+    assert result.success is True
+    assert any(
+        "did not appear" in warning and str(values.TUNNEL_KEYS_PATH) in warning
+        for warning in result.warnings
+    )
+    assert "not available yet" in (result.message or "")
+    assert not values.ADDRESS_FILE_PATH.exists()
+
+
 def test_first_run_message_without_keys_file(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # On the first run the keys file does not exist yet: the task writes
-    # the tunnels file, starts the service and reports that the address
-    # appears after the first start.
+    # On the first run the keys file does not exist yet: the task writes the
+    # tunnels file, starts the service and reports that the address is not
+    # available yet, as a warning of the run.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(monkeypatch, tmp_path)
     calls = _install_fake(
@@ -668,7 +748,8 @@ def test_first_run_message_without_keys_file(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert "appears after the first start" in (result.message or "")
+    assert "SSH tunnel address not available yet" in (result.message or "")
+    assert result.warnings
     assert values.TUNNELS_CONFIG_PATH.is_file()
     assert ["systemctl", "start", "i2pd.service"] in calls
 

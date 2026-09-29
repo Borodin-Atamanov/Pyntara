@@ -83,7 +83,7 @@ Add the name to MODES in src/pyntara/values/tasks.py and list it in the modes of
 
 ## Task best practices
 
-These rules come from the kde_keyboard_setup hotkey work, where writing a config file alone did not make a setting work. They apply to any task that configures a running service or a desktop session.
+These rules come from the kde_keyboard_setup hotkey work, where writing a config file alone did not make a setting work, and from the i2pd service work, where a package started its daemon before the task wrote the configuration. They apply to any task that configures a running service or a desktop session.
 
 Find how a setting takes effect before writing files. A value a daemon reads only at session start does not apply live; the mechanism is a file read, a DBus call, or a reload signal. Design the task around the real mechanism.  
 Identify the process that owns the state. A DBus service name can be served by an unexpected process (kwin serves org.kde.kglobalaccel on Wayland). Check the owner with GetConnectionUnixProcessID before planning restarts or reloads.  
@@ -96,7 +96,9 @@ Keep idempotency through read-back. Compare the current value before writing and
 Respect the side that persists state. If the daemon saves on its own, do not duplicate the file write and race its autosave; write the file only for the no-session path.  
 Use stable identifiers in config keys. Prefer unique names over localized display names or codes that need a fragile mapping.  
 Declare runtime dependencies in the task and install them. Do not assume a client library exists on the target.  
-Document limitations honestly. State what is not applied automatically (conflicts without a session, unsupported forms) instead of claiming full behavior.
+Document limitations honestly. State what is not applied automatically (conflicts without a session, unsupported forms) instead of claiming full behavior.  
+Read the service state after the install when the package starts the daemon itself. The postinst of such a package runs invoke-rc.d, so a state read before the install can say inactive while the daemon already runs with the packaged configuration; a start on a running unit does nothing, the daemon never reads the configuration written afterwards, and the result the task promises never appears (i2pd_service_setup, 2026-09-29: the identity file of the SSH tunnel stayed absent and the run reported success). The good shapes already in the tree are tor_setup, which reads the state after the install, and yggdrasil_service_setup, which restarts the unit after every configuration write.  
+Report a promised artefact that did not appear as a warning of the run. The task still completes, but the run summary and the exit code must show that the machine does not have the result yet; a quiet success leaves the user with a capability that is not there.
 
 ## Planning a task
 

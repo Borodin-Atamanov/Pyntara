@@ -34,11 +34,17 @@ after a start the task waits for the file with the declared address
 loop, saves the address into ADDRESS_FILE_PATH with the
 declared mode and reports it in the same run, so the deployed address
 command finds the saved value; a machine where the identity never
-appears ends the wait and says the address is not available yet.
+appears ends the wait with a warning that the machine is not reachable
+over I2P yet.
 
 The service
-is enabled and started or restarted immediately, and the task waits with
-the declared readiness loop for it to become active, because the
+is enabled, and it is started or restarted immediately: the action is
+chosen from a state read taken AFTER the install and the configuration
+writes, because the package starts the daemon itself (its postinst runs
+invoke-rc.d) and a start on an already running unit would leave the
+daemon with the packaged configuration, so the tunnel identity would
+never appear. The task then waits with the declared readiness loop for
+the service to become active, because the
 forking service may take a moment to fork. The task is idempotent: it
 skips when the installed version equals the newest release tag, the
 configuration matches the rendered template, the tunnels file matches
@@ -366,11 +372,13 @@ def task(ctx: Context) -> TaskResult:
     changed=False. Otherwise it downloads the matching .deb asset from
     the release, installs it, writes the configuration and the tunnels
     file, enables the service, starts or restarts it and waits for it to
-    become active. The .b32.i2p address of the tunnel is read from the
-    keys file and reported; i2pd writes the identity only after the
-    router is up, so a start is followed by the declared identity wait,
-    and a machine where the file never appears reports that the address
-    is not available yet instead of hanging.
+    become active. The action of that step is chosen from a service state
+    read after the install and after the configuration writes, because the
+    package starts the daemon itself. The .b32.i2p address of the tunnel is
+    read from the keys file and reported; i2pd writes the identity only
+    after the router is up, so a start is followed by the declared identity
+    wait, and a machine where the file never appears reports a warning that
+    the machine is not reachable over I2P yet instead of hanging.
     Every step is reported to stdout:
     measurements and decisions as single lines that include their
     result, long-running commands as a line before and a line after. A
@@ -612,10 +620,23 @@ def task(ctx: Context) -> TaskResult:
         or not keys_exist
         or force
     ):
-        action = "restart" if active else "start"
+        # The package starts the daemon itself when it is installed or
+        # reinstalled: its postinst runs invoke-rc.d i2pd start/restart, so the
+        # state read above is stale by now and the daemon may already run with
+        # the packaged configuration. A start on a running unit does nothing,
+        # the daemon never reads the configuration written above, and the
+        # tunnel identity then never appears; that is exactly what happened on
+        # 2026-09-29. The decision therefore reads the state again, after the
+        # install and after the configuration writes.
+        active_now = service_is_active(values.SERVICE_UNIT_NAME, timeout)
+        _log(
+            "checking service status after the configuration step: "
+            f"{'active' if active_now else 'inactive'}"
+        )
+        action = "restart" if active_now else "start"
         service_command = (
             values.SERVICE_RESTART_COMMAND
-            if active
+            if active_now
             else values.SERVICE_START_COMMAND
         )
         if service_command:
@@ -665,6 +686,16 @@ def task(ctx: Context) -> TaskResult:
         )
         address = _wait_tunnel_address()
         _log(f"tunnel address: {address or 'not available yet'}")
+        if address is None:
+            # The promised result of the task is the reachable tunnel, and the
+            # identity file is the half of it that is verifiable on this
+            # machine. Its absence is a warning of the run and no longer a
+            # quiet success: the run summary and the exit code show it.
+            warnings.append(
+                f"the tunnel identity file {values.TUNNEL_KEYS_PATH} did not "
+                f"appear after {values.ADDRESS_CHECK_ATTEMPTS} checks; the "
+                "machine is not reachable over I2P yet"
+            )
     if address and not _saved_address_matches(values.ADDRESS_FILE_PATH, address):
         try:
             values.ADDRESS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -684,13 +715,14 @@ def task(ctx: Context) -> TaskResult:
         message = (
             f"i2pd {tag or 'unknown version'} installed, "
             f"service {values.SERVICE_UNIT_NAME} active, "
-            f"SSH tunnel address {address}"
+            f"SSH tunnel address {address} (the local identity of the tunnel; "
+            "the router publishes it on the I2P network)"
         )
     else:
         message = (
             f"i2pd {tag or 'unknown version'} installed, "
             f"service {values.SERVICE_UNIT_NAME} active, "
-            "SSH tunnel address appears after the first start"
+            "SSH tunnel address not available yet"
         )
 
     return _result(changed=changed, message=message, warnings=warnings)
