@@ -8,8 +8,9 @@ itself live in the program alone and the task carries only what it must pass,
 where to put things and which packages its tools come from
 (docs/spec/users-and-host.md).
 
-The name of the /proc/meminfo line that carries the installed RAM is read from
-the shared module, because the zram_service section reads the same line.
+The kernel file the installed memory is read from and the name of the line
+inside it that carries the total are read from the shared module, because the
+zram_service section reads the same file and line.
 """
 
 from __future__ import annotations
@@ -39,9 +40,6 @@ SIZE_TOLERANCE_MB: int = 1
 # is created next to the swap file and removed again, so storage that keeps its
 # data in memory costs a few kibibytes instead of the size of the swap file.
 PROBE_SIZE_KB: int = 512
-
-# The kernel file the installed memory is read from, handed to the program.
-MEMINFO_PATH: Path = Path("/proc/meminfo")
 
 # The packages the tools of the program come from: swapon and swapoff are in
 # mount, mkswap and fallocate in util-linux, chattr in e2fsprogs. The task
@@ -203,7 +201,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SWAPFILE_MODE",
     "SIZE_TOLERANCE_MB",
     "PROBE_SIZE_KB",
-    "MEMINFO_PATH",
     "PACKAGES",
     "PROGRAM_FILE_NAME",
     "PROGRAM_DEPLOY_PATH",

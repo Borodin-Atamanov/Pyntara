@@ -1,35 +1,51 @@
-"""Task zram_service: configure aggressive ZRAM swap by CPU and RAM.
+"""Task zram_service: deploy the ZRAM program and its boot service.
 
-The device count equals the number of CPU cores (8 when the count cannot
-be determined), the total capacity is memory_fraction_percent of installed RAM split
-evenly across the devices and rounded down to the 4096-byte zram page
-size. Every device uses the zstd compression algorithm and is activated
-with swap priority 1111, so ZRAM swap is preferred over the disk
-swapfile (docs/spec/users-and-host.md). The task configures the devices
-immediately and installs a systemd oneshot service that repeats the same
-setup at every boot. Kernel 7.0 creates one zram device on every read of
-the hot_add attribute and returns the new device id; older kernels
-create one device per write. The task detects the interface at run time
-and renders the boot unit with the matching commands. The unit file is
-rendered from the template at task_data/zram_service/zram.service with
-the ExecStart block substituted (string.Template); the service reads
-no configuration file itself. The task is idempotent: it skips when every
-device already exists at the computed size with zstd active, no extra
-devices are present and the service is enabled; force mode tears the
-devices down and configures them again.
+The ZRAM devices belong to the program the section ships
+(task_data/zram_service/configure_zram.py). That program reads the installed
+memory and the CPU core count at every run, computes the device count and the
+size of every device, brings the devices of the machine to that state and
+activates them; the boot service runs the very same program at every start, so
+the run and the boot apply one code and cannot drift apart. This is what makes
+the machine follow a memory size or a core count that changed between two
+boots, instead of repeating numbers that were measured once when the task ran.
+
+The task deploys the program, renders the unit template with the command line it
+builds from the values module, enables the service and runs the program once,
+so the work of this run is done by the code the machine will run at its next
+boot. Kernel 7.0 creates one zram device on every read of the hot_add attribute
+and older kernels create one device per write; the program tells the two apart
+at run time, so the unit no longer carries the interface that was detected when
+the task ran.
+
+The program prints one line per step and its last line carries the result as a
+JSON object of changed, skipped_reason, error and warnings; that object is the
+only thing this task parses, while the sentences go into the run log as they
+are. A step the program could not perform is reported here as a warning of a
+completed task: the machine stays usable with the devices it could configure
+instead of the run failing.
+
+Every step is idempotent: the program is written only when its content differs
+from the deployed one, the unit only when the rendered content differs, and the
+service is enabled only when it is not enabled yet. Both files are written
+through a temporary file that replaces the target in one step, because a machine
+that loses power in the middle of an in-place write would be left with a
+truncated program or unit and the next boot would fail on it. After the program
+has run, the unit itself is started, so the artifact the next boot uses is
+proved by this run instead of being trusted.
 """
 
 from __future__ import annotations
 
-import errno
+import json
+import os
 import subprocess
-import time
 from pathlib import Path
 from string import Template
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     run_command,
     service_is_enabled,
@@ -41,346 +57,152 @@ from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import zram_service as values
 
-# Module-level path constants are monkeypatched by the tests, which run
-# against temporary fixtures instead of the real system (developer guide).
-MEMINFO_PATH = Path("/proc/meminfo")
-CPUINFO_PATH = Path("/proc/cpuinfo")
-SYS_BLOCK_PATH = Path("/sys/block")
-ZRAM_CONTROL_DIR = Path("/sys/class/zram-control")
-ZRAM_HOT_ADD_PATH = ZRAM_CONTROL_DIR / "hot_add"
-ZRAM_HOT_REMOVE_PATH = ZRAM_CONTROL_DIR / "hot_remove"
+# Suffix of the temporary file an atomic write goes through before it replaces
+# the deployed program or the rendered unit.
+TEMPORARY_FILE_SUFFIX: str = ".tmp"
 
 
-def _device_name(module_name: str, index: int) -> str:
-    """Name of one device as the kernel exposes it in /sys/block.
+def _write_file_atomically(path: Path, content: bytes | str) -> None:
+    """Write a file so that it is either the old content or the new one.
 
-    The name is the configured module name and the index, because the
-    kernel names every device of a module that way; the name is never
-    spelled in this module.
+    The content goes into a temporary file next to the target and replaces it in
+    one step, because a machine that loses power in the middle of an in-place
+    write would be left with a truncated file.
     """
 
-    return f"{module_name}{index}"
+    temporary = path.with_name(path.name + TEMPORARY_FILE_SUFFIX)
+    if isinstance(content, bytes):
+        temporary.write_bytes(content)
+    else:
+        temporary.write_text(content, encoding="utf-8")
+    os.replace(temporary, path)
 
 
-def _device_path(module_name: str, index: int) -> str:
-    """Path of the swap device the kernel creates for one device."""
+def _program_command(*, force: bool) -> tuple[str, ...]:
+    """The command line of the deployed program, built from the values.
 
-    return f"/dev/{_device_name(module_name, index)}"
-
-
-def _read_ram_kib() -> int:
-    """Total installed RAM in kibibytes from /proc/meminfo.
-
-    Raises OSError when the file cannot be read or the configured total
-    line is missing.
+    The option names are the interface of the program, which parses exactly
+    these names and reads no other source; the end to end test of the section
+    runs the program with this command line, so a name that drifts on one side
+    fails the tests instead of failing on a target machine.
     """
 
-    for line in MEMINFO_PATH.read_text(encoding="utf-8").splitlines():
-        if line.startswith(common_values.MEMINFO_TOTAL_KEY):
-            parts = line.split()
-            if len(parts) >= 2:
-                return int(parts[1])
-    raise OSError(f"{MEMINFO_PATH} has no {common_values.MEMINFO_TOTAL_KEY} line")
+    command = [
+        str(values.PROGRAM_DEPLOY_PATH),
+        "--meminfo",
+        str(common_values.MEMINFO_PATH),
+        "--meminfo-total-key",
+        common_values.MEMINFO_TOTAL_KEY,
+        "--cpuinfo",
+        str(values.CPUINFO_PATH),
+        "--cpuinfo-processor-key",
+        values.CPUINFO_PROCESSOR_KEY,
+        "--compressor",
+        values.COMPRESSOR,
+        "--swap-priority",
+        str(values.SWAP_PRIORITY),
+        "--memory-fraction-percent",
+        str(values.MEMORY_FRACTION_PERCENT),
+        "--percent-scale",
+        str(engine_values.PERCENT_SCALE),
+        "--fallback-cpu-count",
+        str(values.FALLBACK_CPU_COUNT),
+        "--alignment-bytes",
+        str(values.ALIGNMENT_BYTES),
+        "--bytes-per-kib",
+        str(engine_values.BYTES_PER_KIB),
+        "--module-name",
+        values.MODULE_NAME,
+        "--reset-busy-attempts",
+        str(values.RESET_BUSY_ATTEMPTS),
+        "--reset-busy-retry-delay-seconds",
+        str(values.RESET_BUSY_RETRY_DELAY_SECONDS),
+        "--command-timeout-seconds",
+        str(engine_values.COMMAND_TIMEOUT_SECONDS),
+    ]
+    if force:
+        command.append("--force")
+    return tuple(command)
 
 
-def _read_cpu_count() -> tuple[int, bool]:
-    """CPU core count and whether the fallback was used.
+def _deploy_program(source: Path, target: Path) -> tuple[bool, str | None]:
+    """Put the program at its deployed path with the declared mode.
 
-    The count comes from the processor lines in /proc/cpuinfo, whose name
-    is a value. When the file cannot be read or reports no processors, the
-    configured fallback is used and the flag is True.
-    """
-
-    try:
-        text = CPUINFO_PATH.read_text(encoding="utf-8")
-    except OSError:
-        return values.FALLBACK_CPU_COUNT, True
-    count = sum(
-        1 for line in text.splitlines() if line.startswith(values.CPUINFO_PROCESSOR_KEY)
-    )
-    if count == 0:
-        return values.FALLBACK_CPU_COUNT, True
-    return count, False
-
-
-def _calculate_devices(
-    ram_kib: int,
-    cpu_count: int,
-    bytes_per_kib: int,
-    percent_scale: int,
-) -> tuple[int, int]:
-    """Target (device_count, per_device_bytes).
-
-    The total capacity is the configured fraction of installed RAM; it is
-    split evenly across the devices and rounded down to the configured
-    byte boundary that the zram driver requires for disksize. The byte
-    factor and the percent scale are declared values.
-    """
-
-    total_bytes = (
-        ram_kib * bytes_per_kib * values.MEMORY_FRACTION_PERCENT // percent_scale
-    )
-    per_device_bytes = (
-        total_bytes // cpu_count // values.ALIGNMENT_BYTES * values.ALIGNMENT_BYTES
-    )
-    return cpu_count, per_device_bytes
-
-
-def _existing_device_indices(module_name: str) -> list[int]:
-    """Sorted device indices currently present in /sys/block.
-
-    Iterating the actual indices instead of a numeric range keeps the
-    teardown correct when a device is missing in the middle, which
-    happens when a device was removed by hand. An entry whose name is the
-    configured module name followed by a number is a device of it.
-    """
-
-    if not SYS_BLOCK_PATH.is_dir():
-        return []
-    indices: list[int] = []
-    for path in SYS_BLOCK_PATH.iterdir():
-        name = path.name
-        if not name.startswith(module_name):
-            continue
-        index_text = name[len(module_name) :]
-        if index_text.isdigit():
-            indices.append(int(index_text))
-    return sorted(indices)
-
-
-def _existing_device_count(module_name: str) -> int:
-    """Number of devices of the module currently present in /sys/block."""
-
-    return len(_existing_device_indices(module_name))
-
-
-def _read_disksize(index: int, module_name: str) -> int | None:
-    """Configured disksize in bytes for one device, or None when unreadable."""
-
-    try:
-        text = (
-            SYS_BLOCK_PATH.joinpath(_device_name(module_name, index), "disksize")
-            .read_text(encoding="utf-8")
-            .strip()
-        )
-        return int(text)
-    except OSError, ValueError:
-        return None
-
-
-def _read_active_algorithm(index: int, module_name: str) -> str | None:
-    """Currently active compression algorithm for one device, or None.
-
-    comp_algorithm lists every supported algorithm; the active one is
-    marked with square brackets, for example lzo lzo-rle [zstd] zstd.
+    The file is written only when its content differs, so a rerun leaves the
+    deployed program alone and reports no change of its own.
     """
 
     try:
-        text = SYS_BLOCK_PATH.joinpath(
-            _device_name(module_name, index), "comp_algorithm"
-        ).read_text(encoding="utf-8")
-    except OSError:
-        return None
-    for token in text.split():
-        if token.startswith("[") and token.endswith("]"):
-            return token[1:-1]
-    return None
+        content = source.read_bytes()
+    except OSError as exc:
+        return False, f"cannot read the program {source}: {exc}"
+    try:
+        if target.is_file() and target.read_bytes() == content:
+            _log(f"program already deployed: {target}")
+            return False, None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_file_atomically(target, content)
+        target.chmod(values.PROGRAM_FILE_MODE)
+    except OSError as exc:
+        return False, f"cannot deploy the program to {target}: {exc}"
+    _log(f"program deployed: {target}")
+    return True, None
 
 
-def _write_sysfs(path: Path, value: str) -> None:
-    """Write one value into a sysfs attribute file.
+def _render_unit(template_path: Path, command: tuple[str, ...]) -> str:
+    """Render the unit template with the command line of the program."""
 
-    Raises OSError when the attribute does not exist or the kernel
-    rejects the value.
-    """
-
-    path.write_text(value, encoding="utf-8")
-
-
-def _write_sysfs_with_retry(path: Path, value: str) -> None:
-    """Write a sysfs attribute, retrying when the device is transiently busy.
-
-    The kernel returns EBUSY for reset and hot_remove while the device is
-    momentarily open, for example by a udev blkid probe triggered by a
-    preceding event; the condition clears within milliseconds. The write
-    is retried with a short pause until the configured attempts run out, then
-    the last error is re-raised so the caller reports it. Other errors are
-    raised immediately: they are not transient.
-    """
-
-    for attempt in range(values.RESET_BUSY_ATTEMPTS):
-        try:
-            _write_sysfs(path, value)
-            return
-        except OSError as exc:
-            if exc.errno != errno.EBUSY:
-                raise
-            if attempt + 1 >= values.RESET_BUSY_ATTEMPTS:
-                raise
-            time.sleep(values.RESET_BUSY_RETRY_DELAY_SECONDS)
-
-
-def _hot_add_read_interface() -> bool:
-    """True when hot_add is the read-to-add interface (kernel 7.0+).
-
-    Kernel 7.0 creates a zram device on every read of hot_add and
-    returns the new device id; older kernels create one device per
-    write. The interface is told apart by the attribute mode: readable
-    files are read-to-add, write-only files are write-to-add. The mode
-    query itself does not create a device; the configured bit marks the
-    attribute as readable.
-    """
-
-    mode = ZRAM_HOT_ADD_PATH.stat().st_mode
-    return bool(mode & values.HOT_ADD_READABLE_MODE_BIT)
-
-
-def _add_devices(count: int, read_interface: bool, module_name: str) -> str | None:
-    """Create devices via hot_add; return an error message or None.
-
-    On the read-to-add interface every read creates one device and
-    returns its id, which is logged; on the write interface every write
-    creates one device. A failed operation returns a message and stops
-    the task.
-    """
-
-    for _ in range(count):
-        if read_interface:
-            try:
-                text = ZRAM_HOT_ADD_PATH.read_text(encoding="utf-8").strip()
-            except OSError as exc:
-                return f"cannot add {module_name} devices: {exc}"
-            try:
-                device_id = int(text)
-            except ValueError:
-                return f"cannot add devices: hot_add returned {text!r}"
-            _log(f"device added: {_device_name(module_name, device_id)}")
-        else:
-            try:
-                _write_sysfs(ZRAM_HOT_ADD_PATH, "1")
-            except OSError as exc:
-                return f"cannot add {module_name} devices: {exc}"
-            _log("device added via hot_add write")
-    return None
-
-
-def _active_swap_devices(timeout: float) -> set[str]:
-    """Paths of every active swap device, including the disk swapfile.
-
-    The configured swap listing command reports all activated swaps; the
-    set includes both the zram devices and a file-backed swap such as
-    /swap/swapfile, so the caller checks the zram paths it cares about
-    individually.
-    """
-
-    result = run_command(
-        list(values.SWAP_SHOW_COMMAND),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        return set()
-    paths: set[str] = set()
-    for line in result.stdout.splitlines():
-        tokens = line.split()
-        if tokens:
-            paths.add(tokens[0])
-    return paths
-
-
-def _target_reached(
-    device_count: int,
-    per_device_bytes: int,
-    active_paths: set[str],
-    enabled: bool,
-) -> bool:
-    """True when every device exists at the target size with the target
-    algorithm, is active, no extra devices exist and the service is enabled.
-    """
-
-    if not enabled:
-        return False
-    if _existing_device_count(values.MODULE_NAME) != device_count:
-        return False
-    for index in range(device_count):
-        if _read_disksize(index, values.MODULE_NAME) != per_device_bytes:
-            return False
-        if _read_active_algorithm(index, values.MODULE_NAME) != values.COMPRESSOR:
-            return False
-        if _device_path(values.MODULE_NAME, index) not in active_paths:
-            return False
-    return True
-
-
-def _render_unit(
-    template_path: Path,
-    device_count: int,
-    per_device_bytes: int,
-    read_interface: bool,
-) -> str:
-    """Render the service unit template with the ExecStart block substituted.
-
-    The boot service repeats the install-time setup: load the module, add
-    the devices past zram0 through hot_add, then configure, format and
-    activate every device. The hot_add command matches the interface
-    detected at install time: a read creates a device on kernel 7.0, a
-    write on older kernels. The block is fully expanded here, so the
-    template carries no shell variables of its own and substitute cannot
-    trip on stray dollar signs.
-    """
-
-    lines: list[str] = [values.UNIT_LOAD_LINE.format(module_name=values.MODULE_NAME)]
-    for index in range(1, device_count):
-        if read_interface:
-            lines.append(
-                values.UNIT_ADD_READ_LINE.format(hot_add_path=str(ZRAM_HOT_ADD_PATH))
-            )
-        else:
-            lines.append(
-                values.UNIT_ADD_WRITE_LINE.format(hot_add_path=str(ZRAM_HOT_ADD_PATH))
-            )
-    for index in range(device_count):
-        lines.append(
-            values.UNIT_ALGORITHM_LINE.format(
-                compressor=values.COMPRESSOR,
-                algorithm_attribute=str(
-                    SYS_BLOCK_PATH
-                    / _device_name(values.MODULE_NAME, index)
-                    / "comp_algorithm"
-                ),
-            )
-        )
-        lines.append(
-            values.UNIT_DISKSIZE_LINE.format(
-                size_bytes=per_device_bytes,
-                disksize_attribute=str(
-                    SYS_BLOCK_PATH
-                    / _device_name(values.MODULE_NAME, index)
-                    / "disksize"
-                ),
-            )
-        )
-        lines.append(
-            values.UNIT_FORMAT_LINE.format(
-                device_path=_device_path(values.MODULE_NAME, index)
-            )
-        )
-        lines.append(
-            values.UNIT_SWAP_ON_LINE.format(
-                swap_priority=values.SWAP_PRIORITY,
-                device_path=_device_path(values.MODULE_NAME, index),
-            )
-        )
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines="\n".join(lines))
+    return template.substitute(exec_lines=f"ExecStart={' '.join(command)}")
 
 
-def _write_unit_file(unit_dir: Path, service_name: str, content: str) -> None:
-    """Write the rendered unit file into the systemd unit directory."""
+def _write_unit_file(
+    unit_dir: Path, service_name: str, content: str
+) -> tuple[bool, str | None]:
+    """Write the unit file when it differs from the rendered content."""
 
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    (unit_dir / service_name).write_text(content, encoding="utf-8")
+    path = unit_dir / service_name
+    try:
+        if path.is_file() and path.read_text(encoding="utf-8") == content:
+            _log(f"unit file already current: {path}")
+            return False, None
+        unit_dir.mkdir(parents=True, exist_ok=True)
+        _write_file_atomically(path, content)
+    except OSError as exc:
+        return False, f"cannot write the unit file {path}: {exc}"
+    _log(f"unit file written: {path}")
+    return True, None
+
+
+def _parse_program_result(stdout: str) -> dict[str, object] | None:
+    """The result object the program prints as its last line, or None.
+
+    The program answers with one JSON object; anything else means the caller
+    cannot know what happened, and the task then reports that instead of
+    guessing from the sentences.
+    """
+
+    for line in reversed(stdout.splitlines()):
+        text = line.strip()
+        if not text:
+            continue
+        try:
+            parsed: object = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(parsed, dict):
+            return {str(key): value for key, value in parsed.items()}
+        return None
+    return None
+
+
+def _reported_warnings(outcome: dict[str, object]) -> list[str]:
+    """The warnings the program reported, each as its own sentence."""
+
+    reported = outcome.get("warnings")
+    if not isinstance(reported, list):
+        return []
+    return [str(item) for item in reported if str(item)]
 
 
 def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
@@ -394,20 +216,15 @@ def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
 
 
 def task(ctx: Context) -> TaskResult:
-    """Configure the ZRAM devices and the boot service; skip when done.
+    """Deploy the ZRAM program and its boot service; the program does the work.
 
-    The goal is reached when every device exists at the computed size with
-    the zstd algorithm, is active, no extra devices are present and the
-    service is enabled; the task then returns changed=False. Otherwise it
-    deactivates and resets the existing devices, removes the extras,
-    creates the missing ones, configures every device, writes the unit
-    file and enables the service. Every step is reported to stdout:
-    measurements and decisions as single lines that include their result,
-    long-running commands as a line before and a line after. A step that
-    cannot run is reported as a warning of a completed task: the missing
-    mechanism skips that step alone and every independent step still
-    runs, except the RAM measurement, without which no device size can be
-    computed at all, so the task ends with the reason in the warnings.
+    The goal is reached when the program is deployed, the unit carries the
+    rendered command line, the service is enabled and the program reports the
+    target state of the devices as reached; the task then returns changed=False.
+    Otherwise it deploys what differs, enables the service, runs the program
+    once and reports what the program did. A step that cannot run is reported as
+    a warning of a completed task, so the runner continues with the remaining
+    tasks and never stops here.
     """
 
     absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
@@ -415,8 +232,8 @@ def task(ctx: Context) -> TaskResult:
     )
     if absent:
         # A value that is not declared costs the task and never the run: the
-        # names are reported in plain words and the runner carries on with the
-        # remaining tasks. The guard stands above every read.
+        # names are reported in plain words and the runner carries on. The
+        # guard stands above every read.
         return TaskResult(
             success=True,
             message="the zram_service values are not declared, nothing was changed",
@@ -427,223 +244,72 @@ def task(ctx: Context) -> TaskResult:
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
     service_name = values.SERVICE_UNIT_NAME
-    percent_scale = engine_values.PERCENT_SCALE
-    bytes_per_kib = engine_values.BYTES_PER_KIB
-    bytes_per_mib = engine_values.BYTES_PER_MIB
+    data_dir = task_data_dir(ctx.repo_root, ctx.task_name)
     warnings: list[str] = []
+    changed = False
 
-    try:
-        ram_kib = _read_ram_kib()
-    except OSError as exc:
+    _, installed, failures, package_warnings = install_missing_packages(
+        ctx, values.PACKAGES
+    )
+    warnings.extend(package_warnings)
+    if installed:
+        _log(f"installed for the zram tools: {', '.join(installed)}")
+    if failures:
+        warnings.append(f"packages of the zram tools: {failure_detail(failures)}")
+
+    command = _program_command(force=force)
+
+    _log(f"deploying the zram program to {values.PROGRAM_DEPLOY_PATH}")
+    program_changed, program_error = _deploy_program(
+        data_dir / values.PROGRAM_FILE_NAME, values.PROGRAM_DEPLOY_PATH
+    )
+    if program_error is not None:
+        # Without the program neither this run nor a boot can configure the
+        # devices, so the task reports the reason and leaves the rest of the
+        # machine alone instead of installing a service that cannot start.
+        warnings.append(program_error)
         return _result(
             changed=False,
-            message=f"{values.MODULE_NAME} not configured",
-            warnings=[f"cannot determine RAM size: {exc}"],
+            message="the zram program could not be deployed",
+            warnings=warnings,
         )
-    cpu_count, cpu_fallback = _read_cpu_count()
-    device_count, per_device_bytes = _calculate_devices(
-        ram_kib, cpu_count, bytes_per_kib, percent_scale
-    )
-    total_mb = per_device_bytes * device_count // bytes_per_mib
+    changed = changed or program_changed
 
-    _log(f"reading RAM from {MEMINFO_PATH}: {ram_kib // bytes_per_kib} MiB")
-    if cpu_fallback:
-        _log(
-            f"reading CPU count from {CPUINFO_PATH}: undeterminable, "
-            f"using fallback {values.FALLBACK_CPU_COUNT}"
-        )
-    else:
-        _log(f"reading CPU count from {CPUINFO_PATH}: {cpu_count} cores")
-    _log(
-        f"calculated target: {device_count} devices, {per_device_bytes} bytes "
-        f"each, total {total_mb} MiB"
-    )
-
-    active_paths = _active_swap_devices(timeout)
-    enabled = service_is_enabled(service_name, timeout)
-    existing_count = _existing_device_count(values.MODULE_NAME)
-    _log(f"checking existing {values.MODULE_NAME} devices: {existing_count}")
-    _log(f"checking active swap devices: {len(active_paths)}")
-    _log(
-        f"checking autorun service {service_name}: "
-        f"{'enabled' if enabled else 'disabled'}"
-    )
-
-    if not force and _target_reached(
-        device_count, per_device_bytes, active_paths, enabled
-    ):
-        _log("target state already reached, skipping")
-        return _result(changed=False, message="already configured", warnings=warnings)
-
-    # Deactivate, reset and remove the existing devices so sizes and
-    # algorithms can be rewritten; devices beyond the target count are
-    # removed entirely.
-    for index in _existing_device_indices(values.MODULE_NAME):
-        name = _device_name(values.MODULE_NAME, index)
-        device_path = _device_path(values.MODULE_NAME, index)
-        if device_path in active_paths:
-            _log(f"deactivating swap: swapoff {device_path}")
-            try:
-                run_command(
-                    substituted_command(
-                        values.SWAP_OFF_COMMAND, {"device_path": device_path}
-                    ),
-                    timeout=timeout,
-                )
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                warnings.append(f"cannot deactivate {device_path}: {exc}")
-            else:
-                _log("swap deactivated")
-        if index < device_count:
-            _log(f"resetting device {name}: echo 1 > reset")
-            try:
-                _write_sysfs_with_retry(
-                    SYS_BLOCK_PATH / name / "reset",
-                    "1",
-                )
-            except OSError as exc:
-                warnings.append(f"cannot reset {name}: {exc}")
-            else:
-                _log("device reset")
-        else:
-            _log(f"removing extra device {name}: echo {index} > hot_remove")
-            try:
-                _write_sysfs_with_retry(
-                    ZRAM_HOT_REMOVE_PATH,
-                    str(index),
-                )
-            except OSError as exc:
-                warnings.append(f"cannot remove {name}: {exc}")
-            else:
-                _log("device removed")
-
-    # Load the module, then create the devices that are still missing. The
-    # module creates zram0 itself; the rest come from hot_add.
-    _log(f"loading module: modprobe {values.MODULE_NAME}")
-    try:
-        run_command(
-            substituted_command(
-                values.MODULE_LOAD_COMMAND, {"module_name": values.MODULE_NAME}
-            ),
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        warnings.append(f"cannot load zram module: {exc}")
-    else:
-        _log("module loaded")
-    read_interface = False
-    try:
-        read_interface = _hot_add_read_interface()
-    except OSError as exc:
-        # The write spelling of the interface is the fallback, and the
-        # creation step reports its own failure if the module is absent.
-        warnings.append(f"cannot query hot_add: {exc}")
-    _log(f"hot_add interface: {'read' if read_interface else 'write'}")
-    missing = device_count - _existing_device_count(values.MODULE_NAME)
-    if missing > 0:
-        _log(f"creating missing devices: hot_add {missing} times")
-        add_error = _add_devices(missing, read_interface, values.MODULE_NAME)
-        if add_error is not None:
-            warnings.append(add_error)
-        else:
-            _log("devices created")
-
-    # Configure every device in order: algorithm, size, swap signature,
-    # activation with the configured priority.
-    changed = False
-    device_changed = False
-    for index in range(device_count):
-        name = _device_name(values.MODULE_NAME, index)
-        device_path = _device_path(values.MODULE_NAME, index)
-        _log(f"configuring {name}: algorithm {values.COMPRESSOR}")
-        try:
-            _write_sysfs(
-                SYS_BLOCK_PATH / name / "comp_algorithm",
-                values.COMPRESSOR,
-            )
-            _write_sysfs(
-                SYS_BLOCK_PATH / name / "disksize",
-                str(per_device_bytes),
-            )
-        except OSError as exc:
-            warnings.append(f"cannot configure {name}: {exc}")
-            continue
-        _log(f"{name} configured: {per_device_bytes} bytes")
-        _log(f"formatting {name}: mkswap {device_path}")
-        try:
-            run_command(
-                substituted_command(
-                    values.FORMAT_COMMAND, {"device_path": device_path}
-                ),
-                timeout=timeout,
-            )
-            _log(f"activating {name}: swapon --priority {values.SWAP_PRIORITY}")
-            run_command(
-                substituted_command(
-                    values.SWAP_ON_COMMAND,
-                    {
-                        "swap_priority": str(values.SWAP_PRIORITY),
-                        "device_path": device_path,
-                    },
-                ),
-                timeout=timeout,
-            )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"{name} setup failed: {exc}")
-            continue
-        _log(f"{name} active")
-        device_changed = True
-    changed = changed or device_changed
-
-    # Verify the configured state by reading the system files back.
-    _log(f"verifying {values.MODULE_NAME} configuration")
-    problems: list[str] = []
-    verified_active = _active_swap_devices(timeout)
-    for index in range(device_count):
-        name = _device_name(values.MODULE_NAME, index)
-        if _read_disksize(index, values.MODULE_NAME) != per_device_bytes:
-            problems.append(f"{name} disksize mismatch")
-        if _read_active_algorithm(index, values.MODULE_NAME) != values.COMPRESSOR:
-            problems.append(f"{name} algorithm mismatch")
-        if _device_path(values.MODULE_NAME, index) not in verified_active:
-            problems.append(f"{name} not active")
-    if _existing_device_count(values.MODULE_NAME) != device_count:
-        problems.append(f"extra {values.MODULE_NAME} devices present")
-    if problems:
-        warnings.append("; ".join(problems))
-    else:
-        _log("verification passed")
-
-    template_path = (
-        task_data_dir(ctx.repo_root, ctx.task_name) / values.UNIT_TEMPLATE_FILE_NAME
-    )
-    _log(f"rendering unit template from {template_path}")
+    template_path = data_dir / values.UNIT_TEMPLATE_FILE_NAME
+    _log(f"rendering the unit template {template_path}")
     content: str | None = None
     try:
-        content = _render_unit(
-            template_path, device_count, per_device_bytes, read_interface
-        )
+        content = _render_unit(template_path, command)
     except OSError as exc:
-        warnings.append(f"cannot read unit template: {exc}")
+        warnings.append(f"cannot read the unit template: {exc}")
+    unit_ready = False
     if content is not None:
-        unit_dir = engine_values.SYSTEMD_UNIT_DIR
-        _log(f"writing unit file {unit_dir / service_name}")
-        unit_written = False
-        try:
-            _write_unit_file(unit_dir, service_name, content)
-        except OSError as exc:
-            warnings.append(f"cannot write unit file: {exc}")
+        unit_changed, unit_error = _write_unit_file(
+            engine_values.SYSTEMD_UNIT_DIR, service_name, content
+        )
+        if unit_error is not None:
+            warnings.append(unit_error)
         else:
-            _log("unit file written")
-            unit_written = True
-        if unit_written:
+            unit_ready = True
+            if unit_changed:
+                changed = True
+                try:
+                    run_command(
+                        list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
+                    )
+                    _log("systemd reloaded")
+                except (
+                    subprocess.CalledProcessError,
+                    subprocess.TimeoutExpired,
+                ) as exc:
+                    warnings.append(f"systemd reload failed: {exc}")
+        enabled = service_is_enabled(service_name, timeout)
+        _log(
+            f"checking autorun service {service_name}: "
+            f"{'enabled' if enabled else 'disabled'}"
+        )
+        if not enabled:
             try:
-                _log("reloading systemd: systemctl daemon-reload")
-                run_command(
-                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
-                )
-                _log("systemd reloaded")
-                _log(f"enabling service: systemctl enable {service_name}")
                 run_command(
                     substituted_command(
                         values.SYSTEMCTL_ENABLE_COMMAND,
@@ -651,18 +317,54 @@ def task(ctx: Context) -> TaskResult:
                     ),
                     timeout=timeout,
                 )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                warnings.append(f"systemd enable failed: {exc}")
+            else:
                 _log("service enabled")
-            except (
-                subprocess.CalledProcessError,
-                subprocess.TimeoutExpired,
-            ) as exc:
-                warnings.append(f"systemd setup failed: {exc}")
+                changed = True
 
-    return _result(
-        changed=changed,
-        message=(
-            f"{values.MODULE_NAME} configured: {device_count} devices, "
-            f"{per_device_bytes} bytes each, total {total_mb} MiB"
-        ),
-        warnings=warnings,
-    )
+    try:
+        result = run_command(list(command), check=False, capture=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        warnings.append(f"the zram program could not run: {exc}")
+    else:
+        for line in result.stdout.splitlines():
+            _log(line)
+        outcome = _parse_program_result(result.stdout)
+        if outcome is None:
+            warnings.append(
+                "the zram program reported nothing readable, "
+                f"exit code {result.returncode}"
+            )
+        else:
+            error_text = outcome.get("error")
+            skipped_reason = outcome.get("skipped_reason")
+            if isinstance(error_text, str) and error_text:
+                warnings.append(f"the zram program failed: {error_text}")
+            elif isinstance(skipped_reason, str) and skipped_reason:
+                warnings.append(f"no zram device was configured: {skipped_reason}")
+            warnings.extend(_reported_warnings(outcome))
+            if outcome.get("changed") is True:
+                changed = True
+
+    if unit_ready:
+        # The unit is the artifact the next boot runs, so it is started here as
+        # well: a unit that cannot start is a finding of this run instead of a
+        # surprise of the next boot. The program already did the work above, so
+        # this start changes nothing.
+        try:
+            run_command(
+                substituted_command(
+                    values.SYSTEMCTL_START_COMMAND,
+                    {"service_unit_name": service_name},
+                ),
+                timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"the boot service could not be started: {exc}")
+
+    if changed:
+        message = f"zram devices and service {service_name} configured"
+    else:
+        message = "already configured"
+    return _result(changed=changed, message=message, warnings=warnings)

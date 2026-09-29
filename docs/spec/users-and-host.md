@@ -23,10 +23,14 @@ ZRAM should be aggressive, with strong compression, using almost all memory.
 Each device uses the configured compressor algorithm.  
 ZRAM swap is activated with the configured swap_priority, so it is used before the disk swapfile.
 
-All parameter values live in the src/pyntara/values/zram_service.py: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, alignment_bytes, reset_busy_attempts, reset_busy_retry_delay_seconds, meminfo_total_key and cpuinfo_processor_key. The last two name the kernel file lines the task reads: the installed RAM in /proc/meminfo, with the separator that file uses, and the per-core line of /proc/cpuinfo, so a kernel that renames a field is answered in the config.
+The zram_service task deploys a program and a systemd oneshot service that runs it at every boot.
+
+One program of the section, deployed from task_data/zram_service/configure_zram.py to its configured path, reads the installed memory and the core count, computes the device count and the size of every device, brings the devices of the machine to that state and activates them. The unit zram.service starts that same program at every boot, so a run and a boot apply one code instead of two implementations of the same steps, and the machine follows a memory size or a core count that changed between two boots instead of repeating numbers that were measured once. The installed RAM is read from the shared memory file, from the line whose name meminfo_total_key carries, with the separator that file uses; the core count comes from the per-core line cpuinfo_processor_key of the cpuinfo_path file, so a kernel that renames a field is answered in the config. The packages the tools of the program come from (mount for swapon and swapoff, util-linux for mkswap, kmod for modprobe) are installed through the shared package helper, so the section never assumes the machine already carries them.
+
+All parameter values live in the src/pyntara/values/zram_service.py: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, cpuinfo_path, cpuinfo_processor_key, alignment_bytes, module_name, reset_busy_attempts, reset_busy_retry_delay_seconds, program_file_name, program_deploy_path, program_file_mode, service_unit_name, unit_template_file_name and the systemctl calls. The path /proc/meminfo and the name of its line come from the shared values module, because the swapfile section reads the same file and line.
 reset_busy_attempts and reset_busy_retry_delay_seconds bound the retries of a reset or hot_remove that the kernel rejects with EBUSY while a transient opener, for example a udev probe, holds the device.
 
-The zram_service task configures the devices immediately and installs a systemd oneshot service that repeats the setup at every boot.
+Kernel 7.0 creates one zram device on every read of the hot_add attribute and older kernels create one device per write; the program tells the two apart by the attribute mode at run time, so the unit does not carry the interface that was detected when the task ran. The task deploys the program and the unit, enables the service and runs the program once; a step the program could not perform is reported as a warning of a completed task, and the program answers with one result line naming what changed and what failed.
 
 ## Zswap
 
@@ -54,7 +58,7 @@ mkswap and fallocate, e2fsprogs for chattr) are installed through the shared
 package helper, so the section never assumes the machine already carries them.
 
 The size is min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction).
-The installed RAM is read from the line of /proc/meminfo whose name
+The installed RAM is read from the shared memory file, from the line whose name
 meminfo_total_key carries, with the separator that file uses, and free disk space
 comes from the filesystem that holds the configured swap file. Where the RAM term
 wins, the size does not follow the free space of the moment, so a machine with

@@ -164,7 +164,7 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
         "--probe-size-kb",
         str(values.PROBE_SIZE_KB),
         "--meminfo",
-        str(values.MEMINFO_PATH),
+        str(common_values.MEMINFO_PATH),
         "--meminfo-total-key",
         common_values.MEMINFO_TOTAL_KEY,
         "--command-timeout-seconds",

@@ -150,7 +150,6 @@ EXTRA_VALUE_RULES: tuple[tuple[str, str, Callable[[object, str], object]], ...] 
         check_file_mode,
     ),
     ("yggdrasil_service_setup", "PRIVATE_KEY_FILE_MODE", check_file_mode),
-    ("zram_service", "HOT_ADD_READABLE_MODE_BIT", check_file_mode),
 )
 
 # Values the rule of their annotation refuses while the shipped value is

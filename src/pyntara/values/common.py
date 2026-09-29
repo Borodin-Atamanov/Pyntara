@@ -63,10 +63,12 @@ DESKTOP_HOME_DIR: str = "/home/i"
 LAUNCHER_FILE_MODE: int = 0o644
 EXECUTABLE_FILE_MODE: int = 0o755
 
-# Name of the line in /proc/meminfo that carries the installed RAM, with the
-# separator the file uses. Two tasks read the total size from it, the swapfile
-# section and the zram section, so the name is written once here; a kernel that
-# renames the line is answered here.
+# The kernel file that reports the installed RAM and the name of the line inside
+# it that carries the total, with the separator the file uses. Two tasks read the
+# memory from it, the swapfile section and the zram section, so the file and the
+# line are written once here; a kernel that moves or renames either is answered
+# here.
+MEMINFO_PATH: Path = Path("/proc/meminfo")
 MEMINFO_TOTAL_KEY: str = "MemTotal:"
 
 # Name of the KConfig file of the global shortcuts. Two desktop sections write
@@ -97,6 +99,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DESKTOP_HOME_DIR",
     "LAUNCHER_FILE_MODE",
     "EXECUTABLE_FILE_MODE",
+    "MEMINFO_PATH",
     "MEMINFO_TOTAL_KEY",
     "SHORTCUTS_FILE_NAME",
     "KCONFIG_TRUE_VALUE",
