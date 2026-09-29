@@ -15,7 +15,7 @@ The helpers fit files where one setting is one line and the line order does not 
 ## Top-level files
 
 inst.sh — Bootstrap installer: installs dependencies, clones repo, launches Python CLI. See docs/contracts/bootstrap.md.  
-pyntara.sh — Launcher: downloads inst.sh from the raw branch and runs it as root, with every run parameter held in the file itself; a name the file leaves commented out keeps the value the caller exported. See docs/contracts/bootstrap.md.  
+pyntara.sh — Launcher: downloads inst.sh from the raw branch and runs it as root, with every run parameter held in the file itself; a name the file leaves commented out keeps the value the caller exported, and the repository address and the branch come from the environment when it sets them. See docs/contracts/bootstrap.md.  
 README.md — Quick start, installation modes, and links to detailed docs.  
 hooks/pre-commit — Build version hook: bumps the single build version carrier before every commit, so the number grows per commit without a merge conflict (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).
 hooks/land_version_commit.sh — Landing step: bumps the version on the branch tip, mirrors it into inst.sh and README.md, verifies the three carriers and records one commit before the push to main (docs/guides/developer-guide.md, [Version bumping](developer-guide.md#version-bumping)).

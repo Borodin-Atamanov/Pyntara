@@ -6,9 +6,12 @@
 set -euo pipefail
 
 # Repository and branch of the run: the branch selects both the installer
-# downloaded below and the checkout the installer clones.
-PYNTARA_REPO_URL="https://github.com/Borodin-Atamanov/Pyntara.git"
-PYNTARA_REPO_BRANCH="main"
+# downloaded below and the checkout the installer clones. These two names are the
+# exception to the file owning the parameters: an exported value wins, so a test
+# run takes its code from another branch or from a local clone without editing
+# this file, and the values below are the fallback of an ordinary run.
+PYNTARA_REPO_URL="${PYNTARA_REPO_URL:-https://github.com/Borodin-Atamanov/Pyntara.git}"
+PYNTARA_REPO_BRANCH="${PYNTARA_REPO_BRANCH:-main}"
 
 # Source of the installer, the raw branch of the same repository, and the
 # temporary copy. /dev/shm is a memory filesystem, so the downloaded installer

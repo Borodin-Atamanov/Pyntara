@@ -28,7 +28,9 @@ the next reboot, and a password written into the file is not left on the machine
 parameters are the values of the file, and a variable left commented out is resolved by the
 installer or the engine itself; a name the file leaves commented out keeps the value the
 caller exported, so a test run selects its install mode and its task list through the
-environment.
+environment. The repository address and the branch are the exception: an exported value
+wins over the one in the file, so a test run takes its code from another branch or from a
+local clone without editing the file.
 
 The vault password is the PYNTARA_VAULT_PASSWORD line. The value shipped there is the
 published password of the default vault, and a user who knows the production vault password

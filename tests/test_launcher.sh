@@ -178,13 +178,29 @@ test_launcher_keeps_an_inherited_value_of_a_name_it_leaves_commented_out() {
 }
 
 test_launcher_replaces_an_inherited_value_of_a_name_it_sets() {
-    export PYNTARA_REPO_BRANCH="branch-from-caller"
     export PYNTARA_VAULT_PASSWORD="password-from-caller"
     export PYNTARA_DELETE_PACKAGES_AFTER_INSTALL="keep-from-caller"
     source_launcher
-    assert_equals "main" "$PYNTARA_REPO_BRANCH" "the branch of the run comes from the file" || return 1
     assert_equals "$(head -n 1 "$DEFAULT_PASSWORD_FILE")" "$PYNTARA_VAULT_PASSWORD" "an inherited password is replaced by the value of the file" || return 1
     assert_equals "1" "$PYNTARA_DELETE_PACKAGES_AFTER_INSTALL" "an inherited delete-packages value is replaced by the value of the file" || return 1
+}
+
+test_launcher_takes_the_repository_and_the_branch_from_the_environment() {
+    # The two names that select the code are the exception of the file: a test
+    # run takes its code from another branch or from a local clone without
+    # editing the launcher.
+    export PYNTARA_REPO_URL="/srv/git/Pyntara.git"
+    export PYNTARA_REPO_BRANCH="test-branch"
+    source_launcher
+    assert_equals "/srv/git/Pyntara.git" "$PYNTARA_REPO_URL" "an exported repository wins" || return 1
+    assert_equals "test-branch" "$PYNTARA_REPO_BRANCH" "an exported branch wins" || return 1
+}
+
+test_launcher_defaults_the_repository_and_the_branch_of_an_ordinary_run() {
+    unset PYNTARA_REPO_URL PYNTARA_REPO_BRANCH
+    source_launcher
+    assert_equals "https://github.com/Borodin-Atamanov/Pyntara.git" "$PYNTARA_REPO_URL" "the fallback repository of an ordinary run" || return 1
+    assert_equals "main" "$PYNTARA_REPO_BRANCH" "the fallback branch of an ordinary run" || return 1
 }
 
 
@@ -336,6 +352,8 @@ run_test test_launcher_hands_its_password_to_the_installer
 run_test test_launcher_passes_no_password_when_its_line_is_empty
 run_test test_launcher_replaced_password_is_passed_through
 run_test test_launcher_keeps_an_inherited_value_of_a_name_it_leaves_commented_out
+run_test test_launcher_takes_the_repository_and_the_branch_from_the_environment
+run_test test_launcher_defaults_the_repository_and_the_branch_of_an_ordinary_run
 run_test test_launcher_replaces_an_inherited_value_of_a_name_it_sets
 run_test test_launcher_exports_the_delete_packages_flag
 run_test test_launcher_installer_receives_the_file_values_and_the_inherited_rest
