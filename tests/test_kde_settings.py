@@ -48,29 +48,29 @@ def _shared_client(tmp_path: Path) -> Path:
     path.write_text(_SHARED_CLIENT.read_text(encoding="utf-8"), encoding="utf-8")
     return path
 
-# Shortcut records as the config carries them: the description field is not
-# read, the absent word and an empty field mean no combination, and a record
-# of another file is a plain KConfig value.
+# Shortcut records as the config carries them: the value of a record is the
+# combination its action must own, the absent word and an empty field mean no
+# combination, and a record of another file is a plain KConfig value.
 _SHORTCUT_RECORDS = (
     KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="Walk Through Windows",
-        value="Alt+Tab,none,Walk Through Windows",
+        value="Alt+Tab",
         delete=False,
     ),
     KconfigRecord(
         file="kglobalshortcutsrc",
         group=("kwin",),
         key="MinimizeAll",
-        value="Meta+D,meta+u,Minimize all windows",
+        value="Meta+D",
         delete=False,
     ),
     KconfigRecord(
         file="kglobalshortcutsrc",
         group=("plasmashell",),
         key="manage activities",
-        value="none,none,Show Activity Switcher",
+        value="none",
         delete=False,
     ),
     KconfigRecord(
@@ -2479,3 +2479,146 @@ def test_the_activity_switcher_record_names_its_owning_component() -> None:
         and record.key == "manage activities"
     ]
     assert groups == [("plasmashell",)]
+
+
+# An appletsrc as Plasma writes it: one section per containment and per applet,
+# the plugin of an applet named in its own section, and the settings of the
+# applet nested below it. The clock appears twice, once on the panel and once
+# inside the system tray of a second panel.
+_SAMPLE_APPLETSRC = """[Containments][1]
+plugin=org.kde.plasma.folder
+
+[Containments][2]
+plugin=org.kde.plasma.panel
+
+[Containments][2][Applets][22]
+plugin=org.kde.plasma.digitalclock
+
+[Containments][2][Applets][22][Configuration][Appearance]
+use24hFormat=1
+
+[Containments][2][Applets][3]
+plugin=org.kde.plasma.kickoff
+
+[Containments][2][Applets][7]
+plugin=org.kde.plasma.systemtray
+
+[Containments][2][Applets][7][Applets][15]
+plugin=org.kde.plasma.digitalclock
+"""
+
+
+def test_an_applet_group_is_found_by_the_plugin_its_section_declares() -> None:
+    # Plasma nests an applet as [Containments][N][Applets][M], and that position
+    # differs per machine, so the group of an applet is never a written value:
+    # it is found by the plugin the section declares. Every matching section is
+    # returned, so an applet a panel shows twice gets the setting on both.
+    assert task_module._applet_groups(
+        _SAMPLE_APPLETSRC, "org.kde.plasma.kickoff"
+    ) == (("Containments", "2", "Applets", "3"),)
+    assert task_module._applet_groups(
+        _SAMPLE_APPLETSRC, "org.kde.plasma.digitalclock"
+    ) == (
+        ("Containments", "2", "Applets", "22"),
+        ("Containments", "2", "Applets", "7", "Applets", "15"),
+    )
+    assert (
+        task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.missing") == ()
+    )
+
+
+def _appletsrc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A home of the desktop user that holds a sample appletsrc."""
+
+    home = tmp_path / "home"
+    config_dir = home / values.USER_CONFIG_DIR
+    config_dir.mkdir(parents=True)
+    (config_dir / values.APPLETSRC_FILE_NAME).write_text(
+        _SAMPLE_APPLETSRC, encoding="utf-8"
+    )
+    monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(home))
+    return home
+
+
+def test_an_applet_setting_is_written_into_the_group_of_its_applet(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The key goes into the group below the section of the applet, so the
+    # clock of the sample file is written under [Containments][2][Applets][22]
+    # and the group of the applet is not a value anywhere.
+    _appletsrc_home(tmp_path, monkeypatch)
+    clock_group = ("Containments", "2", "Applets", "22")
+    monkeypatch.setattr(
+        values,
+        "APPLET_CONFIG_RECORDS",
+        (
+            values.AppletConfigRecord(
+                "org.kde.plasma.digitalclock",
+                ("Configuration", "Appearance"),
+                "use24hFormat",
+                "2",
+            ),
+        ),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_records(
+        timeout=5, force=False, warnings=warnings
+    )
+
+    assert changed is True
+    assert warnings == []
+    expected = ["kwriteconfig6", "--file", values.APPLETSRC_FILE_NAME]
+    for segment in clock_group + ("Configuration", "Appearance"):
+        expected.extend(["--group", segment])
+    expected.extend(["--key", "use24hFormat", "2"])
+    assert any(call[-len(expected) :] == expected for call in seen)
+
+
+def test_an_applet_no_section_declares_is_reported_and_the_rest_applies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A panel without the applet must not stop the settings of the applets it
+    # does show, and the absent applet is reported in plain words instead of
+    # being written into a group no applet owns.
+    _appletsrc_home(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        values,
+        "APPLET_CONFIG_RECORDS",
+        (
+            values.AppletConfigRecord(
+                "org.kde.plasma.missing", ("Configuration", "General"), "icon", "x"
+            ),
+            values.AppletConfigRecord(
+                "org.kde.plasma.kickoff",
+                ("Configuration", "General"),
+                "systemFavorites",
+                "suspend,hibernate",
+            ),
+        ),
+    )
+    seen: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        seen.append(list(command))
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    changed = task_module._apply_applet_records(
+        timeout=5, force=False, warnings=warnings
+    )
+
+    assert changed is True
+    assert len(warnings) == 1
+    assert "org.kde.plasma.missing" in warnings[0]
+    assert all(call[-1] != "x" for call in seen)
+    assert any(call[-1] == "suspend,hibernate" for call in seen)

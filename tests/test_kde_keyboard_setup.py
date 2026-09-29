@@ -420,6 +420,7 @@ def test_keyboard_layout_config_group_finds_nested_applet() -> None:
         "Applets",
         "19",
         "Configuration",
+        "General",
     )
 
 

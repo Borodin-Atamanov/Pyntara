@@ -43,6 +43,24 @@ class KconfigRecord:
     delete: bool = False
 
 
+@dataclass(frozen=True)
+class AppletConfigRecord:
+    """One setting of a Plasma panel applet: the applet, group, key and value.
+
+    plugin is the plugin name the section of the applet declares in the
+    appletsrc, group is the group below that section the applet keeps the
+    setting in, and key, value and type mean what they mean in KconfigRecord.
+    The group of the applet itself is not written here, because it names the
+    position of the applet on the panel and that position differs per machine.
+    """
+
+    plugin: str
+    group: tuple[str, ...]
+    key: str
+    value: str = ""
+    type: str = ""
+
+
 # The placeholders a record may carry where a path belongs to the desktop account:
 # the task fills them with the account of the machine when it reads or writes the
 # record. A record is built when this module is imported, and the engine resolves
@@ -302,15 +320,16 @@ KWIN_SCRIPT_ACTIONS: tuple[str, ...] = (
     "Shrink Window by 5px",
 )
 
-# The word the first field of a shortcut record carries when its action owns no
+# The word the value of a shortcut record carries when its action owns no
 # combination: the task reads it as "no combination".
 SHORTCUT_ABSENT_VALUE: str = "none"
 
-# A shortcut record names one action and the combination it must own in the first
-# field of its value; the task reads only that field, because the second field
-# holds the combination the action ships with and the third its friendly name,
-# which the running daemon reports and writes itself. A record copied from
-# kglobalshortcutsrc therefore needs nothing removed from it. The records are
+# A shortcut record names one action and carries the combination it must own as
+# its whole value, for example Meta+I. The combination the action ships with and
+# the friendly name the desktop shows in its settings are not written here: the
+# running daemon reports both and writes them itself, and the task reads only the
+# first comma field of a value, so a value that still carries them is read
+# correctly as well. The records are
 # applied to the running KGlobalAccel daemon, which holds the combinations in
 # memory and writes the file itself: the shared client frees every named
 # combination from whatever action holds it and gives it to the configured
@@ -494,29 +513,27 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "kglobalshortcutsrc",
         ("kwin",),
         "ClearMouseMarks",
-        "Meta+Shift+F11,Meta+Shift+F11,Clear Mouse Marks",
+        "Meta+Shift+F11",
     ),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "ClearLastMouseMark",
-        "Meta+Shift+F12,Meta+Shift+F12,Clear Last Mouse Mark",
+        "Meta+Shift+F12",
     ),
-    KconfigRecord("kglobalshortcutsrc", ("kwin",), "Cube", "Meta+C,Meta+C,Toggle Cube"),
+    KconfigRecord("kglobalshortcutsrc", ("kwin",), "Cube", "Meta+C"),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "MinimizeAll",
-        "Meta+D,none,Minimize all windows",
+        "Meta+D",
     ),
-    KconfigRecord(
-        "kglobalshortcutsrc", ("kwin",), "Invert", "Meta+I,none,Toggle Invert Effect"
-    ),
+    KconfigRecord("kglobalshortcutsrc", ("kwin",), "Invert", "Meta+I"),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "InvertWindow",
-        "Meta+Ctrl+I,Meta+Ctrl+U,Toggle Invert Effect on Window",
+        "Meta+Ctrl+I",
     ),
     # The Activity Switcher belongs to plasmashell alone: kwin carries no
     # action of that name, so a kwin record would name an action the running
@@ -525,7 +542,7 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "kglobalshortcutsrc",
         ("plasmashell",),
         "manage activities",
-        "none,none,Show Activity Switcher",
+        "none",
     ),
     # The per-layout switching combinations are configured by the keyboard task
     # (layout_switch_shortcuts of kde_keyboard_setup) instead of a record here:
@@ -535,25 +552,25 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
         "kglobalshortcutsrc",
         ("kwin",),
         "Walk Through Windows",
-        "Alt+Tab,none,Walk Through Windows",
+        "Alt+Tab",
     ),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "Walk Through Windows (Reverse)",
-        "Alt+Shift+Tab,none,Walk Through Windows (Reverse)",
+        "Alt+Shift+Tab",
     ),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "Walk Through Windows Alternative",
-        "Meta+Tab,none,Walk Through Windows Alternative",
+        "Meta+Tab",
     ),
     KconfigRecord(
         "kglobalshortcutsrc",
         ("kwin",),
         "Walk Through Windows Alternative (Reverse)",
-        "Meta+Shift+Tab,none,Walk Through Windows Alternative (Reverse)",
+        "Meta+Shift+Tab",
     ),
     KconfigRecord(
         "kscreenlockerrc",
@@ -1138,11 +1155,92 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
     KconfigRecord("katerc", ("lspclient",), "TypeFormatting", "false", "bool"),
 )
 
+# The applet settings the task applies. A panel applet is named by the plugin
+# its appletsrc section declares, because the group of the applet names its
+# position on the panel and that position differs per machine. The plugin and
+# the group below the applet are part of every record, so no name of an applet
+# stands on its own here, and the records name the clock of the panel, the
+# application launcher and the task manager that pins the launchers.
+APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
+APPLET_PLUGIN_KEY: str = "plugin"
+APPLET_CONFIG_RECORDS: tuple[AppletConfigRecord, ...] = (
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "use24hFormat",
+        "2",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "dateFormat",
+        "custom",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "customDateFormat",
+        "yy-MM-dd",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "showDate",
+        "true",
+        "bool",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "showSeconds",
+        "false",
+        "bool",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.digitalclock",
+        ("Configuration", "Appearance"),
+        "fontWeight",
+        "400",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.kickoff",
+        ("Configuration", "General"),
+        "icon",
+        "love-amarok",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.kickoff",
+        ("Configuration", "General"),
+        "systemFavorites",
+        "suspend,hibernate,reboot,shutdown",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.icontasks", ("Configuration", "General"), "iconSpacing", "0"
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.icontasks",
+        ("Configuration", "General"),
+        "showOnlyCurrentDesktop",
+        "false",
+        "bool",
+    ),
+    AppletConfigRecord(
+        "org.kde.plasma.icontasks",
+        ("Configuration", "General"),
+        "showOnlyCurrentActivity",
+        "false",
+        "bool",
+    ),
+)
+
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
+    "APPLETSRC_FILE_NAME",
+    "APPLET_PLUGIN_KEY",
+    "APPLET_CONFIG_RECORDS",
     "KCONFIG_BOOL_TYPE",
     "USERNAME_PLACEHOLDER_NAME",
     "HOME_PLACEHOLDER_NAME",

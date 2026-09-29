@@ -801,6 +801,87 @@ def _substituted_records() -> tuple[values.KconfigRecord, ...]:
     return tuple(_substituted_record(record) for record in values.KCONFIG_RECORDS)
 
 
+def _applet_groups(text: str, plugin: str) -> tuple[tuple[str, ...], ...]:
+    """The group of every appletsrc section declaring one plugin.
+
+    Plasma nests a panel applet as [Containments][N][Applets][M], and that
+    position differs per machine, so the group of an applet is never a value
+    that can be written down: it is found by the plugin name the section
+    declares. Every matching applet is returned, so a panel that shows the
+    same applet twice gets the setting on both.
+    """
+
+    groups: list[tuple[str, ...]] = []
+    current: tuple[str, ...] = ()
+    marker = f"{values.APPLET_PLUGIN_KEY}="
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = tuple(part for part in stripped[1:-1].split("][") if part)
+        elif stripped.startswith(marker) and stripped.removeprefix(marker) == plugin:
+            groups.append(current)
+    return tuple(groups)
+
+
+def _apply_applet_records(
+    *, timeout: float, force: bool, warnings: list[str] | None = None
+) -> bool:
+    """Apply the configured panel applet settings; True when any changed.
+
+    The appletsrc of the desktop user is read to find the group of every
+    applet a record names, and each key is written into the group below that
+    applet with the same read-then-write step as every other record. An applet
+    no section declares is reported and the remaining applets still apply,
+    because one absent applet must not stop the settings of the others.
+    """
+
+    path = (
+        Path(common_values.DESKTOP_HOME_DIR)
+        / values.USER_CONFIG_DIR
+        / values.APPLETSRC_FILE_NAME
+    )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        warning = f"cannot read {values.APPLETSRC_FILE_NAME}: {exc}"
+        _log(warning)
+        if warnings is not None:
+            warnings.append(warning)
+        return False
+    changed = False
+    for record in values.APPLET_CONFIG_RECORDS:
+        groups = _applet_groups(text, record.plugin)
+        if not groups:
+            warning = (
+                f"no applet declares {record.plugin}, so {record.key} keeps its value"
+            )
+            _log(warning)
+            if warnings is not None:
+                warnings.append(warning)
+            continue
+        for group in groups:
+            try:
+                changed |= _sync_config_value(
+                    values.APPLETSRC_FILE_NAME,
+                    group + record.group,
+                    record.key,
+                    record.value,
+                    timeout=timeout,
+                    force=force,
+                    bool_value=record.type == values.KCONFIG_BOOL_TYPE,
+                )
+            except (
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+                OSError,
+            ) as exc:
+                warning = f"cannot apply {record.key} of {record.plugin}: {exc}"
+                _log(warning)
+                if warnings is not None:
+                    warnings.append(warning)
+    return changed
+
+
 def _apply_kconfig_records(
     *,
     timeout: float,
@@ -866,30 +947,23 @@ def _apply_kconfig_records(
 def _is_shortcut_record(record: values.KconfigRecord) -> bool:
     """True when a record names the keyboard combination of one action.
 
-    The shortcut file carries one record per action of a component, in
-    the form key,defaults,friendly name, which is what the comma test
-    recognises. A delete record is a plain KConfig removal and stays with
-    the other records of the file.
+    Every record of the shortcut file is one action of a component with the
+    combination it owns, so the file the record names decides its kind and no
+    shape of the value has to. A delete record is a plain KConfig removal and
+    stays with the other records of the file.
     """
 
-    return (
-        record.file == common_values.SHORTCUTS_FILE_NAME
-        and not record.delete
-        and "," in record.value
-    )
+    return record.file == common_values.SHORTCUTS_FILE_NAME and not record.delete
 
 
 def _shortcut_record_changes() -> tuple[tuple[str, str, str, tuple[str, ...]], ...]:
     """The configured combinations, by component, action and combination.
 
     A shortcut record names one action and the combination it must own.
-    Only the first comma field of its value is read: the second field
-    holds the combination the action ships with and the third its
-    friendly name, both of which the running daemon reports and writes
-    itself, so a record copied from the shortcut file carries the default
-    combination in the second field, and reading that field as a
-    configured combination would take a key the action must not own. The
-    absent word and an empty field mean no combination at all. The group
+    Only the first comma field of its value is read, so a value that still
+    carries the combination the action ships with and the friendly name of
+    the action is read as the configured combination and nothing else, and
+    the absent word and an empty field mean no combination at all. The group
     segment of the record is the unique component name the running daemon
     knows and the key is the unique action name inside that component;
     the component friendly name of the change is that same name, because a
@@ -2301,6 +2375,10 @@ def task(ctx: Context) -> TaskResult:
     settings_changed |= step(
         "write the SDDM settings",
         lambda: _apply_sddm(timeout=timeout, force=force, warnings=warnings),
+    )
+    settings_changed |= step(
+        "apply the panel applet settings",
+        lambda: _apply_applet_records(timeout=timeout, force=force, warnings=warnings),
     )
     changed |= settings_changed
 

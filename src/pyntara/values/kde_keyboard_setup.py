@@ -138,10 +138,14 @@ KXKBRC_GROUP: tuple[str, ...] = ("Layout",)
 # The own config group of a Plasma applet inside the appletsrc, as the group
 # segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6:
 # the running shell reads and writes the settings of an applet in
-# [Containments][N][Applets][M][Configuration], which is the group the shipped
-# Kubuntu layout template writes through the shell; a value written into a
-# deeper group appears in the file and never reaches the panel.
-APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration",)
+# [Containments][N][Applets][M][Configuration][General]: the applet declares its
+# own config group in its shipped schema, where the kcfg of the keyboard layout
+# applet names it General, and the applet reads its settings from that group
+# alone. Measured on Kubuntu 26.04 with Plasma 6.6.6 on 2026-09-28: a displayStyle
+# written into [Configuration] appears in the file and never reaches the panel,
+# while the same value written into [Configuration][General] shows the flag at
+# once, which is what configuring the applet through the panel itself produces.
+APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration", "General")
 
 # The keys the task writes in kxkbrc, in the order KDE writes them.
 KXKBRC_KEY_LAYOUT_LIST: str = "LayoutList"
