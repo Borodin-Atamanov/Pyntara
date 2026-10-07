@@ -197,7 +197,7 @@ def test_appends_missing_components(
     assert text.count("Components: main universe restricted multiverse") == 2
     assert "Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg" in text
     updates = [call for call in calls if call[0] == "apt-get" and call[1] == "update"]
-    assert updates == [["apt-get", "update"]]
+    assert updates == [["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"]]
 
 
 def test_preserves_third_party_sources(

@@ -567,14 +567,49 @@ PACKAGE_STATUS_QUERY_COMMAND: tuple[str, ...] = (
 DPKG_AUDIT_COMMAND: tuple[str, ...] = ("dpkg", "--audit")
 DPKG_CONFIGURE_PENDING_COMMAND: tuple[str, ...] = ("dpkg", "--configure", "-a")
 
+# Seconds every apt call waits for the package lock before it gives up. A
+# machine straight after boot runs its own periodic upgrade and holds the dpkg
+# lock for a while; a run that did not wait failed on that lock alone with exit
+# code 100. apt accepts the wait through its DPkg::Lock::Timeout option, which
+# makes it print "Waiting for cache lock" and retry instead of exiting, so the
+# value is generous: the holder is the machine's own upgrade.
+APT_LOCK_TIMEOUT_SECONDS: int = 600
+
 # The apt calls of the package helpers: the index refresh and the install of
 # one package. The environment is the variable apt needs to never ask a
-# question on the target machine, where nobody watches the terminal.
-APT_UPDATE_COMMAND: tuple[str, ...] = ("apt-get", "update")
-APT_INSTALL_COMMAND: tuple[str, ...] = ("apt-get", "install", "-y", "{package}")
+# question on the target machine, where nobody watches the terminal. The lock
+# wait rides in both commands, before the package name so the option and the
+# value it carries are declared once above, and no caller can forget them.
+APT_UPDATE_COMMAND: tuple[str, ...] = (
+    "apt-get",
+    "update",
+    "-o",
+    f"DPkg::Lock::Timeout={APT_LOCK_TIMEOUT_SECONDS}",
+)
+APT_INSTALL_COMMAND: tuple[str, ...] = (
+    "apt-get",
+    "install",
+    "-y",
+    "-o",
+    f"DPkg::Lock::Timeout={APT_LOCK_TIMEOUT_SECONDS}",
+    "{package}",
+)
 APT_NONINTERACTIVE_ENVIRONMENT: dict[str, str] = {
     "DEBIAN_FRONTEND": "noninteractive",
 }
+
+# The units of the machine's own periodic package work that a run stops before
+# its first apt call: they schedule the daily run or hold the dpkg lock, but
+# none of them runs dpkg itself, so stopping them cannot interrupt a package
+# transaction. The oneshot that may already be upgrading
+# (apt-daily-upgrade.service) is deliberately absent: stopping it in the middle
+# of a package operation risks the package database, so a run waits for it
+# through APT_LOCK_TIMEOUT_SECONDS instead of killing it.
+APT_PERIODIC_UPDATE_UNITS: tuple[str, ...] = (
+    "apt-daily.timer",
+    "apt-daily-upgrade.timer",
+    "packagekit.service",
+)
 
 # The apt call that empties the package download cache. A run that economizes
 # space calls it after every task, because apt keeps the packages it downloaded
@@ -611,6 +646,16 @@ SYSTEMCTL_MAIN_PID_COMMAND: tuple[str, ...] = (
 )
 SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
 
+# The stop call of the periodic package updaters: it never asks for a password,
+# so a run that is not root fails at once instead of opening a polkit prompt on
+# the desktop of the target machine.
+SYSTEMCTL_STOP_NO_PROMPT_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "--no-ask-password",
+    "stop",
+    "{unit}",
+)
+
 # Seconds the run waits for an unknown process to release a port after the
 # termination signal before it is killed outright, and the pause between two
 # lookups while it waits.
@@ -621,7 +666,9 @@ PORT_KILL_POLL_SECONDS: float = 0.2
 READ_VALUE_NAMES: tuple[str, ...] = (
     "APT_CLEAN_COMMAND",
     "APT_INSTALL_COMMAND",
+    "APT_LOCK_TIMEOUT_SECONDS",
     "APT_NONINTERACTIVE_ENVIRONMENT",
+    "APT_PERIODIC_UPDATE_UNITS",
     "APT_UPDATE_COMMAND",
     "ADDRESS_FAMILY_BY_FLAG",
     "AUGEAS_COMMENT_LINE",
@@ -728,6 +775,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_IS_ENABLED_COMMAND",
     "SYSTEMCTL_MAIN_PID_COMMAND",
     "SYSTEMCTL_STOP_COMMAND",
+    "SYSTEMCTL_STOP_NO_PROMPT_COMMAND",
     "SYSTEM_PYTHON",
     "SOCKET_LISTENER_COMMAND",
     "TASK_DATA_ROOT",

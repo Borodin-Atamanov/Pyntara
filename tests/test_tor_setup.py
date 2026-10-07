@@ -251,7 +251,7 @@ def test_installs_and_starts(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     assert result.success is True
     assert result.changed is True
     assert ADDRESS in (result.message or "")
-    assert ["apt-get", "install", "-y", "tor"] in calls
+    assert ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "tor"] in calls
     assert ["runuser", "-u", "debian-tor", "--", "tor", "--verify-config"] in calls
     assert ["systemctl", "enable", "tor@default.service"] in calls
     assert ["systemctl", "start", "tor@default.service"] in calls

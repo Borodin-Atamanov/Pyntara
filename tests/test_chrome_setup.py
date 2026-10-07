@@ -847,7 +847,14 @@ def test_full_flow_applies_everything(
         / values.APT_SOURCE_TEMPLATE_FILE_NAME,
         values.KEYRING_PATH,
     ) in values.APT_SOURCE_PATH.read_text(encoding="utf-8")
-    assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        "google-chrome-stable",
+    ] in calls
     policy = (
         values.SYSTEM_ROOT
         / "etc"
@@ -1202,7 +1209,14 @@ def test_force_rewrites_files_and_reinstalls(
 
     assert result.success
     assert result.changed
-    assert ["apt-get", "install", "-y", "google-chrome-stable"] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        "google-chrome-stable",
+    ] in calls
 
 
 def test_repository_failure_is_warning(

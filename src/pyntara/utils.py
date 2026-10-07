@@ -112,6 +112,42 @@ def refresh_apt_index(timeout: float) -> None:
     )
 
 
+def quiesce_package_updaters(timeout: float) -> list[str]:
+    """Stop the machine's periodic package updaters before the first apt call.
+
+    A machine straight after boot runs its own daily upgrade, which holds the
+    dpkg lock and made a run fail on that lock alone. The run stops the units
+    that schedule that work and the ones that hold the lock without running
+    dpkg. A unit the machine does not have is skipped, and a unit that cannot
+    be stopped never stops the run, because the apt lock wait is the guard that
+    actually keeps an install going. The units that were stopped are returned
+    so the caller can report them, and the wait the run gives apt is named in
+    the same line, so the log says why an install may pause.
+    """
+
+    stopped: list[str] = []
+    for unit in engine_values.APT_PERIODIC_UPDATE_UNITS:
+        command = substituted_command(
+            engine_values.SYSTEMCTL_STOP_NO_PROMPT_COMMAND, {"unit": unit}
+        )
+        try:
+            result = run_command(
+                command, check=False, capture=True, timeout=timeout
+            )
+        except subprocess.TimeoutExpired as exc:
+            logger.log_progress(f"cannot stop {unit}: {exc}")
+            continue
+        if result.returncode == 0:
+            stopped.append(unit)
+    if stopped:
+        logger.log_progress(
+            f"stopped the periodic package updaters: {', '.join(stopped)}; "
+            f"apt waits up to {engine_values.APT_LOCK_TIMEOUT_SECONDS} s "
+            "for the package lock"
+        )
+    return stopped
+
+
 def disk_shortage_message() -> str | None:
     """The sentence that reports a machine without room for the next task.
 

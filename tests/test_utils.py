@@ -213,10 +213,12 @@ def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(utils, "run_command", fake_run)
     assert utils.install_package_once("mc", 30.0) == (True, "")
-    assert calls == [["apt-get", "install", "-y", "mc"]]
+    assert calls == [
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"]
+    ]
     assert envs == [{"DEBIAN_FRONTEND": "noninteractive"}]
     utils.refresh_apt_index(30.0)
-    assert calls[-1] == ["apt-get", "update"]
+    assert calls[-1] == ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"]
 
     marker = "the install, the refresh and the environment are declared values"
     monkeypatch.setattr(
@@ -255,10 +257,10 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
     )
     assert (installed, failures, warnings) == (["mc", "nc"], [], [])
     assert calls[0] == ["dpkg", "--audit"]
-    assert calls[1] == ["apt-get", "update"]
+    assert calls[1] == ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"]
     assert calls[2:] == [
-        ["apt-get", "install", "-y", "mc"],
-        ["apt-get", "install", "-y", "nc"],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "nc"],
     ]
 
     calls.clear()
@@ -269,7 +271,43 @@ def test_install_packages_refreshes_once_and_installs_each_missing(
         retries=0,
         skip_update=True,
     )
-    assert calls == [["dpkg", "--audit"], ["apt-get", "install", "-y", "mc"]]
+    assert calls == [
+        ["dpkg", "--audit"],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"],
+    ]
+
+
+def test_quiesce_package_updaters_stops_the_declared_units(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The run stops exactly the declared units before its first apt call, so a
+    # fresh boot's own package work no longer holds the dpkg lock.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        return _FakeProc(0)
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    stopped = utils.quiesce_package_updaters(5.0)
+    assert stopped == list(engine_values.APT_PERIODIC_UPDATE_UNITS)
+    assert calls == [
+        ["systemctl", "--no-ask-password", "stop", unit]
+        for unit in engine_values.APT_PERIODIC_UPDATE_UNITS
+    ]
+
+
+def test_quiesce_package_updaters_skips_a_unit_the_machine_lacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A unit the machine does not have answers with a nonzero exit, and the
+    # helper reports that it stopped nothing instead of failing the run; the
+    # apt lock wait is the guard that keeps the install going.
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        return _FakeProc(5, "Unit not found.\n")
+
+    monkeypatch.setattr(utils, "run_command", fake_run)
+    assert utils.quiesce_package_updaters(5.0) == []
 
 
 def test_disk_shortage_message_is_none_when_there_is_room(

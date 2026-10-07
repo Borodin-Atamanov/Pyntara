@@ -352,7 +352,14 @@ def test_installs_package_when_missing(
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["apt-get", "install", "-y", "openssh-server"] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        "openssh-server",
+    ] in calls
     assert ["systemctl", "enable", "ssh.service"] in calls
     assert ["systemctl", "start", "ssh.service"] in calls
     assert ["sshd", "-T"] in calls
@@ -408,7 +415,7 @@ def test_apt_update_runs_unless_skipped(
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, installed=False)
     ssh_daemon_setup.task(ctx)
-    assert ["apt-get", "update"] in calls
+    assert ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"] in calls
 
     ctx_skipped = _ctx(monkeypatch, tmp_path, skip_apt_update=True)
     calls_skipped = _install_fake(monkeypatch, installed=False)
@@ -958,7 +965,14 @@ def test_installs_augtool_when_missing(
     result = ssh_daemon_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["apt-get", "install", "-y", AUGTOOL_PACKAGE] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        AUGTOOL_PACKAGE,
+    ] in calls
     assert ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
@@ -996,7 +1010,7 @@ def test_augtool_install_respects_apt_update_flag(
     _write_sshd_config(ctx)
     calls = _install_fake(monkeypatch, augeas_installed=False)
     ssh_daemon_setup.task(ctx)
-    assert ["apt-get", "update"] in calls
+    assert ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"] in calls
 
     ctx_skipped = _ctx(monkeypatch, tmp_path, skip_apt_update=True)
     calls_skipped = _install_fake(monkeypatch, augeas_installed=False)

@@ -131,6 +131,20 @@ run_timed() {
 fi
 
 # Implementation: phase 2.1 (apt package install)
+
+# Seconds every apt call waits for the package lock, mirroring
+# APT_LOCK_TIMEOUT_SECONDS of src/pyntara/values/engine.py. A machine straight
+# after boot runs its own periodic upgrade and holds the dpkg lock, so apt is
+# told to wait instead of failing with exit code 100; the option travels before
+# the package name of the install.
+APT_LOCK_TIMEOUT_SECONDS="${PYNTARA_APT_LOCK_TIMEOUT_SECONDS:-600}"
+
+# The units of the machine's own periodic package work the installer stops
+# before its first apt call, mirroring APT_PERIODIC_UPDATE_UNITS of the engine
+# values. None of them runs dpkg itself, so stopping them cannot interrupt a
+# package transaction; the oneshot that may already be upgrading is left alone.
+APT_PERIODIC_UPDATE_UNITS=(apt-daily.timer apt-daily-upgrade.timer packagekit.service)
+
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f apt_update_skipped &>/dev/null; then
 apt_update_skipped() {
@@ -157,16 +171,31 @@ apt_install() {
         log "Package index refresh skipped"
     else
         log "Refreshing package index before install"
-        if ! DEBIAN_FRONTEND=noninteractive run_timed apt-get update; then
+        if ! DEBIAN_FRONTEND=noninteractive run_timed apt-get update -o "DPkg::Lock::Timeout=$APT_LOCK_TIMEOUT_SECONDS"; then
             log "Package index refresh failed, continuing with the existing index"
         fi
     fi
-    if DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y "${packages[@]}"; then
+    if DEBIAN_FRONTEND=noninteractive run_timed apt-get install -y -o "DPkg::Lock::Timeout=$APT_LOCK_TIMEOUT_SECONDS" "${packages[@]}"; then
         log "Packages installed: ${packages[*]}"
         return 0
     fi
     log "Package install failed: ${packages[*]}"
     return 1
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f quiesce_package_updaters &>/dev/null; then
+quiesce_package_updaters() {
+    # Stop the machine's periodic package updaters before the first apt call,
+    # so the daily upgrade a fresh boot starts does not hold the dpkg lock
+    # through the install. A unit the machine does not have is skipped and a
+    # stop that fails is ignored: the apt lock wait is what keeps the install
+    # going, and this step only makes that wait short.
+    local unit
+    for unit in "${APT_PERIODIC_UPDATE_UNITS[@]}"; do
+        systemctl --no-ask-password stop "$unit" &>/dev/null || true
+    done
 }
 fi
 
@@ -482,6 +511,7 @@ main() {
     ensure_fhs_dirs
     prepare_log_file
     log "Install log started: $LOG_FILE"
+    quiesce_package_updaters
     install_dependencies
     install_uv
     fetch_source

@@ -126,7 +126,9 @@ def test_installs_the_missing_package_of_its_own_list(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "pandoc"]]
+    assert install_calls == [
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "pandoc"]
+    ]
 
 
 def test_a_package_of_the_heavy_list_that_fails_is_named(

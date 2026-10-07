@@ -429,6 +429,7 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         ensure_fhs_dirs() { echo ensure_fhs_dirs >> "$flags_file"; }
         prepare_log_file() { echo prepare_log_file >> "$flags_file"; }
         log() { echo log >> "$flags_file"; }
+        quiesce_package_updaters() { echo quiesce_package_updaters >> "$flags_file"; }
         install_dependencies() { echo install_dependencies >> "$flags_file"; }
         install_uv() { echo install_uv >> "$flags_file"; }
         fetch_source() { echo fetch_source >> "$flags_file"; }
@@ -439,7 +440,7 @@ inst_main_calls_root_then_dirs_then_log_in_order() {
         main "--test-arg"
     ' _ "$INSTALLER" "$flags"
     local expected
-    expected="$(printf 'check_root\nensure_fhs_dirs\nprepare_log_file\nlog\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
+    expected="$(printf 'check_root\nensure_fhs_dirs\nprepare_log_file\nlog\nquiesce_package_updaters\ninstall_dependencies\ninstall_uv\nfetch_source\nsetup_python\nprompt_vault_password\nrun_pyntara --test-arg\nlog')"
     local actual
     actual="$(cat "$flags")"
     if [[ "$actual" != "$expected" ]]; then
@@ -518,9 +519,9 @@ EOF
     output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
         bash -c 'source "$1"; apt_install dialog python3' _ "$INSTALLER" 2>&1)"
     local update_calls
-    update_calls="$(grep -c '^update$' "$calls" || true)"
+    update_calls="$(grep -c '^update -o DPkg::Lock::Timeout=600$' "$calls" || true)"
     local install_calls
-    install_calls="$(grep -c '^install -y dialog python3$' "$calls" || true)"
+    install_calls="$(grep -c '^install -y -o DPkg::Lock::Timeout=600 dialog python3$' "$calls" || true)"
     if [[ "$update_calls" -ne 1 ]]; then
         echo "apt-get update must be called exactly once by default" >&2
         rm -rf "$tmp"
@@ -531,7 +532,7 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
-    if [[ "$(head -1 "$calls")" != "update" ]]; then
+    if [[ "$(head -1 "$calls")" != "update -o DPkg::Lock::Timeout=600" ]]; then
         echo "update must precede install in the call order" >&2
         rm -rf "$tmp"
         return 1
@@ -566,9 +567,9 @@ EOF
         PYNTARA_SKIP_APT_UPDATE=1 \
         bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER" 2>&1)"
     local update_calls
-    update_calls="$(grep -c '^update$' "$calls" || true)"
+    update_calls="$(grep -c '^update -o DPkg::Lock::Timeout=600$' "$calls" || true)"
     local install_calls
-    install_calls="$(grep -c '^install -y dialog$' "$calls" || true)"
+    install_calls="$(grep -c '^install -y -o DPkg::Lock::Timeout=600 dialog$' "$calls" || true)"
     if [[ "$update_calls" -ne 0 ]]; then
         echo "apt-get update must be skipped when PYNTARA_SKIP_APT_UPDATE is set" >&2
         rm -rf "$tmp"
@@ -607,9 +608,9 @@ EOF
     output="$(PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
         bash -c 'source "$1"; apt_install dialog' _ "$INSTALLER" 2>&1)"
     local update_calls
-    update_calls="$(grep -c '^update$' "$calls" || true)"
+    update_calls="$(grep -c '^update -o DPkg::Lock::Timeout=600$' "$calls" || true)"
     local install_calls
-    install_calls="$(grep -c '^install -y dialog$' "$calls" || true)"
+    install_calls="$(grep -c '^install -y -o DPkg::Lock::Timeout=600 dialog$' "$calls" || true)"
     if [[ "$update_calls" -ne 1 ]]; then
         echo "apt-get update must be attempted once" >&2
         rm -rf "$tmp"
@@ -643,11 +644,39 @@ EOF
     chmod +x "$bin/apt-get"
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
         bash -c 'source "$1"; apt_install dialog python3-venv git' _ "$INSTALLER"
-    if ! grep -q '^install -y dialog python3-venv git$' "$calls"; then
+    if ! grep -q '^install -y -o DPkg::Lock::Timeout=600 dialog python3-venv git$' "$calls"; then
         echo "package list not passed in order" >&2
         rm -rf "$tmp"
         return 1
     fi
+    rm -rf "$tmp"
+}
+
+inst_quiesce_stops_the_periodic_package_updaters() {
+    # Before its first apt call the installer stops the units that schedule
+    # the machine's own package update, so the dpkg lock is free for the run.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local calls="$tmp/systemctl_calls"
+    local bin="$tmp/bin"
+    mkdir -p "$bin"
+    cat > "$bin/systemctl" <<'EOF'
+#!/bin/bash
+echo "$@" >> "$SYSTEMCTL_CALLS_FILE"
+exit 0
+EOF
+    chmod +x "$bin/systemctl"
+    PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" SYSTEMCTL_CALLS_FILE="$calls" \
+        bash -c 'source "$1"; quiesce_package_updaters' _ "$INSTALLER"
+    local unit
+    for unit in apt-daily.timer apt-daily-upgrade.timer packagekit.service; do
+        if ! grep -q "^--no-ask-password stop $unit\$" "$calls"; then
+            echo "systemctl stop $unit not called" >&2
+            rm -rf "$tmp"
+            return 1
+        fi
+    done
     rm -rf "$tmp"
 }
 
@@ -710,7 +739,7 @@ EOF
     chmod +x "$bin/apt-get"
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" APT_CALLS_FILE="$calls" \
         bash -c 'source "$1"; install_dependencies' _ "$INSTALLER"
-    if ! grep -q '^install -y python3$' "$calls"; then
+    if ! grep -q '^install -y -o DPkg::Lock::Timeout=600 python3$' "$calls"; then
         echo "missing package python3 not installed" >&2
         rm -rf "$tmp"
         return 1
@@ -1806,6 +1835,7 @@ run_test inst_apt_install_updates_before_install
 run_test inst_apt_install_skips_update_when_flag_set
 run_test inst_apt_install_warns_and_continues_when_update_fails
 run_test inst_apt_install_passes_package_list
+run_test inst_quiesce_stops_the_periodic_package_updaters
 run_test inst_install_dependencies_skips_when_all_present
 run_test inst_install_dependencies_installs_missing_packages
 run_test inst_install_dependencies_reports_all_installed

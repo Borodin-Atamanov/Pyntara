@@ -260,7 +260,14 @@ def test_installs_augtool_when_missing(
     result = ssh_client_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert ["apt-get", "install", "-y", values.AUGEAS_TOOLS_PACKAGE_NAME] in calls
+    assert [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        values.AUGEAS_TOOLS_PACKAGE_NAME,
+    ] in calls
     assert values.SSH_CONFIG_DROPIN_PATH.read_text(encoding="utf-8") == (
         _expected_dropin_content()
     )
@@ -305,7 +312,7 @@ def test_augtool_install_respects_apt_update_flag(
     _write_ssh_config(ctx)
     calls = _install_fake(monkeypatch, augeas_installed=False)
     ssh_client_setup.task(ctx)
-    assert ["apt-get", "update"] in calls
+    assert ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"] in calls
 
     ctx_skipped = _ctx(tmp_path)
     calls_skipped = _install_fake(monkeypatch, augeas_installed=False)

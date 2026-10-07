@@ -31,6 +31,7 @@ from pyntara.logger import (
 from pyntara.task_runner import run_tasks
 from pyntara.utils import (
     export_session_environment,
+    quiesce_package_updaters,
     run_command,
     session_environment,
     substituted_command,
@@ -565,6 +566,7 @@ def run() -> None:
     log_event(f"Tasks: {' '.join(names)}")
     if ctx.force_tasks:
         log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
+    quiesce_package_updaters(common_values.PACKAGE_STATUS_TIMEOUT_SECONDS)
     results, stop_reason = run_tasks(ctx, names)
     if stop_reason is not None:
         run_warnings.append(stop_reason)

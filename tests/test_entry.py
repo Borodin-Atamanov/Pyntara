@@ -104,6 +104,20 @@ def _fixed_desktop_account(monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+@pytest.fixture(autouse=True)
+def _no_package_updater_quiescing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the unit tests away from the machine's package updaters.
+
+    The run stops the periodic package updaters before the tasks; a unit test
+    must never call the real systemctl, so the helper reports that it stopped
+    nothing unless a test replaces this fixture.
+    """
+
+    monkeypatch.setattr(
+        "pyntara.pyntara.quiesce_package_updaters", lambda timeout: []
+    )
+
+
 def test_run_exports_the_desktop_session(monkeypatch: pytest.MonkeyPatch) -> None:
     # The run hands the session variables of the desktop user to the process,
     # so every task and every child process inherits them no matter where the

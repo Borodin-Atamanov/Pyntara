@@ -21,7 +21,9 @@ The apt index is refreshed before the first install by default, so packages reso
 PYNTARA_SKIP_APT_UPDATE (1, true or yes) skips the refresh for test or offline runs.  
 A failed refresh is logged as a warning and the install continues with the existing index.  
 There is no optimistic first attempt and no retry.  
-All apt operations run with DEBIAN_FRONTEND=noninteractive.
+All apt operations run with DEBIAN_FRONTEND=noninteractive.  
+Every apt call waits for the package lock through apt's own DPkg::Lock::Timeout option, whose bound mirrors APT_LOCK_TIMEOUT_SECONDS of src/pyntara/values/engine.py, so a machine running its own periodic upgrade no longer fails the run on the lock.  
+Before its first apt call the installer and the engine stop the units that schedule that upgrade (apt-daily.timer, apt-daily-upgrade.timer, packagekit.service), mirroring APT_PERIODIC_UPDATE_UNITS of the engine values; the oneshot that may already be upgrading is left running, and the run waits for it through the lock timeout instead of interrupting it.
 
 ## Installed packages (in order)
 

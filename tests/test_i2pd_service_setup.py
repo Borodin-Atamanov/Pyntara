@@ -399,6 +399,8 @@ def test_installs_new_release(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         "apt-get",
         "install",
         "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
         str(values.DOWNLOAD_DIR / asset),
     ] in calls
     assert ["systemctl", "enable", "i2pd.service"] in calls

@@ -181,7 +181,16 @@ def test_installs_missing_package(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "imagemagick"]]
+    assert install_calls == [
+        [
+            "apt-get",
+            "install",
+            "-y",
+            "-o",
+            "DPkg::Lock::Timeout=600",
+            "imagemagick",
+        ]
+    ]
 
 
 def test_skip_apt_update_skips_the_update(

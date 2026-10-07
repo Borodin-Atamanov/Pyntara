@@ -114,7 +114,9 @@ def test_installs_missing_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "mc"]]
+    assert install_calls == [
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"]
+    ]
 
 
 def test_share_follows_the_configured_percent_scale(
@@ -150,10 +152,17 @@ def test_config_files_leftover_counts_as_not_installed(
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
     assert install_calls == [
-        ["apt-get", "install", "-y", "mc"],
-        ["apt-get", "install", "-y", "htop"],
-        ["apt-get", "install", "-y", "hollywood"],
-        ["apt-get", "install", "-y", "wget"],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "htop"],
+        [
+            "apt-get",
+            "install",
+            "-y",
+            "-o",
+            "DPkg::Lock::Timeout=600",
+            "hollywood",
+        ],
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "wget"],
     ]
 
 
@@ -226,7 +235,7 @@ def test_update_runs_before_first_install(monkeypatch: pytest.MonkeyPatch) -> No
     updates = [call for call in calls if call[0] == "apt-get" and call[1] == "update"]
     assert len(updates) == 1
     apt_calls = [call for call in calls if call[0] == "apt-get"]
-    assert apt_calls[0] == ["apt-get", "update"]
+    assert apt_calls[0] == ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"]
 
 
 def test_force_mode_keeps_idempotency(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -415,7 +424,9 @@ def test_skip_apt_update_skips_index_refresh(
     install_calls = [
         call for call in calls if call[0] == "apt-get" and call[1] == "install"
     ]
-    assert install_calls == [["apt-get", "install", "-y", "mc"]]
+    assert install_calls == [
+        ["apt-get", "install", "-y", "-o", "DPkg::Lock::Timeout=600", "mc"]
+    ]
 
 
 def test_skip_apt_update_still_retries_installs(
