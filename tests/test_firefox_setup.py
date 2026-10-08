@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from support import FakeProc, make_context
 
-from pyntara import plasma_panel, task_catalog
+from pyntara import apt_repository, plasma_panel, task_catalog
 from pyntara.context import Context
 from pyntara.tasks import firefox_setup
 from pyntara.values import common as common_values
@@ -64,6 +64,11 @@ def _point_the_values_at_the_temporary_tree(
         values,
         "KEYRING_PATH",
         tmp_path / "usr" / "share" / "keyrings" / "packages.mozilla.org.asc",
+    )
+    monkeypatch.setattr(
+        values,
+        "LEGACY_SOURCE_PATH",
+        tmp_path / "etc" / "apt" / "sources.list.d" / "mozilla.list",
     )
     monkeypatch.setattr(
         values,
@@ -227,6 +232,62 @@ def test_registers_the_mozilla_repository(
     assert f"Signed-By: {values.KEYRING_PATH}" in source
     assert "Pin-Priority: 1000" in values.APT_PREFERENCES_PATH.read_text(
         encoding="utf-8"
+    )
+
+
+def test_legacy_mozilla_source_is_moved_aside(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_repository()
+    values.LEGACY_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.LEGACY_SOURCE_PATH.write_text(
+        "deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] "
+        "https://packages.mozilla.org/apt mozilla main\n",
+        encoding="utf-8",
+    )
+    _fake_run(monkeypatch)
+    result = firefox_setup.task(_ctx(tmp_path))
+    assert result.success
+    assert not values.LEGACY_SOURCE_PATH.exists()
+    backup = values.LEGACY_SOURCE_PATH.with_name(
+        values.LEGACY_SOURCE_PATH.name + values.LEGACY_SOURCE_BACKUP_SUFFIX
+    )
+    assert backup.is_file()
+    assert "packages.mozilla.org" in backup.read_text(encoding="utf-8")
+    assert result.message is not None
+    assert "moved the legacy apt source" in result.message
+
+
+def test_moved_legacy_source_is_not_reported_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_repository()
+    values.LEGACY_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.LEGACY_SOURCE_PATH.write_text("legacy\n", encoding="utf-8")
+    _fake_run(monkeypatch)
+    firefox_setup.task(_ctx(tmp_path))
+    second = firefox_setup.task(_ctx(tmp_path))
+    assert second.message is not None
+    assert "moved the legacy apt source" not in second.message
+
+
+def test_legacy_source_that_cannot_be_moved_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_repository()
+    values.LEGACY_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.LEGACY_SOURCE_PATH.write_text("legacy\n", encoding="utf-8")
+
+    def fail_move(path: Path, backup_suffix: str) -> bool:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(apt_repository, "move_legacy_source_aside", fail_move)
+    _fake_run(monkeypatch)
+    result = firefox_setup.task(_ctx(tmp_path))
+    assert result.success
+    assert any(
+        "cannot move the legacy apt source" in warning
+        for warning in result.warnings
     )
 
 

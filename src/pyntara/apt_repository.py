@@ -5,7 +5,10 @@ place it in a keyring under /usr/share/keyrings, render a deb822 source from a
 template and write the root-owned files only when their content differs. The
 key of one vendor is armored as downloaded while the other is armored and
 dearmored through gpg, so a section passes its own commands and names; the
-sequence itself lives here once.
+sequence itself lives here once. A section that replaced an earlier source
+scheme also moves the legacy source file aside here, because a leftover
+naming the same repository with a different signing key makes apt refuse the
+whole source list.
 """
 
 from __future__ import annotations
@@ -84,4 +87,21 @@ def write_root_file(
     path.write_text(content, encoding="utf-8")
     path.chmod(common_values.LAUNCHER_FILE_MODE)
     apply_owner(path, owner_uid, owner_gid)
+    return True
+
+
+def move_legacy_source_aside(path: Path, backup_suffix: str) -> bool:
+    """Move a legacy apt source file aside so apt stops reading it; True when moved.
+
+    apt reads every file under sources.list.d whose name ends in .list or
+    .sources, and it refuses the whole source list when two of them describe
+    the same repository with different signing keys, which leaves the machine
+    without any package operation. The legacy file is moved next to itself
+    under the suffix, a name apt ignores, so nothing is deleted and the move
+    can be reversed by hand.
+    """
+
+    if not path.is_file():
+        return False
+    path.replace(path.with_name(path.name + backup_suffix))
     return True

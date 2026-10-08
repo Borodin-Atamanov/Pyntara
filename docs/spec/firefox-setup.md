@@ -25,6 +25,14 @@ with priority 1000: the Ubuntu transitional package carries the epoch 1 and
 would otherwise win the install, because its version compares higher than the
 Mozilla version.
 
+An earlier scheme wrote a single-line source of the same repository at
+legacy_source_path, with the signing key in /etc/apt/keyrings. While both files
+stand, apt refuses to read the whole source list ("Conflicting values set for
+option Signed-By regarding source ... mozilla"), so no package operation works
+on the machine. The task moves that file next to itself under
+legacy_source_backup_suffix, a name apt ignores, so nothing is deleted and the
+move is reversible by hand; a machine without the file is left alone.
+
 ## Snap removal
 
 The task asks whether the snap is present with snap list first and removes it
@@ -111,6 +119,7 @@ home_dir - the home directory of that user
 settings_repo_url, settings_repo_ref, settings_dir - the defaults repository, its branch and the clone cache
 settings_system_tree_relative_path - the tree inside the repository deployed under system_root
 mozilla_key_url, keyring_path, apt_source_path, apt_preferences_path - the Mozilla repository registration
+legacy_source_path, legacy_source_backup_suffix - the leftover single-line source of the same repository and the suffix it is moved under
 apt_source_template_file_name, apt_preferences_template_file_name - the templates under task_data/firefox_setup/
 package_name, process_name, snap_name, browser_binary_path - the package, its process, the snap it replaces and the binary of the real build
 apt_install_command, snap_remove_command, process_check_command - the command templates

@@ -14,6 +14,11 @@ the default browser of the desktop user and pins the Firefox launcher to every
 Plasma taskbar. The browser is not started through the local proxy, so the task
 takes no dependency on three_x_ui_xray_setup.
 
+A legacy single-line source of the same repository is moved aside first when it
+is present, because apt refuses the whole source list while two descriptions of
+the repository name different signing keys, and no package operation works on
+such a machine.
+
 The defaults repository is the single source of the browser defaults: the
 machine policy sets the default search engine and installs the chosen
 extensions, and the AutoConfig file sets interface defaults with defaultPref, so
@@ -43,6 +48,28 @@ from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import firefox_setup as values
 from pyntara.values import missing_value_names
+
+
+def _remove_legacy_apt_source() -> tuple[bool, str | None]:
+    """Move the legacy single-line Mozilla source aside; (changed, warning).
+
+    The file describes the same repository as the deb822 source with a
+    different signing key, and apt refuses to read the whole source list while
+    both stand, so no package operation works on such a machine. The file is
+    moved next to itself under the backup suffix, a name apt ignores, so
+    nothing is deleted and the move is reversible by hand.
+    """
+
+    try:
+        moved = apt_repository.move_legacy_source_aside(
+            values.LEGACY_SOURCE_PATH, values.LEGACY_SOURCE_BACKUP_SUFFIX
+        )
+    except OSError as exc:
+        return False, (
+            f"cannot move the legacy apt source {values.LEGACY_SOURCE_PATH} "
+            f"aside: {exc}"
+        )
+    return moved, None
 
 
 def _ensure_repository(
@@ -236,6 +263,16 @@ def task(ctx: Context) -> TaskResult:
     apt_preferences_template_path = (
         template_dir / values.APT_PREFERENCES_TEMPLATE_FILE_NAME
     )
+
+    _log("moving the legacy Mozilla apt source aside when present")
+    legacy_changed, legacy_warning = _remove_legacy_apt_source()
+    if legacy_warning:
+        warnings.append(legacy_warning)
+    elif legacy_changed:
+        messages.append(
+            f"moved the legacy apt source {values.LEGACY_SOURCE_PATH} aside"
+        )
+        changed = True
 
     if apt_source_template_path.is_file() and apt_preferences_template_path.is_file():
         _log("registering the Mozilla apt repository")

@@ -40,6 +40,17 @@ KEYRING_ARMORED_FILE_NAME: str = "packages.mozilla.org.asc"
 APT_SOURCE_PATH: Path = Path("/etc/apt/sources.list.d/mozilla.sources")
 APT_PREFERENCES_PATH: Path = Path("/etc/apt/preferences.d/mozilla")
 
+# Legacy single-line source of the same Mozilla repository, written by an
+# earlier scheme that kept the signing key in /etc/apt/keyrings. While it stands
+# beside APT_SOURCE_PATH it describes the repository with a different signing
+# key, and apt refuses to read the whole source list with "Conflicting values
+# set for option Signed-By regarding source ... mozilla", so no package
+# operation works on the machine. The task moves the file next to itself under
+# LEGACY_SOURCE_BACKUP_SUFFIX, a name apt ignores, so nothing is deleted and the
+# move is reversible by hand.
+LEGACY_SOURCE_PATH: Path = Path("/etc/apt/sources.list.d/mozilla.list")
+LEGACY_SOURCE_BACKUP_SUFFIX: str = ".bak"
+
 # Names of the apt source template and the apt preferences template under
 # task_data/firefox_setup/ of the clone; the source is rendered with
 # $keyring_path.
@@ -102,6 +113,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KEYRING_ARMORED_FILE_NAME",
     "APT_SOURCE_PATH",
     "APT_PREFERENCES_PATH",
+    "LEGACY_SOURCE_PATH",
+    "LEGACY_SOURCE_BACKUP_SUFFIX",
     "APT_SOURCE_TEMPLATE_FILE_NAME",
     "APT_PREFERENCES_TEMPLATE_FILE_NAME",
     "PACKAGE_NAME",
