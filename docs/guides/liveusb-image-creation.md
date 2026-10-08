@@ -16,7 +16,7 @@ Deleting the snap seed frees nothing: its files are hardlinked into /var/lib/sna
 
 ## Identities to keep
 
-Never blank /etc/machine-id. RustDesk decrypts enc_id and password in its RustDesk.toml with a key derived from the machine identity, so a fresh machine-id makes it report a new ID, lose the password and rewrite the file. The same holds for any state encrypted to the machine.
+Don't blank /etc/machine-id. RustDesk decrypts enc_id and password in its RustDesk.toml with a key derived from the machine identity, so a fresh machine-id makes it report a new ID, lose the password and rewrite the file. The same holds for any state encrypted to the machine.
 
 Keep /etc/ssh host keys, /var/lib/tor with its onion keys, /var/lib/i2pd, /var/lib/pyntara and /etc/pyntara/pass.
 
@@ -46,8 +46,8 @@ xorriso -indev ISO -outdev OUT -boot_image any replay -map filesystem.squashfs /
 
 Update both changed lines of /md5sum.txt. xorriso extracts that file read-only and root-owned, so write the new one through tee.
 
-Measured: zstd at -Xcompression-level 19 turns 12 GiB into 5.66 GiB, and the ISO rebuild takes about two minutes.
+zstd at -Xcompression-level 19
 
 ## Verify
 
-Boot in QEMU with UEFI, no display, the monitor on a unix socket for a screenshot and the SSH port forwarded. The key exported with the tree logs into the live session, which then names its host, user, groups, sessions and services; only that shows the session equal to the machine.
+Boot in QEMU. The key exported with the tree logs into the live session, which then names its host, user, groups, sessions and services; only that shows the session equal to the machine.
