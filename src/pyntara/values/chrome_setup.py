@@ -177,9 +177,6 @@ SETTINGS_RESET_COMMAND: tuple[str, ...] = (
     "{revision}",
 )
 
-# Command that tells whether the browser runs; {process_name} is PROCESS_NAME.
-PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
-
 # Command that reports the mount point that contains a path, used to confirm
 # the profile mirror; {path} is the path to inspect. Only the target is read:
 # a bind mount of a directory that lies on a btrfs subvolume reports its
@@ -274,7 +271,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SETTINGS_FETCH_COMMAND",
     "SETTINGS_REVISION_COMMAND",
     "SETTINGS_RESET_COMMAND",
-    "PROCESS_CHECK_COMMAND",
     "MOUNT_CHECK_COMMAND",
     "MOUNT_RELOAD_COMMAND",
     "MOUNT_ENABLE_COMMAND",

@@ -17,7 +17,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import kconfig, task_catalog
+from pyntara import kconfig, plasma_panel, task_catalog
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
@@ -42,6 +42,7 @@ def _kconfig_runs_through_the_recorded_run_command(
         return chrome_setup.run_command(*args, **kwargs)
 
     monkeypatch.setattr(kconfig, "run_command", forward)
+    monkeypatch.setattr(plasma_panel, "run_command", forward)
 
 # The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -268,7 +269,7 @@ def _pin_run_fakes(
     calls: list[list[str]] = []
 
     monkeypatch.setattr(
-        chrome_setup,
+        plasma_panel,
         "session_environment",
         lambda *args, **kwargs: (
             {
@@ -359,7 +360,7 @@ def _fake_run_factory(
     calls: list[list[str]] = []
 
     monkeypatch.setattr(
-        chrome_setup,
+        plasma_panel,
         "session_environment",
         lambda *args, **kwargs: (
             {
@@ -931,7 +932,7 @@ def test_menu_refresh_carries_the_plasma_menu_prefix(
 
 
 def test_taskbar_launcher_groups_finds_both_widget_types() -> None:
-    groups = chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT)
+    groups = plasma_panel.launcher_groups(APPLETSRC_TEXT)
     assert len(groups) == 2
     assert ICON_TASKS_GROUP in groups
     assert TASKMANAGER_GROUP in groups
@@ -944,9 +945,9 @@ def test_the_launcher_group_comes_from_the_values(
     # a value of the foreign file the task edits: another group in the module
     # is the group the task looks for.
     monkeypatch.setattr(
-        common_values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers")
+        common_values, "APPLET_CONFIGURATION_GROUP", ("Pinned", "Launchers")
     )
-    assert chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT) == [
+    assert plasma_panel.launcher_groups(APPLETSRC_TEXT) == (
         (
             "Containments",
             "2",
@@ -963,7 +964,7 @@ def test_the_launcher_group_comes_from_the_values(
             "Pinned",
             "Launchers",
         ),
-    ]
+    )
 
 
 def test_pin_gives_the_launcher_to_the_running_panel(
@@ -972,7 +973,7 @@ def test_pin_gives_the_launcher_to_the_running_panel(
     _write_appletsrc()
     calls = _pin_run_fakes(monkeypatch, report=LIVE_PIN_REPORT)
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert changed
     assert note is None
@@ -993,7 +994,7 @@ def test_pin_is_idempotent_when_the_panel_already_holds_the_launcher(
     _write_appletsrc()
     calls = _pin_run_fakes(monkeypatch, report=LIVE_PIN_ALREADY_REPORT)
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert not changed
     assert note is None
@@ -1013,7 +1014,7 @@ def test_pin_without_a_session_writes_the_group_below_the_applet(
         current="applications:org.kde.dolphin.desktop",
     )
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert changed
     assert note is None
@@ -1044,7 +1045,7 @@ def test_pin_warns_when_the_running_panel_does_not_take_the_launcher(
         current="",
     )
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert changed
     assert note is not None
@@ -1058,7 +1059,7 @@ def test_pin_warns_when_the_shell_cannot_be_reached(
     _write_appletsrc()
     calls = _pin_run_fakes(monkeypatch, shell_fail=True, current="")
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert changed
     assert note is not None
@@ -1071,7 +1072,7 @@ def test_pin_without_panel_config_changes_nothing(
 ) -> None:
     calls = _pin_run_fakes(monkeypatch)
 
-    changed, note = chrome_setup._pin_chrome_launcher(timeout=60)
+    changed, note = plasma_panel.pin_launcher(PINNED_LAUNCHER, timeout=60)
 
     assert not changed
     assert note is None

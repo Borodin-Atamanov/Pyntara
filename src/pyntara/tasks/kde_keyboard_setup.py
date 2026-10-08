@@ -42,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from pyntara import kconfig
+from pyntara import appletsrc, kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -135,20 +135,15 @@ def _sync_key(
 def _keyboard_layout_config_group(text: str, plugin: str) -> tuple[str, ...] | None:
     """The Configuration/General group of the applet that declares plugin.
 
-    Plasma appletsrc nests groups as [Containments][X][Applets][Y]; the
-    applet whose section declares plugin=<plugin> holds its configuration
-    in the configured group below that section. Returns the group
-    segments or None when no applet declares the plugin.
+    The walk over the appletsrc sections lives in pyntara.appletsrc, so this
+    section adds only the group it writes the indicator setting into; None
+    means no applet declares the plugin.
     """
 
-    current: tuple[str, ...] = ()
-    for line in text.splitlines():
-        line = line.strip()
-        if line.startswith("[") and line.endswith("]"):
-            current = tuple(part for part in line[1:-1].split("][") if part)
-        elif line == f"plugin={plugin}":
-            return current + values.APPLET_CONFIGURATION_GROUP
-    return None
+    groups = appletsrc.applet_groups(text, (plugin,))
+    if not groups:
+        return None
+    return groups[0] + common_values.APPLET_CONFIGURATION_GROUP
 
 
 def _reload_kwin(
@@ -190,7 +185,7 @@ def _compositor_pids(timeout: float) -> tuple[str, ...]:
     """
 
     command = substituted_command(
-        values.PROCESS_CHECK_COMMAND, {"process_name": values.KWIN_PROCESS_NAME}
+        common_values.PROCESS_CHECK_COMMAND, {"process_name": values.KWIN_PROCESS_NAME}
     )
     try:
         result = run_command(

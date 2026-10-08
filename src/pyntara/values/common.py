@@ -104,15 +104,22 @@ TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
     "org.kde.plasma.taskmanager",
 )
 
-# The appletsrc key that carries the pinned launchers and the group below a task
-# manager applet that holds them, written as the group segments Plasma nests the
-# file with. Measured on Kubuntu 26.04 with KDE 6.6 on 2026-09-26 and again on
-# 2026-09-29 on another machine: the panel draws the list of the nested group
+# The appletsrc key that carries the pinned launchers, the key that names the
+# applet plugin in a section, and the group below an applet that carries its own
+# configuration, written as the group segments Plasma nests the file with.
+# Measured on Kubuntu 26.04 with KDE 6.6 on 2026-09-26 and again on 2026-09-29
+# on another machine: the panel draws the list of the nested group
 # [Containments][N][Applets][M][Configuration][General] while a list written into
 # the parent [Configuration] group of the same applet stands in the file and
 # never reaches the panel.
 APPLETSRC_LAUNCHERS_KEY: str = "launchers"
-APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
+APPLET_PLUGIN_KEY: str = "plugin"
+APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration", "General")
+
+# The command that asks whether a process runs; {process_name} is the name of
+# the program as pgrep sees it. The engine and the browser sections ask the same
+# question, so the command is written once here.
+PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
 # Vocabulary of the KConfig tools: the two base calls carry the file as
 # {file_name}, a group is selected with CONFIG_GROUP_FLAG, a key with
@@ -155,7 +162,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "APPLETSRC_RELATIVE_PATH",
     "TASKBAR_PLUGIN_NAMES",
     "APPLETSRC_LAUNCHERS_KEY",
-    "APPLETSRC_LAUNCHER_GROUP",
+    "APPLET_PLUGIN_KEY",
+    "APPLET_CONFIGURATION_GROUP",
+    "PROCESS_CHECK_COMMAND",
     "KREADCONFIG_COMMAND",
     "KWRITECONFIG_COMMAND",
     "CONFIG_GROUP_FLAG",

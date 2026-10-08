@@ -2485,23 +2485,6 @@ plugin=org.kde.plasma.digitalclock
 """
 
 
-def test_an_applet_group_is_found_by_the_plugin_its_section_declares() -> None:
-    # Plasma nests an applet as [Containments][N][Applets][M], and that position
-    # differs per machine, so the group of an applet is never a written value:
-    # it is found by the plugin the section declares. Every matching section is
-    # returned, so an applet a panel shows twice gets the setting on both.
-    assert task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.kickoff") == (
-        ("Containments", "2", "Applets", "3"),
-    )
-    assert task_module._applet_groups(
-        _SAMPLE_APPLETSRC, "org.kde.plasma.digitalclock"
-    ) == (
-        ("Containments", "2", "Applets", "22"),
-        ("Containments", "2", "Applets", "7", "Applets", "15"),
-    )
-    assert task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.missing") == ()
-
-
 def _appletsrc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A home of the desktop user that holds a sample appletsrc."""
 

@@ -23,6 +23,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pyntara.values import common as common_values
+
 # Directory for runtime task state, and the one directory the systemd unit
 # files of the provisioned services are written to; several tasks deploy a
 # unit and share that location.
@@ -320,9 +322,9 @@ PROGRESS_PRIORITY: int = 7
 PROCESS_CHECK_TIMEOUT_SECONDS: int = 5
 
 # Command that answers whether a process with an exact name is running: exit
-# status 0 means running. {process_name} is replaced with the name, and the
-# engine reads the exit status only.
-PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
+# status 0 means running. The command is the shared one, so the engine and the
+# browser sections ask the question the same way.
+PROCESS_CHECK_COMMAND: tuple[str, ...] = common_values.PROCESS_CHECK_COMMAND
 
 # Seconds the engine pauses after showing a task title before running it.
 TASK_START_DELAY_SECONDS: float = 0.5

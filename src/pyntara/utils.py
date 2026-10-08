@@ -777,6 +777,25 @@ def port_listener_pid(port: int, timeout: float) -> int | None:
     return None
 
 
+def process_is_running(process_name: str, timeout: float) -> bool:
+    """True when a process of that name runs.
+
+    The question is the shared pgrep command, so the engine and the sections
+    that check a running browser ask it the same way; a nonzero exit code means
+    no such process.
+    """
+
+    result = run_command(
+        substituted_command(
+            common_values.PROCESS_CHECK_COMMAND, {"process_name": process_name}
+        ),
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0
+
+
 def service_main_pid(service_name: str, timeout: float) -> int | None:
     """The systemd MainPID of the service, or None when not running.
 

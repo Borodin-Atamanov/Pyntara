@@ -1141,8 +1141,6 @@ KCONFIG_RECORDS: tuple[KconfigRecord, ...] = (
     KconfigRecord("katerc", ("lspclient",), "TypeFormatting", "false", "bool"),
 )
 
-APPLET_PLUGIN_KEY: str = "plugin"
-
 # The scripting interface of the running Plasma shell, by its parts: the bus
 # name, the object path, the interface and the method that runs a script inside
 # the running shell. A setting of a panel applet is applied through this call,
@@ -1249,7 +1247,6 @@ APPLET_REMOVE_PLUGINS: tuple[str, ...] = ("org.kde.plasma.pager",)
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
-    "APPLET_PLUGIN_KEY",
     "PLASMA_SHELL_BUS_NAME",
     "PLASMA_SHELL_OBJECT_PATH",
     "PLASMA_SHELL_SCRIPT_INTERFACE_NAME",

@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from support import FakeProc, make_context
 
-from pyntara import task_catalog
+from pyntara import plasma_panel, task_catalog
 from pyntara.context import Context
 from pyntara.tasks import firefox_setup
 from pyntara.values import common as common_values
@@ -138,6 +138,7 @@ def _patch_run(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> None:
     monkeypatch.setattr(firefox_setup, "run_command", fake_run)
     monkeypatch.setattr("pyntara.utils.run_command", fake_run)
     monkeypatch.setattr("pyntara.kconfig.run_command", fake_run)
+    monkeypatch.setattr("pyntara.plasma_panel.run_command", fake_run)
 
 
 def _is_curl(command: list[str]) -> bool:
@@ -403,7 +404,7 @@ def test_pins_the_launcher_without_a_session(
     _write_repository()
     _write_appletsrc()
     store = _fake_run(monkeypatch)
-    monkeypatch.setattr(firefox_setup, "session_environment", lambda *a, **k: {})
+    monkeypatch.setattr(plasma_panel, "session_environment", lambda *a, **k: {})
     result = firefox_setup.task(_ctx(tmp_path))
     assert result.success
     launchers = [

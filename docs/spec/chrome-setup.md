@@ -90,7 +90,7 @@ taskbar_plugin_names - the task manager plugin names whose launcher list receive
 appletsrc_launchers_key - the appletsrc key that carries the pinned launchers
 appletsrc_launcher_group - the appletsrc group below a task manager applet that holds those launchers, as the group segments Plasma nests the file with; Configuration/General on Kubuntu 26.04 with KDE 6.6
 
-The appletsrc and KConfig values above are read from the shared values module (pyntara.values.common), because chrome_setup, vocalinux_setup, firefox_setup, kde_settings and kde_keyboard_setup use the same facts. The KConfig calls themselves come from the shared module pyntara.kconfig, and the wrapper that runs a command as the desktop user from pyntara.utils (as_user_command), so a section keeps only its own file name, groups and keys.
+The appletsrc and KConfig values above are read from the shared values module (pyntara.values.common), because chrome_setup, vocalinux_setup, firefox_setup, kde_settings and kde_keyboard_setup use the same facts. The KConfig calls themselves come from the shared module pyntara.kconfig, the wrapper that runs a command as the desktop user from pyntara.utils (as_user_command), the walk over the appletsrc from pyntara.appletsrc and the panel launcher pinning from pyntara.plasma_panel, so a section keeps only its own file name, groups, keys and launcher id.
 panel_launcher_id - the launcher id pinned to the panel
 settings_repo_url - the git repository of browser settings
 settings_repo_ref - the branch of that repository applied on every run

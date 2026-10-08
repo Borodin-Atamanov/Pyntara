@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import TypedDict
 from xml.etree import ElementTree
 
-from pyntara import kconfig
+from pyntara import appletsrc, kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -748,28 +748,6 @@ def _substituted_records() -> tuple[values.KconfigRecord, ...]:
     return tuple(_substituted_record(record) for record in values.KCONFIG_RECORDS)
 
 
-def _applet_groups(text: str, plugin: str) -> tuple[tuple[str, ...], ...]:
-    """The group of every appletsrc section declaring one plugin.
-
-    Plasma nests a panel applet as [Containments][N][Applets][M], and that
-    position differs per machine, so the group of an applet is never a value
-    that can be written down: it is found by the plugin name the section
-    declares. Every matching applet is returned, so a panel that shows the
-    same applet twice gets the setting on both.
-    """
-
-    groups: list[tuple[str, ...]] = []
-    current: tuple[str, ...] = ()
-    marker = f"{values.APPLET_PLUGIN_KEY}="
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            current = tuple(part for part in stripped[1:-1].split("][") if part)
-        elif stripped.startswith(marker) and stripped.removeprefix(marker) == plugin:
-            groups.append(current)
-    return tuple(groups)
-
-
 def _script_value(record: values.AppletConfigRecord) -> bool | int | str:
     """The value of one applet setting in the type its applet expects.
 
@@ -1026,7 +1004,7 @@ def _apply_applet_records(
         return False
     changed = False
     for record in values.APPLET_CONFIG_RECORDS:
-        groups = _applet_groups(text, record.plugin)
+        groups = appletsrc.applet_groups(text, (record.plugin,))
         if not groups:
             warning = (
                 f"no applet declares {record.plugin}, so {record.key} keeps its value"

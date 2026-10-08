@@ -87,10 +87,8 @@ KWIN_RESTART_COMMAND: tuple[str, ...] = (
     "org.kde.KWin.replace",
 )
 
-# Name of the compositor process a caller waits for after the restart, and the
-# command that asks whether it runs.
+# Name of the compositor process a caller waits for after the restart.
 KWIN_PROCESS_NAME: str = "kwin_wayland"
-PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
 # The session manager of the desktop user. KWin does not restart it, so the
 # caller starts it after the compositor restart and waits for it; {username} is
@@ -134,18 +132,6 @@ LAYOUT_SWITCH_SHORTCUTS: dict[str, str] = {
 # The group of kxkbrc that carries the layout settings and the group of the
 # appletsrc applet that carries its configuration.
 KXKBRC_GROUP: tuple[str, ...] = ("Layout",)
-# The own config group of a Plasma applet inside the appletsrc, as the group
-# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6:
-# the running shell reads and writes the settings of an applet in
-# [Containments][N][Applets][M][Configuration][General]: the applet declares its
-# own config group in its shipped schema, where the kcfg of the keyboard layout
-# applet names it General, and the applet reads its settings from that group
-# alone. Measured on Kubuntu 26.04 with Plasma 6.6.6 on 2026-09-28: a displayStyle
-# written into [Configuration] appears in the file and never reaches the panel,
-# while the same value written into [Configuration][General] shows the flag at
-# once, which is what configuring the applet through the panel itself produces.
-APPLET_CONFIGURATION_GROUP: tuple[str, ...] = ("Configuration", "General")
-
 # The keys the task writes in kxkbrc, in the order KDE writes them.
 KXKBRC_KEY_LAYOUT_LIST: str = "LayoutList"
 KXKBRC_KEY_DISPLAY_NAMES: str = "DisplayNames"
@@ -204,7 +190,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KWIN_RELOAD_COMMAND",
     "KWIN_RESTART_COMMAND",
     "KWIN_PROCESS_NAME",
-    "PROCESS_CHECK_COMMAND",
     "SESSION_MANAGER_UNIT_NAME",
     "SESSION_MANAGER_IS_ACTIVE_COMMAND",
     "SESSION_MANAGER_START_COMMAND",
@@ -212,7 +197,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KWIN_RESTART_POLL_SECONDS",
     "LAYOUT_SWITCH_SHORTCUTS",
     "KXKBRC_GROUP",
-    "APPLET_CONFIGURATION_GROUP",
     "KXKBRC_KEY_LAYOUT_LIST",
     "KXKBRC_KEY_DISPLAY_NAMES",
     "KXKBRC_KEY_VARIANT_LIST",

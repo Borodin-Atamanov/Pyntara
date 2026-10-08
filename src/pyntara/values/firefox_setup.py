@@ -76,7 +76,6 @@ APT_INSTALL_COMMAND: tuple[str, ...] = (
 )
 SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "--terminate", "{snap}")
 SNAP_LIST_COMMAND: tuple[str, ...] = ("snap", "list", "{snap}")
-PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
 # Commands that clone, update and compare the defaults repository; {url}, {ref}
 # and {dir} are the repository, the configured ref and the clone directory.
@@ -158,7 +157,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "APT_INSTALL_COMMAND",
     "SNAP_REMOVE_COMMAND",
     "SNAP_LIST_COMMAND",
-    "PROCESS_CHECK_COMMAND",
     "SETTINGS_CLONE_COMMAND",
     "SETTINGS_FETCH_COMMAND",
     "SETTINGS_REVISION_COMMAND",
