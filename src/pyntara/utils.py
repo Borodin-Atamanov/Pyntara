@@ -53,26 +53,58 @@ def package_is_installed(package: str, timeout: float) -> bool:
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
-def install_package_once(package: str, timeout: float) -> tuple[bool, str]:
+def install_package_once(
+    package: str, timeout: float, *, install_command: Sequence[str] | None = None
+) -> tuple[bool, str]:
     """Install one package; return (success, error_text).
 
     apt runs noninteractive through the declared environment so it never asks
-    questions, and the argv of the install comes from the values package. Any
-    nonzero exit or timeout is a failure with the exception text; the caller
-    decides whether to retry.
+    questions. The argv of the install comes from the caller when it needs
+    another form, such as the --allow-downgrades of a package that replaces a
+    transitional one, and from the engine otherwise. Any nonzero exit or timeout
+    is a failure with the exception text; the caller decides whether to retry.
     """
 
+    command = (
+        install_command
+        if install_command is not None
+        else engine_values.APT_INSTALL_COMMAND
+    )
     try:
         run_command(
-            substituted_command(
-                engine_values.APT_INSTALL_COMMAND, {"package": package}
-            ),
+            substituted_command(command, {"package": package}),
             extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
             timeout=timeout,
         )
         return True, ""
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, str(exc)
+
+
+def install_package_refreshing_index(
+    package: str,
+    *,
+    install_command: Sequence[str] | None = None,
+    skip_apt_update: bool,
+    timeout: float,
+) -> tuple[bool, str | None]:
+    """Refresh the apt index unless skipped and install one package.
+
+    Returns (installed, error). The shared steps of every task that installs one
+    package on its own, so the browser sections and any future caller take the
+    same path; install_command selects another argv, such as one carrying
+    --allow-downgrades.
+    """
+
+    try:
+        if not skip_apt_update:
+            refresh_apt_index(timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return False, f"cannot refresh the apt index: {exc}"
+    ok, error = install_package_once(package, timeout, install_command=install_command)
+    if not ok:
+        return False, f"cannot install {package}: {error}"
+    return True, None
 
 
 def discard_downloaded_files(ctx: Context, directory: Path) -> None:

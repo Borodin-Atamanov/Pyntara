@@ -136,6 +136,7 @@ Shared helpers that tasks import instead of reimplementing. When you need a capa
 
 Module              Public functions
 utils.py            run_command, package_is_installed, install_package_once,
+                    install_package_refreshing_index,
                     read_os_release, os_family_is_debian, dpkg_architecture,
                     service_is_enabled, service_is_active, apply_owner,
                     proquint_encode, proquint_decode, trim_whitespace,

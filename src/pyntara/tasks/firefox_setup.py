@@ -33,8 +33,8 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    install_package_refreshing_index,
     process_is_running,
-    refresh_apt_index,
     run_command,
     substituted_command,
     task_data_dir,
@@ -133,28 +133,23 @@ def _ensure_firefox_installed(
     The check is the binary of the Mozilla build and not the package alone,
     because the Ubuntu archive ships the transitional package firefox, whose
     presence installs the snap and provides no browser: a machine that carries
-    the transitional package alone is installed over. The note names a machine
-    that still has no browser after the install, so the run never reports a
-    browser it did not get.
+    the transitional package alone is installed over. The Mozilla package
+    carries no epoch while the transitional one carries the epoch 1, so the
+    install runs with --allow-downgrades. The note names a machine that still
+    has no browser after the install, so the run never reports a browser it did
+    not get.
     """
 
     if not force and values.BROWSER_BINARY_PATH.is_file():
         return False, None
-    try:
-        if not skip_apt_update:
-            refresh_apt_index(timeout)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot refresh the apt index: {exc}"
-    try:
-        run_command(
-            substituted_command(
-                values.APT_INSTALL_COMMAND, {"package": values.PACKAGE_NAME}
-            ),
-            extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot install {values.PACKAGE_NAME}: {exc}"
+    installed, note = install_package_refreshing_index(
+        values.PACKAGE_NAME,
+        install_command=values.APT_INSTALL_COMMAND,
+        skip_apt_update=skip_apt_update,
+        timeout=timeout,
+    )
+    if not installed:
+        return False, note
     if not values.BROWSER_BINARY_PATH.is_file():
         return True, (
             f"{values.PACKAGE_NAME} was installed but "
@@ -162,7 +157,6 @@ def _ensure_firefox_installed(
             "working browser"
         )
     return True, None
-
 
 def _browser_is_running(timeout: float) -> bool:
     """True when a Firefox main process is running."""

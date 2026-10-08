@@ -65,11 +65,10 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
     hand_to_user,
-    install_package_once,
+    install_package_refreshing_index,
     package_is_installed,
     port_listener_pid,
     process_is_running,
-    refresh_apt_index,
     run_command,
     substituted_command,
     task_data_dir,
@@ -139,15 +138,9 @@ def _ensure_chrome_installed(
 
     if not force and package_is_installed(values.PACKAGE_NAME, timeout):
         return False, None
-    try:
-        if not skip_apt_update:
-            refresh_apt_index(timeout)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        return False, f"cannot refresh the apt index: {exc}"
-    ok, error = install_package_once(values.PACKAGE_NAME, timeout)
-    if not ok:
-        return False, f"cannot install {values.PACKAGE_NAME}: {error}"
-    return True, None
+    return install_package_refreshing_index(
+        values.PACKAGE_NAME, skip_apt_update=skip_apt_update, timeout=timeout
+    )
 
 
 def _profile_dir() -> Path:
