@@ -59,6 +59,14 @@ APT_PREFERENCES_TEMPLATE_FILE_NAME: str = "mozilla.pref"
 PACKAGE_NAME: str = "firefox"
 PROCESS_NAME: str = "firefox"
 SNAP_NAME: str = "firefox"
+
+# The binary the real Mozilla package installs. The Ubuntu archive ships only the
+# transitional package firefox (1:1snap1), whose presence in dpkg says nothing
+# about a working browser: it installs the snap and provides /usr/bin/firefox
+# alone. The task treats the browser as installed only when this file exists, so
+# a machine that carries the transitional package alone still gets the Mozilla
+# build (measured on liveusb_test on 2026-10-08).
+BROWSER_BINARY_PATH: Path = Path("/usr/lib/firefox/firefox")
 APT_INSTALL_COMMAND: tuple[str, ...] = (
     "apt-get",
     "install",
@@ -112,16 +120,18 @@ SETTINGS_RESET_COMMAND: tuple[str, ...] = (
 # default of the desktop user.
 DESKTOP_FILE_NAME: str = "firefox.desktop"
 PANEL_LAUNCHER_ID: str = "applications:firefox.desktop"
-DEFAULT_BROWSER_COMMAND: tuple[str, ...] = (
-    "xdg-settings",
-    "set",
-    "default-web-browser",
-    "{desktop_id}",
-)
-DEFAULT_BROWSER_QUERY_COMMAND: tuple[str, ...] = (
-    "xdg-settings",
-    "get",
-    "default-web-browser",
+
+# The default-browser setting: the mimeapps.list of the desktop user, the group
+# that carries the default applications and the keys that name the browser. The
+# entries are written with kwriteconfig6, because xdg-settings on Kubuntu 26.04
+# takes a KDE branch that calls qtpaths, which is not installed (only qtpaths6
+# is), and fails (measured on liveusb_test on 2026-10-08).
+MIMEAPPS_FILE_NAME: str = "mimeapps.list"
+DEFAULT_BROWSER_GROUP: tuple[str, ...] = ("Default Applications",)
+DEFAULT_BROWSER_MIME_KEYS: tuple[str, ...] = (
+    "x-scheme-handler/http",
+    "x-scheme-handler/https",
+    "text/html",
 )
 
 # Name of the desktop user appletsrc that carries the pinned taskbar launchers,
@@ -170,6 +180,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_NAME",
     "PROCESS_NAME",
     "SNAP_NAME",
+    "BROWSER_BINARY_PATH",
     "APT_INSTALL_COMMAND",
     "SNAP_REMOVE_COMMAND",
     "PROCESS_CHECK_COMMAND",
@@ -179,8 +190,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SETTINGS_RESET_COMMAND",
     "DESKTOP_FILE_NAME",
     "PANEL_LAUNCHER_ID",
-    "DEFAULT_BROWSER_COMMAND",
-    "DEFAULT_BROWSER_QUERY_COMMAND",
+    "MIMEAPPS_FILE_NAME",
+    "DEFAULT_BROWSER_GROUP",
+    "DEFAULT_BROWSER_MIME_KEYS",
     "APPLETSRC_FILE_NAME",
     "APPLETSRC_RELATIVE_PATH",
     "TASKBAR_PLUGIN_NAMES",

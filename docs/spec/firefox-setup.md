@@ -33,10 +33,15 @@ machine and not a failure; any other error is a warning of the run.
 
 ## Install
 
-The package is installed with apt-get when it is missing or in force mode, with
---allow-downgrades so the Mozilla build replaces the Ubuntu transitional
-package. An installed package is left alone and apt keeps it current on later
-runs.
+The package is installed with apt-get when the real browser is missing or in
+force mode, with --allow-downgrades so the Mozilla build replaces the Ubuntu
+transitional package. The presence of the package alone is not the test: the
+Ubuntu archive ships only the transitional package firefox (1:1snap1), whose
+presence installs the snap and provides no browser, so the task treats the
+browser as installed only when the Mozilla binary browser_binary_path exists. A
+machine that still has no browser after the install is reported as a warning.
+The install runs before the snap is removed, so the machine never loses its
+browser (measured on liveusb_test on 2026-10-08).
 
 ## Defaults repository
 
@@ -65,10 +70,13 @@ file reaches the machine without a code change.
 
 ## Default browser
 
-The task sets the packaged entry firefox.desktop as the default browser of the
-desktop user with xdg-settings, writing the mimeapps.list of that user. The
-current value is read first, so a machine that already points at the entry is
-left alone.
+The task writes the browser into the mimeapps.list of the desktop user, in the
+group Default Applications, for the keys x-scheme-handler/http,
+x-scheme-handler/https and text/html, with the KConfig writer kwriteconfig6.
+The xdg-settings tool is not used: on Kubuntu 26.04 it takes a KDE branch that
+calls qtpaths, which is not installed (only qtpaths6 is), and the step fails
+(measured on liveusb_test on 2026-10-08). Every key is read first, so a machine
+that already points at the entry is left alone.
 
 ## Taskbar pinning
 
@@ -99,10 +107,10 @@ settings_repo_url, settings_repo_ref, settings_dir - the defaults repository, it
 settings_system_tree_relative_path - the tree inside the repository deployed under system_root
 mozilla_key_url, keyring_path, apt_source_path, apt_preferences_path - the Mozilla repository registration
 apt_source_template_file_name, apt_preferences_template_file_name - the templates under task_data/firefox_setup/
-package_name, process_name, snap_name - the package, its process and the snap it replaces
+package_name, process_name, snap_name, browser_binary_path - the package, its process, the snap it replaces and the binary of the real build
 apt_install_command, snap_remove_command, process_check_command - the command templates
 settings_clone_command, settings_fetch_command, settings_revision_command, settings_reset_command - the git command templates
-desktop_file_path, desktop_file_name, panel_launcher_id, default_browser_command, default_browser_query_command - the desktop entry, the default-browser setting and the panel launcher
+desktop_file_name, panel_launcher_id, mimeapps_file_name, default_browser_group, default_browser_mime_keys - the desktop entry, the default-browser entries and the panel launcher
 appletsrc_file_name, appletsrc_relative_path, taskbar_plugin_names, appletsrc_launchers_key, appletsrc_launcher_group - the Plasma appletsrc
 kreadconfig_command, kwriteconfig_command, config_group_flag, config_key_flag - the KConfig vocabulary
 runuser_command - the wrapper that runs a command as the desktop user

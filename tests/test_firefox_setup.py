@@ -1,12 +1,11 @@
 """Unit tests for the firefox_setup task.
 
-External commands (curl, apt-get, snap, git, pgrep, runuser, xdg-settings,
-kreadconfig6, kwriteconfig6) are mocked by monkeypatching run_command in both the
-task module and the utils module, because the shared helpers of utils (the
-package query and the apt index refresh) call their own run_command; the file
-operations run against the temporary tree, because one autouse fixture points
-every writable path of the section at the directory of the test
-(docs/guides/developer-guide.md).
+External commands (curl, apt-get, snap, git, pgrep, runuser, kreadconfig6,
+kwriteconfig6) are mocked by monkeypatching run_command in both the task module
+and the utils module, because the shared helpers of utils (the apt index refresh)
+call their own run_command; the file operations run against the temporary tree,
+because one autouse fixture points every writable path of the section at the
+directory of the test (docs/guides/developer-guide.md).
 """
 
 from __future__ import annotations
@@ -66,6 +65,11 @@ def _point_the_values_at_the_temporary_tree(
         "KEYRING_PATH",
         tmp_path / "usr" / "share" / "keyrings" / "packages.mozilla.org.asc",
     )
+    monkeypatch.setattr(
+        values,
+        "BROWSER_BINARY_PATH",
+        tmp_path / "usr" / "lib" / "firefox" / "firefox",
+    )
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path / "home"))
 
 
@@ -95,6 +99,39 @@ def _write_repository() -> None:
     (root / "LICENSE").write_bytes(b"MIT\n")
 
 
+def _mark_browser_installed() -> None:
+    """Create the binary of the real browser build."""
+
+    values.BROWSER_BINARY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.BROWSER_BINARY_PATH.write_bytes(b"#!/bin/sh\n")
+
+
+def _write_appletsrc() -> None:
+    """Create the Plasma appletsrc of the desktop user."""
+
+    path = Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(APPLETSRC_TEXT, encoding="utf-8")
+
+
+def _kconfig_key(command: list[str]) -> tuple[str, tuple[str, ...], str]:
+    """The (file, groups, key) an applet or KConfig command addresses."""
+
+    file_name = ""
+    groups: list[str] = []
+    key = ""
+    index = 0
+    while index < len(command):
+        if command[index] == "--file" and index + 1 < len(command):
+            file_name = command[index + 1]
+        elif command[index] == "--group" and index + 1 < len(command):
+            groups.append(command[index + 1])
+        elif command[index] == "--key" and index + 1 < len(command):
+            key = command[index + 1]
+        index += 1
+    return file_name, tuple(groups), key
+
+
 def _patch_run(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> None:
     """Patch run_command in the task module and in the utils module."""
 
@@ -109,21 +146,28 @@ def _is_curl(command: list[str]) -> bool:
 def _fake_run(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    installed: bool = False,
+    installed: bool = True,
     snap_present: bool = False,
+    install_creates_binary: bool = True,
     calls: list[list[str]] | None = None,
-) -> None:
-    """Replace run_command with a stand-in that answers by argv content."""
+) -> dict[tuple[str, tuple[str, ...], str], str]:
+    """Replace run_command with a stand-in that answers by argv content.
+
+    The KConfig calls share one in-memory store, so a value written by
+    kwriteconfig6 is read back by kreadconfig6 and a second run observes the
+    state the first one left, which is how the idempotency of the default-browser
+    step is tested. The apt install writes the browser binary unless the test
+    asks for a machine that still has no browser after the install.
+    """
 
     recorded = calls if calls is not None else []
+    store: dict[tuple[str, tuple[str, ...], str], str] = {}
+    if installed:
+        _mark_browser_installed()
 
     def fake_run(command: list[str], **kwargs: object) -> FakeProc:
         recorded.append(list(command))
         joined = " ".join(command)
-        if "dpkg-query" in joined:
-            if installed:
-                return FakeProc(0, stdout="install ok installed\n")
-            return FakeProc(1, stdout="deinstall ok config-files\n")
         if _is_curl(command):
             for flag in ("--output", "-o"):
                 if flag in command:
@@ -136,11 +180,19 @@ def _fake_run(
             if snap_present:
                 return FakeProc(0, stdout="firefox removed\n")
             return FakeProc(1, stderr="error: no matching snaps installed\n")
-        if "xdg-settings" in joined and "get" in command:
-            return FakeProc(0, stdout=f"{values.DESKTOP_FILE_NAME}\n")
+        if "kreadconfig6" in joined:
+            return FakeProc(0, stdout=store.get(_kconfig_key(command), ""))
+        if "kwriteconfig6" in joined:
+            store[_kconfig_key(command)] = command[-1]
+            return FakeProc(0)
+        if command[:1] == ["apt-get"] and "install" in command:
+            if install_creates_binary:
+                _mark_browser_installed()
+            return FakeProc(0)
         return FakeProc(0, stdout="")
 
     _patch_run(monkeypatch, fake_run)
+    return store
 
 
 def test_firefox_setup_is_in_desktop_default_set() -> None:
@@ -169,19 +221,23 @@ def test_registers_the_mozilla_repository(
     )
 
 
-def test_installs_with_allow_downgrades(
+def test_transitional_package_does_not_count_as_installed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # The Ubuntu archive ships only the transitional package firefox, which
+    # installs the snap and provides no browser. dpkg reporting it as installed
+    # must not stop the task: the real binary is what counts.
     _write_repository()
     calls: list[list[str]] = []
     _fake_run(monkeypatch, installed=False, calls=calls)
+    monkeypatch.setattr("pyntara.utils.package_is_installed", lambda *a, **k: True)
     firefox_setup.task(_ctx(tmp_path))
     installs = [call for call in calls if call[:1] == ["apt-get"] and "install" in call]
-    assert installs, "no apt-get install call was made"
+    assert installs, "the install was skipped for a machine without the real browser"
     assert "--allow-downgrades" in installs[0]
 
 
-def test_installed_package_is_not_reinstalled(
+def test_installed_browser_is_not_reinstalled(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _write_repository()
@@ -190,6 +246,16 @@ def test_installed_package_is_not_reinstalled(
     firefox_setup.task(_ctx(tmp_path))
     installs = [call for call in calls if call[:1] == ["apt-get"] and "install" in call]
     assert installs == []
+
+
+def test_missing_browser_after_install_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_repository()
+    _fake_run(monkeypatch, installed=False, install_creates_binary=False)
+    result = firefox_setup.task(_ctx(tmp_path))
+    assert result.success
+    assert any("has no working browser" in warning for warning in result.warnings)
 
 
 def test_snap_removal_tolerates_absent_snap(
@@ -211,6 +277,24 @@ def test_removed_snap_is_reported(
     assert "removed the snap version of Firefox" in result.message
 
 
+def test_browser_is_installed_before_the_snap_is_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The machine must never lose its browser: the package is installed first and
+    # the snap is removed only afterwards.
+    _write_repository()
+    calls: list[list[str]] = []
+    _fake_run(monkeypatch, installed=False, calls=calls)
+    firefox_setup.task(_ctx(tmp_path))
+    install_index = next(
+        index
+        for index, call in enumerate(calls)
+        if call[:1] == ["apt-get"] and "install" in call
+    )
+    snap_index = next(index for index, call in enumerate(calls) if call[:1] == ["snap"])
+    assert install_index < snap_index
+
+
 def test_deploys_the_system_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -225,11 +309,24 @@ def test_deploys_the_system_tree(
         assert (values.SYSTEM_ROOT / relative).read_bytes() == data
 
 
+def test_default_browser_is_written_with_the_kconfig_writer(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _write_repository()
+    store = _fake_run(monkeypatch)
+    firefox_setup.task(_ctx(tmp_path))
+    for key in values.DEFAULT_BROWSER_MIME_KEYS:
+        assert (
+            store[(values.MIMEAPPS_FILE_NAME, values.DEFAULT_BROWSER_GROUP, key)]
+            == values.DESKTOP_FILE_NAME
+        )
+
+
 def test_second_run_changes_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _write_repository()
-    _fake_run(monkeypatch, installed=True)
+    _fake_run(monkeypatch)
     first = firefox_setup.task(_ctx(tmp_path))
     assert first.changed is True
     second = firefox_setup.task(_ctx(tmp_path))
@@ -240,7 +337,7 @@ def test_force_mode_rewrites_the_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _write_repository()
-    _fake_run(monkeypatch, installed=True)
+    _fake_run(monkeypatch)
     firefox_setup.task(_ctx(tmp_path))
     target = values.SYSTEM_ROOT / "usr/lib/firefox/mozilla.cfg"
     target.write_bytes(b"changed\n")
@@ -280,26 +377,15 @@ def test_pins_the_launcher_without_a_session(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _write_repository()
-    appletsrc = Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
-    appletsrc.parent.mkdir(parents=True, exist_ok=True)
-    appletsrc.write_text(APPLETSRC_TEXT, encoding="utf-8")
-    written: list[str] = []
-
-    def fake_run(command: list[str], **kwargs: object) -> FakeProc:
-        joined = " ".join(command)
-        if "dpkg-query" in joined:
-            return FakeProc(1, stdout="deinstall ok config-files\n")
-        if _is_curl(command):
-            return FakeProc(0)
-        if "kwriteconfig6" in joined:
-            written.append(command[-1])
-            return FakeProc(0)
-        if "kreadconfig6" in joined:
-            return FakeProc(0, stdout="")
-        return FakeProc(0)
-
-    _patch_run(monkeypatch, fake_run)
+    _write_appletsrc()
+    store = _fake_run(monkeypatch)
     monkeypatch.setattr(firefox_setup, "session_environment", lambda *a, **k: {})
     result = firefox_setup.task(_ctx(tmp_path))
     assert result.success
-    assert any(values.PANEL_LAUNCHER_ID in value for value in written)
+    launchers = [
+        value
+        for (file_name, _groups, key), value in store.items()
+        if file_name == values.APPLETSRC_FILE_NAME
+        and key == values.APPLETSRC_LAUNCHERS_KEY
+    ]
+    assert any(values.PANEL_LAUNCHER_ID in value for value in launchers)

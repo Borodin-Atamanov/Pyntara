@@ -37,7 +37,6 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
     download_command,
-    package_is_installed,
     refresh_apt_index,
     run_command,
     session_environment,
@@ -142,9 +141,17 @@ def _remove_snap_firefox(timeout: float) -> tuple[bool, str | None]:
 def _ensure_firefox_installed(
     *, force: bool, skip_apt_update: bool, timeout: float
 ) -> tuple[bool, str | None]:
-    """Install the browser package when missing or forced; (changed, error)."""
+    """Install the browser when the real build is missing; (changed, note).
 
-    if not force and package_is_installed(values.PACKAGE_NAME, timeout):
+    The check is the binary of the Mozilla build and not the package alone,
+    because the Ubuntu archive ships the transitional package firefox, whose
+    presence installs the snap and provides no browser: a machine that carries
+    the transitional package alone is installed over. The note names a machine
+    that still has no browser after the install, so the run never reports a
+    browser it did not get.
+    """
+
+    if not force and values.BROWSER_BINARY_PATH.is_file():
         return False, None
     try:
         if not skip_apt_update:
@@ -159,10 +166,14 @@ def _ensure_firefox_installed(
             extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
             timeout=timeout,
         )
-    except subprocess.CalledProcessError as exc:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot install {values.PACKAGE_NAME}: {exc}"
-    except subprocess.TimeoutExpired as exc:
-        return False, f"cannot install {values.PACKAGE_NAME}: {exc}"
+    if not values.BROWSER_BINARY_PATH.is_file():
+        return True, (
+            f"{values.PACKAGE_NAME} was installed but "
+            f"{values.BROWSER_BINARY_PATH} is missing; the machine has no "
+            "working browser"
+        )
     return True, None
 
 
@@ -330,54 +341,51 @@ def _home_env() -> dict[str, str]:
 def _set_default_browser(*, timeout: float) -> tuple[bool, str | None]:
     """Make the packaged Firefox entry the default browser; (changed, warning).
 
-    The current default is read first so a machine that already points at the
-    entry is left alone, which keeps the task idempotent. The setting is written
-    for the desktop user, because the mimeapps.list of that user is the file the
-    desktop reads.
+    The entries go into the mimeapps.list of the desktop user, which is the file
+    the desktop reads, written with the KConfig writer of the section. The
+    xdg-settings tool is unusable here: on Kubuntu 26.04 it takes a KDE branch
+    that calls qtpaths, which is not installed (only qtpaths6 is), and fails
+    (measured on liveusb_test on 2026-10-08). Every key is read first, so a
+    machine that already points at the entry is left alone.
     """
 
-    query = run_command(
-        _as_user_command(substituted_command(values.DEFAULT_BROWSER_QUERY_COMMAND, {})),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if (
-        query.returncode == 0
-        and trim_whitespace(query.stdout) == values.DESKTOP_FILE_NAME
-    ):
-        return False, None
-    result = run_command(
-        _as_user_command(
-            substituted_command(
-                values.DEFAULT_BROWSER_COMMAND,
-                {"desktop_id": values.DESKTOP_FILE_NAME},
+    changed = False
+    for key in values.DEFAULT_BROWSER_MIME_KEYS:
+        try:
+            current = _kreadconfig(
+                values.MIMEAPPS_FILE_NAME,
+                values.DEFAULT_BROWSER_GROUP,
+                key,
+                timeout=timeout,
             )
-        ),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        return False, (
-            "cannot set Firefox as the default browser: "
-            f"{trim_whitespace(result.stderr) or trim_whitespace(result.stdout)}"
-        )
-    return True, None
+            if current == values.DESKTOP_FILE_NAME:
+                continue
+            _kwriteconfig(
+                values.MIMEAPPS_FILE_NAME,
+                values.DEFAULT_BROWSER_GROUP,
+                key,
+                values.DESKTOP_FILE_NAME,
+                timeout=timeout,
+            )
+        except (
+            subprocess.CalledProcessError,
+            subprocess.TimeoutExpired,
+            OSError,
+        ) as exc:
+            return changed, f"cannot set Firefox as the default browser: {exc}"
+        changed = True
+    return changed, None
 
 
 def _kconfig_command(
     base_command: tuple[str, ...],
+    file_name: str,
     group_segments: tuple[str, ...],
     key: str,
 ) -> list[str]:
-    """One KConfig call: the base, the groups and the key."""
+    """One KConfig call: the base, the file, the groups and the key."""
 
-    command = substituted_command(
-        base_command, {"file_name": values.APPLETSRC_FILE_NAME}
-    )
+    command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
             substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
@@ -386,12 +394,18 @@ def _kconfig_command(
     return command
 
 
-def _kreadconfig(group_segments: tuple[str, ...], key: str, *, timeout: float) -> str:
-    """Current value of one appletsrc key of the desktop user."""
+def _kreadconfig(
+    file_name: str,
+    group_segments: tuple[str, ...],
+    key: str,
+    *,
+    timeout: float,
+) -> str:
+    """Current value of one key of a KConfig file of the desktop user."""
 
     result = run_command(
         _as_user_command(
-            _kconfig_command(values.KREADCONFIG_COMMAND, group_segments, key)
+            _kconfig_command(values.KREADCONFIG_COMMAND, file_name, group_segments, key)
         ),
         extra_env=_home_env(),
         check=False,
@@ -402,15 +416,18 @@ def _kreadconfig(group_segments: tuple[str, ...], key: str, *, timeout: float) -
 
 
 def _kwriteconfig(
+    file_name: str,
     group_segments: tuple[str, ...],
     key: str,
     value: str,
     *,
     timeout: float,
 ) -> None:
-    """Write one appletsrc key with the writer of the section as the user."""
+    """Write one key of a KConfig file of the desktop user."""
 
-    command = _kconfig_command(values.KWRITECONFIG_COMMAND, group_segments, key)
+    command = _kconfig_command(
+        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+    )
     command.append(value)
     run_command(_as_user_command(command), extra_env=_home_env(), timeout=timeout)
 
@@ -544,12 +561,16 @@ def _pin_launcher_in_the_appletsrc(
     for group in groups:
         try:
             current = _kreadconfig(
-                group, values.APPLETSRC_LAUNCHERS_KEY, timeout=timeout
+                values.APPLETSRC_FILE_NAME,
+                group,
+                values.APPLETSRC_LAUNCHERS_KEY,
+                timeout=timeout,
             )
             entries = [entry for entry in current.split(",") if entry]
             if values.PANEL_LAUNCHER_ID in entries:
                 continue
             _kwriteconfig(
+                values.APPLETSRC_FILE_NAME,
                 group,
                 values.APPLETSRC_LAUNCHERS_KEY,
                 ",".join([*entries, values.PANEL_LAUNCHER_ID]),
@@ -653,24 +674,24 @@ def task(ctx: Context) -> TaskResult:
     else:
         warnings.append(f"missing apt source template: {apt_source_template_path}")
 
+    _log("checking the Firefox installation")
+    install_changed, install_note = _ensure_firefox_installed(
+        force=force,
+        skip_apt_update=ctx.skip_apt_update,
+        timeout=timeout,
+    )
+    if install_note:
+        warnings.append(install_note)
+    if install_changed:
+        messages.append(f"installed {values.PACKAGE_NAME}")
+        changed = True
+
     _log("removing the snap version of Firefox when present")
     snap_changed, snap_warning = _remove_snap_firefox(timeout)
     if snap_warning:
         warnings.append(snap_warning)
     elif snap_changed:
         messages.append("removed the snap version of Firefox")
-        changed = True
-
-    _log("checking the Firefox installation")
-    install_changed, error = _ensure_firefox_installed(
-        force=force,
-        skip_apt_update=ctx.skip_apt_update,
-        timeout=timeout,
-    )
-    if error:
-        warnings.append(error)
-    elif install_changed:
-        messages.append(f"installed {values.PACKAGE_NAME}")
         changed = True
 
     _log("updating the Firefox defaults repository")
