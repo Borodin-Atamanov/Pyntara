@@ -17,7 +17,13 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import kconfig, plasma_panel, settings_repo, task_catalog
+from pyntara import (
+    apt_repository,
+    kconfig,
+    plasma_panel,
+    settings_repo,
+    task_catalog,
+)
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
@@ -44,6 +50,7 @@ def _kconfig_runs_through_the_recorded_run_command(
     monkeypatch.setattr(kconfig, "run_command", forward)
     monkeypatch.setattr(plasma_panel, "run_command", forward)
     monkeypatch.setattr(settings_repo, "run_command", forward)
+    monkeypatch.setattr(apt_repository, "run_command", forward)
 
 # The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -474,7 +481,7 @@ def test_source_text_mentions_google_repo_and_keyring() -> None:
         / "chrome_setup"
         / values.APT_SOURCE_TEMPLATE_FILE_NAME
     )
-    text = chrome_setup._source_text(
+    text = apt_repository.render_source_text(
         template_path, Path("/etc/apt/keyrings/google-chrome.gpg")
     )
     assert "URIs: https://dl.google.com/linux/chrome-stable/deb/" in text
@@ -860,7 +867,7 @@ def test_full_flow_applies_everything(
     assert values.APT_SOURCE_PATH.is_file()
     assert values.KEYRING_PATH.is_file()
     assert values.KEYRING_PATH.stat().st_size > 0
-    assert chrome_setup._source_text(
+    assert apt_repository.render_source_text(
         Path(__file__).resolve().parents[1]
         / "task_data"
         / "chrome_setup"

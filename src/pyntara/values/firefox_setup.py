@@ -36,6 +36,7 @@ SETTINGS_DIR: Path = Path("/var/cache/pyntara/firefox-settings")
 MOZILLA_KEY_URL: str = "https://packages.mozilla.org/apt/repo-signing-key.gpg"
 KEYRING_PATH: Path = Path("/usr/share/keyrings/packages.mozilla.org.asc")
 KEYRING_TEMP_DIR_PREFIX: str = "pyntara-firefox-"
+KEYRING_ARMORED_FILE_NAME: str = "packages.mozilla.org.asc"
 APT_SOURCE_PATH: Path = Path("/etc/apt/sources.list.d/mozilla.sources")
 APT_PREFERENCES_PATH: Path = Path("/etc/apt/preferences.d/mozilla")
 
@@ -98,6 +99,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "MOZILLA_KEY_URL",
     "KEYRING_PATH",
     "KEYRING_TEMP_DIR_PREFIX",
+    "KEYRING_ARMORED_FILE_NAME",
     "APT_SOURCE_PATH",
     "APT_PREFERENCES_PATH",
     "APT_SOURCE_TEMPLATE_FILE_NAME",

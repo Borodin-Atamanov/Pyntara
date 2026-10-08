@@ -140,6 +140,7 @@ def _patch_run(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> None:
     monkeypatch.setattr("pyntara.kconfig.run_command", fake_run)
     monkeypatch.setattr("pyntara.plasma_panel.run_command", fake_run)
     monkeypatch.setattr("pyntara.settings_repo.run_command", fake_run)
+    monkeypatch.setattr("pyntara.apt_repository.run_command", fake_run)
 
 
 def _is_curl(command: list[str]) -> bool:

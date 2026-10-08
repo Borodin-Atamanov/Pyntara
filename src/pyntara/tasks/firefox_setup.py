@@ -26,17 +26,13 @@ the current bytes.
 from __future__ import annotations
 
 import subprocess
-import tempfile
 from pathlib import Path
-from string import Template
 
-from pyntara import kconfig, plasma_panel, settings_repo
+from pyntara import apt_repository, kconfig, plasma_panel, settings_repo
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    apply_owner,
-    download_command,
     process_is_running,
     refresh_apt_index,
     run_command,
@@ -49,18 +45,6 @@ from pyntara.values import firefox_setup as values
 from pyntara.values import missing_value_names
 
 
-def _source_text(template_path: Path, keyring_path: Path) -> str:
-    """The deb822 apt source of the official Mozilla repository.
-
-    The body of the source file lives in the template under task_data/ and only
-    the keyring path is substituted, so the suite, the components and the
-    archive address stay with the template.
-    """
-
-    template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(keyring_path=str(keyring_path))
-
-
 def _ensure_repository(
     apt_source_template_path: Path,
     apt_preferences_template_path: Path,
@@ -70,11 +54,11 @@ def _ensure_repository(
 ) -> tuple[bool, str | None]:
     """Register the Mozilla apt source, keyring and preferences; (changed, error).
 
-    The armored key is downloaded when missing and written to the configured
-    keyring path as downloaded, because it is already in the armored form apt
-    accepts. The deb822 source is rendered from its template and the apt
-    preferences file is copied from its template; both are written only when
-    their content differs, root-owned with the configured mode.
+    The armored key is downloaded when missing and written into the keyring path
+    as downloaded, because it is already in the armored form apt accepts. The
+    deb822 source is rendered from its template and the apt preferences file is
+    copied from its template; both are root-owned and written only when their
+    content differs.
     """
 
     changed = False
@@ -82,32 +66,27 @@ def _ensure_repository(
         if not (
             values.KEYRING_PATH.is_file() and values.KEYRING_PATH.stat().st_size > 0
         ):
-            values.KEYRING_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(
-                prefix=values.KEYRING_TEMP_DIR_PREFIX
-            ) as tmp:
-                downloaded = Path(tmp) / "packages.mozilla.org.asc"
-                run_command(
-                    download_command(downloaded, values.MOZILLA_KEY_URL),
-                    timeout=timeout,
-                )
-                values.KEYRING_PATH.write_bytes(downloaded.read_bytes())
-            values.KEYRING_PATH.chmod(common_values.LAUNCHER_FILE_MODE)
-            apply_owner(values.KEYRING_PATH, owner_uid, owner_gid)
+            apt_repository.download_keyring(
+                url=values.MOZILLA_KEY_URL,
+                keyring_path=values.KEYRING_PATH,
+                temp_dir_prefix=values.KEYRING_TEMP_DIR_PREFIX,
+                armored_file_name=values.KEYRING_ARMORED_FILE_NAME,
+                timeout=timeout,
+                owner_uid=owner_uid,
+                owner_gid=owner_gid,
+            )
             changed = True
-        source_text = _source_text(apt_source_template_path, values.KEYRING_PATH)
+        source_text = apt_repository.render_source_text(
+            apt_source_template_path, values.KEYRING_PATH
+        )
         preferences_text = apt_preferences_template_path.read_text(encoding="utf-8")
         for path, content in (
             (values.APT_SOURCE_PATH, source_text),
             (values.APT_PREFERENCES_PATH, preferences_text),
         ):
-            if path.is_file() and path.read_text(encoding="utf-8") == content:
-                continue
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(content, encoding="utf-8")
-            path.chmod(common_values.LAUNCHER_FILE_MODE)
-            apply_owner(path, owner_uid, owner_gid)
-            changed = True
+            changed |= apt_repository.write_root_file(
+                path, content, owner_uid=owner_uid, owner_gid=owner_gid
+            )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return changed, f"cannot register the Mozilla apt repository: {exc}"
     return changed, None

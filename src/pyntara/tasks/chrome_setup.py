@@ -55,17 +55,15 @@ import json
 import os
 import re
 import subprocess
-import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara import plasma_panel, settings_repo
+from pyntara import apt_repository, plasma_panel, settings_repo
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
-    download_command,
     hand_to_user,
     install_package_once,
     package_is_installed,
@@ -88,18 +86,6 @@ from pyntara.values import three_x_ui_xray_setup as panel_values
 FLAG_PLACEHOLDER_PATTERN = re.compile(r"\{([a-z_]+)\}")
 
 
-def _source_text(template_path: Path, keyring_path: Path) -> str:
-    """The deb822 apt source of the official Google Chrome repository.
-
-    The body of the source file lives in the template under task_data/ and
-    only the keyring path is substituted, so the suite, the components and
-    the archive address stay with the template.
-    """
-
-    template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(keyring_path=str(keyring_path))
-
-
 def _ensure_repository(
     apt_source_template_path: Path,
     timeout: float,
@@ -108,10 +94,9 @@ def _ensure_repository(
 ) -> tuple[bool, str | None]:
     """Register the Google apt source and its keyring; (changed, error).
 
-    The keyring is downloaded from Google when missing, with the declared
-    download command, and dearmored into the configured path; the deb822
-    source file is rendered from its template and written when its content
-    differs. Both files are root-owned with the configured mode.
+    The armored key is downloaded when missing and dearmored into the keyring
+    path, and the deb822 source is rendered from its template. Both files are
+    root-owned and written only when their content differs.
     """
 
     changed = False
@@ -119,38 +104,26 @@ def _ensure_repository(
         if not (
             values.KEYRING_PATH.is_file() and values.KEYRING_PATH.stat().st_size > 0
         ):
-            values.KEYRING_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(
-                prefix=values.KEYRING_TEMP_DIR_PREFIX
-            ) as tmp:
-                armored = Path(tmp) / values.KEYRING_ARMORED_FILE_NAME
-                run_command(
-                    download_command(armored, values.GOOGLE_KEY_URL),
-                    timeout=timeout,
-                )
-                run_command(
-                    substituted_command(
-                        values.KEYRING_DEARMOR_COMMAND,
-                        {
-                            "output": str(values.KEYRING_PATH),
-                            "armored": str(armored),
-                        },
-                    ),
-                    timeout=timeout,
-                )
-            values.KEYRING_PATH.chmod(common_values.LAUNCHER_FILE_MODE)
-            apply_owner(values.KEYRING_PATH, owner_uid, owner_gid)
+            apt_repository.download_keyring(
+                url=values.GOOGLE_KEY_URL,
+                keyring_path=values.KEYRING_PATH,
+                temp_dir_prefix=values.KEYRING_TEMP_DIR_PREFIX,
+                armored_file_name=values.KEYRING_ARMORED_FILE_NAME,
+                timeout=timeout,
+                owner_uid=owner_uid,
+                owner_gid=owner_gid,
+                dearmor_command=values.KEYRING_DEARMOR_COMMAND,
+            )
             changed = True
-        content = _source_text(apt_source_template_path, values.KEYRING_PATH)
-        if not (
-            values.APT_SOURCE_PATH.is_file()
-            and values.APT_SOURCE_PATH.read_text(encoding="utf-8") == content
-        ):
-            values.APT_SOURCE_PATH.parent.mkdir(parents=True, exist_ok=True)
-            values.APT_SOURCE_PATH.write_text(content, encoding="utf-8")
-            values.APT_SOURCE_PATH.chmod(common_values.LAUNCHER_FILE_MODE)
-            apply_owner(values.APT_SOURCE_PATH, owner_uid, owner_gid)
-            changed = True
+        source_text = apt_repository.render_source_text(
+            apt_source_template_path, values.KEYRING_PATH
+        )
+        changed |= apt_repository.write_root_file(
+            values.APT_SOURCE_PATH,
+            source_text,
+            owner_uid=owner_uid,
+            owner_gid=owner_gid,
+        )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         return changed, f"cannot register the Google Chrome apt repository: {exc}"
     return changed, None
