@@ -176,10 +176,15 @@ def _fake_run(
                     output.write_bytes(KEY_CONTENT)
                     break
             return FakeProc(0)
-        if command[:1] == ["snap"]:
+        if command[:1] == ["snap"] and command[1:2] == ["list"]:
+            if snap_present:
+                return FakeProc(0, stdout="firefox 157.0-1\n")
+            return FakeProc(1, stderr="error: no matching snaps installed\n")
+        if command[:1] == ["snap"] and command[1:2] == ["remove"]:
+            # snap remove answers the success code even for an absent snap.
             if snap_present:
                 return FakeProc(0, stdout="firefox removed\n")
-            return FakeProc(1, stderr="error: no matching snaps installed\n")
+            return FakeProc(0, stdout='snap "firefox" is not installed\n')
         if "kreadconfig6" in joined:
             return FakeProc(0, stdout=store.get(_kconfig_key(command), ""))
         if "kwriteconfig6" in joined:
@@ -277,6 +282,17 @@ def test_removed_snap_is_reported(
     assert "removed the snap version of Firefox" in result.message
 
 
+def test_absent_snap_is_not_reported_as_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # snap remove answers the success code for an absent snap, so the exit code
+    # alone must not be read as a removal.
+    _write_repository()
+    _fake_run(monkeypatch, snap_present=False)
+    result = firefox_setup.task(_ctx(tmp_path))
+    assert "removed the snap" not in result.message
+
+
 def test_browser_is_installed_before_the_snap_is_removed(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -284,14 +300,18 @@ def test_browser_is_installed_before_the_snap_is_removed(
     # the snap is removed only afterwards.
     _write_repository()
     calls: list[list[str]] = []
-    _fake_run(monkeypatch, installed=False, calls=calls)
+    _fake_run(monkeypatch, installed=False, snap_present=True, calls=calls)
     firefox_setup.task(_ctx(tmp_path))
     install_index = next(
         index
         for index, call in enumerate(calls)
         if call[:1] == ["apt-get"] and "install" in call
     )
-    snap_index = next(index for index, call in enumerate(calls) if call[:1] == ["snap"])
+    snap_index = next(
+        index
+        for index, call in enumerate(calls)
+        if call[:1] == ["snap"] and call[1:2] == ["remove"]
+    )
     assert install_index < snap_index
 
 

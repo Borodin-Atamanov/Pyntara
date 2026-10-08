@@ -75,6 +75,7 @@ APT_INSTALL_COMMAND: tuple[str, ...] = (
     "{package}",
 )
 SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "{snap}")
+SNAP_LIST_COMMAND: tuple[str, ...] = ("snap", "list", "{snap}")
 PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
 # Commands that clone, update and compare the defaults repository; {url}, {ref}
@@ -183,6 +184,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "BROWSER_BINARY_PATH",
     "APT_INSTALL_COMMAND",
     "SNAP_REMOVE_COMMAND",
+    "SNAP_LIST_COMMAND",
     "PROCESS_CHECK_COMMAND",
     "SETTINGS_CLONE_COMMAND",
     "SETTINGS_FETCH_COMMAND",

@@ -118,12 +118,22 @@ def _ensure_repository(
 def _remove_snap_firefox(timeout: float) -> tuple[bool, str | None]:
     """Remove the snap version of the browser; (changed, warning).
 
-    A machine that never had the snap answers an error that names no installed
-    snap, which is the normal state of a fresh machine and not a failure, so the
-    error of an absent snap is swallowed. Any other failure is a warning: the
-    deb install still works and the leftover snap is reported.
+    The presence of the snap is asked first, because snap remove answers the
+    success code even for a snap that is not installed (measured on liveusb_test
+    on 2026-10-08: the message `snap "firefox" is not installed` with exit code
+    0), so that exit code alone cannot tell a removal from a no-op. A machine
+    without the snap is left alone; a snap that is present and cannot be removed
+    is a warning, and the deb install is unaffected.
     """
 
+    present = run_command(
+        substituted_command(values.SNAP_LIST_COMMAND, {"snap": values.SNAP_NAME}),
+        check=False,
+        capture=True,
+        timeout=timeout,
+    )
+    if present.returncode != 0:
+        return False, None
     result = run_command(
         substituted_command(values.SNAP_REMOVE_COMMAND, {"snap": values.SNAP_NAME}),
         check=False,
@@ -133,7 +143,7 @@ def _remove_snap_firefox(timeout: float) -> tuple[bool, str | None]:
     if result.returncode == 0:
         return True, None
     answer = f"{result.stdout}\n{result.stderr}".lower()
-    if "no matching snaps" in answer or "not installed" in answer:
+    if "not installed" in answer or "no matching snaps" in answer:
         return False, None
     return False, f"cannot remove the snap {values.SNAP_NAME}: {answer.strip()}"
 
