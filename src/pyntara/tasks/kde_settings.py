@@ -1403,14 +1403,14 @@ def _reload_powerdevil(
     env: dict[str, str] | None,
     warnings: list[str] | None = None,
 ) -> bool:
-    """Let powerdevil read its file again and name the live power profile.
+    """Let powerdevil re-read its records and switch the live power profile.
 
     The profile record of powerdevilrc does not change the live profile by
-    itself (measured), so the owner is asked to re-read its configuration and
-    the profile the session really uses is read back and compared with the
-    configured one. A run whose configuration asks for a profile the session
-    does not run says so instead of reporting the value as applied. Returns
-    False, because the step carries no change of its own.
+    itself (measured): the live profile belongs to power-profiles-daemon. The
+    owner of the records is asked to read them again and the daemon is then
+    switched to the configured profile, or to the nearest profile the machine
+    offers when it does not offer the configured one. Returns False, because the
+    step carries no change of its own in the file the task owns.
     """
 
     if env is None:
@@ -1429,20 +1429,136 @@ def _reload_powerdevil(
             )
         return False
     _log("powerdevil read its configuration again")
+    _apply_power_profile(timeout=timeout, env=env, warnings=warnings)
+    return False
+
+
+def _apply_power_profile(
+    *,
+    timeout: float,
+    env: dict[str, str],
+    warnings: list[str] | None = None,
+) -> None:
+    """Switch the live power profile to the configured one or its nearest.
+
+    The configured profile is the one the records ask for. The machine may not
+    offer it, so the profiles it does offer are read and the nearest profile of
+    the preference order is switched to; the substitution is named, so the user
+    reads which profile the machine really runs. A daemon that does not answer
+    is reported and the machine is left as it is.
+    """
+
     configured = _configured_power_profile()
-    running = _running_power_profile(timeout=timeout, env=env)
-    if configured and running and configured != running:
+    if not configured:
+        return
+    offered, error = _offered_power_profiles(timeout=timeout, env=env)
+    if error is not None:
+        if warnings is not None:
+            warnings.append(error)
+        return
+    chosen = _nearest_power_profile(configured, offered)
+    if chosen is None:
         message = (
-            f"the session runs the power profile {running} while the configuration "
-            f"asks for {configured}: the live profile belongs to "
-            "power-profiles-daemon and is not switched by writing the file"
+            f"the machine offers none of the power profiles "
+            f"{', '.join(values.POWER_PROFILE_PREFERENCE)}, so the configured "
+            f"{configured} was not applied"
         )
         _log(message, priority=engine_values.ERROR_PRIORITY)
         if warnings is not None:
             warnings.append(message)
-    elif running:
+        return
+    if chosen != configured:
+        _log(
+            f"the machine does not offer the power profile {configured}; the "
+            f"nearest offered profile {chosen} is applied"
+        )
+    _set_power_profile(chosen, timeout=timeout, warnings=warnings)
+    running = _running_power_profile(timeout=timeout, env=env)
+    if running:
         _log(f"the session runs the power profile {running}")
-    return False
+
+
+def _offered_power_profiles(
+    *, timeout: float, env: dict[str, str]
+) -> tuple[tuple[str, ...], str | None]:
+    """Profiles the machine offers, read from the list the daemon prints.
+
+    Every offered profile is named by a line that ends with a colon; only the
+    names of the preference order are taken, so a header line or a detail line
+    of the tool is never mistaken for a profile.
+    """
+
+    try:
+        result = run_command(
+            as_user_command(list(values.POWER_PROFILE_LIST_COMMAND)),
+            extra_env=env,
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return (), f"the power profiles of the machine could not be read: {exc}"
+    names: list[str] = []
+    for line in result.stdout.splitlines():
+        text = line.strip().lstrip("*").strip()
+        if not text.endswith(":"):
+            continue
+        name = text[:-1].strip()
+        if name in values.POWER_PROFILE_PREFERENCE and name not in names:
+            names.append(name)
+    return tuple(names), None
+
+
+def _nearest_power_profile(configured: str, offered: tuple[str, ...]) -> str | None:
+    """The offered profile nearest the configured one in the preference order.
+
+    The order runs from the highest performance to the most saving, so the
+    nearest profile is the offered one with the smallest distance in that order;
+    a tie is decided towards the higher performance, which is the earlier entry.
+    None means the machine offers no profile of the order.
+    """
+
+    order = list(values.POWER_PROFILE_PREFERENCE)
+    if configured not in order:
+        order.insert(0, configured)
+    configured_index = order.index(configured)
+    candidates = [name for name in offered if name in order]
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda name: (
+            abs(order.index(name) - configured_index),
+            order.index(name),
+        ),
+    )
+
+
+def _set_power_profile(
+    profile: str,
+    *,
+    timeout: float,
+    warnings: list[str] | None = None,
+) -> None:
+    """Ask the power daemon to run one profile, and report a refusal.
+
+    The switch runs as the task's own account and not as the desktop user: the
+    daemon guards its switch-profile action with polkit, and a call made on
+    behalf of a user who is not on the seat of an active session is refused
+    (measured on Kubuntu 26.04: the same switch succeeds as root and is refused
+    with AccessDenied through runuser).
+    """
+
+    command = substituted_command(values.POWER_PROFILE_SET_COMMAND, {"profile": profile})
+    try:
+        run_command(list(command), timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        warning = f"the power profile {profile} could not be applied: {exc}"
+        _log(warning, priority=engine_values.ERROR_PRIORITY)
+        if warnings is not None:
+            warnings.append(warning)
+        return
+    _log(f"power profile applied: {profile}")
 
 
 def _configured_power_profile() -> str | None:

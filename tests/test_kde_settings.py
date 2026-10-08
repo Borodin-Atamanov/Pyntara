@@ -265,17 +265,19 @@ def _granted_script_hotkeys() -> dict[str, list[str]]:
     }
 
 
-def test_the_live_power_profile_is_named_when_it_differs(
+def test_the_power_profile_is_switched_through_the_daemon(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Measured on Kubuntu 26.04 with KDE 6.6: the profile record of
-    # powerdevilrc does not change the live profile of the session, because
-    # that profile belongs to power-profiles-daemon. The step therefore names
-    # both profiles instead of presenting the configured one as applied.
+    # Measured on Kubuntu 26.04 with KDE 6.6: the live profile belongs to
+    # power-profiles-daemon, so writing the powerdevilrc record alone never
+    # switches it. The step therefore asks that daemon for the profiles it
+    # offers and switches it to the configured one.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
         calls.append(list(command))
+        if command[-1] == "list":
+            return _FakeProc(0, "* performance:\n  balanced:\n  power-saver:\n")
         if command[-1] == "get":
             return _FakeProc(0, "balanced\n")
         return _FakeProc(0, "")
@@ -290,9 +292,37 @@ def test_the_live_power_profile_is_named_when_it_differs(
     )
 
     assert any("reparseConfiguration" in " ".join(call) for call in calls)
-    assert any(
-        "balanced" in warning and "performance" in warning for warning in warnings
+    assert any(call[-2:] == ["set", "performance"] for call in calls)
+    assert warnings == []
+
+
+def test_the_nearest_offered_power_profile_is_applied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A machine whose hardware has no performance profile must still run the
+    # closest profile instead of keeping one nobody asked for, and the
+    # substitution is named in the log rather than reported as a failure.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
+        calls.append(list(command))
+        if command[-1] == "list":
+            return _FakeProc(0, "  balanced:\n  power-saver:\n")
+        if command[-1] == "get":
+            return _FakeProc(0, "balanced\n")
+        return _FakeProc(0, "")
+
+    monkeypatch.setattr(task_module, "run_command", fake_run)
+    warnings: list[str] = []
+
+    task_module._reload_powerdevil(
+        timeout=5,
+        env={"DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus"},
+        warnings=warnings,
     )
+
+    assert any(call[-2:] == ["set", "balanced"] for call in calls)
+    assert warnings == []
 
 
 def test_the_power_settings_are_left_to_the_next_login_without_a_session(
@@ -336,6 +366,7 @@ def _install_fakes(
     assign_unsupported: dict[str, list[str]] | None = None,
     assign_held_elsewhere: dict[str, list[list[Any]]] | None = None,
     power_profile: str = "",
+    power_profiles_list: str = "* performance:\n  balanced:\n  power-saver:\n",
 ):
     """Replace run_command, the session environment and package state.
 
@@ -415,7 +446,11 @@ def _install_fakes(
                     reloads.append(list(command))
                 return _FakeProc(0, "")
             if inner[0] == "powerprofilesctl":
-                return _FakeProc(0, f"{power_profile}\n")
+                if inner[1] == "list":
+                    return _FakeProc(0, power_profiles_list)
+                if inner[1] == "get":
+                    return _FakeProc(0, f"{power_profile}\n")
+                return _FakeProc(0, "")
             if inner[0] == "/usr/bin/python3":
                 if _is_assign_call(inner):
                     index = attempt[0]
@@ -441,6 +476,12 @@ def _install_fakes(
                     )
                 return _FakeProc(0, "")
         if command[0] in ("chown", "chmod"):
+            return _FakeProc(0, "")
+        if command[0] == "powerprofilesctl":
+            if command[1] == "list":
+                return _FakeProc(0, power_profiles_list)
+            if command[1] == "get":
+                return _FakeProc(0, f"{power_profile}\n")
             return _FakeProc(0, "")
         if command[0] == "kreadconfig6":
             key = command[command.index("--key") + 1]

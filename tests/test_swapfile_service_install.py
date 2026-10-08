@@ -756,3 +756,171 @@ def test_the_program_reads_the_command_line_the_task_builds(
         part.startswith("--swapfile") or part == str(values.SWAPFILE_PATH)
         for part in command
     )
+
+
+def _point_at_a_temporary_fstab(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str
+) -> Path:
+    """Give the cleanup its own fstab and swapfile paths in the temporary tree."""
+
+    fstab = tmp_path / "fstab"
+    fstab.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(values, "FSTAB_PATH", fstab)
+    monkeypatch.setattr(values, "SWAPFILE_PATH", tmp_path / "swapfile")
+    return fstab
+
+
+def test_a_foreign_swap_file_is_switched_off_and_removed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A remaining swap file of another owner blocks the save point of a btrfs
+    # root and holds its room on any machine, so the section switches it off and
+    # removes it, while its own swap file and every swap device are left alone.
+    _point_at_a_temporary_fstab(
+        monkeypatch, tmp_path, "UUID=test-root / ext4 defaults 0 1\n"
+    )
+    own = values.SWAPFILE_PATH
+    own.write_bytes(b"own")
+    foreign = tmp_path / "foreign.img"
+    foreign.write_bytes(b"\0" * 4096)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "swapon":
+            return _FakeProc(
+                0,
+                f"{foreign} file\n/dev/zram0 partition\n{own} file\n",
+            )
+        return _FakeProc(0)
+
+    monkeypatch.setattr(swapfile_service_install, "run_command", fake_run)
+    warnings: list[str] = []
+    changed = swapfile_service_install._remove_foreign_swap_files(
+        timeout=5, warnings=warnings
+    )
+    assert changed is True
+    assert not foreign.exists()
+    assert own.exists()
+    assert ["swapoff", str(foreign)] in calls
+    assert not any("/dev/zram0" in " ".join(call) for call in calls)
+    assert warnings == []
+
+
+def test_the_fstab_entry_of_a_foreign_swap_file_is_removed_through_augeas(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The entry is removed through augeas, so every other line and comment of
+    # the fstab survives; the entry is named by its type and its device field,
+    # so no other line can be touched.
+    foreign = tmp_path / "foreign.img"
+    _point_at_a_temporary_fstab(
+        monkeypatch,
+        tmp_path,
+        f"{foreign} none swap sw 0 0\nUUID=test-root / ext4 defaults 0 1\n",
+    )
+    scripts: list[str] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "augtool":
+            scripts.append(str(kwargs.get("input", "")))
+            return _FakeProc(0, "Saved 1 file(s)\n")
+        if command[0] == "swapon":
+            return _FakeProc(0, "")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(swapfile_service_install, "run_command", fake_run)
+    warnings: list[str] = []
+    changed = swapfile_service_install._remove_foreign_swap_files(
+        timeout=5, warnings=warnings
+    )
+    assert changed is True
+    assert scripts
+    assert values.FSTAB_LENS in scripts[0]
+    assert f"spec='{foreign}'" in scripts[0]
+    assert warnings == []
+
+
+def test_a_swap_device_named_by_the_fstab_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An entry whose device field is a UUID names a device, not a file, so the
+    # section never removes it: only swap files are removed.
+    _point_at_a_temporary_fstab(
+        monkeypatch, tmp_path, "UUID=swap-device none swap sw 0 0\n"
+    )
+    foreign_file = tmp_path / "foreign.img"
+    foreign_file.write_bytes(b"\0" * 4096)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "swapon":
+            return _FakeProc(0, "/dev/sda2 partition\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr(swapfile_service_install, "run_command", fake_run)
+    warnings: list[str] = []
+    changed = swapfile_service_install._remove_foreign_swap_files(
+        timeout=5, warnings=warnings
+    )
+    assert changed is False
+    assert foreign_file.exists()
+    assert not any(call[0] in {"swapoff", "augtool"} for call in calls)
+    assert warnings == []
+
+
+def test_no_foreign_swap_file_changes_nothing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine whose only swap file is the one of this section has nothing to
+    # remove, so a rerun makes no call and reports no change.
+    _point_at_a_temporary_fstab(
+        monkeypatch, tmp_path, "UUID=test-root / ext4 defaults 0 1\n"
+    )
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "swapon":
+            return _FakeProc(
+                0, f"{values.SWAPFILE_PATH} file\n/dev/zram0 partition\n"
+            )
+        return _FakeProc(0)
+
+    monkeypatch.setattr(swapfile_service_install, "run_command", fake_run)
+    warnings: list[str] = []
+    changed = swapfile_service_install._remove_foreign_swap_files(
+        timeout=5, warnings=warnings
+    )
+    assert changed is False
+    assert not any(call[0] in {"swapoff", "augtool"} for call in calls)
+    assert warnings == []
+
+
+def test_a_swap_file_that_cannot_be_switched_off_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A refusal is a warning of the step and never stops the run: the file is
+    # still removed and the remaining steps still go.
+    _point_at_a_temporary_fstab(
+        monkeypatch, tmp_path, "UUID=test-root / ext4 defaults 0 1\n"
+    )
+    foreign = tmp_path / "foreign.img"
+    foreign.write_bytes(b"\0" * 4096)
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "swapon":
+            return _FakeProc(0, f"{foreign} file\n")
+        if command[0] == "swapoff":
+            raise subprocess.CalledProcessError(1, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr(swapfile_service_install, "run_command", fake_run)
+    warnings: list[str] = []
+    changed = swapfile_service_install._remove_foreign_swap_files(
+        timeout=5, warnings=warnings
+    )
+    assert changed is True
+    assert not foreign.exists()
+    assert any("could not be switched off" in warning for warning in warnings)

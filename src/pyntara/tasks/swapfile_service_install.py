@@ -180,7 +180,7 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
         "--initramfs-resume-node",
         _initramfs_resume_node(),
         "--augeas-lens",
-        values.AUGEAS_SHELL_LENS,
+        values.AUGEAS_LENS,
         "--resume-device-parameter",
         values.RESUME_DEVICE_PARAMETER,
         "--resume-offset-parameter",
@@ -480,6 +480,171 @@ def _hibernate_answer_for_desktop_user(
     return False, answer or f"exit code {result.returncode}"
 
 
+def _active_swap_file_paths(timeout: float) -> tuple[tuple[str, ...], str | None]:
+    """Paths of the active swap files of the machine, or a reason it was not read.
+
+    The listing names every active swap area with its kind, so a swap file is
+    told apart from a swap device such as a partition or a zram device: only a
+    file can be removed here, because a device is not a file this section owns.
+    """
+
+    try:
+        result = run_command(
+            list(values.SWAP_SHOW_COMMAND), check=False, capture=True, timeout=timeout
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return (), f"the active swap areas could not be read: {exc}"
+    paths: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1] == values.SWAP_FILE_TYPE:
+            paths.append(fields[0])
+    return tuple(paths), None
+
+
+def _fstab_swap_file_paths() -> tuple[tuple[str, ...], str | None]:
+    """Device fields of the fstab swap entries that name a swap file.
+
+    A swap entry of the fstab names its area in the device field and carries the
+    type swap; only an entry whose device field is a path names a file, while an
+    entry whose device field is a UUID or a device node names a device that this
+    section never removes.
+    """
+
+    try:
+        text = values.FSTAB_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        return (), f"cannot read {values.FSTAB_PATH}: {exc}"
+    paths: list[str] = []
+    for line in text.splitlines():
+        fields = fstab.field_values(line)
+        if fields is None:
+            continue
+        device, mount_point, filesystem_type = fields[0], fields[1], fields[2]
+        if filesystem_type != values.FSTAB_SWAP_TYPE:
+            continue
+        if mount_point not in values.FSTAB_SWAP_MOUNT_POINTS:
+            continue
+        if device.startswith("/"):
+            paths.append(device)
+    return tuple(paths), None
+
+
+def _remove_foreign_swap_files(*, timeout: float, warnings: list[str]) -> bool:
+    """Remove every swap file of another owner and its fstab entry.
+
+    A swap file inside the root subvolume blocks the save point of a btrfs root
+    and holds the room it occupies on any machine, so the section keeps the
+    machine to its own swap file: every active swap file and every swap file
+    named by the fstab is switched off, removed and dropped from the fstab, while
+    the swap file of this section and every swap device are left alone. Each step
+    reports its own failure and the remaining files still go.
+    """
+
+    active, active_error = _active_swap_file_paths(timeout)
+    if active_error is not None:
+        warnings.append(active_error)
+    in_fstab, fstab_error = _fstab_swap_file_paths()
+    if fstab_error is not None:
+        warnings.append(fstab_error)
+    own = str(values.SWAPFILE_PATH)
+    foreign: list[str] = []
+    for path in (*active, *in_fstab):
+        if path == own or path in foreign:
+            continue
+        foreign.append(path)
+    if not foreign:
+        _log("no swap file of another owner is present")
+        return False
+    changed = False
+    for path in foreign:
+        if path in active:
+            changed = _switch_off_swap_file(path, timeout, warnings) or changed
+        changed = _delete_swap_file(path, warnings) or changed
+        if path in in_fstab:
+            changed = _remove_fstab_swap_entry(path, timeout, warnings) or changed
+    return changed
+
+
+def _switch_off_swap_file(path: str, timeout: float, warnings: list[str]) -> bool:
+    """Switch an active swap file off, so it is free to be removed."""
+
+    try:
+        run_command(
+            [values.SWAPOFF_COMMAND_NAME, path],
+            check=True,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warnings.append(f"the swap file {path} could not be switched off: {exc}")
+        return False
+    _log(f"swap file switched off: {path}")
+    return True
+
+
+def _delete_swap_file(path: str, warnings: list[str]) -> bool:
+    """Remove a swap file and name the room it frees."""
+
+    swapfile = Path(path)
+    try:
+        if not swapfile.is_file():
+            _log(f"the swap file {path} is not present, nothing to remove")
+            return False
+        size_mib = swapfile.stat().st_size // (1024 * 1024)
+        swapfile.unlink()
+    except OSError as exc:
+        warnings.append(f"the swap file {path} could not be removed: {exc}")
+        return False
+    _log(f"removed the swap file {path} of {size_mib} MiB")
+    return True
+
+
+def _remove_fstab_swap_entry(path: str, timeout: float, warnings: list[str]) -> bool:
+    """Remove the fstab entry of a swap file, and no other line of the fstab.
+
+    The entry is named by its type and its device field, so the removal cannot
+    touch the line of another mount; augeas parses and writes the fstab, which
+    keeps every other line and comment of that machine file.
+    """
+
+    node = f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{values.FSTAB_PATH}"
+    script = (
+        "\n".join(
+            (
+                engine_values.AUGEAS_LENS_LINE.format(lens=values.FSTAB_LENS),
+                engine_values.AUGEAS_INCL_LINE.format(path=values.FSTAB_PATH),
+                engine_values.AUGEAS_LOAD_LINE,
+                values.FSTAB_SWAP_REMOVE_LINE.format(
+                    node=node,
+                    swap_type=values.FSTAB_SWAP_TYPE,
+                    spec=path,
+                ),
+                engine_values.AUGEAS_SAVE_LINE,
+            )
+        )
+        + "\n"
+    )
+    try:
+        result = run_command(
+            list(engine_values.AUGTOOL_COMMAND),
+            input=script,
+            capture=True,
+            timeout=timeout,
+            check=False,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        warnings.append(f"the fstab entry of {path} could not be removed: {exc}")
+        return False
+    if result.returncode != 0:
+        warnings.append(
+            f"the fstab entry of {path} could not be removed: {result.stderr.strip()}"
+        )
+        return False
+    _log(f"removed the fstab entry of {path}")
+    return True
+
+
 def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
     """Build the result of the task, carrying the warning of a skipped step."""
 
@@ -550,6 +715,8 @@ def task(ctx: Context) -> TaskResult:
             message="the swap tool is not installed",
             warnings=warnings,
         )
+
+    changed = _remove_foreign_swap_files(timeout=timeout, warnings=warnings) or changed
 
     resume_device, device_warnings = _resume_device_spec(
         values.SWAPFILE_PATH.parent, timeout
@@ -629,6 +796,13 @@ def task(ctx: Context) -> TaskResult:
     else:
         for line in result.stdout.splitlines():
             _log(line)
+        # The program prints the reason a step could not be performed to
+        # stderr; the reason is what the user reads, so it goes into the run
+        # log as well instead of being dropped.
+        for line in result.stderr.splitlines():
+            reason = line.strip()
+            if reason:
+                _log(reason)
         outcome = _parse_program_result(result.stdout)
         if outcome is None:
             warnings.append(

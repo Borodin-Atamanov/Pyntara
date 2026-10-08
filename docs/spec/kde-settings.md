@@ -88,7 +88,10 @@ The power records of powerdevilrc and the live power profile were measured
 on Kubuntu 26.04 with KDE 6.6: writing the record and asking powerdevil to
 read its configuration again with the reparseConfiguration call of its own
 interface does not change the profile the session runs, because that profile
-belongs to power-profiles-daemon. The section therefore calls that owner
-reload after the records and reads the live profile back, and it names both
-profiles when they differ, instead of presenting the configured one as
-applied.
+belongs to power-profiles-daemon. The section therefore asks that daemon for
+the profiles the machine offers and switches it to the configured profile, or
+to the nearest profile of the preference order (performance, balanced,
+power-saver) when the machine does not offer the configured one, so a machine
+whose hardware has no performance profile still runs the closest profile
+instead of keeping a profile nobody asked for. The profile the session then
+runs is read back and named; a profile that cannot be applied is a warning.

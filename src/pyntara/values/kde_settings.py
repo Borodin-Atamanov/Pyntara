@@ -128,11 +128,14 @@ KWIN_RELOAD_COMMAND: tuple[str, ...] = (
 )
 
 # The owner call that makes powerdevil read its configuration again and the
-# call that reads the live power profile of the session. Measured on Kubuntu
-# 26.04 with KDE 6.6: the profile record of powerdevilrc does not change the
-# live profile by itself, because the live profile belongs to
-# power-profiles-daemon, so the task reports the profile the session really
-# uses instead of presenting the configured one as applied.
+# calls that read and switch the live power profile of the session. Measured on
+# Kubuntu 26.04 with KDE 6.6: the profile record of powerdevilrc does not change
+# the live profile by itself, because the live profile belongs to
+# power-profiles-daemon. The task therefore asks the daemon for the profiles the
+# machine offers and switches it to the configured profile, or to the nearest
+# one of the preference order when the machine does not offer the configured
+# one, so a machine whose hardware has no performance profile still runs the
+# closest profile instead of keeping a profile nobody asked for.
 POWERDEVIL_REPARSE_COMMAND: tuple[str, ...] = (
     "qdbus6",
     "org.kde.Solid.PowerManagement",
@@ -141,6 +144,18 @@ POWERDEVIL_REPARSE_COMMAND: tuple[str, ...] = (
 )
 POWER_PROFILE_READ_COMMAND: tuple[str, ...] = ("powerprofilesctl", "get")
 POWER_PROFILE_KEY_NAME: str = "PowerProfile"
+
+# The profiles power-profiles-daemon knows, in the order the task prefers them:
+# the highest performance first, the most saving last. The configured record
+# names the profile the machine should run; a profile the machine does not offer
+# is replaced by the nearest profile of this order that it does offer.
+POWER_PROFILE_PREFERENCE: tuple[str, ...] = ("performance", "balanced", "power-saver")
+
+# The tool that lists the offered profiles and the tool that switches the live
+# profile. The live profile belongs to power-profiles-daemon, so writing the
+# powerdevilrc record alone never switches it; the task asks that daemon.
+POWER_PROFILE_LIST_COMMAND: tuple[str, ...] = ("powerprofilesctl", "list")
+POWER_PROFILE_SET_COMMAND: tuple[str, ...] = ("powerprofilesctl", "set", "{profile}")
 
 # Prefix of the calls that run a rendered python client with the system
 # interpreter of the engine and the path of the rendered client as the next
@@ -1269,6 +1284,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "POWERDEVIL_REPARSE_COMMAND",
     "POWER_PROFILE_READ_COMMAND",
     "POWER_PROFILE_KEY_NAME",
+    "POWER_PROFILE_PREFERENCE",
+    "POWER_PROFILE_LIST_COMMAND",
+    "POWER_PROFILE_SET_COMMAND",
     "PYTHON_SCRIPT_COMMAND",
     "KWIN_BUS_NAME",
     "VIRTUAL_DESKTOP_MANAGER_OBJECT_PATH",

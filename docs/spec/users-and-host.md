@@ -57,6 +57,20 @@ the tools of the program come from (mount for swapon and swapoff, util-linux for
 mkswap and fallocate, e2fsprogs for chattr) are installed through the shared
 package helper, so the section never assumes the machine already carries them.
 
+The section keeps the machine to its own swap file: every swap file of another
+owner is switched off, removed and dropped from the fstab, while the swap file of
+this section and every swap device are left alone. A file of another owner is
+found as an active swap file (the listing of the swap tool tells a file from a
+device) and as an fstab entry whose type is swap and whose device field is a path;
+an entry whose device field is a UUID or a device node names a device and is never
+removed. Removing these files is what lets the save point of a btrfs root be
+taken: a file of another owner lying inside the root subvolume makes the kernel
+refuse that snapshot (docs/spec/btrfs-setup.md, "The swap area"), and on any
+machine the file holds the room it occupies. The file is deleted, which is safe
+because a swap file carries no data of its own, and every removal is named in the
+log with the size it frees. A removal that cannot happen is reported as a warning
+of the step and the remaining files still go.
+
 The size is min(RAM * ram_multiplier + ram_extra_mb, free_disk * disk_fraction).
 The installed RAM is read from the shared memory file, from the line whose name
 meminfo_total_key carries, with the separator that file uses, and free disk space
@@ -124,7 +138,10 @@ augeas: the tool parses the file with the lens the values name, the program
 replaces the value of one node of the parsed tree and the tool writes the file
 back. Every other line, every comment and the quoting style of the machine
 therefore survive, and the section never spells the syntax of a machine file
-itself. The kernel command line is one node whose value carries the quotes of the
+itself. The lens is Sysconfig and not the shell lens, because the shell lens
+cannot write back a file that carries an empty quoted value such as
+GRUB_CMDLINE_LINUX="": it answers put_failed on save, so the resume address is
+then never published (measured on Kubuntu 26.04). The kernel command line is one node whose value carries the quotes of the
 file, so the words inside that quoting are what changes. The menu is rebuilt only
 when the value changed, and the program rebuilds it when it runs at boot as well,
 because a boot that created the swap file again carries a new offset. A resume
@@ -157,6 +174,9 @@ All parameter values live in the src/pyntara/values/swapfile_service_install.py:
 the swapfile path and mode, the packages of the tools, the size formula factors,
 the accepted deviation size_tolerance_mb, the probe size probe_size_kb, the kernel
 file the memory is read from, the name of the tool the unit stops the swap with,
+the listing that tells a swap file from a swap device and the file type it names,
+the fstab lens with the swap type, its mount points and the line that removes
+such an entry,
 the file name, deployed path and mode of the program, the fstab and the settings
 files the resume address lives in, the key of the kernel command line and the two
 parameter names, the lens augeas parses those files with, the key the initramfs

@@ -81,6 +81,19 @@ SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
 # step by hand and the boot service takes nothing from PATH.
 SWAPOFF_COMMAND_NAME: str = "swapoff"
 
+# The swap tool that lists every active swap area with its kind, one line per
+# area as the name and the type. The listing is how the section tells a swap
+# file from a swap device: only a line whose type is the file type below names a
+# file this section may remove, while a partition or a zram device is left alone.
+SWAP_SHOW_COMMAND: tuple[str, ...] = (
+    "swapon",
+    "--show",
+    "--noheadings",
+    "--output",
+    "NAME,TYPE",
+)
+SWAP_FILE_TYPE: str = "file"
+
 # The address a hibernation image is resumed from. The kernel reads the device
 # from the kernel command line of the boot entry and the offset of the swap file
 # header inside that device from the same line, because the kernel ignores the
@@ -96,14 +109,30 @@ GRUB_COMMAND_LINE_KEY: str = "GRUB_CMDLINE_LINUX_DEFAULT"
 RESUME_DEVICE_PARAMETER: str = "resume"
 RESUME_OFFSET_PARAMETER: str = "resume_offset"
 
+# The fstab of the machine is not a shell variable file, so the section parses
+# and writes it with its own lens when it removes a swap entry of another owner.
+# An entry that activates a swap area names the area in its device field and
+# carries the type swap; only an entry whose device field is a path names a swap
+# file, while an entry whose device field is a UUID or a device node names a
+# device the section never removes.
+FSTAB_LENS: str = "Fstab.lns"
+FSTAB_SWAP_TYPE: str = "swap"
+FSTAB_SWAP_MOUNT_POINTS: tuple[str, ...] = ("none", "swap")
+FSTAB_SWAP_REMOVE_LINE: str = (
+    "rm {node}/*[vfstype='{swap_type}'][spec='{spec}']"
+)
+
 # The lens augeas parses the machine settings files with, and the key the
 # initramfs reads the resume device from. Both settings files are shell variable
 # files, so augeas parses each of them with the lens named here and the section
 # never edits the syntax of a machine file itself: it replaces one node of the
 # parsed tree and the tool writes the file back, which keeps every other line,
 # every comment and the quoting style of the file as the machine wrote them
-# (docs/spec/users-and-host.md).
-AUGEAS_SHELL_LENS: str = "Shellvars.lns"
+# (docs/spec/users-and-host.md). The lens is Sysconfig and not Shellvars,
+# because Shellvars cannot write back a file that carries an empty quoted value
+# such as GRUB_CMDLINE_LINUX="": it answers put_failed on save, so the resume
+# address is then never published (measured on Kubuntu 26.04).
+AUGEAS_LENS: str = "Sysconfig.lns"
 INITRAMFS_RESUME_KEY: str = "RESUME"
 
 # The mount point a path belongs to, which is how the task reaches the fstab
@@ -210,13 +239,19 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_ENABLE_COMMAND",
     "SYSTEMCTL_START_COMMAND",
     "SWAPOFF_COMMAND_NAME",
+    "SWAP_SHOW_COMMAND",
+    "SWAP_FILE_TYPE",
     "FSTAB_PATH",
     "GRUB_DEFAULT_FILE_PATH",
     "GRUB_CONFIG_FILE_PATH",
     "GRUB_COMMAND_LINE_KEY",
     "RESUME_DEVICE_PARAMETER",
     "RESUME_OFFSET_PARAMETER",
-    "AUGEAS_SHELL_LENS",
+    "FSTAB_LENS",
+    "FSTAB_SWAP_TYPE",
+    "FSTAB_SWAP_MOUNT_POINTS",
+    "FSTAB_SWAP_REMOVE_LINE",
+    "AUGEAS_LENS",
     "INITRAMFS_RESUME_KEY",
     "MOUNT_POINT_COMMAND",
     "INITRAMFS_RESUME_FILE_PATH",

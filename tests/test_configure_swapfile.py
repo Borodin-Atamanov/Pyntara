@@ -158,7 +158,7 @@ def _config(tmp_path: Path, **overrides: Any) -> Any:
         ),
         "initramfs_resume_file_path": tmp_path / "conf.d" / "resume",
         "initramfs_resume_node": f"/files{tmp_path}/conf.d/resume/RESUME",
-        "augeas_lens": "Shellvars.lns",
+        "augeas_lens": "Sysconfig.lns",
         "resume_device_parameter": "resume",
         "resume_offset_parameter": "resume_offset",
         "power_resume_file_path": tmp_path / "power-resume",
