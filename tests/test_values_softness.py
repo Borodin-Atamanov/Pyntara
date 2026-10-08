@@ -38,6 +38,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("playwright_setup", "playwright_setup"),
     ("rustdesk_setup", "rustdesk_setup"),
     ("scrcpy_setup", "scrcpy_setup"),
+    ("snap_remove", "snap_remove"),
     ("sotavpn_setup", "sotavpn_setup"),
     ("ssh_client_setup", "ssh_client_setup"),
     ("swapfile_service_install", "swapfile_service_install"),

@@ -120,6 +120,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/scrcpy-setup.md](docs/spec/scrcpy-setup.md) — scrcpy Android screen mirroring client from the GitHub release with the Ubuntu archive as the fallback, the version directory with the switched command link, the Android USB rules and the two menu entries  
 [docs/spec/chrome-setup.md](docs/spec/chrome-setup.md) — Google Chrome from the official apt repository, the settings repository applied to the live profile, the desktop entry with the local proxy and the CDP listener, and the boot unit that keeps the profile mirror mounted  
 [docs/spec/firefox-setup.md](docs/spec/firefox-setup.md) — Firefox from the official Mozilla apt repository in place of the snap, the browser defaults of the firefox-default-settings repository, the default browser and the panel launcher
+[docs/spec/snap-remove.md](docs/spec/snap-remove.md) — removal of the snap subsystem and every snap it carries, returning the space they held
 [docs/spec/keyring-setup.md](docs/spec/keyring-setup.md) — the KDE wallet of a machine that logs in automatically is created without a password, so no keyring password dialog appears  
 [docs/spec/btrfs-setup.md](docs/spec/btrfs-setup.md) — btrfs compression, the one-off recompression that runs as a watchable background job, the maintenance timers, and the immutable save point with its writable work copy in the boot menu
 Guides — how to work with the project:

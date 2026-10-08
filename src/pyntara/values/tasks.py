@@ -242,6 +242,13 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop",),
     ),
     TaskSpec(
+        "snap_remove",
+        "Remove the snap subsystem and every snap it carries, and return the "
+        "space they held.",
+        (),
+        ("minimal", "server", "desktop"),
+    ),
+    TaskSpec(
         "playwright_setup",
         "Install the playwright-cli browser control tool for the desktop user.",
         ("add_extra_repos", "chrome_setup"),

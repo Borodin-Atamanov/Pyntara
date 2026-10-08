@@ -68,6 +68,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "port_forwarding_setup",
     "rustdesk_setup",
     "scrcpy_setup",
+    "snap_remove",
     "sotavpn_setup",
     "ssh_client_setup",
     "ssh_daemon_setup",

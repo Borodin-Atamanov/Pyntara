@@ -107,6 +107,7 @@ tasks -> src/pyntara/values/tasks.py -> TaskSpec -> task_catalog.py
 cli_tools_lite_setup -> src/pyntara/values/cli_tools_lite_setup.py -> READ_VALUE_NAMES -> the task
 cli_tools_heavy_setup -> src/pyntara/values/cli_tools_heavy_setup.py -> READ_VALUE_NAMES -> the task
 chrome_setup -> src/pyntara/values/chrome_setup.py -> READ_VALUE_NAMES -> the task
+snap_remove -> src/pyntara/values/snap_remove.py -> READ_VALUE_NAMES -> the task
 add_extra_repos -> src/pyntara/values/add_extra_repos.py -> READ_VALUE_NAMES -> the task
 hostname -> src/pyntara/values/hostname.py -> READ_VALUE_NAMES -> the task
 swapfile_service_install -> src/pyntara/values/swapfile_service_install.py -> READ_VALUE_NAMES -> the task
