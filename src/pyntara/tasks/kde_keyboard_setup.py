@@ -131,9 +131,9 @@ def _kconfig_command(
     command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
-            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
+            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
+    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
@@ -146,7 +146,7 @@ def _kreadconfig(
     """Current value of one KConfig key, or an empty string when unset."""
 
     command = _kconfig_command(
-        values.KREADCONFIG_COMMAND, file_name, group_segments, key
+        common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(
         _as_user_command(command),
@@ -170,7 +170,7 @@ def _kwriteconfig(
     """Write one KConfig key with the configured writer as the target user."""
 
     command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     if bool_value:
         command.extend(values.CONFIG_BOOL_TYPE_FLAG)
@@ -277,7 +277,7 @@ def _compositor_pids(timeout: float) -> tuple[str, ...]:
         result = run_command(
             command, check=False, capture=True, timeout=timeout, log_command=False
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return ()
     return tuple(trim_whitespace(result.stdout).split())
 
@@ -297,7 +297,7 @@ def _session_manager_is_active(username: str, timeout: float) -> bool:
         result = run_command(
             command, check=False, capture=True, timeout=timeout, log_command=False
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         return False
     return trim_whitespace(result.stdout) == engine_values.SYSTEMD_ACTIVE_STATE
 
@@ -697,7 +697,7 @@ def task(ctx: Context) -> TaskResult:
     changed |= layout_changed
 
     applet_changed = False
-    appletsrc_path = values.CONFIG_DIR / values.APPLETSRC_FILE_NAME
+    appletsrc_path = values.CONFIG_DIR / common_values.APPLETSRC_FILE_NAME
     try:
         group = _keyboard_layout_config_group(
             appletsrc_path.read_text(encoding="utf-8"), values.APPLET_PLUGIN
@@ -712,14 +712,14 @@ def task(ctx: Context) -> TaskResult:
     else:
         try:
             current = _kreadconfig(
-                values.APPLETSRC_FILE_NAME,
+                common_values.APPLETSRC_FILE_NAME,
                 group,
                 values.DISPLAY_STYLE_KEY,
                 timeout,
             )
             if force or current != values.INDICATOR_DISPLAY_STYLE:
                 _kwriteconfig(
-                    values.APPLETSRC_FILE_NAME,
+                    common_values.APPLETSRC_FILE_NAME,
                     group,
                     values.DISPLAY_STYLE_KEY,
                     values.INDICATOR_DISPLAY_STYLE,
@@ -729,7 +729,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"set indicator display style: {values.INDICATOR_DISPLAY_STYLE}")
                 applet_changed = True
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"cannot write {values.APPLETSRC_FILE_NAME}: {exc}")
+            warnings.append(f"cannot write {common_values.APPLETSRC_FILE_NAME}: {exc}")
     changed |= applet_changed
 
     hotkeys_changed = False

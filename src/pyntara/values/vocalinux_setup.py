@@ -81,14 +81,6 @@ SERVICE_ACTIVE_STATE: str = "active"
 # files the user owns; {username} is filled from the shared module.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
-# Vocabulary of the KConfig tools the task reads and writes the shortcut file
-# with: the two base calls carry the file as {file_name}, a group is selected
-# with CONFIG_GROUP_FLAG and a key with CONFIG_KEY_FLAG.
-KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
-KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
-CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
-CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
-
 # Commands of the file operations the task runs for the desktop user: {path},
 # {owner} and {file_mode} are filled in at the call site.
 MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
@@ -144,10 +136,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SERVICE_UNIT_NAME",
     "SERVICE_ACTIVE_STATE",
     "RUNUSER_COMMAND",
-    "KREADCONFIG_COMMAND",
-    "KWRITECONFIG_COMMAND",
-    "CONFIG_GROUP_FLAG",
-    "CONFIG_KEY_FLAG",
     "MKDIR_COMMAND",
     "CHOWN_COMMAND",
     "CHMOD_COMMAND",

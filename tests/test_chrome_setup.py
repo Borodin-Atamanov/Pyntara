@@ -140,8 +140,6 @@ LIVE_PIN_ALREADY_REPORT = (
 )
 
 
-
-
 @pytest.fixture(autouse=True)
 def _point_the_values_at_the_temporary_tree(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -226,7 +224,7 @@ def _write_desktop_source() -> None:
 def _write_appletsrc(text: str = APPLETSRC_TEXT) -> None:
     """Create the Plasma appletsrc of the desktop user."""
 
-    path = Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+    path = Path(common_values.DESKTOP_HOME_DIR) / common_values.APPLETSRC_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
 
@@ -626,7 +624,9 @@ def test_the_override_starts_the_browser_with_its_own_cache_home(
 
     assert result.success
     prefix = f"/usr/bin/env XDG_CACHE_HOME={chrome_setup._chrome_cache_home()} "
-    assert prefix == f"/usr/bin/env XDG_CACHE_HOME={tmp_path}/home/.cache/google-chrome "
+    assert (
+        prefix == f"/usr/bin/env XDG_CACHE_HOME={tmp_path}/home/.cache/google-chrome "
+    )
     override_text = values.DESKTOP_OVERRIDE_PATH.read_text(encoding="utf-8")
     exec_lines = [
         line for line in override_text.splitlines() if line.startswith("Exec=")
@@ -925,7 +925,9 @@ def test_the_launcher_group_comes_from_the_values(
     # The group below a task manager applet that holds the pinned launchers is
     # a value of the foreign file the task edits: another group in the module
     # is the group the task looks for.
-    monkeypatch.setattr(values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers"))
+    monkeypatch.setattr(
+        common_values, "APPLETSRC_LAUNCHER_GROUP", ("Pinned", "Launchers")
+    )
     assert chrome_setup._taskbar_launcher_groups(APPLETSRC_TEXT) == [
         (
             "Containments",
@@ -1363,16 +1365,16 @@ def test_kconfig_calls_come_from_the_values(
     # the KConfig access are values: another set of commands is what the task
     # builds.
     monkeypatch.setattr(
-        values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
+        common_values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
     )
-    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
+    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert chrome_setup._kconfig_command(
-        values.KREADCONFIG_COMMAND, ("Containments", "1"), "launchers"
+        common_values.KREADCONFIG_COMMAND, ("Containments", "1"), "launchers"
     ) == [
         "my-reader",
         "--config",
-        values.APPLETSRC_FILE_NAME,
+        common_values.APPLETSRC_FILE_NAME,
         "--section",
         "Containments",
         "--section",

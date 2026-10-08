@@ -33,7 +33,6 @@ CONFIG_DIR: Path = Path(common_values.DESKTOP_HOME_DIR) / ".config"
 
 # The KConfig file names under CONFIG_DIR that the task manages.
 KXKBRC_FILE_NAME: str = "kxkbrc"
-APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
 
 # The Plasma applet whose display style is the layout indicator.
 APPLET_PLUGIN: str = "org.kde.plasma.keyboardlayout"
@@ -184,13 +183,6 @@ APPLY_HOTKEYS_SCRIPT_FILE_NAME: str = "apply_hotkeys.py"
 # session files the user owns; {username} is the account of the machine.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
-# Vocabulary of the KConfig tools the task reads and writes the keyboard
-# configuration with: the two base calls carry the file as {file_name}, a group
-# is selected with CONFIG_GROUP_FLAG and a key with CONFIG_KEY_FLAG.
-KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
-KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
-CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
-CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
 CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
 
 # Command that creates the directories of the user configuration; {path} is
@@ -208,7 +200,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
     "CONFIG_DIR",
     "KXKBRC_FILE_NAME",
-    "APPLETSRC_FILE_NAME",
     "APPLET_PLUGIN",
     "LAYOUTS",
     "SWITCH_OPTION",
@@ -241,10 +232,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SHORTCUT_MODIFIER_BITS",
     "APPLY_HOTKEYS_SCRIPT_FILE_NAME",
     "RUNUSER_COMMAND",
-    "KREADCONFIG_COMMAND",
-    "KWRITECONFIG_COMMAND",
-    "CONFIG_GROUP_FLAG",
-    "CONFIG_KEY_FLAG",
     "CONFIG_BOOL_TYPE_FLAG",
     "MKDIR_COMMAND",
     "PYTHON_SCRIPT_COMMAND",

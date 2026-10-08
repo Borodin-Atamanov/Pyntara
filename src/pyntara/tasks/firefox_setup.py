@@ -398,9 +398,9 @@ def _kconfig_command(
     command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
-            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
+            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
+    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
@@ -415,7 +415,9 @@ def _kreadconfig(
 
     result = run_command(
         _as_user_command(
-            _kconfig_command(values.KREADCONFIG_COMMAND, file_name, group_segments, key)
+            _kconfig_command(
+                common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
+            )
         ),
         extra_env=_home_env(),
         check=False,
@@ -436,7 +438,7 @@ def _kwriteconfig(
     """Write one key of a KConfig file of the desktop user."""
 
     command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     command.append(value)
     run_command(_as_user_command(command), extra_env=_home_env(), timeout=timeout)
@@ -454,9 +456,9 @@ def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
             current = tuple(part for part in line[1:-1].split("][") if part)
         elif (
             line.startswith(plugin_key)
-            and line.removeprefix(plugin_key) in values.TASKBAR_PLUGIN_NAMES
+            and line.removeprefix(plugin_key) in common_values.TASKBAR_PLUGIN_NAMES
         ):
-            groups.append(current + values.APPLETSRC_LAUNCHER_GROUP)
+            groups.append(current + common_values.APPLETSRC_LAUNCHER_GROUP)
     return groups
 
 
@@ -483,9 +485,9 @@ def _launcher_script() -> str:
 
     spec = json.dumps(
         {
-            "plugins": list(values.TASKBAR_PLUGIN_NAMES),
-            "group": list(values.APPLETSRC_LAUNCHER_GROUP[1:]),
-            "key": values.APPLETSRC_LAUNCHERS_KEY,
+            "plugins": list(common_values.TASKBAR_PLUGIN_NAMES),
+            "group": list(common_values.APPLETSRC_LAUNCHER_GROUP[1:]),
+            "key": common_values.APPLETSRC_LAUNCHERS_KEY,
             "id": values.PANEL_LAUNCHER_ID,
         }
     )
@@ -571,18 +573,18 @@ def _pin_launcher_in_the_appletsrc(
     for group in groups:
         try:
             current = _kreadconfig(
-                values.APPLETSRC_FILE_NAME,
+                common_values.APPLETSRC_FILE_NAME,
                 group,
-                values.APPLETSRC_LAUNCHERS_KEY,
+                common_values.APPLETSRC_LAUNCHERS_KEY,
                 timeout=timeout,
             )
             entries = [entry for entry in current.split(",") if entry]
             if values.PANEL_LAUNCHER_ID in entries:
                 continue
             _kwriteconfig(
-                values.APPLETSRC_FILE_NAME,
+                common_values.APPLETSRC_FILE_NAME,
                 group,
-                values.APPLETSRC_LAUNCHERS_KEY,
+                common_values.APPLETSRC_LAUNCHERS_KEY,
                 ",".join([*entries, values.PANEL_LAUNCHER_ID]),
                 timeout=timeout,
             )
@@ -607,7 +609,7 @@ def _pin_firefox_launcher(*, timeout: float) -> tuple[bool, str | None]:
     """
 
     appletsrc_path = (
-        Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+        Path(common_values.DESKTOP_HOME_DIR) / common_values.APPLETSRC_RELATIVE_PATH
     )
     try:
         groups = _taskbar_launcher_groups(appletsrc_path.read_text(encoding="utf-8"))

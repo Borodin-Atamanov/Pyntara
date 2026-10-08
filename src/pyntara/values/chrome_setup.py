@@ -56,43 +56,6 @@ DESKTOP_ENTRY_EXEC_KEY: str = "Exec="
 PACKAGE_NAME: str = "google-chrome-stable"
 PROCESS_NAME: str = "chrome"
 
-# Name of the desktop user appletsrc that carries the pinned taskbar launchers,
-# as the KConfig tools take it, and its path under the home of the user.
-APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
-APPLETSRC_RELATIVE_PATH: str = ".config/plasma-org.kde.plasma.desktop-appletsrc"
-
-# The task manager applet plugins whose launcher list receives the Chrome
-# button: the icons-only task manager and the classic one, so a desktop with
-# either widget pins the button.
-TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
-    "org.kde.plasma.icontasks",
-    "org.kde.plasma.taskmanager",
-)
-
-# The appletsrc key that carries the pinned launchers of a task manager applet
-# and the group below such an applet that holds them, written as the group
-# segments Plasma nests the file with. Measured on Kubuntu 26.04 with KDE 6.6
-# on 2026-09-26 and again on 2026-09-29 on another machine: the panel draws the
-# list of the nested group [Containments][N][Applets][M][Configuration][General]
-# while a list written into the parent [Configuration] group of the same applet
-# stands in the file and never reaches the panel, which is why the Chrome
-# button did not appear. The group is the same one the applet settings of
-# kde_settings use. A running shell never reads the appletsrc again, so the
-# task hands the launcher to the running panel through the scripting interface
-# and writes the file only for a machine without a session
-# (docs/spec/chrome-setup.md, Taskbar pinning).
-APPLETSRC_LAUNCHERS_KEY: str = "launchers"
-APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
-
-# Vocabulary of the KConfig tools the task reads and writes the appletsrc with:
-# the two calls carry the file as {file_name}, a group is selected with
-# CONFIG_GROUP_FLAG, a key with CONFIG_KEY_FLAG, and the value of a write is a
-# positional argument the code appends.
-KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
-KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
-CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
-CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
-
 # Launcher id pinned to the panel; it resolves to the CDP desktop override in
 # the XDG applications directories.
 PANEL_LAUNCHER_ID: str = "applications:google-chrome.desktop"
@@ -299,15 +262,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DESKTOP_ENTRY_EXEC_KEY",
     "PACKAGE_NAME",
     "PROCESS_NAME",
-    "APPLETSRC_FILE_NAME",
-    "APPLETSRC_RELATIVE_PATH",
-    "TASKBAR_PLUGIN_NAMES",
-    "APPLETSRC_LAUNCHERS_KEY",
-    "APPLETSRC_LAUNCHER_GROUP",
-    "KREADCONFIG_COMMAND",
-    "KWRITECONFIG_COMMAND",
-    "CONFIG_GROUP_FLAG",
-    "CONFIG_KEY_FLAG",
     "PANEL_LAUNCHER_ID",
     "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
     "SETTINGS_REPO_BOOKKEEPING_PATHS",

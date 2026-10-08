@@ -109,7 +109,7 @@ def _mark_browser_installed() -> None:
 def _write_appletsrc() -> None:
     """Create the Plasma appletsrc of the desktop user."""
 
-    path = Path(common_values.DESKTOP_HOME_DIR) / values.APPLETSRC_RELATIVE_PATH
+    path = Path(common_values.DESKTOP_HOME_DIR) / common_values.APPLETSRC_RELATIVE_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(APPLETSRC_TEXT, encoding="utf-8")
 
@@ -312,6 +312,7 @@ def test_browser_is_installed_before_the_snap_is_removed(
         for index, call in enumerate(calls)
         if call[:1] == ["snap"] and call[1:2] == ["remove"]
     )
+    assert "--terminate" in calls[snap_index]
     assert install_index < snap_index
 
 
@@ -405,7 +406,7 @@ def test_pins_the_launcher_without_a_session(
     launchers = [
         value
         for (file_name, _groups, key), value in store.items()
-        if file_name == values.APPLETSRC_FILE_NAME
-        and key == values.APPLETSRC_LAUNCHERS_KEY
+        if file_name == common_values.APPLETSRC_FILE_NAME
+        and key == common_values.APPLETSRC_LAUNCHERS_KEY
     ]
     assert any(values.PANEL_LAUNCHER_ID in value for value in launchers)

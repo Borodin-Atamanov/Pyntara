@@ -74,7 +74,7 @@ APT_INSTALL_COMMAND: tuple[str, ...] = (
     "--allow-downgrades",
     "{package}",
 )
-SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "{snap}")
+SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "--terminate", "{snap}")
 SNAP_LIST_COMMAND: tuple[str, ...] = ("snap", "list", "{snap}")
 PROCESS_CHECK_COMMAND: tuple[str, ...] = ("pgrep", "-x", "{process_name}")
 
@@ -135,30 +135,6 @@ DEFAULT_BROWSER_MIME_KEYS: tuple[str, ...] = (
     "text/html",
 )
 
-# Name of the desktop user appletsrc that carries the pinned taskbar launchers,
-# as the KConfig tools take it, and its path under the home of the user.
-APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
-APPLETSRC_RELATIVE_PATH: str = ".config/plasma-org.kde.plasma.desktop-appletsrc"
-
-# The task manager applet plugins whose launcher list receives the Firefox
-# button: the icons-only task manager and the classic one.
-TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
-    "org.kde.plasma.icontasks",
-    "org.kde.plasma.taskmanager",
-)
-
-# The appletsrc key that carries the pinned launchers and the group below a task
-# manager applet that holds them, as the group segments Plasma nests the file
-# with. Measured on Kubuntu 26.04 with KDE 6.6 (docs/spec/chrome-setup.md).
-APPLETSRC_LAUNCHERS_KEY: str = "launchers"
-APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
-
-# Vocabulary of the KConfig tools the task reads and writes the appletsrc with.
-KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
-KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
-CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
-CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
-
 # Prefix that runs a command as the desktop user.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
@@ -195,14 +171,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "MIMEAPPS_FILE_NAME",
     "DEFAULT_BROWSER_GROUP",
     "DEFAULT_BROWSER_MIME_KEYS",
-    "APPLETSRC_FILE_NAME",
-    "APPLETSRC_RELATIVE_PATH",
-    "TASKBAR_PLUGIN_NAMES",
-    "APPLETSRC_LAUNCHERS_KEY",
-    "APPLETSRC_LAUNCHER_GROUP",
-    "KREADCONFIG_COMMAND",
-    "KWRITECONFIG_COMMAND",
-    "CONFIG_GROUP_FLAG",
-    "CONFIG_KEY_FLAG",
     "RUNUSER_COMMAND",
 )

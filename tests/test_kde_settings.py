@@ -48,6 +48,7 @@ def _shared_client(tmp_path: Path) -> Path:
     path.write_text(_SHARED_CLIENT.read_text(encoding="utf-8"), encoding="utf-8")
     return path
 
+
 # Shortcut records as the config carries them: the value of a record is the
 # combination its action must own, the absent word and an empty field mean no
 # combination, and a record of another file is a plain KConfig value.
@@ -2332,9 +2333,9 @@ def test_kconfig_calls_come_from_the_values() -> None:
     # The two base calls and the three selectors are values: another set of
     # them is what the task builds, for the user session and for the system
     # files.
-    values.KREADCONFIG_COMMAND = ("my-reader", "--config", "{file_name}")
-    values.CONFIG_GROUP_FLAG = ("--section", "{group}")
-    values.CONFIG_KEY_FLAG = ("--entry", "{key}")
+    common_values.KREADCONFIG_COMMAND = ("my-reader", "--config", "{file_name}")
+    common_values.CONFIG_GROUP_FLAG = ("--section", "{group}")
+    common_values.CONFIG_KEY_FLAG = ("--entry", "{key}")
     expected = [
         "my-reader",
         "--config",
@@ -2348,13 +2349,13 @@ def test_kconfig_calls_come_from_the_values() -> None:
     ]
     assert (
         task_module._kconfig_command(
-            values.KREADCONFIG_COMMAND, "kwinrc", ("Group", "Sub"), "Key"
+            common_values.KREADCONFIG_COMMAND, "kwinrc", ("Group", "Sub"), "Key"
         )
         == expected
     )
-    values.KWRITECONFIG_COMMAND = ("my-writer", "--config", "{file_name}")
+    common_values.KWRITECONFIG_COMMAND = ("my-writer", "--config", "{file_name}")
     assert task_module._kconfig_command(
-        values.KWRITECONFIG_COMMAND, "kdeglobals", ("Group",), "Key"
+        common_values.KWRITECONFIG_COMMAND, "kdeglobals", ("Group",), "Key"
     ) == [
         "my-writer",
         "--config",
@@ -2483,8 +2484,7 @@ def test_the_activity_switcher_record_names_its_owning_component() -> None:
     groups = [
         record.group
         for record in values.KCONFIG_RECORDS
-        if record.file == "kglobalshortcutsrc"
-        and record.key == "manage activities"
+        if record.file == "kglobalshortcutsrc" and record.key == "manage activities"
     ]
     assert groups == [("plasmashell",)]
 
@@ -2524,18 +2524,16 @@ def test_an_applet_group_is_found_by_the_plugin_its_section_declares() -> None:
     # differs per machine, so the group of an applet is never a written value:
     # it is found by the plugin the section declares. Every matching section is
     # returned, so an applet a panel shows twice gets the setting on both.
-    assert task_module._applet_groups(
-        _SAMPLE_APPLETSRC, "org.kde.plasma.kickoff"
-    ) == (("Containments", "2", "Applets", "3"),)
+    assert task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.kickoff") == (
+        ("Containments", "2", "Applets", "3"),
+    )
     assert task_module._applet_groups(
         _SAMPLE_APPLETSRC, "org.kde.plasma.digitalclock"
     ) == (
         ("Containments", "2", "Applets", "22"),
         ("Containments", "2", "Applets", "7", "Applets", "15"),
     )
-    assert (
-        task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.missing") == ()
-    )
+    assert task_module._applet_groups(_SAMPLE_APPLETSRC, "org.kde.plasma.missing") == ()
 
 
 def _appletsrc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -2544,7 +2542,7 @@ def _appletsrc_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "home"
     config_dir = home / values.USER_CONFIG_DIR
     config_dir.mkdir(parents=True)
-    (config_dir / values.APPLETSRC_FILE_NAME).write_text(
+    (config_dir / common_values.APPLETSRC_FILE_NAME).write_text(
         _SAMPLE_APPLETSRC, encoding="utf-8"
     )
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(home))
@@ -2586,7 +2584,7 @@ def test_an_applet_setting_is_written_into_the_group_of_its_applet(
 
     assert changed is True
     assert warnings == []
-    expected = ["kwriteconfig6", "--file", values.APPLETSRC_FILE_NAME]
+    expected = ["kwriteconfig6", "--file", common_values.APPLETSRC_FILE_NAME]
     for segment in clock_group + ("Configuration", "Appearance"):
         expected.extend(["--group", segment])
     expected.extend(["--key", "use24hFormat", "2"])
@@ -2667,7 +2665,9 @@ def test_a_running_panel_gets_the_applet_settings(
     env = {"DISPLAY": ":0"}
     warnings: list[str] = []
 
-    task_module._apply_applet_records(timeout=5, force=False, env=env, warnings=warnings)
+    task_module._apply_applet_records(
+        timeout=5, force=False, env=env, warnings=warnings
+    )
 
     live = [
         (command, kwargs)
@@ -2697,7 +2697,9 @@ def test_without_a_session_the_applet_settings_wait_for_the_next_login(
     monkeypatch.setattr(task_module, "run_command", fake_run)
     warnings: list[str] = []
 
-    task_module._apply_applet_records(timeout=5, force=False, env=None, warnings=warnings)
+    task_module._apply_applet_records(
+        timeout=5, force=False, env=None, warnings=warnings
+    )
 
     assert not [call for call in seen if any("plasmashell" in part for part in call)]
     assert warnings == []

@@ -199,9 +199,9 @@ def _kconfig_command(
     )
     for segment in group_segments:
         command.extend(
-            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
+            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
+    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
@@ -212,7 +212,7 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = _kconfig_command(values.KREADCONFIG_COMMAND, group_segments, key)
+    command = _kconfig_command(common_values.KREADCONFIG_COMMAND, group_segments, key)
     result = run_command(
         _as_user_command(command),
         extra_env=_home_env(),
@@ -232,7 +232,7 @@ def _kwriteconfig(
 ) -> None:
     """Write one KConfig key with the writer of the section as the user."""
 
-    command = _kconfig_command(values.KWRITECONFIG_COMMAND, group_segments, key)
+    command = _kconfig_command(common_values.KWRITECONFIG_COMMAND, group_segments, key)
     command.append(value)
     run_command(
         _as_user_command(command),

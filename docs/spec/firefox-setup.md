@@ -27,9 +27,14 @@ Mozilla version.
 
 ## Snap removal
 
-The task removes the snap version with snap remove. A machine that never had the
-snap answers no matching snaps installed, which is the normal state of a fresh
-machine and not a failure; any other error is a warning of the run.
+The task asks whether the snap is present with snap list first and removes it
+with snap remove --terminate, which stops a browser of that snap that is still
+running. The presence check is needed because snap remove answers the success
+code even for a snap that is not installed (the message snap "firefox" is not
+installed with exit code 0, measured on liveusb_test on 2026-10-08), so that
+exit code alone cannot tell a removal from a no-op. A machine without the snap is
+left alone; a snap that is present and cannot be removed is a warning of the run,
+and the deb install is unaffected.
 
 ## Install
 
@@ -111,7 +116,6 @@ package_name, process_name, snap_name, browser_binary_path - the package, its pr
 apt_install_command, snap_remove_command, process_check_command - the command templates
 settings_clone_command, settings_fetch_command, settings_revision_command, settings_reset_command - the git command templates
 desktop_file_name, panel_launcher_id, mimeapps_file_name, default_browser_group, default_browser_mime_keys - the desktop entry, the default-browser entries and the panel launcher
-appletsrc_file_name, appletsrc_relative_path, taskbar_plugin_names, appletsrc_launchers_key, appletsrc_launcher_group - the Plasma appletsrc
-kreadconfig_command, kwriteconfig_command, config_group_flag, config_key_flag - the KConfig vocabulary
+appletsrc_file_name, appletsrc_relative_path, taskbar_plugin_names, appletsrc_launchers_key, appletsrc_launcher_group, kreadconfig_command, kwriteconfig_command, config_group_flag, config_key_flag - read from the shared values module (pyntara.values.common), because chrome_setup, vocalinux_setup, kde_settings and kde_keyboard_setup use the same facts of the Plasma appletsrc and the KConfig tools
 runuser_command - the wrapper that runs a command as the desktop user
 file_mode - the mode of every deployed configuration file

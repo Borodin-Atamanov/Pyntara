@@ -88,6 +88,41 @@ KCONFIG_FALSE_VALUE: str = "false"
 PROFILE_ID_FILE_PATH: Path = Path("/var/lib/pyntara/nextdns_profile_id")
 PROFILE_ID_FILE_MODE: int = 0o644
 
+# The KDE appletsrc of the desktop user: the name the KConfig tools take, the
+# path under the home of the user, the task manager plugins whose launcher list
+# receives a pinned button, and the key and the group that carry that list.
+# Three sections pin a launcher (chrome_setup, firefox_setup, vocalinux_setup),
+# so the facts about that file are written once here and a fix reaches every
+# section.
+APPLETSRC_FILE_NAME: str = "plasma-org.kde.plasma.desktop-appletsrc"
+APPLETSRC_RELATIVE_PATH: str = ".config/plasma-org.kde.plasma.desktop-appletsrc"
+
+# The task manager applet plugins: the icons-only task manager and the classic
+# one, so a desktop with either widget pins the button.
+TASKBAR_PLUGIN_NAMES: tuple[str, ...] = (
+    "org.kde.plasma.icontasks",
+    "org.kde.plasma.taskmanager",
+)
+
+# The appletsrc key that carries the pinned launchers and the group below a task
+# manager applet that holds them, written as the group segments Plasma nests the
+# file with. Measured on Kubuntu 26.04 with KDE 6.6 on 2026-09-26 and again on
+# 2026-09-29 on another machine: the panel draws the list of the nested group
+# [Containments][N][Applets][M][Configuration][General] while a list written into
+# the parent [Configuration] group of the same applet stands in the file and
+# never reaches the panel.
+APPLETSRC_LAUNCHERS_KEY: str = "launchers"
+APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
+
+# Vocabulary of the KConfig tools: the two base calls carry the file as
+# {file_name}, a group is selected with CONFIG_GROUP_FLAG, a key with
+# CONFIG_KEY_FLAG, and the value of a write is a positional argument the code
+# appends.
+KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
+KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
+CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
+CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -106,4 +141,13 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KCONFIG_FALSE_VALUE",
     "PROFILE_ID_FILE_PATH",
     "PROFILE_ID_FILE_MODE",
+    "APPLETSRC_FILE_NAME",
+    "APPLETSRC_RELATIVE_PATH",
+    "TASKBAR_PLUGIN_NAMES",
+    "APPLETSRC_LAUNCHERS_KEY",
+    "APPLETSRC_LAUNCHER_GROUP",
+    "KREADCONFIG_COMMAND",
+    "KWRITECONFIG_COMMAND",
+    "CONFIG_GROUP_FLAG",
+    "CONFIG_KEY_FLAG",
 )

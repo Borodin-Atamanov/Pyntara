@@ -89,6 +89,8 @@ appletsrc_relative_path - the same file under home_dir
 taskbar_plugin_names - the task manager plugin names whose launcher list receives the button
 appletsrc_launchers_key - the appletsrc key that carries the pinned launchers
 appletsrc_launcher_group - the appletsrc group below a task manager applet that holds those launchers, as the group segments Plasma nests the file with; Configuration/General on Kubuntu 26.04 with KDE 6.6
+
+The appletsrc and KConfig values above are read from the shared values module (pyntara.values.common), because chrome_setup, vocalinux_setup, firefox_setup, kde_settings and kde_keyboard_setup use the same facts.
 panel_launcher_id - the launcher id pinned to the panel
 settings_repo_url - the git repository of browser settings
 settings_repo_ref - the branch of that repository applied on every run

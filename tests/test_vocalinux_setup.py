@@ -596,12 +596,12 @@ def test_kconfig_calls_come_from_the_values(
     # The writer and the two selectors are values: another set of commands is
     # what the task builds for the shortcut file of the shared module.
     monkeypatch.setattr(
-        values, "KWRITECONFIG_COMMAND", ("my-writer", "--config", "{file_name}")
+        common_values, "KWRITECONFIG_COMMAND", ("my-writer", "--config", "{file_name}")
     )
-    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
+    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert task_module._kconfig_command(
-        values.KWRITECONFIG_COMMAND, ("services",), "myservice"
+        common_values.KWRITECONFIG_COMMAND, ("services",), "myservice"
     ) == [
         "my-writer",
         "--config",

@@ -83,7 +83,9 @@ def _ctx(
 
     config_dir = values.CONFIG_DIR
     config_dir.mkdir(parents=True, exist_ok=True)
-    (config_dir / values.APPLETSRC_FILE_NAME).write_text(appletsrc, encoding="utf-8")
+    (config_dir / common_values.APPLETSRC_FILE_NAME).write_text(
+        appletsrc, encoding="utf-8"
+    )
     _write_task_data(tmp_path)
     return make_context(
         task_name="kde_keyboard_setup",
@@ -749,12 +751,12 @@ def test_kconfig_calls_come_from_the_values(
     # The reader and the two selectors are values: another set of
     # commands is what the task builds.
     monkeypatch.setattr(
-        values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
+        common_values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
     )
-    monkeypatch.setattr(values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
+    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
+    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
     assert task_module._kconfig_command(
-        values.KREADCONFIG_COMMAND, "kxkbrc", ("Layout",), "LayoutList"
+        common_values.KREADCONFIG_COMMAND, "kxkbrc", ("Layout",), "LayoutList"
     ) == [
         "my-reader",
         "--config",

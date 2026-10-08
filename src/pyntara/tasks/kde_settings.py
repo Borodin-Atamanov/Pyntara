@@ -110,9 +110,9 @@ def _kconfig_command(
     command = substituted_command(base_command, {"file_name": file_name})
     for segment in group_segments:
         command.extend(
-            substituted_command(values.CONFIG_GROUP_FLAG, {"group": segment})
+            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
         )
-    command.extend(substituted_command(values.CONFIG_KEY_FLAG, {"key": key}))
+    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
     return command
 
 
@@ -125,7 +125,7 @@ def _kreadconfig(
     """Current value of one KConfig key, or an empty string when unset."""
 
     command = _kconfig_command(
-        values.KREADCONFIG_COMMAND, file_name, group_segments, key
+        common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(
         _as_user_command(command),
@@ -173,7 +173,7 @@ def _kwriteconfig(
     """
 
     command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     if bool_value:
         command.extend(values.CONFIG_BOOL_TYPE_FLAG)
@@ -198,7 +198,7 @@ def _delete_kconfig_key(
     """Delete one KConfig key with kwriteconfig6 as the target user."""
 
     command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     command.extend(values.CONFIG_DELETE_FLAG)
     command.extend(_notify_flag(file_name, env))
@@ -991,10 +991,7 @@ def _apply_applet_records_live(
     )
     if answer is None:
         return
-    _log(
-        "applied the applet settings to the running panel:"
-        f" {trim_whitespace(answer)}"
-    )
+    _log(f"applied the applet settings to the running panel: {trim_whitespace(answer)}")
 
 
 def _apply_applet_removals(
@@ -1019,9 +1016,7 @@ def _apply_applet_removals(
         return False
     answer = _run_plasma_script(
         _applet_removal_script(values.APPLET_REMOVE_PLUGINS),
-        no_session_message=(
-            "no desktop session, the panel applets stay on the panel"
-        ),
+        no_session_message=("no desktop session, the panel applets stay on the panel"),
         warning_prefix="cannot remove the panel applets, they stay on the panel",
         timeout=timeout,
         env=env,
@@ -1072,12 +1067,12 @@ def _apply_applet_records(
     path = (
         Path(common_values.DESKTOP_HOME_DIR)
         / values.USER_CONFIG_DIR
-        / values.APPLETSRC_FILE_NAME
+        / common_values.APPLETSRC_FILE_NAME
     )
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
-        warning = f"cannot read {values.APPLETSRC_FILE_NAME}: {exc}"
+        warning = f"cannot read {common_values.APPLETSRC_FILE_NAME}: {exc}"
         _log(warning)
         if warnings is not None:
             warnings.append(warning)
@@ -1096,7 +1091,7 @@ def _apply_applet_records(
         for group in groups:
             try:
                 changed |= _sync_config_value(
-                    values.APPLETSRC_FILE_NAME,
+                    common_values.APPLETSRC_FILE_NAME,
                     group + record.group,
                     record.key,
                     record.value,
@@ -1534,9 +1529,7 @@ def _configured_power_profile() -> str | None:
     return None
 
 
-def _running_power_profile(
-    *, timeout: float, env: dict[str, str]
-) -> str | None:
+def _running_power_profile(*, timeout: float, env: dict[str, str]) -> str | None:
     """The power profile of the running session, or None when unreadable.
 
     The reader is a program of the session and may be absent on a machine
@@ -1553,7 +1546,7 @@ def _running_power_profile(
             capture=True,
             timeout=timeout,
         )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError):
+    except subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError:
         return None
     return result.stdout.strip() or None
 
@@ -2086,7 +2079,7 @@ def _system_kreadconfig(
     """Current value of one system KConfig key, read as the root process."""
 
     command = _kconfig_command(
-        values.KREADCONFIG_COMMAND, file_name, group_segments, key
+        common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(command, check=False, capture=True, timeout=timeout)
     return trim_whitespace(result.stdout)
@@ -2103,7 +2096,7 @@ def _system_kwriteconfig(
     """Write one system KConfig key as the root process."""
 
     command = _kconfig_command(
-        values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     command.append(value)
     run_command(command, timeout=timeout)
@@ -2528,9 +2521,7 @@ def task(ctx: Context) -> TaskResult:
     )
     step(
         "ask powerdevil to read its configuration",
-        lambda: _reload_powerdevil(
-            timeout=timeout, env=apply_env, warnings=warnings
-        ),
+        lambda: _reload_powerdevil(timeout=timeout, env=apply_env, warnings=warnings),
     )
     settings_changed |= step(
         "write the theme cursor overrides",
