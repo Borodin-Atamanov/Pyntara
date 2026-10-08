@@ -404,10 +404,7 @@ APPLY_CURSOR_THEME_COMMAND: tuple[str, ...] = (
 
 # Commands of the file operations the task runs on the files it deploys for the
 # user; {path}, {owner} and {file_mode} are filled in at the call site.
-MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
-CHOWN_COMMAND: tuple[str, ...] = ("chown", "{owner}", "{path}")
 CHOWN_RECURSIVE_COMMAND: tuple[str, ...] = ("chown", "-R", "{owner}", "{path}")
-CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{path}")
 
 # The KConfig values of the desktop, applied by the task as the desktop user: the
 # file name under ~/.config, the group segments, the key and the string form of
@@ -1357,9 +1354,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "APPLY_LOOK_AND_FEEL_COMMAND",
     "APPLY_COLOR_SCHEME_COMMAND",
     "APPLY_CURSOR_THEME_COMMAND",
-    "MKDIR_COMMAND",
-    "CHOWN_COMMAND",
     "CHOWN_RECURSIVE_COMMAND",
-    "CHMOD_COMMAND",
     "KCONFIG_RECORDS",
 )

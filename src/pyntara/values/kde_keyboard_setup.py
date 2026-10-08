@@ -165,9 +165,6 @@ SHORTCUT_MODIFIER_BITS: dict[str, int] = {
 # with the hotkey payload as its argument.
 APPLY_HOTKEYS_SCRIPT_FILE_NAME: str = "apply_hotkeys.py"
 
-# Command that creates the directories of the user configuration; {path} is
-# filled in at the call site.
-MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
 
 # Prefix of the call that runs the rendered apply_hotkeys client with the system
 # interpreter of the [engine] table; the path of the rendered client and the
@@ -209,6 +206,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "LAYOUT_SWITCHER_COMPONENT_FRIENDLY",
     "SHORTCUT_MODIFIER_BITS",
     "APPLY_HOTKEYS_SCRIPT_FILE_NAME",
-    "MKDIR_COMMAND",
     "PYTHON_SCRIPT_COMMAND",
 )

@@ -39,7 +39,7 @@ from pathlib import Path
 from typing import TypedDict
 from xml.etree import ElementTree
 
-from pyntara import appletsrc, kconfig
+from pyntara import appletsrc, kconfig, user_files
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -1641,51 +1641,17 @@ def _write_user_file(
 ) -> bool:
     """Write one user-owned file as the target user; True when written.
 
-    The directory is created as the target user, the content is written by
-    the root process and then chowned and chmodded to the target user with
-    the given mode, so the file keeps the user ownership a desktop config
-    file needs. A file that already holds the content is skipped.
+    The sequence lives in pyntara.user_files; this section keeps the name of
+    its own argument for the mode, which its records carry as mode.
     """
 
-    target = Path(common_values.DESKTOP_HOME_DIR) / rel_path
-    if not force and target.is_file():
-        try:
-            if target.read_text(encoding="utf-8") == content:
-                return False
-        except OSError:
-            pass
-    run_command(
-        as_user_command(
-            substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
-        ),
-        extra_env=home_environment(),
+    return user_files.write_user_file(
+        rel_path,
+        content,
+        file_mode=mode,
         timeout=timeout,
+        force=force,
     )
-    # The user mkdir above owns the directory; this direct creation is a
-    # no-op when it succeeded and a fallback for a read-only fixture.
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
-    run_command(
-        substituted_command(
-            values.CHOWN_COMMAND,
-            {
-                "owner": (
-                    f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"
-                ),
-                "path": str(target),
-            },
-        ),
-        timeout=timeout,
-    )
-    run_command(
-        substituted_command(
-            values.CHMOD_COMMAND,
-            {"file_mode": f"{mode:04o}", "path": str(target)},
-        ),
-        timeout=timeout,
-    )
-    _log(f"wrote {target}")
-    return True
 
 
 def _apply_kwin_scripts(
@@ -2376,7 +2342,7 @@ def task(ctx: Context) -> TaskResult:
         run_command(
             as_user_command(
                 substituted_command(
-                    values.MKDIR_COMMAND,
+                    common_values.MKDIR_COMMAND,
                     {
                         "path": str(
                             Path(common_values.DESKTOP_HOME_DIR)

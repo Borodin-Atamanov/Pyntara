@@ -77,12 +77,6 @@ SERVICE_UNIT_NAME: str = "ydotool.service"
 # already applied only when the answer is this word.
 SERVICE_ACTIVE_STATE: str = "active"
 
-# Commands of the file operations the task runs for the desktop user: {path},
-# {owner} and {file_mode} are filled in at the call site.
-MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
-CHOWN_COMMAND: tuple[str, ...] = ("chown", "{owner}", "{path}")
-CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{path}")
-
 # Commands of the input group membership; {username} and {input_group} are
 # filled in at the call site.
 GROUP_MEMBERS_COMMAND: tuple[str, ...] = ("id", "-nG", "{username}")
@@ -131,9 +125,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SHORTCUT_KEY_SEQUENCE",
     "SERVICE_UNIT_NAME",
     "SERVICE_ACTIVE_STATE",
-    "MKDIR_COMMAND",
-    "CHOWN_COMMAND",
-    "CHMOD_COMMAND",
     "GROUP_MEMBERS_COMMAND",
     "GROUP_ADD_COMMAND",
     "SERVICE_ACTIVE_COMMAND",

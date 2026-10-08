@@ -19,7 +19,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import kconfig
+from pyntara import kconfig, user_files
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import kglobalaccel_names
 from pyntara.values import common as common_values
@@ -121,6 +121,7 @@ def _kconfig_runs_through_the_recorded_run_command(
         return task_module.run_command(*args, **kwargs)
 
     monkeypatch.setattr(kconfig, "run_command", forward)
+    monkeypatch.setattr(user_files, "run_command", forward)
 
 
 def _temporary_clone(tmp_path: Path) -> Path:
@@ -706,7 +707,7 @@ def test_written_user_file_mode_comes_from_the_values(
         "notes.txt", "content", mode=0o640, timeout=5, force=True
     )
     assert written is True
-    assert chmods == [["chmod", "0640", str(tmp_path / "notes.txt")]]
+    assert chmods == [["chmod", "640", str(tmp_path / "notes.txt")]]
 
 
 def test_one_config_failure_does_not_stop_other_steps(
@@ -2339,9 +2340,13 @@ def test_file_operations_come_from_the_values(
     # The maker of the parent directory, the owner writer and the mode
     # writer are values: another program in the values is the argv the task
     # runs around a user config file.
-    values.MKDIR_COMMAND = ("mymkdir", "--parents", "{path}")
-    values.CHOWN_COMMAND = ("mychown", "--owner", "{owner}", "{path}")
-    values.CHMOD_COMMAND = ("mychmod", "--mode", "{file_mode}", "{path}")
+    monkeypatch.setattr(common_values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
+    monkeypatch.setattr(
+        common_values, "CHOWN_COMMAND", ("mychown", "--owner", "{owner}", "{path}")
+    )
+    monkeypatch.setattr(
+        common_values, "CHMOD_COMMAND", ("mychmod", "--mode", "{file_mode}", "{path}")
+    )
     seen: list[list[str]] = []
 
     def fake_run(command: list[str], **kwargs: Any) -> _FakeProc:
@@ -2364,7 +2369,7 @@ def test_file_operations_come_from_the_values(
         (f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"),
         str(target),
     ]
-    assert seen[2] == ["mychmod", "--mode", f"{0o600:04o}", str(target)]
+    assert seen[2] == ["mychmod", "--mode", f"{0o600:o}", str(target)]
 
 
 def test_recursive_owner_command_comes_from_the_values(

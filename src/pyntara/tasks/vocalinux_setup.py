@@ -29,7 +29,7 @@ import subprocess
 from pathlib import Path
 from string import Template
 
-from pyntara import kconfig
+from pyntara import kconfig, user_files
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -110,57 +110,23 @@ def _write_user_file(
 ) -> tuple[bool, str | None]:
     """Write one user-owned file as the target user; (changed, error).
 
-    The parent directory is created as the target user, the content is
-    written by the root process and then chowned and chmodded to the target
-    user, so the file keeps the user ownership a desktop config file needs.
-    A file that already holds the content is skipped. file_mode is the
-    configured mode, applied in its octal form. A step that fails is
-    reported with the path of the file and skips that file alone, so the
-    remaining files and the steps after them still run.
+    The sequence lives in pyntara.user_files; this section reports a step that
+    fails with the path of the file and skips that file alone, so the remaining
+    files and the steps after them still run.
     """
 
     target = Path(common_values.DESKTOP_HOME_DIR) / rel_path
-    if not force and target.is_file():
-        try:
-            if target.read_text(encoding="utf-8") == content:
-                return False, None
-        except OSError:
-            pass
     try:
-        run_command(
-            as_user_command(
-                substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
-            ),
-            extra_env=home_environment(),
+        changed = user_files.write_user_file(
+            rel_path,
+            content,
+            file_mode=file_mode,
             timeout=timeout,
-        )
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
-        run_command(
-            substituted_command(
-                values.CHOWN_COMMAND,
-                {
-                    "owner": (
-                        f"{common_values.DESKTOP_USERNAME}:"
-                        f"{common_values.DESKTOP_USERNAME}"
-                    ),
-                    "path": str(target),
-                },
-            ),
-            timeout=timeout,
-        )
-        run_command(
-            substituted_command(
-                values.CHMOD_COMMAND,
-                {"file_mode": f"{file_mode:o}", "path": str(target)},
-            ),
-            timeout=timeout,
+            force=force,
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"cannot write {target}: {exc}"
-    _log(f"wrote {target}")
-    return True, None
-
+    return changed, None
 
 def _sync_echo_shortcut(
     *,
@@ -255,7 +221,7 @@ def _install_appimage(
         return False, None
     run_command(
         as_user_command(
-            substituted_command(values.MKDIR_COMMAND, {"path": str(install_dir)}),
+            substituted_command(common_values.MKDIR_COMMAND, {"path": str(install_dir)}),
         ),
         extra_env=home_environment(),
         timeout=timeout,
@@ -290,7 +256,7 @@ def _install_appimage(
         return False, f"cannot install {target}: {exc}"
     run_command(
         substituted_command(
-            values.CHOWN_COMMAND,
+            common_values.CHOWN_COMMAND,
             {
                 "owner": (
                     f"{common_values.DESKTOP_USERNAME}:{common_values.DESKTOP_USERNAME}"
@@ -302,7 +268,7 @@ def _install_appimage(
     )
     run_command(
         substituted_command(
-            values.CHMOD_COMMAND,
+            common_values.CHMOD_COMMAND,
             {
                 "file_mode": f"{common_values.EXECUTABLE_FILE_MODE:o}",
                 "path": str(target),

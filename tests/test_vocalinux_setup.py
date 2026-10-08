@@ -18,7 +18,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import kconfig, package_set, task_catalog
+from pyntara import kconfig, package_set, task_catalog, user_files
 from pyntara.tasks import vocalinux_setup as task_module
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
@@ -57,6 +57,7 @@ def _kconfig_runs_through_the_recorded_run_command(
         return task_module.run_command(*args, **kwargs)
 
     monkeypatch.setattr(kconfig, "run_command", forward)
+    monkeypatch.setattr(user_files, "run_command", forward)
 
 
 ASSET = "Vocalinux-0.16.2-x86_64.AppImage"
@@ -594,12 +595,12 @@ def test_file_operations_come_from_the_values(
     # The maker of the parent directory, the owner writer and the mode writer
     # are values: another program in the section is the argv the task runs
     # around a user file.
-    monkeypatch.setattr(values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
+    monkeypatch.setattr(common_values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
     monkeypatch.setattr(
-        values, "CHOWN_COMMAND", ("mychown", "--owner", "{owner}", "{path}")
+        common_values, "CHOWN_COMMAND", ("mychown", "--owner", "{owner}", "{path}")
     )
     monkeypatch.setattr(
-        values, "CHMOD_COMMAND", ("mychmod", "--mode", "{file_mode}", "{path}")
+        common_values, "CHMOD_COMMAND", ("mychmod", "--mode", "{file_mode}", "{path}")
     )
     seen: list[list[str]] = []
 

@@ -765,7 +765,9 @@ def test_mkdir_command_comes_from_the_values(
         return real_as_user_command(command)
 
     monkeypatch.setattr(task_module, "as_user_command", recording_as_user_command)
-    monkeypatch.setattr(values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
+    monkeypatch.setattr(
+        common_values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}")
+    )
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)
     task_module.task(ctx)

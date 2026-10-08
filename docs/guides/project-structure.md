@@ -54,6 +54,7 @@ src/pyntara/kconfig.py — Shared KConfig access of the desktop sections: builds
 src/pyntara/appletsrc.py — Reading of the Plasma appletsrc: applet_groups finds the group of every section declaring one of the given plugin names, because the position of an applet differs per machine and is never a written value. Imported by plasma_panel, kde_settings and kde_keyboard_setup.  
 src/pyntara/plasma_panel.py — Pinning a launcher to the Plasma taskbars: launcher_groups reads the group below every task manager applet, pin_launcher gives the launcher to the running panel through the shell scripting interface and falls back to the appletsrc of the user when no session runs, and a missing appletsrc is a note while a pin that did not arrive is a warning. Imported by chrome_setup and firefox_setup.  
 src/pyntara/settings_repo.py — Cloning, updating and deploying a browser defaults repository: sync_repository brings the clone in the root cache to the declared branch, deploy_tree copies one tree under a path with its relative paths preserved and deploy_system_tree applies the system tree of the repository under the system root. The version control commands, the branch, the tree name and the system root are shared values, so a section passes only its own repository url and clone directory. Imported by chrome_setup and firefox_setup.  
+src/pyntara/user_files.py — Writing one file of the desktop user from the root run: write_user_file creates the directory as the desktop user, writes the content, hands the file to that user and sets the declared mode, and skips a file that already holds the content. Imported by kde_settings and vocalinux_setup.  
 src/pyntara/i2pd.py — Shared I2P helpers: decode the .b32.i2p tunnel address from the binary PrivateKeys record. Imported by i2pd_service_setup and i2pd_address.  
 src/pyntara/i2pd_address.py — Deployed address command: prints one JSON record with the I2P tunnel address and the ssh command that reaches the SSH daemon through the tunnel, from the live keys file or the saved fallback. Runs as `python -m pyntara.i2pd_address`.  
 src/pyntara/network_addresses.py — Deployed address command: prints one JSON record per address of one family, each with its interface, its scope and the ssh command that connects to it. Runs as `python -m pyntara.network_addresses FAMILY`.  
@@ -150,6 +151,8 @@ appletsrc.py        applet_groups
 plasma_panel.py     launcher_groups, pin_launcher
 
 settings_repo.py    sync_repository, deploy_tree, deploy_system_tree
+
+user_files.py       write_user_file
 
 augeas.py           parse_augtool_print, sync_dropin, read_dropin,
                     dropin_exists, remove_dropin

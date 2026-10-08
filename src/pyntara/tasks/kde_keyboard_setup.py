@@ -548,7 +548,7 @@ def task(ctx: Context) -> TaskResult:
         run_command(
             as_user_command(
                 substituted_command(
-                    values.MKDIR_COMMAND, {"path": str(values.CONFIG_DIR)}
+                    common_values.MKDIR_COMMAND, {"path": str(values.CONFIG_DIR)}
                 ),
             ),
             extra_env=home_env,

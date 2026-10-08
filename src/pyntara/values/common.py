@@ -186,6 +186,13 @@ SETTINGS_RESET_COMMAND: tuple[str, ...] = (
     "{revision}",
 )
 
+# Commands of the user file operations that several desktop sections share:
+# create a directory, hand a file to the user and set its mode; {path}, {owner}
+# and {file_mode} are filled in at the call site.
+MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
+CHOWN_COMMAND: tuple[str, ...] = ("chown", "{owner}", "{path}")
+CHMOD_COMMAND: tuple[str, ...] = ("chmod", "{file_mode}", "{path}")
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -224,4 +231,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SETTINGS_FETCH_COMMAND",
     "SETTINGS_REVISION_COMMAND",
     "SETTINGS_RESET_COMMAND",
+    "MKDIR_COMMAND",
+    "CHOWN_COMMAND",
+    "CHMOD_COMMAND",
 )
