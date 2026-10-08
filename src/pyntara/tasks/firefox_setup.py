@@ -31,12 +31,15 @@ import tempfile
 from pathlib import Path
 from string import Template
 
+from pyntara import kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
+    as_user_command,
     download_command,
+    home_environment,
     refresh_apt_index,
     run_command,
     session_environment,
@@ -330,24 +333,6 @@ def _browser_is_running(timeout: float) -> bool:
     return result.returncode == 0
 
 
-def _as_user_command(command: list[str]) -> list[str]:
-    """Prefix a command with the wrapper of the desktop user."""
-
-    return [
-        *substituted_command(
-            values.RUNUSER_COMMAND,
-            {"username": common_values.DESKTOP_USERNAME},
-        ),
-        *command,
-    ]
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points a command at the home of the desktop user."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
-
-
 def _set_default_browser(*, timeout: float) -> tuple[bool, str | None]:
     """Make the packaged Firefox entry the default browser; (changed, warning).
 
@@ -362,7 +347,7 @@ def _set_default_browser(*, timeout: float) -> tuple[bool, str | None]:
     changed = False
     for key in values.DEFAULT_BROWSER_MIME_KEYS:
         try:
-            current = _kreadconfig(
+            current = kconfig.read_config_value(
                 values.MIMEAPPS_FILE_NAME,
                 values.DEFAULT_BROWSER_GROUP,
                 key,
@@ -370,7 +355,7 @@ def _set_default_browser(*, timeout: float) -> tuple[bool, str | None]:
             )
             if current == values.DESKTOP_FILE_NAME:
                 continue
-            _kwriteconfig(
+            kconfig.write_config_value(
                 values.MIMEAPPS_FILE_NAME,
                 values.DEFAULT_BROWSER_GROUP,
                 key,
@@ -385,63 +370,6 @@ def _set_default_browser(*, timeout: float) -> tuple[bool, str | None]:
             return changed, f"cannot set Firefox as the default browser: {exc}"
         changed = True
     return changed, None
-
-
-def _kconfig_command(
-    base_command: tuple[str, ...],
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-) -> list[str]:
-    """One KConfig call: the base, the file, the groups and the key."""
-
-    command = substituted_command(base_command, {"file_name": file_name})
-    for segment in group_segments:
-        command.extend(
-            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
-        )
-    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
-    return command
-
-
-def _kreadconfig(
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-    *,
-    timeout: float,
-) -> str:
-    """Current value of one key of a KConfig file of the desktop user."""
-
-    result = run_command(
-        _as_user_command(
-            _kconfig_command(
-                common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
-            )
-        ),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return trim_whitespace(result.stdout)
-
-
-def _kwriteconfig(
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-    value: str,
-    *,
-    timeout: float,
-) -> None:
-    """Write one key of a KConfig file of the desktop user."""
-
-    command = _kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
-    )
-    command.append(value)
-    run_command(_as_user_command(command), extra_env=_home_env(), timeout=timeout)
 
 
 def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
@@ -475,7 +403,7 @@ def _desktop_session_environment() -> dict[str, str] | None:
     )
     if not session:
         return None
-    env = _home_env()
+    env = home_environment()
     env.update(session)
     return env
 
@@ -521,7 +449,7 @@ def _pin_launcher_in_the_running_panel(
 ) -> tuple[bool, str | None]:
     """Give the launcher to the running panel; (pinned, warning)."""
 
-    command = _as_user_command(
+    command = as_user_command(
         substituted_command(
             shell_values.PLASMA_SHELL_SCRIPT_COMMAND,
             {
@@ -572,7 +500,7 @@ def _pin_launcher_in_the_appletsrc(
     changed = False
     for group in groups:
         try:
-            current = _kreadconfig(
+            current = kconfig.read_config_value(
                 common_values.APPLETSRC_FILE_NAME,
                 group,
                 common_values.APPLETSRC_LAUNCHERS_KEY,
@@ -581,7 +509,7 @@ def _pin_launcher_in_the_appletsrc(
             entries = [entry for entry in current.split(",") if entry]
             if values.PANEL_LAUNCHER_ID in entries:
                 continue
-            _kwriteconfig(
+            kconfig.write_config_value(
                 common_values.APPLETSRC_FILE_NAME,
                 group,
                 common_values.APPLETSRC_LAUNCHERS_KEY,

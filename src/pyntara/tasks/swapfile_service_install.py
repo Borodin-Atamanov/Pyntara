@@ -465,7 +465,8 @@ def _hibernate_answer_for_desktop_user(
 
     command = [
         *substituted_command(
-            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
+            common_values.RUNUSER_COMMAND,
+            {"username": common_values.DESKTOP_USERNAME},
         ),
         *values.LOGIND_HIBERNATE_QUERY_COMMAND,
     ]

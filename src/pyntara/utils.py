@@ -904,6 +904,29 @@ def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> li
     return [part.format(**values) for part in command]
 
 
+def as_user_command(command: Sequence[str]) -> list[str]:
+    """Prefix a command with the wrapper that runs it as the desktop user.
+
+    The wrapper is the shared RUNUSER_COMMAND value, so every section that
+    reaches the files or the session of the desktop user builds the same argv
+    and one value change reaches all of them.
+    """
+
+    return [
+        *substituted_command(
+            common_values.RUNUSER_COMMAND,
+            {"username": common_values.DESKTOP_USERNAME},
+        ),
+        *command,
+    ]
+
+
+def home_environment() -> dict[str, str]:
+    """Environment that points a tool at the home of the desktop user."""
+
+    return {"HOME": common_values.DESKTOP_HOME_DIR}
+
+
 def render_client_file(script_path: Path, substitutions: Mapping[str, str]) -> Path | str:
     """Write the client of the clone next to itself with its names filled in.
 

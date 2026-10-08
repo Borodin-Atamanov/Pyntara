@@ -29,14 +29,17 @@ import subprocess
 from pathlib import Path
 from string import Template
 
+from pyntara import kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
+    as_user_command,
     discard_downloaded_files,
     download_command,
     dpkg_architecture,
+    home_environment,
     release_asset_architecture,
     run_command,
     substituted_command,
@@ -64,28 +67,6 @@ def _read_task_template(
     if not path.is_file():
         return None, f"missing {label}: {path}"
     return path.read_text(encoding="utf-8"), None
-
-
-def _as_user_command(command: list[str]) -> list[str]:
-    """Prefix a command with the wrapper of the target user.
-
-    The wrapper is a value of this section, so a machine whose desktop user
-    is reached another way is a values change.
-    """
-
-    return [
-        *substituted_command(
-            values.RUNUSER_COMMAND,
-            {"username": common_values.DESKTOP_USERNAME},
-        ),
-        *command,
-    ]
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points the KDE tools at the target user home."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _release_download_url(repo: str, version: str, asset_name: str) -> str:
@@ -147,10 +128,10 @@ def _write_user_file(
             pass
     try:
         run_command(
-            _as_user_command(
+            as_user_command(
                 substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
             ),
-            extra_env=_home_env(),
+            extra_env=home_environment(),
             timeout=timeout,
         )
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -181,66 +162,6 @@ def _write_user_file(
     return True, None
 
 
-def _kconfig_command(
-    base_command: tuple[str, ...],
-    group_segments: tuple[str, ...],
-    key: str,
-) -> list[str]:
-    """One KConfig call: the base, the groups and the key.
-
-    The base call carries the shortcut file name and every selector is a value
-    of this section, so another KConfig version or another tool is a values
-    change. The reader and the writer share this builder, so the two calls can
-    never drift apart.
-    """
-
-    command = substituted_command(
-        base_command, {"file_name": common_values.SHORTCUTS_FILE_NAME}
-    )
-    for segment in group_segments:
-        command.extend(
-            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
-        )
-    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
-    return command
-
-
-def _kreadconfig(
-    group_segments: tuple[str, ...],
-    key: str,
-    timeout: float,
-) -> str:
-    """Current value of one KConfig key, or an empty string when unset."""
-
-    command = _kconfig_command(common_values.KREADCONFIG_COMMAND, group_segments, key)
-    result = run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return trim_whitespace(result.stdout)
-
-
-def _kwriteconfig(
-    group_segments: tuple[str, ...],
-    key: str,
-    value: str,
-    *,
-    timeout: float,
-) -> None:
-    """Write one KConfig key with the writer of the section as the user."""
-
-    command = _kconfig_command(common_values.KWRITECONFIG_COMMAND, group_segments, key)
-    command.append(value)
-    run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        timeout=timeout,
-    )
-
-
 def _sync_echo_shortcut(
     *,
     timeout: float,
@@ -259,13 +180,19 @@ def _sync_echo_shortcut(
 
     group = (values.SHORTCUT_GROUP_NAME, values.SHORTCUT_ENTRY_NAME)
     try:
-        current = _kreadconfig(group, values.SHORTCUT_ACTION_NAME, timeout)
+        current = kconfig.read_config_value(
+            common_values.SHORTCUTS_FILE_NAME,
+            group,
+            values.SHORTCUT_ACTION_NAME,
+            timeout=timeout,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         return False, f"cannot read the {values.SHORTCUT_ACTION_NAME} shortcut: {exc}"
     if not force and current == values.SHORTCUT_KEY_SEQUENCE:
         return False, None
     try:
-        _kwriteconfig(
+        kconfig.write_config_value(
+            common_values.SHORTCUTS_FILE_NAME,
             group,
             values.SHORTCUT_ACTION_NAME,
             values.SHORTCUT_KEY_SEQUENCE,
@@ -327,10 +254,10 @@ def _install_appimage(
     if target.is_file() and not force:
         return False, None
     run_command(
-        _as_user_command(
+        as_user_command(
             substituted_command(values.MKDIR_COMMAND, {"path": str(install_dir)}),
         ),
-        extra_env=_home_env(),
+        extra_env=home_environment(),
         timeout=timeout,
     )
     install_dir.mkdir(parents=True, exist_ok=True)

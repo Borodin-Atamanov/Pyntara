@@ -42,10 +42,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from pyntara import kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    as_user_command,
+    home_environment,
     install_package_once,
     kglobalaccel_names,
     package_is_installed,
@@ -65,27 +68,6 @@ from pyntara.values import missing_value_names
 # global shortcuts, the keys the task writes and the Qt modifier flags all come
 # from the values module: they are the vocabulary of foreign files, so they are
 # values like any other.
-
-
-def _as_user_command(command: list[str]) -> list[str]:
-    """Prefix a command with the configured wrapper of the target user.
-
-    The wrapper is a value of the section, so a machine whose desktop user is
-    reached another way is a value change.
-    """
-
-    return [
-        *substituted_command(
-            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
-        ),
-        *command,
-    ]
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points the KDE tools at the target user home."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _session_bus_env() -> dict[str, str]:
@@ -115,73 +97,6 @@ def _per_layout_empty_list(layouts: tuple[str, ...]) -> str:
     return ",".join([""] * len(layouts))
 
 
-def _kconfig_command(
-    base_command: tuple[str, ...],
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-) -> list[str]:
-    """One KConfig call: the configured base, the groups and the key.
-
-    The base call carries the file name and every selector is a value, so
-    another KConfig version or another tool is a value change. The reader and
-    the writer share this builder, so the two calls can never drift apart.
-    """
-
-    command = substituted_command(base_command, {"file_name": file_name})
-    for segment in group_segments:
-        command.extend(
-            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
-        )
-    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
-    return command
-
-
-def _kreadconfig(
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-    timeout: float,
-) -> str:
-    """Current value of one KConfig key, or an empty string when unset."""
-
-    command = _kconfig_command(
-        common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
-    )
-    result = run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return trim_whitespace(result.stdout)
-
-
-def _kwriteconfig(
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-    value: str,
-    *,
-    timeout: float,
-    bool_value: bool,
-) -> None:
-    """Write one KConfig key with the configured writer as the target user."""
-
-    command = _kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
-    )
-    if bool_value:
-        command.extend(values.CONFIG_BOOL_TYPE_FLAG)
-    command.append(value)
-    run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        timeout=timeout,
-    )
-
-
 def _sync_key(
     group_segments: tuple[str, ...],
     key: str,
@@ -198,16 +113,20 @@ def _sync_key(
     always writes.
     """
 
-    current = _kreadconfig(values.KXKBRC_FILE_NAME, group_segments, key, timeout)
+    current = kconfig.read_config_value(
+        values.KXKBRC_FILE_NAME, group_segments, key, timeout=timeout
+    )
     if not force and current == target:
         return False
-    _kwriteconfig(
+    kconfig.write_config_value(
         values.KXKBRC_FILE_NAME,
         group_segments,
         key,
         target,
         timeout=timeout,
-        bool_value=bool_value,
+        extra_flags=(
+            common_values.CONFIG_BOOL_TYPE_FLAG if bool_value else ()
+        ),
     )
     _log(f"set {key}: {target}")
     return True
@@ -252,7 +171,7 @@ def _reload_kwin(
         return None
     try:
         run_command(
-            _as_user_command(list(values.KWIN_RELOAD_COMMAND)),
+            as_user_command(list(values.KWIN_RELOAD_COMMAND)),
             extra_env={**home_env, **bus_env},
             timeout=timeout,
         )
@@ -330,7 +249,7 @@ def _restart_compositor_for_layouts(
     before = _compositor_pids(timeout)
     try:
         run_command(
-            _as_user_command(list(values.KWIN_RESTART_COMMAND)),
+            as_user_command(list(values.KWIN_RESTART_COMMAND)),
             extra_env={**home_env, **bus_env},
             timeout=timeout,
         )
@@ -420,18 +339,17 @@ def _sync_hotkey_file(
     group = (values.LAYOUT_SWITCHER_COMPONENT_UNIQUE,)
     for action, shortcut in shortcuts.items():
         value = f"{shortcut},none,{action}"
-        current = _kreadconfig(
-            common_values.SHORTCUTS_FILE_NAME, group, action, timeout
+        current = kconfig.read_config_value(
+            common_values.SHORTCUTS_FILE_NAME, group, action, timeout=timeout
         )
         if not force and current == value:
             continue
-        _kwriteconfig(
+        kconfig.write_config_value(
             common_values.SHORTCUTS_FILE_NAME,
             group,
             action,
             value,
             timeout=timeout,
-            bool_value=False,
         )
         _log(f"set hotkey {action}: {shortcut}")
         changed = True
@@ -520,7 +438,7 @@ def _apply_hotkeys_live(
         return rendered_client, False
     try:
         result = run_command(
-            _as_user_command(
+            as_user_command(
                 [
                     *substituted_command(
                         values.PYTHON_SCRIPT_COMMAND,
@@ -606,7 +524,7 @@ def task(ctx: Context) -> TaskResult:
         )
     timeout = engine_values.COMMAND_TIMEOUT_SECONDS
     force = ctx.task_name in ctx.force_tasks
-    home_env = _home_env()
+    home_env = home_environment()
     bus_env = _session_bus_env()
     changed = False
     warnings: list[str] = []
@@ -633,7 +551,7 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         run_command(
-            _as_user_command(
+            as_user_command(
                 substituted_command(
                     values.MKDIR_COMMAND, {"path": str(values.CONFIG_DIR)}
                 ),
@@ -711,20 +629,19 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         try:
-            current = _kreadconfig(
+            current = kconfig.read_config_value(
                 common_values.APPLETSRC_FILE_NAME,
                 group,
                 values.DISPLAY_STYLE_KEY,
-                timeout,
+                timeout=timeout,
             )
             if force or current != values.INDICATOR_DISPLAY_STYLE:
-                _kwriteconfig(
+                kconfig.write_config_value(
                     common_values.APPLETSRC_FILE_NAME,
                     group,
                     values.DISPLAY_STYLE_KEY,
                     values.INDICATOR_DISPLAY_STYLE,
                     timeout=timeout,
-                    bool_value=False,
                 )
                 _log(f"set indicator display style: {values.INDICATOR_DISPLAY_STYLE}")
                 applet_changed = True

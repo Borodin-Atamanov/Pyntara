@@ -77,10 +77,6 @@ SERVICE_UNIT_NAME: str = "ydotool.service"
 # already applied only when the answer is this word.
 SERVICE_ACTIVE_STATE: str = "active"
 
-# Prefix that runs a command as the desktop user, so the task reaches the session
-# files the user owns; {username} is filled from the shared module.
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-
 # Commands of the file operations the task runs for the desktop user: {path},
 # {owner} and {file_mode} are filled in at the call site.
 MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
@@ -135,7 +131,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SHORTCUT_KEY_SEQUENCE",
     "SERVICE_UNIT_NAME",
     "SERVICE_ACTIVE_STATE",
-    "RUNUSER_COMMAND",
     "MKDIR_COMMAND",
     "CHOWN_COMMAND",
     "CHMOD_COMMAND",

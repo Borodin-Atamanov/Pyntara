@@ -71,7 +71,7 @@ The bash suites cover both halves on temporary git repositories: bash tests/test
 ## Adding a new task
 
 Add a record to the catalog in src/pyntara/values/tasks.py with name, description, dependencies and modes. Dependencies must name tasks listed earlier (docs/contracts/task-model.md).  
-Create src/pyntara/tasks/<name>.py with a task(ctx) -> TaskResult function ([Task contract](../contracts/architecture.md#task-contract)). Import shared helpers from utils.py, config_edit.py or domain modules (i2pd.py, yggdrasil.py, tor.py, ssh.py, nextdns_profile.py) instead of reimplementing.  
+Create src/pyntara/tasks/<name>.py with a task(ctx) -> TaskResult function ([Task contract](../contracts/architecture.md#task-contract)). Import shared helpers from utils.py, config_edit.py, kconfig.py or domain modules (i2pd.py, yggdrasil.py, tor.py, ssh.py, nextdns_profile.py) instead of reimplementing.  
 If the task needs values, add them to the values module of the task under src/pyntara/values/ and read them at the point of use ([Where a value lives](project-structure.md#adding-a-value-to-an-existing-section)). Every value lives there and nowhere else; a literal that exists both in a values module and in a task body is a defect.  
 If the task needs runtime data files, create a task_data/<name>/ directory.  
 Write tests in tests/test_<name>.py: at minimum one success scenario and one realistic error scenario. Use shared factories from tests/support.py (make_context, FakeProc). Mock external resources via monkeypatch ([Testing rules](#testing-rules)).  

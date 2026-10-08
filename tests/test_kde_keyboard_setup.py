@@ -18,6 +18,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
+from pyntara import kconfig
 from pyntara.tasks import kde_keyboard_setup as task_module
 from pyntara.utils import kglobalaccel_names, task_data_dir
 from pyntara.values import common as common_values
@@ -40,6 +41,25 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
     monkeypatch.setattr(values, "CONFIG_DIR", tmp_path / ".config")
     monkeypatch.setattr(values, "LAYOUT_SWITCH_SHORTCUTS", {})
+
+
+@pytest.fixture(autouse=True)
+def _kconfig_runs_through_the_recorded_run_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Send the shared KConfig calls through the fake a test installs.
+
+    The reader and the writer live in pyntara.kconfig, so a test that replaces
+    run_command of the task module must reach them too; this forwards the
+    shared calls to that name, which the test may replace afterwards. The
+    directory maker of the task runs through the utils helper, so the same
+    forwarding applies to as_user_command.
+    """
+
+    def forward(*args: Any, **kwargs: Any) -> Any:
+        return task_module.run_command(*args, **kwargs)
+
+    monkeypatch.setattr(kconfig, "run_command", forward)
 
 
 SAMPLE_APPLETSRC = """\
@@ -728,53 +748,13 @@ def test_session_applies_a_hotkey_before_restarting_the_compositor(
     assert any("org.kde.KWin.replace" in command for command in session_applies)
 
 
-def test_user_command_prefix_comes_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The wrapper that runs a command as the desktop user is a value: another
-    # wrapper in the section is the argv the task builds.
-    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--"))
-    assert task_module._as_user_command(["kreadconfig6", "--file", "kxkbrc"]) == [
-        "sudo",
-        "-u",
-        common_values.DESKTOP_USERNAME,
-        "--",
-        "kreadconfig6",
-        "--file",
-        "kxkbrc",
-    ]
-
-
-def test_kconfig_calls_come_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The reader and the two selectors are values: another set of
-    # commands is what the task builds.
-    monkeypatch.setattr(
-        common_values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
-    )
-    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
-    assert task_module._kconfig_command(
-        common_values.KREADCONFIG_COMMAND, "kxkbrc", ("Layout",), "LayoutList"
-    ) == [
-        "my-reader",
-        "--config",
-        "kxkbrc",
-        "--section",
-        "Layout",
-        "--entry",
-        "LayoutList",
-    ]
-
-
 def test_mkdir_command_comes_from_the_values(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # The maker of the target config directory is a value: another program in
     # the section is the command the task runs before its writes.
     mkdir_commands: list[list[str]] = []
-    real_as_user_command = task_module._as_user_command
+    real_as_user_command = task_module.as_user_command
 
     def recording_as_user_command(command: list[str]) -> list[str]:
         if command[0] == "mymkdir":
@@ -784,7 +764,7 @@ def test_mkdir_command_comes_from_the_values(
             command = ["mkdir", "-p", command[-1]]
         return real_as_user_command(command)
 
-    monkeypatch.setattr(task_module, "_as_user_command", recording_as_user_command)
+    monkeypatch.setattr(task_module, "as_user_command", recording_as_user_command)
     monkeypatch.setattr(values, "MKDIR_COMMAND", ("mymkdir", "--parents", "{path}"))
     ctx = _ctx(tmp_path)
     _install_fakes(monkeypatch)

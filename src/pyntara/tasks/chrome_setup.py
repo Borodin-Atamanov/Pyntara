@@ -60,13 +60,16 @@ import tempfile
 from pathlib import Path
 from string import Template
 
+from pyntara import kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
+    as_user_command,
     download_command,
     hand_to_user,
+    home_environment,
     install_package_once,
     package_is_installed,
     port_listener_pid,
@@ -774,89 +777,6 @@ def _refresh_menu_database(*, timeout: float) -> str | None:
     return None
 
 
-def _as_user_command(command: list[str]) -> list[str]:
-    """Prefix a command with the wrapper of the desktop user.
-
-    The wrapper is a value of this section, so a machine whose desktop user is
-    reached another way is a values change.
-    """
-
-    return [
-        *substituted_command(
-            values.RUNUSER_COMMAND,
-            {"username": common_values.DESKTOP_USERNAME},
-        ),
-        *command,
-    ]
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points the KDE config tools at the user home."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
-
-
-def _kconfig_command(
-    base_command: tuple[str, ...],
-    group_segments: tuple[str, ...],
-    key: str,
-) -> list[str]:
-    """One KConfig call: the base, the groups and the key.
-
-    The base call carries the file name and every selector is a value of the
-    section, so another KConfig version or another tool is a values change.
-    The reader and the writer share this builder, so the two calls can never
-    drift apart.
-    """
-
-    command = substituted_command(
-        base_command, {"file_name": common_values.APPLETSRC_FILE_NAME}
-    )
-    for segment in group_segments:
-        command.extend(
-            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
-        )
-    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
-    return command
-
-
-def _kreadconfig(
-    group_segments: tuple[str, ...],
-    key: str,
-    *,
-    timeout: float,
-) -> str:
-    """Current value of one appletsrc key of the desktop user."""
-
-    command = _kconfig_command(common_values.KREADCONFIG_COMMAND, group_segments, key)
-    result = run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return trim_whitespace(result.stdout)
-
-
-def _kwriteconfig(
-    group_segments: tuple[str, ...],
-    key: str,
-    value: str,
-    *,
-    timeout: float,
-) -> None:
-    """Write one appletsrc key with the writer of the section as the user."""
-
-    command = _kconfig_command(common_values.KWRITECONFIG_COMMAND, group_segments, key)
-    command.append(value)
-    run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        timeout=timeout,
-    )
-
-
 def _taskbar_launcher_groups(text: str) -> list[tuple[str, ...]]:
     """The group of every task manager applet that holds pinned launchers.
 
@@ -904,7 +824,7 @@ def _desktop_session_environment() -> dict[str, str] | None:
     )
     if not session:
         return None
-    env = _home_env()
+    env = home_environment()
     env.update(session)
     return env
 
@@ -965,7 +885,7 @@ def _pin_launcher_in_the_running_panel(
     file write behind it handles the next login.
     """
 
-    command = _as_user_command(
+    command = as_user_command(
         substituted_command(
             shell_values.PLASMA_SHELL_SCRIPT_COMMAND,
             {
@@ -1022,13 +942,17 @@ def _pin_launcher_in_the_appletsrc(
     changed = False
     for group in groups:
         try:
-            current = _kreadconfig(
-                group, common_values.APPLETSRC_LAUNCHERS_KEY, timeout=timeout
+            current = kconfig.read_config_value(
+                common_values.APPLETSRC_FILE_NAME,
+                group,
+                common_values.APPLETSRC_LAUNCHERS_KEY,
+                timeout=timeout,
             )
             entries = [entry for entry in current.split(",") if entry]
             if values.PANEL_LAUNCHER_ID in entries:
                 continue
-            _kwriteconfig(
+            kconfig.write_config_value(
+                common_values.APPLETSRC_FILE_NAME,
                 group,
                 common_values.APPLETSRC_LAUNCHERS_KEY,
                 ",".join([*entries, values.PANEL_LAUNCHER_ID]),

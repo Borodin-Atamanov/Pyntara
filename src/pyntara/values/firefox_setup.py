@@ -135,9 +135,6 @@ DEFAULT_BROWSER_MIME_KEYS: tuple[str, ...] = (
     "text/html",
 )
 
-# Prefix that runs a command as the desktop user.
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
@@ -171,5 +168,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "MIMEAPPS_FILE_NAME",
     "DEFAULT_BROWSER_GROUP",
     "DEFAULT_BROWSER_MIME_KEYS",
-    "RUNUSER_COMMAND",
 )

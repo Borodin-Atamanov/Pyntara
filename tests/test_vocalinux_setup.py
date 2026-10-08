@@ -18,7 +18,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import package_set, task_catalog
+from pyntara import kconfig, package_set, task_catalog
 from pyntara.tasks import vocalinux_setup as task_module
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
@@ -40,6 +40,23 @@ def _point_the_values_at_the_temporary_tree(
 
     monkeypatch.setattr(values, "DOWNLOAD_DIR", tmp_path / "cache")
     monkeypatch.setattr(common_values, "DESKTOP_HOME_DIR", str(tmp_path))
+
+
+@pytest.fixture(autouse=True)
+def _kconfig_runs_through_the_recorded_run_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Send the shared KConfig calls through the fake a test installs.
+
+    The reader and the writer live in pyntara.kconfig, so a test that replaces
+    run_command of the task module must reach them too; this forwards the
+    shared calls to that name, which the test may replace afterwards.
+    """
+
+    def forward(*args: Any, **kwargs: Any) -> Any:
+        return task_module.run_command(*args, **kwargs)
+
+    monkeypatch.setattr(kconfig, "run_command", forward)
 
 
 ASSET = "Vocalinux-0.16.2-x86_64.AppImage"
@@ -569,48 +586,6 @@ def test_release_download_url_comes_from_the_values(
         "Owner/App", "1.2.3", "App-1.2.3-x86_64.AppImage"
     )
     assert url == ("https://mirror.example/Owner/App/v1.2.3/App-1.2.3-x86_64.AppImage")
-
-
-def test_user_command_prefix_comes_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The wrapper that runs a command as the target user is a value of the
-    # section: another wrapper is the argv the task builds.
-    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}", "--"))
-    assert task_module._as_user_command(
-        ["kwriteconfig6", "--file", "kglobalshortcutsrc"]
-    ) == [
-        "sudo",
-        "-u",
-        common_values.DESKTOP_USERNAME,
-        "--",
-        "kwriteconfig6",
-        "--file",
-        "kglobalshortcutsrc",
-    ]
-
-
-def test_kconfig_calls_come_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The writer and the two selectors are values: another set of commands is
-    # what the task builds for the shortcut file of the shared module.
-    monkeypatch.setattr(
-        common_values, "KWRITECONFIG_COMMAND", ("my-writer", "--config", "{file_name}")
-    )
-    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
-    assert task_module._kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, ("services",), "myservice"
-    ) == [
-        "my-writer",
-        "--config",
-        common_values.SHORTCUTS_FILE_NAME,
-        "--section",
-        "services",
-        "--entry",
-        "myservice",
-    ]
 
 
 def test_file_operations_come_from_the_values(

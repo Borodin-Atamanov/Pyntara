@@ -39,10 +39,13 @@ from pathlib import Path
 from typing import TypedDict
 from xml.etree import ElementTree
 
+from pyntara import kconfig
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
+    as_user_command,
+    home_environment,
     install_package_once,
     kglobalaccel_names,
     package_is_installed,
@@ -72,50 +75,6 @@ from pyntara.values import missing_value_names
 # reads the ids through python3-dbus.
 
 
-def _as_user_command(command: list[str]) -> list[str]:
-    """Prefix a command with the configured wrapper of the target user.
-
-    The wrapper is a value of the section, so a machine whose desktop user
-    is reached another way is a values change.
-    """
-
-    return [
-        *substituted_command(
-            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
-        ),
-        *command,
-    ]
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points the KDE tools at the target user home."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
-
-
-def _kconfig_command(
-    base_command: tuple[str, ...],
-    file_name: str,
-    group_segments: tuple[str, ...],
-    key: str,
-) -> list[str]:
-    """One KConfig call: the configured base, the groups and the key.
-
-    The base call carries the file name and every selector is a value of
-    the section, so another KConfig version or another tool is a values
-    change. The reader, the writer and the delete share this builder, so
-    the three calls can never drift apart.
-    """
-
-    command = substituted_command(base_command, {"file_name": file_name})
-    for segment in group_segments:
-        command.extend(
-            substituted_command(common_values.CONFIG_GROUP_FLAG, {"group": segment})
-        )
-    command.extend(substituted_command(common_values.CONFIG_KEY_FLAG, {"key": key}))
-    return command
-
-
 def _kreadconfig(
     file_name: str,
     group_segments: tuple[str, ...],
@@ -124,17 +83,7 @@ def _kreadconfig(
 ) -> str:
     """Current value of one KConfig key, or an empty string when unset."""
 
-    command = _kconfig_command(
-        common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
-    )
-    result = run_command(
-        _as_user_command(command),
-        extra_env=_home_env(),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return trim_whitespace(result.stdout)
+    return kconfig.read_config_value(file_name, group_segments, key, timeout=timeout)
 
 
 def _notify_flag(file_name: str, env: dict[str, str] | None) -> list[str]:
@@ -172,18 +121,18 @@ def _kwriteconfig(
     live owner of the file.
     """
 
-    command = _kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
+    extra_flags = (
+        list(common_values.CONFIG_BOOL_TYPE_FLAG) if bool_value else []
     )
-    if bool_value:
-        command.extend(values.CONFIG_BOOL_TYPE_FLAG)
-    command.append(value)
-    command.extend(_notify_flag(file_name, env))
-    write_env = env if env is not None else _home_env()
-    run_command(
-        _as_user_command(command),
-        extra_env=write_env,
+    extra_flags.extend(_notify_flag(file_name, env))
+    kconfig.write_config_value(
+        file_name,
+        group_segments,
+        key,
+        value,
         timeout=timeout,
+        extra_flags=extra_flags,
+        env=env,
     )
 
 
@@ -197,16 +146,14 @@ def _delete_kconfig_key(
 ) -> None:
     """Delete one KConfig key with kwriteconfig6 as the target user."""
 
-    command = _kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
-    )
-    command.extend(values.CONFIG_DELETE_FLAG)
-    command.extend(_notify_flag(file_name, env))
-    write_env = env if env is not None else _home_env()
-    run_command(
-        _as_user_command(command),
-        extra_env=write_env,
+    extra_flags = [*values.CONFIG_DELETE_FLAG, *_notify_flag(file_name, env)]
+    kconfig.delete_config_value(
+        file_name,
+        group_segments,
+        key,
         timeout=timeout,
+        extra_flags=extra_flags,
+        env=env,
     )
 
 
@@ -263,7 +210,7 @@ def _apply_env() -> dict[str, str] | None:
     )
     if not session:
         return None
-    env = _home_env()
+    env = home_environment()
     env.update(session)
     return env
 
@@ -308,7 +255,7 @@ def _run_appearance_tool_best_effort(
         _log(f"no desktop session, {applied_message} applies at the next login")
         return
     try:
-        run_command(_as_user_command(command), extra_env=env, timeout=timeout)
+        run_command(as_user_command(command), extra_env=env, timeout=timeout)
         _log(applied_message)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         _log(
@@ -933,7 +880,7 @@ def _run_plasma_script(
     if env is None:
         _log(no_session_message)
         return None
-    command = _as_user_command(
+    command = as_user_command(
         substituted_command(
             values.PLASMA_SHELL_SCRIPT_COMMAND,
             {
@@ -1493,7 +1440,7 @@ def _reload_powerdevil(
         return False
     try:
         run_command(
-            _as_user_command(list(values.POWERDEVIL_REPARSE_COMMAND)),
+            as_user_command(list(values.POWERDEVIL_REPARSE_COMMAND)),
             extra_env=env,
             timeout=timeout,
         )
@@ -1540,7 +1487,7 @@ def _running_power_profile(*, timeout: float, env: dict[str, str]) -> str | None
     command = list(values.POWER_PROFILE_READ_COMMAND)
     try:
         result = run_command(
-            _as_user_command(command),
+            as_user_command(command),
             extra_env=env,
             check=False,
             capture=True,
@@ -1598,7 +1545,7 @@ def _apply_shortcuts_live(
     if isinstance(rendered_client, str):
         report_and_write_for_next_login(changes, rendered_client)
         return False
-    command = _as_user_command(
+    command = as_user_command(
         [
             *substituted_command(
                 values.PYTHON_SCRIPT_COMMAND,
@@ -1730,10 +1677,10 @@ def _write_user_file(
         except OSError:
             pass
     run_command(
-        _as_user_command(
+        as_user_command(
             substituted_command(values.MKDIR_COMMAND, {"path": str(target.parent)}),
         ),
-        extra_env=_home_env(),
+        extra_env=home_environment(),
         timeout=timeout,
     )
     # The user mkdir above owns the directory; this direct creation is a
@@ -2078,7 +2025,7 @@ def _system_kreadconfig(
 ) -> str:
     """Current value of one system KConfig key, read as the root process."""
 
-    command = _kconfig_command(
+    command = kconfig.kconfig_command(
         common_values.KREADCONFIG_COMMAND, file_name, group_segments, key
     )
     result = run_command(command, check=False, capture=True, timeout=timeout)
@@ -2095,7 +2042,7 @@ def _system_kwriteconfig(
 ) -> None:
     """Write one system KConfig key as the root process."""
 
-    command = _kconfig_command(
+    command = kconfig.kconfig_command(
         common_values.KWRITECONFIG_COMMAND, file_name, group_segments, key
     )
     command.append(value)
@@ -2201,7 +2148,7 @@ def _reload_kwin(
         return None
     try:
         run_command(
-            _as_user_command(list(values.KWIN_RELOAD_COMMAND)),
+            as_user_command(list(values.KWIN_RELOAD_COMMAND)),
             extra_env=env,
             timeout=timeout,
         )
@@ -2268,7 +2215,7 @@ def _apply_desktop_count_live(
         return None
     try:
         result = run_command(
-            _as_user_command(
+            as_user_command(
                 substituted_command(
                     values.KWIN_DESKTOP_COUNT_COMMAND, _desktop_dbus_names()
                 ),
@@ -2290,7 +2237,7 @@ def _apply_desktop_count_live(
         for position in range(current, target):
             try:
                 run_command(
-                    _as_user_command(
+                    as_user_command(
                         substituted_command(
                             values.KWIN_DESKTOP_CREATE_COMMAND,
                             {
@@ -2311,7 +2258,7 @@ def _apply_desktop_count_live(
         if isinstance(rendered_ids, str):
             return rendered_ids
         ids_result = run_command(
-            _as_user_command(
+            as_user_command(
                 [
                     *substituted_command(
                         values.PYTHON_SCRIPT_COMMAND,
@@ -2327,7 +2274,7 @@ def _apply_desktop_count_live(
         for desktop_id in ids[-current + target :]:
             try:
                 run_command(
-                    _as_user_command(
+                    as_user_command(
                         substituted_command(
                             values.KWIN_DESKTOP_REMOVE_COMMAND,
                             {
@@ -2449,7 +2396,7 @@ def task(ctx: Context) -> TaskResult:
 
     try:
         run_command(
-            _as_user_command(
+            as_user_command(
                 substituted_command(
                     values.MKDIR_COMMAND,
                     {
@@ -2460,7 +2407,7 @@ def task(ctx: Context) -> TaskResult:
                     },
                 ),
             ),
-            extra_env=_home_env(),
+            extra_env=home_environment(),
             timeout=timeout,
         )
     except (

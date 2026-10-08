@@ -133,10 +133,11 @@ def _kconfig_key(command: list[str]) -> tuple[str, tuple[str, ...], str]:
 
 
 def _patch_run(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> None:
-    """Patch run_command in the task module and in the utils module."""
+    """Patch run_command in the task, the shared modules the task calls."""
 
     monkeypatch.setattr(firefox_setup, "run_command", fake_run)
     monkeypatch.setattr("pyntara.utils.run_command", fake_run)
+    monkeypatch.setattr("pyntara.kconfig.run_command", fake_run)
 
 
 def _is_curl(command: list[str]) -> bool:
@@ -279,6 +280,7 @@ def test_removed_snap_is_reported(
     _write_repository()
     _fake_run(monkeypatch, snap_present=True)
     result = firefox_setup.task(_ctx(tmp_path))
+    assert result.message is not None
     assert "removed the snap version of Firefox" in result.message
 
 
@@ -290,6 +292,7 @@ def test_absent_snap_is_not_reported_as_removed(
     _write_repository()
     _fake_run(monkeypatch, snap_present=False)
     result = firefox_setup.task(_ctx(tmp_path))
+    assert result.message is not None
     assert "removed the snap" not in result.message
 
 

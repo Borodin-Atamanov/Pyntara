@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import task_catalog
+from pyntara import kconfig, task_catalog
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
@@ -24,6 +25,23 @@ from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import tasks as tasks_values
 from pyntara.values import three_x_ui_xray_setup as panel_values
+
+
+@pytest.fixture(autouse=True)
+def _kconfig_runs_through_the_recorded_run_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Send the shared KConfig calls through the fake a test installs.
+
+    The reader and the writer live in pyntara.kconfig, so a test that replaces
+    run_command of the task module must reach them too; this forwards the
+    shared calls to that name, which the test may replace afterwards.
+    """
+
+    def forward(*args: Any, **kwargs: Any) -> Any:
+        return chrome_setup.run_command(*args, **kwargs)
+
+    monkeypatch.setattr(kconfig, "run_command", forward)
 
 # The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -1338,50 +1356,6 @@ def test_sync_leaves_current_repository_alone(
     assert not changed
     assert error is None
     assert not any("reset" in call for call in calls)
-
-
-def test_user_command_prefix_comes_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The wrapper that runs a command as the desktop user is a value of the
-    # section: another wrapper is the argv the task builds.
-    monkeypatch.setattr(values, "RUNUSER_COMMAND", ("sudo", "-u", "{username}"))
-    assert chrome_setup._as_user_command(
-        ["kwriteconfig6", "--file", "plasmashellrc"]
-    ) == [
-        "sudo",
-        "-u",
-        common_values.DESKTOP_USERNAME,
-        "kwriteconfig6",
-        "--file",
-        "plasmashellrc",
-    ]
-
-
-def test_kconfig_calls_come_from_the_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # The reader, the file selector, the group selector and the key selector of
-    # the KConfig access are values: another set of commands is what the task
-    # builds.
-    monkeypatch.setattr(
-        common_values, "KREADCONFIG_COMMAND", ("my-reader", "--config", "{file_name}")
-    )
-    monkeypatch.setattr(common_values, "CONFIG_GROUP_FLAG", ("--section", "{group}"))
-    monkeypatch.setattr(common_values, "CONFIG_KEY_FLAG", ("--entry", "{key}"))
-    assert chrome_setup._kconfig_command(
-        common_values.KREADCONFIG_COMMAND, ("Containments", "1"), "launchers"
-    ) == [
-        "my-reader",
-        "--config",
-        common_values.APPLETSRC_FILE_NAME,
-        "--section",
-        "Containments",
-        "--section",
-        "1",
-        "--entry",
-        "launchers",
-    ]
 
 
 def test_the_merge_hands_the_new_profile_directories_to_the_desktop_user(

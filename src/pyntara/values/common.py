@@ -117,11 +117,21 @@ APPLETSRC_LAUNCHER_GROUP: tuple[str, ...] = ("Configuration", "General")
 # Vocabulary of the KConfig tools: the two base calls carry the file as
 # {file_name}, a group is selected with CONFIG_GROUP_FLAG, a key with
 # CONFIG_KEY_FLAG, and the value of a write is a positional argument the code
-# appends.
+# appends. The flag that stores a value as a boolean instead of text is used by
+# the two sections that write a flag of the desktop, the keyboard section and
+# the settings section, so it is written once here.
 KREADCONFIG_COMMAND: tuple[str, ...] = ("kreadconfig6", "--file", "{file_name}")
 KWRITECONFIG_COMMAND: tuple[str, ...] = ("kwriteconfig6", "--file", "{file_name}")
 CONFIG_GROUP_FLAG: tuple[str, ...] = ("--group", "{group}")
 CONFIG_KEY_FLAG: tuple[str, ...] = ("--key", "{key}")
+CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
+
+# Prefix that runs a command as the desktop user, so a task reaches the files
+# and the sessions the user owns; {username} is the account of the machine.
+# Seven sections reach the user this way and the value is written once here;
+# playwright_setup and sotavpn_setup need a wrapper that also sets HOME in the
+# environment itself and declare their own value, which is a decision.
+RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
@@ -150,4 +160,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KWRITECONFIG_COMMAND",
     "CONFIG_GROUP_FLAG",
     "CONFIG_KEY_FLAG",
+    "CONFIG_BOOL_TYPE_FLAG",
+    "RUNUSER_COMMAND",
 )

@@ -45,6 +45,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
+    home_environment,
     move_paths_to_trash,
     render_client_file,
     run_command,
@@ -77,12 +78,6 @@ def _session_bus_env() -> dict[str, str]:
     if bus is None:
         return {}
     return {engine_values.SESSION_BUS_KEY: bus}
-
-
-def _home_env() -> dict[str, str]:
-    """Environment that points the client at the home of the desktop user."""
-
-    return {"HOME": common_values.DESKTOP_HOME_DIR}
 
 
 def _client_names() -> dict[str, str]:
@@ -142,7 +137,8 @@ def _run_client(
         return {}, rendered_client
     command = [
         *substituted_command(
-            values.RUNUSER_COMMAND, {"username": common_values.DESKTOP_USERNAME}
+            common_values.RUNUSER_COMMAND,
+            {"username": common_values.DESKTOP_USERNAME},
         ),
         *substituted_command(
             values.PYTHON_SCRIPT_COMMAND,
@@ -152,7 +148,7 @@ def _run_client(
     try:
         result = run_command(
             command,
-            extra_env={**_home_env(), **bus_env},
+            extra_env={**home_environment(), **bus_env},
             timeout=values.CLIENT_TIMEOUT_SECONDS,
             capture=True,
         )
@@ -201,7 +197,7 @@ def _replace_wallet_files() -> tuple[tuple[str, ...], list[str]]:
         return (), []
     moved, failures = move_paths_to_trash(
         paths,
-        run_as_user_command=values.RUNUSER_COMMAND,
+        run_as_user_command=common_values.RUNUSER_COMMAND,
         username=common_values.DESKTOP_USERNAME,
         home_dir=common_values.DESKTOP_HOME_DIR,
         program=values.TRASH_PROGRAM,

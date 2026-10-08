@@ -181,7 +181,6 @@ LOGIND_HIBERNATE_QUERY_COMMAND: tuple[str, ...] = (
     "CanHibernate",
 )
 HIBERNATE_AVAILABLE_ANSWER: str = "yes"
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
 # The sentence the run leaves for the user. Plasma asks the machine once, when
 # the session starts, so a machine whose hibernation this run enabled shows the
@@ -235,6 +234,5 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "POLKIT_HIBERNATE_MULTIPLE_SESSIONS_ACTION",
     "LOGIND_HIBERNATE_QUERY_COMMAND",
     "HIBERNATE_AVAILABLE_ANSWER",
-    "RUNUSER_COMMAND",
     "SESSION_RELOAD_MESSAGE",
 )

@@ -242,10 +242,6 @@ MOUNT_UNIT_TEMPLATE_FILE_NAME: str = "mount_chrome_user_dir.service"
 CDP_PORT: int = 19222
 CDP_ADDRESS: str = "127.0.0.1"
 
-# Prefix that runs a command as the desktop user, so the task reaches the
-# session files the user owns; {username} is the account of the machine.
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
@@ -288,5 +284,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "MOUNT_UNIT_TEMPLATE_FILE_NAME",
     "CDP_PORT",
     "CDP_ADDRESS",
-    "RUNUSER_COMMAND",
 )

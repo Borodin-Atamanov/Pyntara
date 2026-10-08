@@ -378,15 +378,10 @@ USER_DIRS: dict[str, str] = {
     "XDG_VIDEOS_DIR": "$HOME/downloads",
 }
 
-# Prefix that runs a command as the desktop user, so the task reaches the session
-# files the user owns; {username} is filled from the shared module.
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-
 # The type word of a KConfig flag: a record whose type is this word is written
-# with --type bool, and the flag takes the same word as its argument.
+# with the shared boolean type flag, which takes the same word as its argument.
 KCONFIG_BOOL_TYPE: str = "bool"
 
-CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", KCONFIG_BOOL_TYPE)
 CONFIG_NOTIFY_FLAG: tuple[str, ...] = ("--notify",)
 CONFIG_DELETE_FLAG: tuple[str, ...] = ("--delete",)
 
@@ -1360,8 +1355,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "KWIN_SCRIPTS_DIR_NAME",
     "KONSOLE_PROFILE_FILE_NAME",
     "USER_DIRS",
-    "RUNUSER_COMMAND",
-    "CONFIG_BOOL_TYPE_FLAG",
     "CONFIG_NOTIFY_FLAG",
     "CONFIG_DELETE_FLAG",
     "APPLY_LOOK_AND_FEEL_COMMAND",

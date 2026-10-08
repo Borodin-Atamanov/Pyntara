@@ -19,6 +19,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
+from pyntara import kconfig
 from pyntara.tasks import kde_settings as task_module
 from pyntara.utils import kglobalaccel_names
 from pyntara.values import common as common_values
@@ -102,6 +103,24 @@ def _point_the_values_at_the_temporary_tree(
         monkeypatch.setattr(values, name, getattr(values, name))
     for name in common_values.READ_VALUE_NAMES:
         monkeypatch.setattr(common_values, name, getattr(common_values, name))
+
+
+@pytest.fixture(autouse=True)
+def _kconfig_runs_through_the_recorded_run_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Send the shared KConfig calls through the fake a test installs.
+
+    The reader, the writer and the delete live in pyntara.kconfig, so a test
+    that replaces run_command of the task module must reach them too; this
+    forwards the shared calls to that name, which the test may replace
+    afterwards.
+    """
+
+    def forward(*args: Any, **kwargs: Any) -> Any:
+        return task_module.run_command(*args, **kwargs)
+
+    monkeypatch.setattr(kconfig, "run_command", forward)
 
 
 def _temporary_clone(tmp_path: Path) -> Path:
@@ -2288,21 +2307,6 @@ def test_sddm_one_key_failure_keeps_other_keys(
     assert not any("CursorSize" in command for command in writes)
 
 
-def test_user_command_prefix_comes_from_the_values() -> None:
-    # The wrapper that runs a command as the desktop user is a value:
-    # another wrapper in the values is the argv the task builds.
-    values.RUNUSER_COMMAND = ("sudo", "-u", "{username}", "--")
-    assert task_module._as_user_command(["kwriteconfig6", "--file", "kwinrc"]) == [
-        "sudo",
-        "-u",
-        common_values.DESKTOP_USERNAME,
-        "--",
-        "kwriteconfig6",
-        "--file",
-        "kwinrc",
-    ]
-
-
 def test_plasma_apply_calls_come_from_the_values() -> None:
     # The three appearance tools and their flags are values: another call in
     # the values is the argv the task runs, with the value it applies
@@ -2326,44 +2330,6 @@ def test_plasma_apply_calls_come_from_the_values() -> None:
     assert task_module._appearance_command("cursor_theme") == [
         "plasma-apply-cursortheme",
         values.CURSOR_THEME,
-    ]
-
-
-def test_kconfig_calls_come_from_the_values() -> None:
-    # The two base calls and the three selectors are values: another set of
-    # them is what the task builds, for the user session and for the system
-    # files.
-    common_values.KREADCONFIG_COMMAND = ("my-reader", "--config", "{file_name}")
-    common_values.CONFIG_GROUP_FLAG = ("--section", "{group}")
-    common_values.CONFIG_KEY_FLAG = ("--entry", "{key}")
-    expected = [
-        "my-reader",
-        "--config",
-        "kwinrc",
-        "--section",
-        "Group",
-        "--section",
-        "Sub",
-        "--entry",
-        "Key",
-    ]
-    assert (
-        task_module._kconfig_command(
-            common_values.KREADCONFIG_COMMAND, "kwinrc", ("Group", "Sub"), "Key"
-        )
-        == expected
-    )
-    common_values.KWRITECONFIG_COMMAND = ("my-writer", "--config", "{file_name}")
-    assert task_module._kconfig_command(
-        common_values.KWRITECONFIG_COMMAND, "kdeglobals", ("Group",), "Key"
-    ) == [
-        "my-writer",
-        "--config",
-        "kdeglobals",
-        "--section",
-        "Group",
-        "--entry",
-        "Key",
     ]
 
 

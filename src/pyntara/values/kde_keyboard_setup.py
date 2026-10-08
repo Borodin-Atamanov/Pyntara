@@ -179,12 +179,6 @@ SHORTCUT_MODIFIER_BITS: dict[str, int] = {
 # with the hotkey payload as its argument.
 APPLY_HOTKEYS_SCRIPT_FILE_NAME: str = "apply_hotkeys.py"
 
-# Prefix that runs a command as the desktop user, so the task reaches the
-# session files the user owns; {username} is the account of the machine.
-RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
-
-CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
-
 # Command that creates the directories of the user configuration; {path} is
 # filled in at the call site.
 MKDIR_COMMAND: tuple[str, ...] = ("mkdir", "-p", "{path}")
@@ -231,8 +225,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "LAYOUT_SWITCHER_COMPONENT_FRIENDLY",
     "SHORTCUT_MODIFIER_BITS",
     "APPLY_HOTKEYS_SCRIPT_FILE_NAME",
-    "RUNUSER_COMMAND",
-    "CONFIG_BOOL_TYPE_FLAG",
     "MKDIR_COMMAND",
     "PYTHON_SCRIPT_COMMAND",
 )
