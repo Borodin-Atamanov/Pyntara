@@ -28,6 +28,7 @@ MIGRATED_SECTIONS: tuple[tuple[str, str], ...] = (
     ("cli_tools_lite_setup", "cli_tools_lite_setup"),
     ("dnsproxy_setup", "dnsproxy_setup"),
     ("ffmpeg_setup", "ffmpeg_setup"),
+    ("firefox_setup", "firefox_setup"),
     ("hostname", "hostname"),
     ("imagemagick_setup", "imagemagick_setup"),
     ("kde_keyboard_setup", "kde_keyboard_setup"),

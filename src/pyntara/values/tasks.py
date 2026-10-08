@@ -234,6 +234,14 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop",),
     ),
     TaskSpec(
+        "firefox_setup",
+        "Install Firefox from the official Mozilla apt repository in place of "
+        "the snap, apply the browser defaults of the firefox-default-settings "
+        "repository and set Firefox as the default browser.",
+        (),
+        ("desktop",),
+    ),
+    TaskSpec(
         "playwright_setup",
         "Install the playwright-cli browser control tool for the desktop user.",
         ("add_extra_repos", "chrome_setup"),

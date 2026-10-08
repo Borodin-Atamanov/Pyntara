@@ -56,6 +56,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "dnsproxy_setup",
     "engine",
     "ffmpeg_setup",
+    "firefox_setup",
     "hostname",
     "i2pd_service_setup",
     "imagemagick_setup",
