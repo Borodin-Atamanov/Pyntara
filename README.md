@@ -126,7 +126,8 @@ Guides — how to work with the project:
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  
 [docs/guides/project-rules.md](docs/guides/project-rules.md) — code conventions: output policy, datetime format, engineering standards  
 [docs/guides/developer-guide.md](docs/guides/developer-guide.md) — quick start, running the test suite (uv run pytest), linting, type checking, CI, commit workflow, task best practices  
-[docs/guides/planning-procedure.md](docs/guides/planning-procedure.md) — mandatory planning procedure for tasks that require a plan
+[docs/guides/planning-procedure.md](docs/guides/planning-procedure.md) — mandatory planning procedure for tasks that require a plan  
+[docs/guides/liveusb-image-creation.md](docs/guides/liveusb-image-creation.md) — baking a configured machine into a Ventoy live USB image that also installs to disk, and the traps of that path
 
 Architecture decisions:
 
