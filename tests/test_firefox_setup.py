@@ -49,7 +49,7 @@ def _point_the_values_at_the_temporary_tree(
     """Give every test its own writable tree for the section values."""
 
     monkeypatch.setattr(values, "SETTINGS_DIR", tmp_path / "repo")
-    monkeypatch.setattr(values, "SYSTEM_ROOT", tmp_path / "root")
+    monkeypatch.setattr(common_values, "SYSTEM_ROOT", tmp_path / "root")
     monkeypatch.setattr(
         values,
         "APT_SOURCE_PATH",
@@ -86,7 +86,7 @@ def _write_repository() -> None:
 
     root = values.SETTINGS_DIR
     (root / ".git").mkdir(parents=True, exist_ok=True)
-    system = root / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
+    system = root / common_values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
     files = {
         "usr/lib/firefox/distribution/policies.json": POLICY_CONTENT,
         "usr/lib/firefox/defaults/pref/autoconfig.js": AUTOCONFIG_CONTENT,
@@ -139,6 +139,7 @@ def _patch_run(monkeypatch: pytest.MonkeyPatch, fake_run: object) -> None:
     monkeypatch.setattr("pyntara.utils.run_command", fake_run)
     monkeypatch.setattr("pyntara.kconfig.run_command", fake_run)
     monkeypatch.setattr("pyntara.plasma_panel.run_command", fake_run)
+    monkeypatch.setattr("pyntara.settings_repo.run_command", fake_run)
 
 
 def _is_curl(command: list[str]) -> bool:
@@ -331,7 +332,7 @@ def test_deploys_the_system_tree(
         "usr/lib/firefox/defaults/pref/autoconfig.js": AUTOCONFIG_CONTENT,
         "usr/lib/firefox/mozilla.cfg": DEFAULTS_CONTENT,
     }.items():
-        assert (values.SYSTEM_ROOT / relative).read_bytes() == data
+        assert (common_values.SYSTEM_ROOT / relative).read_bytes() == data
 
 
 def test_default_browser_is_written_with_the_kconfig_writer(
@@ -364,7 +365,7 @@ def test_force_mode_rewrites_the_tree(
     _write_repository()
     _fake_run(monkeypatch)
     firefox_setup.task(_ctx(tmp_path))
-    target = values.SYSTEM_ROOT / "usr/lib/firefox/mozilla.cfg"
+    target = common_values.SYSTEM_ROOT / "usr/lib/firefox/mozilla.cfg"
     target.write_bytes(b"changed\n")
     forced = firefox_setup.task(_ctx(tmp_path, force=True))
     assert target.read_bytes() == DEFAULTS_CONTENT

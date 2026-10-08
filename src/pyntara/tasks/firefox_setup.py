@@ -30,7 +30,7 @@ import tempfile
 from pathlib import Path
 from string import Template
 
-from pyntara import kconfig, plasma_panel
+from pyntara import kconfig, plasma_panel, settings_repo
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -185,135 +185,6 @@ def _ensure_firefox_installed(
     return True, None
 
 
-def _sync_settings_repo(*, timeout: float) -> tuple[bool, str | None]:
-    """Clone or update the defaults repository; (changed, error).
-
-    The clone, the fetch and the two revision queries come from the values as
-    command templates, so the flags of the version control tool are values and
-    not code.
-    """
-
-    placeholders = {
-        "url": values.SETTINGS_REPO_URL,
-        "ref": values.SETTINGS_REPO_REF,
-        "dir": str(values.SETTINGS_DIR),
-    }
-    try:
-        if not (values.SETTINGS_DIR / ".git").is_dir():
-            values.SETTINGS_DIR.parent.mkdir(parents=True, exist_ok=True)
-            run_command(
-                substituted_command(values.SETTINGS_CLONE_COMMAND, placeholders),
-                timeout=timeout,
-            )
-            return True, None
-        run_command(
-            substituted_command(values.SETTINGS_FETCH_COMMAND, placeholders),
-            timeout=timeout,
-        )
-        head = run_command(
-            substituted_command(
-                values.SETTINGS_REVISION_COMMAND,
-                {**placeholders, "revision": "HEAD"},
-            ),
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-        fetched = run_command(
-            substituted_command(
-                values.SETTINGS_REVISION_COMMAND,
-                {**placeholders, "revision": "FETCH_HEAD"},
-            ),
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-        if (
-            head.returncode == 0
-            and fetched.returncode == 0
-            and head.stdout.strip() == fetched.stdout.strip()
-        ):
-            return False, None
-        run_command(
-            substituted_command(
-                values.SETTINGS_RESET_COMMAND,
-                {**placeholders, "revision": "FETCH_HEAD"},
-            ),
-            timeout=timeout,
-        )
-        return True, None
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
-        return False, f"cannot update the defaults repository: {exc}"
-
-
-def _deploy_tree(
-    source_root: Path,
-    target_root: Path,
-    *,
-    force: bool,
-    skip_relative_paths: tuple[str, ...] = (),
-    owner_ids: tuple[int, int] | None = None,
-) -> tuple[bool, list[str]]:
-    """Copy one tree under another path; (changed, warnings).
-
-    Every file lands under target_root with its relative path preserved,
-    carrying the mode of every deployed file, and is written only when its bytes
-    differ (or in force mode). A relative path that equals a skipped path or
-    stands below it is left out. The owner pair is applied to every written file
-    when it is given. A per-file failure is a warning, never a fatal error.
-    """
-
-    skipped = [Path(name) for name in skip_relative_paths]
-    changed = False
-    warnings: list[str] = []
-    for path in sorted(source_root.rglob("*")):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(source_root)
-        if any(relative == name or name in relative.parents for name in skipped):
-            continue
-        target = target_root / relative
-        try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if (
-                not force
-                and target.is_file()
-                and target.read_bytes() == path.read_bytes()
-            ):
-                continue
-            target.write_bytes(path.read_bytes())
-            target.chmod(common_values.LAUNCHER_FILE_MODE)
-            if owner_ids is not None:
-                apply_owner(target, owner_ids[0], owner_ids[1])
-            changed = True
-        except OSError as exc:
-            warnings.append(f"cannot deploy {relative}: {exc}")
-    return changed, warnings
-
-
-def _deploy_system_tree(
-    *,
-    force: bool,
-    owner_uid: int,
-    owner_gid: int,
-) -> tuple[bool, list[str]]:
-    """Deploy the repository system/ tree under SYSTEM_ROOT; (changed, warnings).
-
-    The files are root-owned, copied only when the target differs (or in force
-    mode); a repository without that tree is a note.
-    """
-
-    source_root = values.SETTINGS_DIR / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH
-    if not source_root.is_dir():
-        return False, ["the defaults repository carries no system/ tree"]
-    return _deploy_tree(
-        source_root,
-        values.SYSTEM_ROOT,
-        force=force,
-        owner_ids=(owner_uid, owner_gid),
-    )
-
-
 def _browser_is_running(timeout: float) -> bool:
     """True when a Firefox main process is running."""
 
@@ -431,19 +302,25 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     _log("updating the Firefox defaults repository")
-    sync_changed, error = _sync_settings_repo(timeout=timeout)
+    sync_changed, error = settings_repo.sync_repository(
+        url=values.SETTINGS_REPO_URL,
+        directory=values.SETTINGS_DIR,
+        timeout=timeout,
+    )
     if error:
         warnings.append(error)
     elif sync_changed:
         messages.append("updated the Firefox defaults repository")
         changed = True
 
-    tree_changed, tree_warnings = _deploy_system_tree(
-        force=force, owner_uid=owner_uid, owner_gid=owner_gid
+    tree_changed, tree_warnings = settings_repo.deploy_system_tree(
+        values.SETTINGS_DIR, force=force, owner_uid=owner_uid, owner_gid=owner_gid
     )
     warnings.extend(tree_warnings)
     if tree_changed:
-        messages.append(f"deployed Firefox defaults to {values.SYSTEM_ROOT}")
+        messages.append(
+            f"deployed Firefox defaults to {common_values.SYSTEM_ROOT}"
+        )
         changed = True
 
     _log("setting Firefox as the default browser")

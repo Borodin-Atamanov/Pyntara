@@ -16,26 +16,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-# Repository of browser defaults, cloned into SETTINGS_DIR, and the branch the
-# task follows.
+# Repository of browser defaults, cloned into SETTINGS_DIR; the branch it is
+# brought to is the shared SETTINGS_REPO_REF.
 SETTINGS_REPO_URL: str = (
     "https://github.com/Borodin-Atamanov/firefox-default-settings.git"
 )
-SETTINGS_REPO_REF: str = "main"
 
 # Root cache directory that holds the clone of the defaults repository.
 SETTINGS_DIR: Path = Path("/var/cache/pyntara/firefox-settings")
 
-# Root the system/ tree of the defaults repository is deployed under, with the
-# relative paths preserved.
-SYSTEM_ROOT: Path = Path("/")
-
-# Directory inside the defaults repository whose tree is deployed under
-# SYSTEM_ROOT. It carries the machine policy and the AutoConfig entry point with
-# the defaults file next to the browser.
-SETTINGS_SYSTEM_TREE_RELATIVE_PATH: str = "system"
-
-# Paths of the defaults repository that are never applied to the machine.
+# The shared SETTINGS_SYSTEM_TREE_RELATIVE_PATH names the tree of the defaults
+# repository that is deployed under the shared SYSTEM_ROOT. It carries the
+# machine policy and the AutoConfig entry point with the defaults file next to
+# the browser. The paths below are never applied to the machine.
 # The official Mozilla apt repository: the armored signing key, the deb822
 # source that verifies against it, and the apt preferences file that keeps the
 # Ubuntu transitional package from winning the install. The key is already
@@ -77,44 +70,6 @@ APT_INSTALL_COMMAND: tuple[str, ...] = (
 SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "--terminate", "{snap}")
 SNAP_LIST_COMMAND: tuple[str, ...] = ("snap", "list", "{snap}")
 
-# Commands that clone, update and compare the defaults repository; {url}, {ref}
-# and {dir} are the repository, the configured ref and the clone directory.
-SETTINGS_CLONE_COMMAND: tuple[str, ...] = (
-    "git",
-    "clone",
-    "--quiet",
-    "--depth",
-    "1",
-    "--branch",
-    "{ref}",
-    "{url}",
-    "{dir}",
-)
-SETTINGS_FETCH_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "fetch",
-    "--quiet",
-    "origin",
-    "{ref}",
-)
-SETTINGS_REVISION_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "rev-parse",
-    "{revision}",
-)
-SETTINGS_RESET_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "reset",
-    "--hard",
-    "{revision}",
-)
-
 # The packaged desktop entry of the browser, the id the default-browser setting
 # and the panel launcher point at, and the command that makes the browser the
 # default of the desktop user.
@@ -139,10 +94,7 @@ DEFAULT_BROWSER_MIME_KEYS: tuple[str, ...] = (
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "SETTINGS_REPO_URL",
-    "SETTINGS_REPO_REF",
     "SETTINGS_DIR",
-    "SYSTEM_ROOT",
-    "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
     "MOZILLA_KEY_URL",
     "KEYRING_PATH",
     "KEYRING_TEMP_DIR_PREFIX",
@@ -157,10 +109,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "APT_INSTALL_COMMAND",
     "SNAP_REMOVE_COMMAND",
     "SNAP_LIST_COMMAND",
-    "SETTINGS_CLONE_COMMAND",
-    "SETTINGS_FETCH_COMMAND",
-    "SETTINGS_REVISION_COMMAND",
-    "SETTINGS_RESET_COMMAND",
     "DESKTOP_FILE_NAME",
     "PANEL_LAUNCHER_ID",
     "MIMEAPPS_FILE_NAME",

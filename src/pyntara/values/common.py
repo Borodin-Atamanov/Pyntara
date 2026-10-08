@@ -140,6 +140,52 @@ CONFIG_BOOL_TYPE_FLAG: tuple[str, ...] = ("--type", "bool")
 # environment itself and declare their own value, which is a decision.
 RUNUSER_COMMAND: tuple[str, ...] = ("runuser", "-u", "{username}", "--")
 
+# The browser defaults repositories of chrome_setup and firefox_setup are
+# cloned, updated and deployed the same way, so the branch, the version control
+# commands, the tree inside the repository that is deployed under the system
+# root and the system root itself are written once here; the repository url and
+# the clone directory differ per section and stay in its own module. {url}, {ref}
+# and {dir} are the repository, the branch and the clone directory, and
+# {revision} is the commit a query or a reset names.
+SETTINGS_REPO_REF: str = "main"
+SETTINGS_SYSTEM_TREE_RELATIVE_PATH: str = "system"
+SYSTEM_ROOT: Path = Path("/")
+SETTINGS_CLONE_COMMAND: tuple[str, ...] = (
+    "git",
+    "clone",
+    "--quiet",
+    "--depth",
+    "1",
+    "--branch",
+    "{ref}",
+    "{url}",
+    "{dir}",
+)
+SETTINGS_FETCH_COMMAND: tuple[str, ...] = (
+    "git",
+    "-C",
+    "{dir}",
+    "fetch",
+    "--quiet",
+    "origin",
+    "{ref}",
+)
+SETTINGS_REVISION_COMMAND: tuple[str, ...] = (
+    "git",
+    "-C",
+    "{dir}",
+    "rev-parse",
+    "{revision}",
+)
+SETTINGS_RESET_COMMAND: tuple[str, ...] = (
+    "git",
+    "-C",
+    "{dir}",
+    "reset",
+    "--hard",
+    "{revision}",
+)
+
 # The names the tasks read. The list lives next to the values it names and is
 # read by every task that uses this module.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -171,4 +217,11 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "CONFIG_KEY_FLAG",
     "CONFIG_BOOL_TYPE_FLAG",
     "RUNUSER_COMMAND",
+    "SETTINGS_REPO_REF",
+    "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
+    "SYSTEM_ROOT",
+    "SETTINGS_CLONE_COMMAND",
+    "SETTINGS_FETCH_COMMAND",
+    "SETTINGS_REVISION_COMMAND",
+    "SETTINGS_RESET_COMMAND",
 )

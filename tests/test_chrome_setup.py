@@ -17,7 +17,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import make_context
 
-from pyntara import kconfig, plasma_panel, task_catalog
+from pyntara import kconfig, plasma_panel, settings_repo, task_catalog
 from pyntara.context import Context
 from pyntara.tasks import chrome_setup
 from pyntara.values import chrome_setup as values
@@ -43,6 +43,7 @@ def _kconfig_runs_through_the_recorded_run_command(
 
     monkeypatch.setattr(kconfig, "run_command", forward)
     monkeypatch.setattr(plasma_panel, "run_command", forward)
+    monkeypatch.setattr(settings_repo, "run_command", forward)
 
 # The real catalog from the values package; the mode-membership and
 # config tests use it so they cover the actual task set.
@@ -174,7 +175,7 @@ def _point_the_values_at_the_temporary_tree(
 
     monkeypatch.setattr(engine_values, "SYSTEMD_UNIT_DIR", tmp_path / "systemd")
     monkeypatch.setattr(values, "SETTINGS_DIR", tmp_path / "repo")
-    monkeypatch.setattr(values, "SYSTEM_ROOT", tmp_path / "root")
+    monkeypatch.setattr(common_values, "SYSTEM_ROOT", tmp_path / "root")
     monkeypatch.setattr(
         values,
         "PROFILE_MIRROR_PATH",
@@ -223,7 +224,7 @@ def _write_repo() -> None:
         encoding="utf-8",
     )
     for rel, data in SYSTEM_FILES.items():
-        path = settings_dir / values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH / rel
+        path = settings_dir / common_values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
     for rel, data in {**PROFILE_ROOT_FILES, **BOOKKEEPING_FILES}.items():
@@ -875,7 +876,7 @@ def test_full_flow_applies_everything(
         "google-chrome-stable",
     ] in calls
     policy = (
-        values.SYSTEM_ROOT
+        common_values.SYSTEM_ROOT
         / "etc"
         / "opt"
         / "chrome"
@@ -888,7 +889,7 @@ def test_full_flow_applies_everything(
         == SYSTEM_FILES["etc/opt/chrome/policies/managed/chrome.json"]
     )
     extension = (
-        values.SYSTEM_ROOT
+        common_values.SYSTEM_ROOT
         / "opt"
         / "google"
         / "chrome"
@@ -1191,12 +1192,12 @@ def test_repository_bookkeeping_and_system_tree_stay_out_of_the_profile(
     for relative in (
         *BOOKKEEPING_FILES,
         ".git",
-        values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH,
+        common_values.SETTINGS_SYSTEM_TREE_RELATIVE_PATH,
     ):
         assert not (profile_dir / relative).exists(), relative
     # The system tree reached the configured root instead.
     system_file = next(iter(SYSTEM_FILES))
-    assert (values.SYSTEM_ROOT / system_file).is_file()
+    assert (common_values.SYSTEM_ROOT / system_file).is_file()
 
 
 def test_profile_left_untouched_when_chrome_running(
@@ -1326,7 +1327,9 @@ def test_sync_clones_missing_repository(
     assert not values.SETTINGS_DIR.exists()
     _fake_run_factory(monkeypatch, clone_creates_dir=True)
 
-    changed, error = chrome_setup._sync_settings_repo(timeout=10)
+    changed, error = settings_repo.sync_repository(
+        url=values.SETTINGS_REPO_URL, directory=values.SETTINGS_DIR, timeout=10
+    )
 
     assert changed
     assert error is None
@@ -1339,7 +1342,9 @@ def test_sync_updates_when_remote_advanced(
     _write_repo()
     calls = _fake_run_factory(monkeypatch, git_head="a" * 40, git_fetch="b" * 40)
 
-    changed, error = chrome_setup._sync_settings_repo(timeout=10)
+    changed, error = settings_repo.sync_repository(
+        url=values.SETTINGS_REPO_URL, directory=values.SETTINGS_DIR, timeout=10
+    )
 
     assert changed
     assert error is None
@@ -1352,7 +1357,9 @@ def test_sync_leaves_current_repository_alone(
     _write_repo()
     calls = _fake_run_factory(monkeypatch)
 
-    changed, error = chrome_setup._sync_settings_repo(timeout=10)
+    changed, error = settings_repo.sync_repository(
+        url=values.SETTINGS_REPO_URL, directory=values.SETTINGS_DIR, timeout=10
+    )
 
     assert not changed
     assert error is None

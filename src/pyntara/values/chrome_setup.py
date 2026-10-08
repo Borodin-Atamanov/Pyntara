@@ -18,19 +18,14 @@ from pathlib import Path
 
 from pyntara.values import common as common_values
 
-# Repository of browser settings, cloned into SETTINGS_DIR, and the branch the
-# task follows.
+# Repository of browser settings, cloned into SETTINGS_DIR; the branch it is
+# brought to is the shared SETTINGS_REPO_REF.
 SETTINGS_REPO_URL: str = (
     "https://github.com/Borodin-Atamanov/chromium-default-settings.git"
 )
-SETTINGS_REPO_REF: str = "main"
 
 # Root cache directory that holds the clone of the settings repository.
 SETTINGS_DIR: Path = Path("/var/cache/pyntara/chromium-settings")
-
-# Root the system/ tree of the settings repository is deployed under, with the
-# relative paths preserved.
-SYSTEM_ROOT: Path = Path("/")
 
 # The Google apt repository: the deb822 source file and the keyring that
 # verifies it, downloaded from GOOGLE_KEY_URL.
@@ -59,10 +54,6 @@ PROCESS_NAME: str = "chrome"
 # Launcher id pinned to the panel; it resolves to the CDP desktop override in
 # the XDG applications directories.
 PANEL_LAUNCHER_ID: str = "applications:google-chrome.desktop"
-
-# Directory inside the settings repository whose tree is deployed under
-# SYSTEM_ROOT with the relative paths preserved.
-SETTINGS_SYSTEM_TREE_RELATIVE_PATH: str = "system"
 
 # Paths of the settings repository that the task never applies to the machine:
 # the clone metadata, the repository bookkeeping files and the git hooks. Every
@@ -139,44 +130,6 @@ KEYRING_DEARMOR_COMMAND: tuple[str, ...] = (
     "{armored}",
 )
 
-# Commands that clone, update and compare the settings repository; {url}, {ref}
-# and {dir} are the repository, the configured ref and the clone directory.
-SETTINGS_CLONE_COMMAND: tuple[str, ...] = (
-    "git",
-    "clone",
-    "--quiet",
-    "--depth",
-    "1",
-    "--branch",
-    "{ref}",
-    "{url}",
-    "{dir}",
-)
-SETTINGS_FETCH_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "fetch",
-    "--quiet",
-    "origin",
-    "{ref}",
-)
-SETTINGS_REVISION_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "rev-parse",
-    "{revision}",
-)
-SETTINGS_RESET_COMMAND: tuple[str, ...] = (
-    "git",
-    "-C",
-    "{dir}",
-    "reset",
-    "--hard",
-    "{revision}",
-)
-
 # Command that reports the mount point that contains a path, used to confirm
 # the profile mirror; {path} is the path to inspect. Only the target is read:
 # a bind mount of a directory that lies on a btrfs subvolume reports its
@@ -244,9 +197,7 @@ CDP_ADDRESS: str = "127.0.0.1"
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "SETTINGS_REPO_URL",
-    "SETTINGS_REPO_REF",
     "SETTINGS_DIR",
-    "SYSTEM_ROOT",
     "APT_SOURCE_PATH",
     "KEYRING_PATH",
     "GOOGLE_KEY_URL",
@@ -256,7 +207,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_NAME",
     "PROCESS_NAME",
     "PANEL_LAUNCHER_ID",
-    "SETTINGS_SYSTEM_TREE_RELATIVE_PATH",
     "SETTINGS_REPO_BOOKKEEPING_PATHS",
     "PREFERENCES_RELATIVE_PATH",
     "PROFILE_DIR_RELATIVE_PATH",
@@ -267,10 +217,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "EXEC_PREFIX",
     "LAUNCH_FLAGS",
     "KEYRING_DEARMOR_COMMAND",
-    "SETTINGS_CLONE_COMMAND",
-    "SETTINGS_FETCH_COMMAND",
-    "SETTINGS_REVISION_COMMAND",
-    "SETTINGS_RESET_COMMAND",
     "MOUNT_CHECK_COMMAND",
     "MOUNT_RELOAD_COMMAND",
     "MOUNT_ENABLE_COMMAND",
