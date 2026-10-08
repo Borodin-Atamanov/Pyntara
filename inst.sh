@@ -49,6 +49,12 @@ fi
 LOG_TIMESTAMP_FORMAT="%Y-%m-%d-%H-%M-%S"
 LOG_FILE="${PYNTARA_LOG_FILE:-$LOG_DIR/install-$(date +"$LOG_TIMESTAMP_FORMAT").log}"
 
+# The engine owns the run log: it opens this path itself and copies its own
+# output and the output of every command it starts into it, so this shell does
+# not tee the engine and every engine stream reaches the file once. The path
+# travels in the environment, resolved here to the one file the whole run uses.
+export PYNTARA_LOG_FILE="$LOG_FILE"
+
 # Journal identifier for own installer messages, fixed by the bootstrap
 # contract (bootstrap contract, Logging). An empty value disables journal
 # forwarding, matching the engine semantics in logger.py; only an unset
@@ -111,15 +117,29 @@ run_logged() {
 }
 fi
 
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f run_untied &>/dev/null; then
+run_untied() {
+    # Run a command that owns its own output and writes its own log file, so
+    # this shell must not tee it: a second copy of the same stream would reach
+    # the file twice. The exit code is returned unchanged.
+    "$@"
+}
+fi
+
 # Implementation: phase 1.4 (timing)
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
-if ! declare -f run_timed &>/dev/null; then
-run_timed() {
-    # Bootstrap contract, Verbose execution and timing: run a command, time it, log duration and exit code.
+if ! declare -f run_timed_through &>/dev/null; then
+run_timed_through() {
+    # Time a command through one runner and log its duration and exit code.
+    # The runner is the first argument, so the teeing timing and the untied
+    # timing share one body. The if guard captures the exit code without
+    # triggering errexit.
+    local runner="$1"
+    shift
     local start rc elapsed
     start="$(date +%s)"
-    # The if guard captures the command exit code without triggering errexit.
-    if run_stream_to_log "$@"; then
+    if "$runner" "$@"; then
         rc=0
     else
         rc=$?
@@ -127,6 +147,26 @@ run_timed() {
     elapsed="$(($(date +%s) - start))"
     log "Finished in ${elapsed}s with exit code ${rc}: $*"
     return "$rc"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f run_timed &>/dev/null; then
+run_timed() {
+    # Bootstrap contract, Verbose execution and timing: run a command, stream
+    # its output to the terminal and the log file through the shell tee, time it
+    # and log its duration and exit code.
+    run_timed_through run_stream_to_log "$@"
+}
+fi
+
+# Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
+if ! declare -f run_timed_untied &>/dev/null; then
+run_timed_untied() {
+    # Time a command that owns its own output and its own log file, so this
+    # shell does not tee it. The engine uses it, because the engine copies its
+    # own stream and the streams of its children into the run log itself.
+    run_timed_through run_untied "$@"
 }
 fi
 
@@ -260,8 +300,10 @@ install_uv() {
     run_timed curl -LSf --max-time "$CURL_TIMEOUT_SECONDS" --connect-timeout "$CURL_CONNECT_TIMEOUT_SECONDS" --retry "$CURL_RETRIES" --retry-all-errors --retry-delay "$CURL_RETRY_DELAY_SECONDS" --retry-max-time "$CURL_RETRY_MAX_TIME_SECONDS" --retry-connrefused --write-out "\nDownloaded %{size_download} bytes in %{time_total}s at %{speed_download} bytes/s\n" -o "$installer" "$UV_INSTALL_URL"
     log "Running uv installer"
     # The installer runs in a subprocess so its own environment changes never
-    # leak into this shell. UV_CACHE_DIR is set for the child explicitly.
-    env UV_CACHE_DIR="$CACHE_DIR" bash "$installer" 2>&1 | tee -a "$LOG_FILE"
+    # leak into this shell. UV_CACHE_DIR is set for the child explicitly. The
+    # shared tee helper writes the stream to the terminal and the log file, so
+    # the shell keeps one place that tees a command.
+    run_stream_to_log env UV_CACHE_DIR="$CACHE_DIR" bash "$installer"
     # The Astral installer places uv into $HOME/.local/bin, which is not on
     # root's PATH by default, so add it explicitly for later phases. HOME can
     # be unset when the installer runs without a login environment, and the uv
@@ -360,7 +402,10 @@ run_pyntara() {
     fi
     local rc=0
     log "Starting Pyntara from $SOURCE_DIR"
-    if ( cd "$SOURCE_DIR" && run_timed uv run pyntara "$@" ); then
+    # The engine owns the run log: it copies its own output and the output of
+    # every command it starts into the log file itself, so this shell does not
+    # tee the engine. run_timed_untied still logs the duration and the exit code.
+    if ( cd "$SOURCE_DIR" && run_timed_untied uv run pyntara "$@" ); then
         rc=0
     else
         rc=$?

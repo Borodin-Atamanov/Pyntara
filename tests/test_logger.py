@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Iterator
@@ -548,3 +549,67 @@ def test_popen_failure_is_silent(monkeypatch: pytest.MonkeyPatch) -> None:
     _use_identifier("some-identifier")
     logger._send_to_journal("hello")
     assert logger._journal_proc is None
+
+
+def test_run_log_tee_copies_own_and_child_output_into_the_file(
+    tmp_path: Path,
+) -> None:
+    """The run log owner copies the process output and a child into the file.
+
+    configure_run_log redirects the file descriptors of the process it runs
+    in, so the check runs in a fresh interpreter and never touches the
+    streams of the test process. The same bytes go to the terminal of that
+    process, which is the copy this test captures, and to the file, so both
+    copies carry the own line, the child line and the last line exactly once.
+    The file is polled, because the tee finishes after the interpreter that
+    started it exits.
+    """
+
+    log_file = tmp_path / "run.log"
+    script = (
+        "from pyntara import logger\n"
+        f"logger.configure_run_log({str(log_file)!r})\n"
+        "print('own-line-marker', flush=True)\n"
+        "import subprocess\n"
+        "subprocess.run(['echo', 'child-line-marker'], check=True)\n"
+        "print('tail-line-marker', flush=True)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    contents = ""
+    deadline = time.monotonic() + 10.0
+    while time.monotonic() < deadline:
+        contents = log_file.read_text(encoding="utf-8") if log_file.exists() else ""
+        if contents.count("tail-line-marker") == 1:
+            break
+        time.sleep(0.05)
+    assert contents.count("own-line-marker") == 1, contents
+    assert contents.count("child-line-marker") == 1, contents
+    assert contents.count("tail-line-marker") == 1, contents
+    assert "own-line-marker" in result.stdout
+    assert "child-line-marker" in result.stdout
+
+
+def test_configure_run_log_without_a_path_is_a_noop() -> None:
+    # Best effort: without a path the process streams stay as they are, so the
+    # console keeps working and no tee is started.
+    logger._run_log_tee_process = None
+    logger.configure_run_log(None)
+    assert logger._run_log_tee_process is None
+
+
+def test_configure_run_log_without_the_tee_tool_is_a_noop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Best effort: a machine without the tee tool logs to the terminal and the
+    # journal only, and the run never stops.
+    monkeypatch.setattr(logger.shutil, "which", lambda _name: None)
+    logger._run_log_tee_process = None
+    logger.configure_run_log(str(tmp_path / "run.log"))
+    assert logger._run_log_tee_process is None

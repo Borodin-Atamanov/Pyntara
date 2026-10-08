@@ -82,6 +82,11 @@ def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for module in _JOURNAL_CONFIGURING_MODULES:
         monkeypatch.setattr(module, "configure_journal", lambda _identifier: None)
+    # The run also owns the run log through configure_run_log, which redirects
+    # the standard streams of the process into the log file. A test must never
+    # redirect the streams of the test process, so the call is a no-op here; a
+    # test that exercises it runs it in a fresh interpreter.
+    monkeypatch.setattr(pyntara_engine, "configure_run_log", lambda _path: None)
 
 
 @pytest.fixture(autouse=True)

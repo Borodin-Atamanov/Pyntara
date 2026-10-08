@@ -15,6 +15,7 @@ run_command and never passes through here.
 from __future__ import annotations
 
 import inspect
+import os
 import re
 import shutil
 import subprocess
@@ -38,6 +39,10 @@ _journal_proc: subprocess.Popen[str] | None = None
 # configure_journal.
 _journal_identifier: str | None = None
 
+# The process that copies this process output into the run log file; None
+# until configure_run_log starts it.
+_run_log_tee_process: subprocess.Popen[bytes] | None = None
+
 
 def configure_journal(identifier: str | None) -> None:
     """Tell the logger which journal identifier its messages carry.
@@ -56,6 +61,77 @@ def configure_journal(identifier: str | None) -> None:
     global _journal_identifier
     _close_shared_journal()
     _journal_identifier = identifier
+
+
+def configure_run_log(log_file_path: str | None) -> None:
+    """Copy this process output and the output of its children into the log.
+
+    The composition root calls this once, with the path the bootstrap put in
+    the environment, so the engine owns the run log instead of relying on the
+    bootstrap to tee it. The process keeps streaming to the terminal in real
+    time, and the same bytes are appended to the file: one external tee reads
+    the stream this process and every child it starts write, and copies it to
+    the terminal and to the file. Every own line and every line of a command
+    that runs through run_command therefore reaches both, with one writer per
+    stream and no second copy.
+
+    A call with no path, a missing tee tool or a file that cannot be opened
+    leaves the process exactly as it was: the console keeps working and the
+    run never stops, the same best effort the journal uses. The file is opened
+    with the declared mode before the tee starts, so it never exists with a
+    wider mode than declared.
+    """
+
+    global _run_log_tee_process
+    if log_file_path is None or _run_log_tee_process is not None:
+        return
+    tee_executable = shutil.which(engine_values.OUTPUT_TEE_COMMAND[0])
+    if tee_executable is None:
+        return
+    try:
+        os.close(
+            os.open(
+                log_file_path,
+                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                engine_values.RUN_LOG_FILE_MODE,
+            )
+        )
+    except OSError:
+        return
+    try:
+        stdout_fd = os.dup(sys.stdout.fileno())
+        stderr_fd = os.dup(sys.stderr.fileno())
+    except (OSError, ValueError, AttributeError):
+        # A launch whose standard streams carry no file descriptor cannot be
+        # teed; the console keeps working without the file.
+        return
+    read_fd, write_fd = os.pipe()
+    try:
+        _run_log_tee_process = subprocess.Popen(
+            [tee_executable, *engine_values.OUTPUT_TEE_COMMAND[1:], log_file_path],
+            stdin=read_fd,
+            stdout=stdout_fd,
+            stderr=stderr_fd,
+        )
+    except OSError:
+        os.close(read_fd)
+        os.close(write_fd)
+        os.close(stdout_fd)
+        os.close(stderr_fd)
+        _run_log_tee_process = None
+        return
+    # The tee holds its own copies of the standard streams, so this process
+    # keeps only the pipe: every later write to fd 1 and fd 2, its own and a
+    # child's, goes through the tee. The tee never holds a write end of the
+    # pipe, because the opened pipe is closed in the child unless it is a
+    # standard stream, so the tee sees the end of the stream when this process
+    # and its children close fd 1 and fd 2.
+    os.close(read_fd)
+    os.close(stdout_fd)
+    os.close(stderr_fd)
+    os.dup2(write_fd, sys.stdout.fileno())
+    os.dup2(write_fd, sys.stderr.fileno())
+    os.close(write_fd)
 
 
 def _timestamp_format() -> str:

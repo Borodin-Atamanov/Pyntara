@@ -288,6 +288,23 @@ JOURNAL_PRIORITY_COMMAND: tuple[str, ...] = (
     "{priority}",
 )
 
+# A command that copies the stream it reads to the terminal and appends the
+# same bytes to a file, so the engine can own the run log instead of relying on
+# the bootstrap to tee it. The flags are followed by the log path, which the
+# caller appends, so the command holds the flags only.
+OUTPUT_TEE_COMMAND: tuple[str, ...] = ("tee", "-a")
+
+# Mode of the run log file the engine opens before the tee starts. It matches
+# the mode the bootstrap gives the file: the stream carries the output of
+# third-party installers, and one of them prints the credentials of the panel
+# it installs, so no other user of the machine may read the file.
+RUN_LOG_FILE_MODE: int = 0o600
+
+# Name of the environment variable that carries the run log path from the
+# bootstrap to the engine. Only the composition root reads it and hands the
+# path to the logger, so no other module reads the environment.
+RUN_LOG_PATH_ENVIRONMENT_NAME: str = "PYNTARA_LOG_FILE"
+
 # Owner of a file the run creates as root: the uid and the gid the shared
 # ensure_root_owner helper applies to it. The pair belongs to the engine and
 # not to a task, because eight tasks give the same ownership.
@@ -722,6 +739,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GITHUB_RELEASE_DOWNLOAD_URL",
     "HOST_SCOPE_NAME",
     "HUMAN_HOME_PREFIX",
+    "OUTPUT_TEE_COMMAND",
     "HUMAN_UID_MAX",
     "HUMAN_UID_MIN",
     "INTERFACE_ADDRESSES_COMMAND",
@@ -754,6 +772,8 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "REPORT_JSON_INDENT",
     "REPORT_RECORD_KEYS",
     "ROOT_OWNER_GID",
+    "RUN_LOG_FILE_MODE",
+    "RUN_LOG_PATH_ENVIRONMENT_NAME",
     "ROOT_OWNER_UID",
     "SEATED_CLASS_NAME",
     "SEATED_SEAT_NAME",

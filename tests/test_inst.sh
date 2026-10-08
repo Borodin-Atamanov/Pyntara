@@ -501,6 +501,44 @@ inst_run_timed_preserves_failing_exit_code() {
     rm -rf "$tmp"
 }
 
+inst_run_timed_untied_does_not_tee_the_output() {
+    # run_timed_untied times a command and logs its duration and exit code, but
+    # leaves the stream untouched: the command output reaches the terminal and
+    # never the log file, because the caller owns the file. The engine uses it,
+    # because the engine copies its own stream into the run log itself, and a
+    # second tee here would write the same bytes twice.
+    local tmp
+    tmp="$(mktemp -d)"
+    local logfile="$tmp/install.log"
+    local output rc
+    set +e
+    output="$(PYNTARA_LOG_FILE="$logfile" \
+        bash -c 'source "$1"; run_timed_untied sh -c "echo unicorn-marker"' _ "$INSTALLER" 2>&1)"
+    rc=$?
+    set -e
+    if [[ "$rc" -ne 0 ]]; then
+        echo "expected exit code 0, got $rc" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if [[ "$output" != *"unicorn-marker"* ]]; then
+        echo "command output missing from the terminal" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if grep -q "unicorn-marker" "$logfile"; then
+        echo "run_timed_untied must not tee the command output into the log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    if ! grep -qE 'Finished in [0-9]+s with exit code 0:' "$logfile"; then
+        echo "duration line missing from the log file" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
+    rm -rf "$tmp"
+}
+
 inst_apt_install_updates_before_install() {
     # By default the index is refreshed before the install, exactly once.
     local tmp
@@ -1793,6 +1831,7 @@ EOF
         rm -rf "$tmp"
         return 1
     }
+run_test inst_run_timed_untied_does_not_tee_the_output
     assert_contains "$output" "VAULT_SOURCE=default" "default source export" || {
         rm -rf "$tmp"
         return 1

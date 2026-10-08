@@ -25,6 +25,7 @@ from pyntara import task_catalog
 from pyntara.context import Context
 from pyntara.logger import (
     configure_journal,
+    configure_run_log,
     log_event,
     log_result_line,
 )
@@ -539,6 +540,10 @@ def _run_context(mode: str, names: list[str]) -> Context:
 def run() -> None:
     """Run the Pyntara provisioning engine."""
 
+    # The engine owns the run log: it copies its own output and the output of
+    # every command it starts into the file the bootstrap named, so the
+    # bootstrap no longer tees the engine and every stream reaches the log once.
+    configure_run_log(_env(engine_values.RUN_LOG_PATH_ENVIRONMENT_NAME))
     configure_journal(engine_values.JOURNAL_IDENTIFIER)
     desktop_username, desktop_home_dir = get_desktop_username_and_home()
     common_values.DESKTOP_USERNAME = desktop_username
