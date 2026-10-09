@@ -111,6 +111,17 @@ def apt_purge_packages_command(
     ]
 
 
+def apt_clean_command() -> list[str]:
+    """The call that empties the apt download cache.
+
+    It carries no package-lock wait on purpose: apt-get clean touches only the
+    cache directory and takes no lock. It lives with the other apt builders so
+    that no module outside this one spells an apt command.
+    """
+
+    return ["apt-get", "clean"]
+
+
 def install_package_once(
     package: str, timeout: float, *, extra_flags: Sequence[str] = ()
 ) -> tuple[bool, str]:
@@ -270,7 +281,7 @@ def free_package_download_cache(timeout: float) -> str | None:
     """
 
     try:
-        run_command(list(engine_values.APT_CLEAN_COMMAND), timeout=timeout)
+        run_command(apt_clean_command(), timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return f"the package download cache was not freed: {exc}"
     return None

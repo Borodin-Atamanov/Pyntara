@@ -373,11 +373,11 @@ def test_disk_shortage_message_reports_a_filesystem_it_cannot_read(
     assert "cannot read the free space" in capsys.readouterr().out
 
 
-def test_free_package_download_cache_runs_the_declared_command(
+def test_free_package_download_cache_runs_the_shared_clean_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # The cleanup runs the configured argv, so a derivative that cleans
-    # another way edits only the values.
+    # The cleanup takes its argv from the shared factory, so the apt command is
+    # built in one place like every other one.
     calls: list[list[str]] = []
 
     def fake_run(command: list[str], **_kwargs: object) -> _FakeProc:
@@ -387,7 +387,7 @@ def test_free_package_download_cache_runs_the_declared_command(
     monkeypatch.setattr(utils, "run_command", fake_run)
     assert utils.free_package_download_cache(30.0) is None
     assert calls == [["apt-get", "clean"]]
-    monkeypatch.setattr(engine_values, "APT_CLEAN_COMMAND", ("myclean",))
+    monkeypatch.setattr(utils, "apt_clean_command", lambda: ["myclean"])
     assert utils.free_package_download_cache(30.0) is None
     assert calls[-1] == ["myclean"]
 

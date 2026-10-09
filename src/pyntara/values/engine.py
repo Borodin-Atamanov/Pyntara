@@ -617,12 +617,6 @@ APT_PERIODIC_UPDATE_UNITS: tuple[str, ...] = (
     "packagekit.service",
 )
 
-# The apt call that empties the package download cache. A run that economizes
-# space calls it after every task, because apt keeps the packages it downloaded
-# while its own option is unset, and the package of a failed install stays in
-# the cache for good.
-APT_CLEAN_COMMAND: tuple[str, ...] = ("apt-get", "clean")
-
 # The service state queries of the shared helpers: the two systemctl calls and
 # the outputs that count as enabled or running. A derivative that spells a
 # state differently reports it here instead of in the code.
@@ -670,7 +664,6 @@ PORT_KILL_POLL_SECONDS: float = 0.2
 
 # The names the readers read. The list lives next to the values it names.
 READ_VALUE_NAMES: tuple[str, ...] = (
-    "APT_CLEAN_COMMAND",
     "APT_LOCK_TIMEOUT_SECONDS",
     "APT_NONINTERACTIVE_ENVIRONMENT",
     "APT_PERIODIC_UPDATE_UNITS",

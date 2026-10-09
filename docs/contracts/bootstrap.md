@@ -22,7 +22,7 @@ PYNTARA_SKIP_APT_UPDATE (1, true or yes) skips the refresh for test or offline r
 A failed refresh is logged as a warning and the install continues with the existing index.  
 There is no optimistic first attempt and no retry.  
 All apt operations run with DEBIAN_FRONTEND=noninteractive.  
-Every apt call waits for the package lock through apt's own DPkg::Lock::Timeout option, whose bound mirrors APT_LOCK_TIMEOUT_SECONDS of src/pyntara/values/engine.py, so a machine running its own periodic upgrade no longer fails the run on the lock.  
+Every apt call waits for the package lock through apt's own DPkg::Lock::Timeout option, whose bound mirrors APT_LOCK_TIMEOUT_SECONDS of src/pyntara/values/engine.py, so a machine running its own periodic upgrade no longer fails the run on the lock. The apt argv is built only by the shared factories of src/pyntara/utils.py (apt_update_command, apt_install_package_command, apt_purge_packages_command, apt_clean_command), so no caller can drop the option; a guard test refuses an apt executable named outside that module.  
 Before its first apt call the installer and the engine stop the units that schedule that upgrade (apt-daily.timer, apt-daily-upgrade.timer, packagekit.service), mirroring APT_PERIODIC_UPDATE_UNITS of the engine values; the oneshot that may already be upgrading is left running, and the run waits for it through the lock timeout instead of interrupting it.
 
 ## Installed packages (in order)
