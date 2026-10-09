@@ -497,3 +497,35 @@ def log_run_end(
         indent="  ",
         priority=priority,
     )
+
+
+def log_start_banner(version: str, mode: str, task_names: list[str]) -> None:
+    """Show the identity of the run before the first task starts.
+
+    Three blocks, each framed by an empty line: the version of the code, the
+    applied install mode and the tasks that will run in execution order, one
+    task per line, so a person at the target machine reads what is about to
+    happen. The run pauses the declared moment after each block, so every
+    block stays readable before the next one appears. The blocks are status
+    lines and reach the journal; the empty framing lines are console only.
+    """
+
+    pause = engine_values.START_BANNER_PAUSE_SECONDS
+
+    def _pause_after_block() -> None:
+        # A pause of zero means no pause, so a test run never waits and the
+        # value alone decides whether the run stops to be read.
+        if pause > 0:
+            time.sleep(pause)
+
+    _emit_line("", to_journal=False)
+    _emit_line(f"Pyntara {version}")
+    _pause_after_block()
+    _emit_line("", to_journal=False)
+    _emit_line(mode)
+    _pause_after_block()
+    _emit_line("", to_journal=False)
+    for name in task_names:
+        _emit_line(name)
+    _pause_after_block()
+    _emit_line("", to_journal=False)

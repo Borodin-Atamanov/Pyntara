@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from pyntara import logger, task_catalog, task_runner
+from pyntara import __version__, logger, task_catalog, task_runner
 from pyntara.context import Context
 from pyntara.models import TaskResult
 from pyntara.pyntara import (
@@ -50,6 +50,7 @@ def _point_the_run_at_the_test_machine(
 
     monkeypatch.setattr(engine_values, "NOTICE_TIMEOUT", 0)
     monkeypatch.setattr(engine_values, "TASK_START_DELAY_SECONDS", 0)
+    monkeypatch.setattr(engine_values, "START_BANNER_PAUSE_SECONDS", 0)
 
 
 def _default_run_set(mode: str) -> list[str]:
@@ -179,7 +180,7 @@ def test_run_auto_detects_mode_when_unset(monkeypatch: pytest.MonkeyPatch) -> No
     result = runner.invoke(app, [])
     assert result.exit_code == 0  # unimplemented tasks are skipped, not failures
     assert "Install mode not set, using detected default: server" in result.output
-    assert "Install mode: server" in result.output
+    assert "\nserver\n" in result.output
 
 
 def test_run_warns_and_fails_when_the_mode_names_no_mode(
@@ -205,7 +206,7 @@ def test_run_warns_and_fails_when_the_mode_names_no_mode(
         "The declared modes are: minimal, server, desktop, fast_desktop"
         in result.output
     )
-    assert "Install mode: server" in result.output
+    assert "\nserver\n" in result.output
     assert "[warn] run: install mode 'fancy' names no declared mode" in result.output
 
 
@@ -221,7 +222,7 @@ def test_run_applies_a_mode_name_written_with_another_separator(
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert "Install mode 'Fast-Desktop' applied as 'fast_desktop'" in result.output
-    assert "Install mode: fast_desktop" in result.output
+    assert "\nfast_desktop\n" in result.output
 
 
 def test_run_warns_and_fails_when_the_default_vault_is_used(
@@ -465,7 +466,35 @@ def test_run_resolves_selected_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
     # The task module is mocked away so no real dpkg or apt command runs.
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert "Tasks: add_extra_repos cli_tools_lite_setup" in result.output
+    assert "\nadd_extra_repos\ncli_tools_lite_setup\n" in result.output
+
+
+def test_start_banner_shows_version_mode_and_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The run opens with a banner: the version of the code, the applied mode
+    # and the tasks to run one per line, each block followed by the declared
+    # pause, so a person reads the plan before the work starts.
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "server")
+    monkeypatch.setenv("PYNTARA_TASKS", "cli_tools_lite_setup")
+    monkeypatch.setattr(task_runner, "load_task", lambda name: None)
+    monkeypatch.setattr(engine_values, "START_BANNER_PAUSE_SECONDS", 1.5)
+    slept: list[float] = []
+    # The pause of the run lives in the entry point; the pause of the banner
+    # lives in the logger, so both timers are recorded.
+    monkeypatch.setattr(
+        "pyntara.pyntara.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    monkeypatch.setattr(
+        "pyntara.logger.time.sleep", lambda seconds: slept.append(seconds)
+    )
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    assert f"Pyntara {__version__}" in result.output
+    assert "\nserver\n" in result.output
+    assert "\nadd_extra_repos\ncli_tools_lite_setup\n" in result.output
+    assert slept == [1.5, 1.5, 1.5]
 
 
 def test_run_default_run_set_resolves_dependencies(
@@ -482,7 +511,7 @@ def test_run_default_run_set_resolves_dependencies(
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     run_set = _default_run_set("minimal")
-    assert f"Tasks: {' '.join(run_set)}" in result.output
+    assert f"\n{'\n'.join(run_set)}\n" in result.output
     assert run_set.index("nextdns_setup_system_wide") < run_set.index("dnsproxy_setup")
 
 
@@ -672,7 +701,7 @@ def test_run_tasks_match_case_insensitively(
     monkeypatch.setenv("PYNTARA_TASKS", "CLI_TOOLS_LITE_SETUP")
     monkeypatch.setattr(task_runner, "load_task", lambda name: None)
     result = runner.invoke(app, [])
-    assert "Tasks: add_extra_repos cli_tools_lite_setup" in result.output
+    assert "\nadd_extra_repos\ncli_tools_lite_setup\n" in result.output
 
 
 def _captured_force_tasks(

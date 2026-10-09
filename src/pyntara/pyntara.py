@@ -21,13 +21,14 @@ import typer
 from pykeepass import PyKeePass
 from pykeepass.exceptions import CredentialsError
 
-from pyntara import task_catalog
+from pyntara import __version__, task_catalog
 from pyntara.context import Context
 from pyntara.logger import (
     configure_journal,
     configure_run_log,
     log_event,
     log_result_line,
+    log_start_banner,
 )
 from pyntara.task_runner import run_tasks
 from pyntara.utils import (
@@ -567,8 +568,7 @@ def run() -> None:
         for warning in (mode_warning, _default_vault_warning(ctx.vault_source))
         if warning
     ]
-    log_event(f"Install mode: {mode}")
-    log_event(f"Tasks: {' '.join(names)}")
+    log_start_banner(__version__, mode, names)
     if ctx.force_tasks:
         log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
     quiesce_package_updaters(common_values.PACKAGE_STATUS_TIMEOUT_SECONDS)

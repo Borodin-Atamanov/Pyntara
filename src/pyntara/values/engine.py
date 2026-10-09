@@ -346,6 +346,11 @@ PROCESS_CHECK_COMMAND: tuple[str, ...] = common_values.PROCESS_CHECK_COMMAND
 # Seconds the engine pauses after showing a task title before running it.
 TASK_START_DELAY_SECONDS: float = 0.5
 
+# Seconds the engine pauses after each block of the start banner (the version,
+# the applied mode and the task list), so a person at the target machine reads
+# the number of the code, the mode and the plan before the work begins.
+START_BANNER_PAUSE_SECONDS: float = 1.0
+
 # Process names whose presence marks a desktop session in the default install
 # mode detection. A desktop session variable wins over these; the list is
 # checked only when no session variable is set.
@@ -767,6 +772,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SSH_REPORT_PROXY_HOST",
     "SSH_REPORT_PROXY_OPTION_FORMAT",
     "SSH_REPORT_SOCKS_COMMAND_FORMAT",
+    "START_BANNER_PAUSE_SECONDS",
     "SUDO_USER_ENV_NAME",
     "SYSTEMD_ACTIVE_STATE",
     "SYSTEMD_ENABLED_STATES",
