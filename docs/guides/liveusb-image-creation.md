@@ -1,22 +1,42 @@
 # Live USB image creation
 
-Baking a Pyntara-configured machine into a Ventoy live USB image that also offers installation to disk. Walked on 2026-10-07 on Kubuntu 26.04.1.
+Baking a Pyntara-configured machine into a live USB image that also offers installation to disk. Walked on 2026-10-07 on Kubuntu 26.04.1 for the export and the rebuild, and on 2026-10-08 and 2026-10-09 for the installer and the read-only route into a stopped machine.
 
 ## Source
 
 The desktop ISO of the same release: kubuntu-26.04.1-desktop-amd64.iso, hybrid BIOS plus EFI plus GPT, carrying /casper/filesystem.squashfs, /casper/initrd and /casper/vmlinuz.
 
+## Reading a stopped machine
+
+A stopped domain can be read without booting it and nothing in it is written.
+
+The disk of a domain is a chain of qcow2 layers and the ACTIVE layer is the top one, which libvirt lists first in the domain XML; `qemu-img info` prints the order of the chain. Opening a middle layer as if it were the machine gives "can't read superblock". Measured on test002: `test002.pre-tools-removal` -> `test002.pre-slim` -> `test002.qcow2` -> `clean_with_all_installed_dont_write_on_it.qcow2`.
+
+`qemu-nbd --read-only --connect=/dev/nbdN <active layer>` then mounting the partition works, but the process with `--fork` lives only as long as the command that started it: the session cgroup takes it down, the next command meets "I/O error, dev nbdN, sector 0" in `dmesg` and "bad superblock" from mount, and the partition nodes /dev/nbdNpM stay stale between sessions. The mount option `nologreplay` is not supported by the kernel of this host: `btrfs: Unknown parameter 'nologreplay'`.
+
+The stable route has no daemon: `qemu-img convert -O raw -S 4k <active layer> <raw file>`, then `losetup --read-only -P --show <raw file>`, then mount the subvolume. The loop device and the mount live in the kernel, so they survive between commands; a stale node cannot appear. Measured on test002: 60 GiB of virtual size, 11 GiB of raw file.
+
+The root of a machine installed by the project lies in the subvolume @: mount it with `-o ro,subvol=@`. The top level alone shows only the subvolumes @, @home, @points and @swap. Home is a separate subvolume, `-o ro,subvol=@home`. Keep the whole sequence, from the conversion or the connect to the mount, in one command when using nbd.
+
+Trap: the images directory is mode 0711, so a glob written by the user shell does not expand; write the paths out and use sudo.
+
 ## Export
 
-Copy the running machine with rsync as root. Give no -x: /home, /points and /swap are separate btrfs subvolumes and -x skips them silently.
+Copy the machine from the read-only mounts, not from the running system: the machine stays off, the copy is consistent, and nothing on it changes. Mount the root subvolume at one point and the home subvolume at another, then copy the root subvolume into the tree and the home subvolume into `<tree>/home`.
 
-Exclude /proc /sys /dev /run /tmp /mnt /media /cdrom /lost+found /snap /boot/efi /swap/swapfile /var/cache/apt /var/lib/apt/lists /var/lib/snapd/cache /var/log/journal /var/tmp and /points. /points holds the save point and the work copy of btrfs_points_setup, 26 GiB of duplicates on the test machine.
+Use `rsync --archive --hard-links --acls --xattrs --numeric-ids`. Exclude the CONTENTS of these paths, not the paths themselves, so that the image keeps the directories: /proc, /sys, /dev, /run, /tmp, /mnt, /media, /cdrom, /lost+found, /snap, /boot/efi, /var/cache/apt, /var/lib/apt/lists, /var/lib/snapd/cache, /var/log/journal, /var/tmp and /home, which the second pass fills. A system whose image lacks the /proc or /dev directory does not work.
+
+Nothing has to be excluded for /points and /swap: they are separate subvolumes, invisible from the root subvolume, so the 24 GiB and the 8.6 GiB of test002 never enter the tree. Both appear in the tree as empty directories, which the swap and the btrfs tasks expect.
 
 Deleting the snap seed frees nothing: its files are hardlinked into /var/lib/snapd/snaps.
 
+Log and rate: send the rsync output to a log, `--info=name` gives a line per copied file and `--info=stats2` the transfer statistics, and sample the size of the tree every 30 seconds to log a rate, for example `copied 5430858709 bytes, rate 30.8 MiB/s`. Run the export as a transient unit, `systemd-run --unit=<name> --collect --property=StandardOutput=append:<log> -- /bin/bash <script>`, so that a long copy does not depend on the shell that started it, and watch it with `tail -F -n +1 <log>`; a plain `tail -F` shows only the last ten lines.
+
+Verify the copy with the same rsync in dry-run mode: `--dry-run --itemize-changes` must report nothing but the change time of /home, which the second pass makes by definition. Measured on test002 on 2026-10-09: 169597 entries, 5.8 GiB, 79 seconds, dry run clean.
+
 ## Slimming before export
 
-The Export list alone frees little; the packages do. Measured on test002 (Kubuntu 26.04.1, btrfs compress=zstd:15, 3057 packages, 16 GiB used): /swap/swapfile held 8.5 GiB and /var/cache/apt 2.0 GiB, and removing those plus locales except ru and en, /usr/share/doc, libreoffice, texlive, pandoc, calibre, node, java, the build tools, the caches and the logs took the machine to 7.5 GiB. What remains is what makes it work: firmware 735 MiB, kernel modules, the core libraries, the KDE stack, Firefox.
+The Export list alone frees little; the packages do. Measured on test002 (Kubuntu 26.04.1, btrfs compress=zstd:15, 3057 packages, 16 GiB used): /swap/swapfile held 8.5 GiB and /var/cache/apt 2.0 GiB, and removing those plus locales except ru and en, /usr/share/doc, libreoffice, texlive, pandoc, calibre, node, java, the build tools, the caches and the logs took the machine to 7.5 GiB. What remains is what makes it work: firmware 735 MiB, kernel modules, the core libraries, the KDE stack, Firefox. Measured again on 2026-10-09: the root subvolume holds 6.2 GiB and 2375 packages.
 
 Never purge a package a kept one depends on. Measured traps on Kubuntu: kf6-breeze-icon-theme and fonts-noto-core take plasma-workspace, plasma-desktop and kubuntu-desktop with them; cpp-15 does the same through x11-xserver-utils and cpp; libllvm21 takes mesa-vulkan-drivers and mesa-libgallium, hence the graphics. Deleting a file a running configuration depends on breaks the session the same way: emptying /usr/share/wallpapers makes the desktop come up black with no panel, because the Plasma configuration points its wallpaper at /usr/share/wallpapers/Kubuntu; a wallpaper package may be purged, the files the configuration references may not be deleted. Simulate every removal first with apt-get -s purge <packages> and read the Purg list for plasma, kde, kwin, sddm, kubuntu, mesa, llvm.
 
@@ -34,21 +54,27 @@ Keep /etc/ssh host keys, /var/lib/tor with its onion keys, /var/lib/i2pd, /var/l
 
 casper reads /etc/casper.conf from the INITRAMFS, not from the squashfs, and copies its own copy over the live root at the end of the boot. With an empty FLAVOUR it overwrites USERNAME and HOST with the first word of /cdrom/.disk/info, which is kubuntu.
 
-So set USERNAME, USERFULLNAME, HOST and a non-empty FLAVOUR in /etc/casper.conf inside /casper/initrd, and repack the initrd as its uncompressed microcode cpio plus a gzip-compressed main cpio. Autologin then follows on its own: casper appends an [Autologin] section to /etc/sddm.conf.
+So set USERNAME, USERFULLNAME, HOST and a non-empty FLAVOUR in /etc/casper.conf inside /casper/initrd, and repack the initrd as its uncompressed microcode cpio plus a gzip-compressed main cpio. Autologin then follows on its own: casper appends an [Autologin] section to /etc/sddm.conf. Verbatim, the tree also yields the machine-id, and the project keeps the live user i: USERNAME="i", USERFULLNAME="i", HOST="i", FLAVOUR="kubuntu".
 
 ## Installer
 
-A Pyntara machine has no installer; Calamares goes into the tree through chroot.
+The installer is subiquity, the one Ubuntu itself uses, taken as a snap from the channel 26.04/stable and carried inside the image. It partitions, formats, mounts, copies the system and installs the bootloader through curtin; the image carries no partitioning code of its own, because curtin cannot create btrfs subvolumes at all and the target layout it does create is the one the autoinstall describes.
 
-It creates the user with useradd and fails when the user exists, so keep the baked user in the image and delete it on the target before the users job with a shellprocess instance. Removing it from the image instead breaks the live session.
+Calamares was tried first and abandoned: it dies with SIGSEGV in the job thread on the first Python job of its second batch (localecfg), and it skips every remaining non-emergency job after any failure, which leaves a target without a bootloader.
 
-Taking a module out of the show list does not hide its page: a view module left in exec still gets one, as keyboard and users do. Remove it from exec too.
+The tree carries /usr/local/share/pyntara-installer with four files: `run_installer.sh`, the only script of the installer; `subiquity.snap`; `autoinstall.yaml.in`, whose placeholders are the target disk and the size of the root partition, computed by the script from the size of that disk because curtin requires an explicit size and does not take -1; and `install-sources.yaml.in`, the source catalog, whose type is fsimage, so curtin copies the squashfs of the image onto the target instead of installing packages. The tree also carries cloud-init, because the subiquity server runs `cloud-init status --wait` and dies without the program. A desktop entry Install Pyntara system runs `konsole --hold -e sudo /usr/local/share/pyntara-installer/run_installer.sh`, so the window and the text of an error stay open.
 
-Calamares must run as root, which the desktop entry does through sudo. A run that stops leaves the target mounted under /tmp/calamares-root-*, unmount before the next run.
+What the script does: it lists the disks, offers the single candidate or asks for a device path, prints what will be erased and requires the literal answer yes, writes the two files, installs the snap with `--dangerous --classic`, starts the server and runs the installer. Nothing else.
 
-Open failure: Calamares 3.3.14-0ubuntu25.26.04.1 from the archive dies with SIGSEGV in the job thread on the first Python job of the second batch, localecfg, along PythonJob::exec, CalamaresPython::Helper::createCleanNamespace, boost::python, PyDict_New. The Python jobs of the first batch pass. The renderer is innocent, and the logged line "The X11 connection broke" only follows the death.
+The catalog has to sit at /cdrom/casper/install-sources.yaml, the path subiquity reads, and /cdrom is the read-only ISO, so the script mounts a tmpfs over /cdrom/casper and writes the catalog there. The squashfs it names is taken from a separate read-only mount of the live medium under /run/pyntara-iso, because that tmpfs hides the copy of the directory that the ISO itself carries.
 
-Text-mode alternative: curtin, whose sources accept squashfs:// and copy a squashfs image to the target, with subiquity as the interactive text installer above it.
+The autoinstall has to sit at /autoinstall.yaml, one of the discovery paths of subiquity. It names the source id, leaves the shutdown section interactive so that the machine never powers off by itself, and describes the storage: GPT, a 1 MiB bios_grub partition (curtin skips it on UEFI and creates it for BIOS), a 1 GiB EFI partition, and one btrfs partition with the rest of the disk, mounted as root with `compress=zstd:15,noatime,autodefrag`, which curtin also writes into the fstab of the target. Its keyboard section names the layout explicitly: without it the keyboard step of subiquity runs `setupcon --save-only` with whatever model the live session detected, and a model that comes out empty makes setupcon exit 1 without a message, which aborts the installation after curtin has already finished.
+
+The live session asks two things: the question of the script about the disk, and one confirmation of the installer itself, a Continue button in its progress screen; a text client over ssh asks the same confirmation as a typed yes. Nothing else is asked, and the installation needs network access in the target only because curtin refreshes the apt index inside the copy of the system.
+
+Logs: the script writes its own steps to /var/log/pyntara-install.log and keeps the screen output of the installer out of that file, because the installer draws a full screen interface whose escape sequences would fill it. The logs of the installer are /var/log/installer (curtin-install.log, subiquity-server-info.log, subiquity-client-info.log, installer-journal.txt, autoinstall-user-data), both in the live session and in the target. When the installer exits while the target is still mounted, the script copies its own log and, on a failure, /var/log/installer and /var/crash into the target.
+
+Traps of this installer, all met live: the snap installs only with --classic; lsblk reports the zram devices with the type disk, so a disk list must be filtered by name (sd, vd, hd, nvme, mmcblk) or a zram device is offered as a target; the report of a failed installation can come out empty, because the subiquity snap bundles python 3.12 and asks apport about /usr/bin/python3.12 while the image and the machine carry python 3.14, so the user sees only "Loading the report failed" and the files in /var/log/installer are what still says what happened; a client in its own window needs that window focused, otherwise the keys sent to the machine go elsewhere.
 
 ## Rebuild
 
@@ -58,6 +84,10 @@ Update both changed lines of /md5sum.txt. xorriso extracts that file read-only a
 
 zstd at -Xcompression-level 19
 
+Build the squashfs as root: run by an ordinary user, mksquashfs cannot read /var/lib/snapd and silently leaves it out of the image (measured: 1.7 MiB instead of 2.45 GiB). Write it on a normal filesystem and not in /tmp, which is a tmpfs of 7.7 GiB on this host and makes mksquashfs die with a fatal error before the end. Check the exit status of mksquashfs and read the log instead of piping it away: a piped run hides both the error and the status, which is how a truncated image was built twice. Measured on 2026-10-08: a tree of 12 GiB gave 6.7 GiB of squashfs at zstd level 1 and an ISO of 7.4 GiB.
+
 ## Verify
 
 Boot in QEMU. The key exported with the tree logs into the live session, which then names its host, user, groups, sessions and services; only that shows the session equal to the machine.
+
+Checks that have caught real defects: the size and the file count of the squashfs against the tree, the boot record of the rebuilt ISO (El Torito, the hidden EFI image and the GPT), the md5sum lines inside the ISO, the payload in /usr/local/share/pyntara-installer of the live session, and then a full installation in a virtual machine: the fstab of the target, the mount options of its root, the files of the ESP, and a boot of the installed system with its services active. A tree that lost /var/lib/snapd and a tree that lost /proc both looked complete until the image was mounted and its directories were counted.
