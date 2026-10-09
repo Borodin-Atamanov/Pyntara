@@ -34,10 +34,20 @@ SNAP_PATH_NAMES: tuple[Path, ...] = (
     Path("/var/lib/snapd"),
 )
 
+# The flags of the purge that the shared factory of utils.py does not add
+# itself. The Mozilla source registered by firefox_setup offers a firefox
+# candidate without an epoch, so apt replaces the transitional Ubuntu package
+# with the Mozilla build during the purge, which is a downgrade that a plain -y
+# refuses and would fail the whole purge; the flag lets that replacement
+# through and the machine keeps a working browser. The wait for the package
+# lock is not repeated here: the factory owns it.
+APT_PURGE_EXTRA_FLAGS: tuple[str, ...] = ("--allow-downgrades",)
+
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_NAMES",
     "SNAP_PATH_NAMES",
+    "APT_PURGE_EXTRA_FLAGS",
 )

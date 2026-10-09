@@ -46,7 +46,9 @@ def _purge_snap_packages(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            apt_purge_packages_command(values.PACKAGE_NAMES),
+            apt_purge_packages_command(
+                values.PACKAGE_NAMES, values.APT_PURGE_EXTRA_FLAGS
+            ),
             check=False,
             capture=True,
             timeout=timeout,

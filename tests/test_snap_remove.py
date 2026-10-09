@@ -102,6 +102,7 @@ def test_removes_the_snap_packages(monkeypatch: pytest.MonkeyPatch) -> None:
             "--yes",
             "-o",
             "DPkg::Lock::Timeout=600",
+            *values.APT_PURGE_EXTRA_FLAGS,
             *values.PACKAGE_NAMES,
         ]
     ]

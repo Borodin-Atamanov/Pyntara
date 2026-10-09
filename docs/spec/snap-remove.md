@@ -47,11 +47,16 @@ task belongs to the minimal, server and desktop modes and is absent from
 fast_desktop, the quick set.
 
 The task does not depend on firefox_setup by design, so it also runs on a
-machine where that task never ran. On such a fresh machine the transitional
-Ubuntu package firefox has a PreDepends on snapd, so the purge removes that
-package together with the daemon, and the machine is left without a browser;
-this is the documented consequence of running the task without firefox_setup
-first, and the task adds no check for it.
+machine where that task never ran. On such a machine the transitional Ubuntu
+package firefox has a PreDepends on snapd, so the purge acts on that package
+too. The purge runs with --allow-downgrades: when the Mozilla source that
+firefox_setup registers is present, apt has a firefox candidate without an
+epoch and replaces the transitional package with the Mozilla build instead of
+removing it, which is a downgrade that a plain -y refuses and would fail the
+whole purge; the machine then keeps a working browser. When no such candidate
+exists the transitional package goes with the daemon, and the machine is left
+without a browser; this is the documented consequence of running the task
+without firefox_setup first, and the task adds no check for it.
 
 ## Idempotency
 
