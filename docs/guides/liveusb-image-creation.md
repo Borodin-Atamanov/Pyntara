@@ -56,6 +56,20 @@ casper reads /etc/casper.conf from the INITRAMFS, not from the squashfs, and cop
 
 So set USERNAME, USERFULLNAME, HOST and a non-empty FLAVOUR in /etc/casper.conf inside /casper/initrd, and repack the initrd as its uncompressed microcode cpio plus a gzip-compressed main cpio. Autologin then follows on its own: casper appends an [Autologin] section to /etc/sddm.conf. Verbatim, the tree also yields the machine-id, and the project keeps the live user i: USERNAME="i", USERFULLNAME="i", HOST="i", FLAVOUR="kubuntu".
 
+## Preparing the tree
+
+The installer snap and cloud-init have to be installed INTO the tree, which needs a chroot. The traps below were all met live.
+
+A chroot that binds only /proc, /sys and /dev makes dpkg fail with `E: Can not write log (Is /dev/pts mounted?) - posix_openpt (19: No such device)` and the package install aborts. /dev/pts is a mount of its own, so binding /dev does not bring it; mount the devpts instance on `<tree>/dev/pts` too. This cost the same step twice, on 2026-10-08 and again on 2026-10-09.
+
+DNS inside the chroot: the /etc/resolv.conf of the tree is a symlink to /run/systemd/resolve/stub-resolv.conf, which resolves nothing there, and apt-get update then answers nothing. Create that path and bind the resolv.conf of the host onto it; apt-get update returns 0 with that in place.
+
+Directories apt expects and a squeezed tree can have lost: /var/cache/apt/archives (755 root:root), /var/cache/apt/archives/partial and /var/lib/apt/lists/partial (700 _apt:root). Create them with those modes before entering the chroot, because apt works as the _apt user.
+
+After the install, clean the tree again: `apt-get clean` inside the chroot, and move the fetched index out of /var/lib/apt/lists, or the squashfs carries about 200 MiB of index that nothing needs.
+
+Reuse instead of download: the installer snap can be copied out of an earlier tree (22 MiB), and the patched initrd of an earlier build can be reused verbatim whenever the casper identity is unchanged (USERNAME, USERFULLNAME, HOST, FLAVOUR), which saves the unpack and the repack of the cpio pair.
+
 ## Installer
 
 The installer is subiquity, the one Ubuntu itself uses, taken as a snap from the channel 26.04/stable and carried inside the image. It partitions, formats, mounts, copies the system and installs the bootloader through curtin; the image carries no partitioning code of its own, because curtin cannot create btrfs subvolumes at all and the target layout it does create is the one the autoinstall describes.
