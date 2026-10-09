@@ -30,9 +30,22 @@ The client options come from the [rustdesk_setup.options] tables of the config a
 
 Screen capture on a KDE Wayland session goes through the xdg-desktop-portal ScreenCast and works with the client's uinput keyboard and mouse devices; both are created by the root service, so no extra permissions are needed. The client cannot capture the login screen on Wayland. The allow-linux-headless option permits capture on a machine without a physical monitor.
 
-## Recorded screen sharing permission
+## Screen sharing without a dialog
 
-The portal asks the person in front of the machine to allow a capture session, and KDE stores the answer per desktop user in the permission store of the portal: `~/.local/share/flatpak/db/screencast`. The file belongs to the desktop user and not to root, even though the RustDesk service runs as root. Measured on 2026-10-09 on an installed Pyntara machine: the file appeared in the minute the first RustDesk session connected, its size is 425 bytes, and its dump carries the granted word `yes` together with the window restore data of that session (the output name and the window list). A machine whose permission store carries no such entry asks again for every new session, which is a question an unattended machine cannot answer, so the record is what makes remote sessions start without anybody in front of the screen. The file is a plain file of that user, so it can be carried to another machine or into an image, which is the route the live image takes (docs/guides/liveusb-image-creation.md, Updating an image with later changes).
+On a KDE Wayland session the portal asks the person in front of the machine to allow a capture session, and that dialog stands between an unattended machine and a remote operator. The permission is a pair of two files that have to agree, both measured on 2026-10-09:
+
+1. The record of the portal permission store, `~/.local/share/flatpak/db/screencast`, a file of the desktop user (mode 664), not of root, even though the RustDesk service runs as root. Its content is a KDE serialization of the store table with one record per session token, each carrying the granted word `yes` next to the restore data of that session: the window restore list, the output `0x0` and the region. The store itself answers on the session bus as `org.freedesktop.impl.portal.PermissionStore` at `/org/freedesktop/impl/portal/PermissionStore`: `List screencast` prints the tokens the table holds and `Lookup screencast <token>` returns `{'': ['yes']}` with the restore payload.
+2. The token the client itself presents, `wayland-restore-token` in `~/.config/rustdesk/RustDesk_local.toml`.
+
+A record whose token no client presents does nothing: a store file carried alone (its record keyed by 2b437323-e0b4-4db8-a85d-516705e9ab2b) met the dialog on a machine whose client held 36f9d82b-d692-47ea-b7b1-8a2fde64ed7e, while the same content with the store record and the client token both 942e390b-6761-4826-b5c5-d06a7f0a946c let the connection start with no dialog at all.
+
+To prepare a new system that works without confirmation, carry the pair and keep it consistent:
+
+1. On a KDE machine, make one connection and answer the dialog once with the remember mark of the KDE portal (the marks of that dialog are `remember` and `allowRestore`, and the store writes the record when the mark is set).
+2. Take `~/.local/share/flatpak/db/screencast` and `~/.config/rustdesk/RustDesk_local.toml` together, and check that the token of the second file appears in the first (`grep wayland-restore-token` against `List screencast`). The live image carries such a pair and starts without the dialog; the recipe of that transfer is in docs/guides/liveusb-image-creation.md, Updating an image with later changes.
+3. After the transfer the client presents the stored token and the portal finds the granted record, so no question is asked on the new machine.
+
+There is no switch that grants this to every application at once, measured rather than assumed: the table is keyed by token, the store interface works only with a named token (`SetPermission`, `DeletePermission`, `Lookup`, `List`), the permission entries of a token carry the empty application name, and the persist mode of a session (NoPersist, PersistWhileRunning, PersistUntilRevoked) is chosen by the requesting application. An application that asks for a fresh session every time therefore asks again, and only the pair of its own recorded token removes the question.
 
 ## Parameters
 

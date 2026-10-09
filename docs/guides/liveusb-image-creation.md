@@ -108,7 +108,7 @@ Read the machine read-only and diff it against the tree. `guestmount` reaches a 
 
 Ask the machine what changed instead of copying it: `find <mount>/@ -xdev -newermt '<export time>' -type f` and the same over `@home`, with the same exclusions as the export, and diff the configuration directories against the tree (`diff -rq` over `home/i/.config`, `home/i/.local/share`, `etc/xdg`). Copy only the files the diff names, then rebuild the squashfs and the ISO as below.
 
-Measured example, 2026-10-09: a machine installed from an earlier image held the permission that keeps KDE from asking for every new remote screen session in `home/i/.local/share/flatpak/db/screencast`, a file the tree did not have. That file was copied into the tree, and the RustDesk files of that machine were left as they were.
+Measured example, 2026-10-09: a machine installed from an earlier image met the screen sharing question of the KDE portal on every new remote session, and the answer to it is a pair of files rather than one. The portal record lives in `home/i/.local/share/flatpak/db/screencast` and is keyed by the session token, and the client keeps that same token in `home/i/.config/rustdesk/RustDesk_local.toml` as `wayland-restore-token`. Both files were taken from a machine where the dialog had been answered, and the connection to the rebuilt image then started with no dialog (docs/spec/rustdesk-setup.md, Screen sharing without a dialog). A store record whose token no client presents is worth nothing: the first attempt carried the store file alone, with a token the client of that machine did not hold, and the dialog stayed.
 
 ## Rebuild
 
