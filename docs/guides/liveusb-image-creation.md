@@ -149,3 +149,411 @@ Build the squashfs as root: run by an ordinary user, mksquashfs cannot read /var
 Boot in QEMU. The key exported with the tree logs into the live session, which then names its host, user, groups, sessions and services; only that shows the session equal to the machine.
 
 Checks that have caught real defects: the size and the file count of the squashfs against the tree, the boot record of the rebuilt ISO (El Torito, the hidden EFI image and the GPT), the md5sum lines inside the ISO, the payload in /usr/local/share/pyntara-installer of the live session, and then a full installation in a virtual machine: the fstab of the target, the mount options of its root, the files of the ESP, and a boot of the installed system with its services active. Mount the produced squashfs read-only and look inside before it becomes an ISO: /usr/bin/snap, the four files of /usr/local/share/pyntara-installer, the wallpapers the Plasma configuration names, and /proc, /sys and /dev as empty directories. A tree that lost /var/lib/snapd and a tree that lost /proc both looked complete until the image was mounted and its directories were counted.
+
+## Installer payload files
+
+The build copies these files into the tree at /usr/local/share/pyntara-installer, and the apt file into /etc/apt/apt.conf.d, so the image can be rebuilt from this record alone. This is the payload of the build that produced pyntara-live-2026-10-09n.iso on 2026-10-09.
+
+Rebuild commands:
+
+```sh
+cd /home/i/Downloads/pyntara-iso
+sudo cp installer-payload/run_installer.sh installer-payload/autoinstall.yaml.in installer-payload/luks-passphrase root-test002/usr/local/share/pyntara-installer/
+sudo chmod 755 root-test002/usr/local/share/pyntara-installer/run_installer.sh
+sudo cp installer-payload/apt-conf.d/zzzzz-pyntara-no-auto-upgrades root-test002/etc/apt/apt.conf.d/
+sudo mksquashfs root-test002 build/filesystem.squashfs -comp zstd -b 131072 -noappend -processors 8
+newmd5=$(md5sum build/filesystem.squashfs | awk '{print $1}')
+sed "s|^[0-9a-f]\{32\}  \./casper/filesystem\.squashfs\$|$newmd5  ./casper/filesystem.squashfs|" previous-md5sum.txt > build/md5sum.txt
+sudo xorriso -indev previous.iso -outdev pyntara-live.iso -boot_image any replay -map build/filesystem.squashfs /casper/filesystem.squashfs -map build/md5sum.txt /md5sum.txt -commit
+```
+
+run_installer.sh:
+
+```bash
+#!/bin/bash
+# Starts the Ubuntu installer with the configuration carried by this image.
+# The script asks which disk may be erased, writes the two files the installer
+# reads and runs the installer. Partitioning, formatting, mounting with
+# compression, copying the system and the bootloader are done by the installer.
+set -euo pipefail
+
+PAYLOAD_DIR=/usr/local/share/pyntara-installer
+SNAP_FILE="$PAYLOAD_DIR/subiquity.snap"
+CATALOG_TEMPLATE="$PAYLOAD_DIR/install-sources.yaml.in"
+AUTOINSTALL_TEMPLATE="$PAYLOAD_DIR/autoinstall.yaml.in"
+LOCAL_LOG=/var/log/pyntara-install.log
+SERVER_LOG=/var/log/pyntara-install-server.log
+CLIENT_LOG=/var/log/pyntara-install-client.log
+CATALOG=/cdrom/casper/install-sources.yaml
+AUTOINSTALL=/autoinstall.yaml
+IMAGE_MOUNT=/run/pyntara-iso
+BIOS_PARTITION_BYTES=1048576
+EFI_PARTITION_BYTES=1073741824
+BOOT_PARTITION_BYTES=1073741824
+SIZE_SLACK_BYTES=8388608
+
+say() { printf '%s\n' "$*"; }
+
+report_failure() {
+    stop_progress_reporter
+    say ""
+    say "The installer stopped before finishing."
+    say "The log of this step is $LOCAL_LOG"
+}
+trap report_failure ERR
+
+PROGRESS_REPORTER_PID=""
+DETAIL_TAIL_PID=""
+stop_progress_reporter() {
+    [ -n "$PROGRESS_REPORTER_PID" ] && kill "$PROGRESS_REPORTER_PID" 2>/dev/null || true
+    PROGRESS_REPORTER_PID=""
+    [ -n "$DETAIL_TAIL_PID" ] && kill "$DETAIL_TAIL_PID" 2>/dev/null || true
+    DETAIL_TAIL_PID=""
+}
+
+# The unattended installer prints few lines of its own, so a window that shows
+# only those looks dead while the copy runs for minutes. This reporter prints how
+# much has reached the target, often enough that the person in front of the
+# machine sees the work moving.
+report_progress() {
+    local start_time current_time written
+    start_time=$(date +%s)
+    while sleep 15; do
+        current_time=$(date +%s)
+        if mountpoint -q /target; then
+            written=$(du -sm /target 2>/dev/null | cut -f1)
+            say "$((current_time - start_time))s elapsed, $written MiB written to the target"
+        else
+            say "$((current_time - start_time))s elapsed, the installer is working"
+        fi
+    done
+}
+
+exec > >(tee -a "$LOCAL_LOG") 2>&1
+
+if [ "$(id -u)" -ne 0 ]; then
+    say "This must run as root."
+    exit 1
+fi
+
+# One run at a time. A second window would collide with the snap install of the
+# first and report a failure of its own, which reads like a broken installer.
+exec 9> /run/pyntara-installer.lock
+if ! flock -n 9; then
+    say "Another installer is already running; its window shows the progress."
+    exit 1
+fi
+
+say "Pyntara image installer."
+say "The installation itself is done by the Ubuntu installer; this step only"
+say "chooses the target disk and starts it."
+
+LIVE_SOURCE=$(findmnt -no SOURCE /cdrom)
+LIVE_DISK=$(printf '%s' "$LIVE_SOURCE" | sed -E 's|p?[0-9]+$||')
+say ""
+say "This live system runs from $LIVE_SOURCE, so $LIVE_DISK is not a candidate."
+say ""
+# A disk can carry the installation when the kernel reports it as a disk and as
+# writable, which is the same condition the installer itself relies on. Nothing
+# is chosen by name, so flash drives and other removable media are listed too.
+# Devices that cannot hold the system partitions are left out: in this image the
+# memory backed disks are writable but hold only a few hundred megabytes.
+CANDIDATES=$(lsblk -dno NAME,TYPE,RO | awk '$2 == "disk" && $3 == "0" {print "/dev/" $1}' | grep -v -x "$LIVE_DISK" || true)
+
+say "The installer erases the whole disk chosen below. It creates a 1G EFI"
+say "partition, a 1G boot partition and a btrfs partition that holds this"
+say "system, encrypts the system partition with LUKS2, copies the system onto"
+say "it and installs the bootloader. The machine starts without asking for the"
+say "passphrase, which is kept in /boot/pyntara.tmp on the installed system."
+say "Every file on the chosen disk is lost and cannot be recovered."
+say ""
+say "Disks that can carry this system:"
+INSTALLABLE_DISKS=""
+DISK_NUMBER=0
+for candidate_disk in $CANDIDATES; do
+    candidate_root_bytes=$(($(blockdev --getsize64 "$candidate_disk") - BIOS_PARTITION_BYTES - EFI_PARTITION_BYTES - BOOT_PARTITION_BYTES - SIZE_SLACK_BYTES))
+    if [ "$candidate_root_bytes" -le 0 ]; then
+        continue
+    fi
+    INSTALLABLE_DISKS="$INSTALLABLE_DISKS $candidate_disk"
+    DISK_NUMBER=$((DISK_NUMBER + 1))
+    say "  $DISK_NUMBER) $candidate_disk $(lsblk -dno SIZE "$candidate_disk")"
+done
+if [ "$DISK_NUMBER" -eq 0 ]; then
+    say "No disk is large enough to carry this system."
+    exit 1
+fi
+say ""
+while true; do
+    read -r -p "Number of the disk to erase and install onto, or 0 to quit: " DISK_CHOICE
+    if printf '%s' "$DISK_CHOICE" | grep -qE '^[0-9]+$'; then
+        if [ "$DISK_CHOICE" -eq 0 ]; then
+            say "Nothing was changed."
+            exit 1
+        fi
+        TARGET_DISK=$(printf '%s\n' $INSTALLABLE_DISKS | sed -n "${DISK_CHOICE}p")
+        if [ -n "$TARGET_DISK" ]; then
+            break
+        fi
+    fi
+    say "Type one of the numbers listed above, or 0 to quit."
+done
+
+DISK_BYTES=$(blockdev --getsize64 "$TARGET_DISK")
+ROOT_SIZE_BYTES=$((DISK_BYTES - BIOS_PARTITION_BYTES - EFI_PARTITION_BYTES - BOOT_PARTITION_BYTES - SIZE_SLACK_BYTES))
+say "Target disk $TARGET_DISK, encrypted btrfs system partition of $ROOT_SIZE_BYTES bytes."
+
+say ""
+say "Reading the system image from $LIVE_SOURCE."
+mkdir -p "$IMAGE_MOUNT"
+mountpoint -q "$IMAGE_MOUNT" || mount -o ro "$LIVE_SOURCE" "$IMAGE_MOUNT"
+SQUASHFS="$IMAGE_MOUNT/casper/filesystem.squashfs"
+if [ ! -f "$SQUASHFS" ]; then
+    say "The system image $SQUASHFS was not found."
+    exit 1
+fi
+
+mountpoint -q /cdrom/casper || mount -t tmpfs tmpfs /cdrom/casper
+sed -e "s|@SQUASHFS_PATH@|$SQUASHFS|" -e "s|@SQUASHFS_SIZE@|$(stat -c %s "$SQUASHFS")|" \
+    "$CATALOG_TEMPLATE" > "$CATALOG"
+say "System source written to $CATALOG."
+if [ ! -f "$PAYLOAD_DIR/luks-passphrase" ]; then
+    say "The passphrase file $PAYLOAD_DIR/luks-passphrase is missing."
+    exit 1
+fi
+LUKS_PASSPHRASE=$(cat "$PAYLOAD_DIR/luks-passphrase")
+sed -e "s|@TARGET_DISK@|$TARGET_DISK|" -e "s|@ROOT_SIZE_BYTES@|$ROOT_SIZE_BYTES|" \
+    -e "s|@LUKS_PASSPHRASE@|$LUKS_PASSPHRASE|" \
+    "$AUTOINSTALL_TEMPLATE" > "$AUTOINSTALL"
+say "Installation configuration written to $AUTOINSTALL."
+
+systemctl is-active --quiet snapd || systemctl start snapd
+
+if ! snap list subiquity > /dev/null 2>&1; then
+    say "Installing the installer from the image."
+    snap install --dangerous --classic "$SNAP_FILE" 2>&1
+fi
+snap stop --disable subiquity 2>&1 || true
+
+say ""
+say "Starting the installer. It asks nothing and shows its progress until the"
+say "machine powers off. Detailed logs will be in /var/log/installer."
+say ""
+setsid snap run subiquity.subiquity-server > "$SERVER_LOG" 2>&1 &
+for _ in $(seq 1 60); do
+    [ -S /run/subiquity/socket ] && break
+    sleep 1
+done
+if [ ! -S /run/subiquity/socket ]; then
+    say "The installer did not start; see $SERVER_LOG."
+    exit 1
+fi
+
+# Everything the installer prints goes to the console and into its own log at the
+# same time, so no part of the run is lost when the window is closed or read
+# later: the log is the whole record of what the installer said.
+exec > >(tee -a "$CLIENT_LOG") 2>&1
+
+# The installer prints only its own top level steps, so a long step leaves the
+# window empty for minutes and the installation looks stopped. The detailed log
+# of what curtin runs is shown beside those steps, so the window always says
+# what is happening.
+tail -F -n +1 /var/log/installer/curtin-install.log &
+DETAIL_TAIL_PID=$!
+report_progress &
+PROGRESS_REPORTER_PID=$!
+
+# The installer asks on its own input whether the configuration must be applied.
+# This script answers it, so the choice of the disk above stays the only
+# confirmation the user gives.
+INSTALL_EXIT=0
+printf 'yes\n' | snap run subiquity || INSTALL_EXIT=$?
+printf '%s\n' "The installer exited with status $INSTALL_EXIT." >> "$LOCAL_LOG"
+stop_progress_reporter
+
+say ""
+if [ "$INSTALL_EXIT" -ne 0 ]; then
+    say "The installer stopped with status $INSTALL_EXIT."
+    say "The installer logs are /var/log/installer and /var/crash."
+    for log_file in /var/log/installer/subiquity-server-info.log "$SERVER_LOG" "$CLIENT_LOG"; do
+        if [ -s "$log_file" ]; then
+            say ""
+            say "Last lines of $log_file:"
+            tail -n 20 "$log_file"
+            break
+        fi
+    done
+fi
+if mountpoint -q /target; then
+    mkdir -p /target/var/log/installer
+    cp -a "$LOCAL_LOG" /target/var/log/installer/pyntara-install.log 2>/dev/null || true
+    cp -a "$CLIENT_LOG" /target/var/log/installer/pyntara-install-client.log 2>/dev/null || true
+    cp -a "$SERVER_LOG" /target/var/log/installer/pyntara-install-server.log 2>/dev/null || true
+    if [ "$INSTALL_EXIT" -ne 0 ]; then
+        cp -a /var/log/installer/. /target/var/log/installer/ 2>/dev/null || true
+        mkdir -p /target/var/crash
+        cp -a /var/crash/. /target/var/crash/ 2>/dev/null || true
+    fi
+    say "The log of this step, together with the installer logs, is in"
+    say "/var/log/installer of the installed system."
+fi
+say "Log of this step: $LOCAL_LOG"
+say "Output of the installer: $CLIENT_LOG and $SERVER_LOG"
+say "Logs of the installer: /var/log/installer"
+
+```
+
+autoinstall.yaml.in:
+
+```yaml
+version: 1
+# An empty list makes the installer ask nothing at all: it starts the
+# installation on its own and never shows its own destructive action
+# confirmation. The only confirmation of this installer is the numbered
+# choice of the target disk in run_installer.sh.
+interactive-sections: []
+keyboard:
+  layout: us
+source:
+  id: pyntara
+storage:
+  version: 1
+  # The project already installs its own swap file (the swapfile_service_install
+  # task) and zram, so the installer must not add a second swap of its own. A
+  # size of zero tells curtin not to create the swap file it would otherwise
+  # create by default.
+  swap:
+    size: 0
+  config:
+    - id: target-disk
+      type: disk
+      path: @TARGET_DISK@
+      ptable: gpt
+      preserve: false
+      wipe: superblock-recursive
+      grub_device: true
+    - id: bios-boot-partition
+      type: partition
+      device: target-disk
+      number: 1
+      size: 1M
+      flag: bios_grub
+      preserve: false
+      wipe: superblock
+    - id: efi-partition
+      type: partition
+      device: target-disk
+      number: 2
+      size: 1G
+      flag: boot
+      grub_device: true
+      preserve: false
+      wipe: superblock
+    - id: efi-format
+      type: format
+      fstype: fat32
+      volume: efi-partition
+      label: EFI
+      preserve: false
+    - id: boot-partition
+      type: partition
+      device: target-disk
+      number: 3
+      size: 1G
+      preserve: false
+      wipe: superblock
+    - id: boot-format
+      type: format
+      fstype: ext4
+      volume: boot-partition
+      label: boot
+      preserve: false
+    - id: boot-mount
+      type: mount
+      path: /boot
+      device: boot-format
+    - id: root-partition
+      type: partition
+      device: target-disk
+      number: 4
+      size: @ROOT_SIZE_BYTES@
+      preserve: false
+      wipe: superblock
+    - id: root-crypt
+      type: dm_crypt
+      volume: root-partition
+      dm_name: cryptroot
+      key: @LUKS_PASSPHRASE@
+      preserve: false
+    - id: root-format
+      type: format
+      fstype: btrfs
+      volume: root-crypt
+      label: pyntara
+      preserve: false
+    - id: root-mount
+      type: mount
+      path: /
+      device: root-format
+      options: compress=zstd:15,noatime,autodefrag
+    - id: efi-mount
+      type: mount
+      path: /boot/efi
+      device: efi-format
+# Late commands run inside the target after its files are in place, which the
+# script that drives the installer cannot wait for. They drop the medium as a
+# package source, drop the file that kept the installer from running update
+# steps, put back the network sources, and set up the automatic unlock of the
+# encrypted root: the key file is copied onto the unencrypted /boot, the
+# crypttab of the installer is pointed at it, the initramfs is told to carry it
+# and is rebuilt so the machine starts without asking for the passphrase.
+late-commands:
+  - curtin in-target -- rm -f /etc/apt/sources.list.d/cdrom.sources
+  - curtin in-target -- rm -f /etc/apt/apt.conf.d/zzzzz-pyntara-no-auto-upgrades
+  - curtin in-target -- cp -a /usr/local/share/pyntara-installer/apt-sources/. /etc/apt/sources.list.d/
+  - curtin in-target -- cp -a /usr/local/share/pyntara-installer/luks-passphrase /boot/pyntara.tmp
+  - curtin in-target -- sed -i 's| none luks| /boot/pyntara.tmp luks|' /etc/crypttab
+  - curtin in-target -- sh -c 'echo KEYFILE_PATTERN=/boot/pyntara.tmp >> /etc/cryptsetup-initramfs/conf-hook'
+  - curtin in-target -- update-initramfs -u -k all
+
+```
+
+install-sources.yaml.in:
+
+```yaml
+version: 1
+sources:
+  - id: pyntara
+    variant: desktop
+    name:
+      en: Pyntara image
+    description:
+      en: The configured system carried by this image
+    type: fsimage
+    path: @SQUASHFS_PATH@
+    size: @SQUASHFS_SIZE@
+    default: true
+kernel:
+  default: linux-generic
+
+```
+
+zzzzz-pyntara-no-auto-upgrades:
+
+```
+# The image carries an already configured system and this configuration is what
+# the build tests, so the installation must not change it with package updates
+# it never verified. subiquity itself writes a file for its update step inside
+# the target and that step then runs unattended-upgrades there; this file is
+# read after that one and blocks every package from that step, so the step finds
+# nothing to change and returns at once. The installer removes this file from
+# the target when it is done, so the installed system keeps the usual behaviour.
+Unattended-Upgrade::Package-Blacklist { ".*"; };
+
+```
+
+luks-passphrase (27 bytes, the text below with no trailing newline):
+
+```
+sudo -n cp pyntara-live.iso
+```
