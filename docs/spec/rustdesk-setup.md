@@ -30,6 +30,12 @@ The client options come from the [rustdesk_setup.options] tables of the config a
 
 Screen capture on a KDE Wayland session goes through the xdg-desktop-portal ScreenCast and works with the client's uinput keyboard and mouse devices; both are created by the root service, so no extra permissions are needed. The client cannot capture the login screen on Wayland. The allow-linux-headless option permits capture on a machine without a physical monitor.
 
+## Recorded screen sharing permission
+
+The portal asks the person in front of the machine to allow a capture session, and KDE stores the answer per desktop user in the permission store of the portal: `~/.local/share/flatpak/db/screencast`. The file belongs to the desktop user and not to root, even though the RustDesk service runs as root. Measured on 2026-10-09 on an installed Pyntara machine: the file appeared in the minute the first RustDesk session connected, its size is 425 bytes, and its dump carries the granted word `yes` together with the window restore data of that session (the output name and the window list). A machine whose permission store carries no such entry asks again for every new session, which is a question an unattended machine cannot answer, so the record is what makes remote sessions start without anybody in front of the screen. The permission is not encrypted with the machine identity, so the file can be carried to another machine or into an image, which is the route the live image takes (docs/guides/liveusb-image-creation.md, Updating an image with later changes).
+
+Do not carry the configuration of the client itself: `~/.config/rustdesk/RustDesk.toml` holds the encrypted identity and the permanent password, and `RustDesk2.toml` the address of that machine and its trusted devices, so those files describe one machine and not a setting.
+
 ## Parameters
 
 All parameters live in the src/pyntara/values/rustdesk_setup.py. The release query and the package download run with the engine-wide curl settings from the engine values module: curl_query_command is the query call and curl_download_command the download call, curl_download_write_out is the progress text the download prints, curl_timeout_seconds is the per-attempt budget of the metadata query, curl_download_timeout_seconds the one of the download, and curl_retries, curl_retry_delay_seconds, curl_connect_timeout_seconds and curl_retry_max_time_seconds are the retry bounds of both; one shared helper inserts those flags before the URL, so no task spells a curl flag itself.
