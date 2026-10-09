@@ -108,7 +108,7 @@ Read the machine read-only and diff it against the tree. `guestmount` reaches a 
 
 Ask the machine what changed instead of copying it: `find <mount>/@ -xdev -newermt '<export time>' -type f` and the same over `@home`, with the same exclusions as the export, and diff the configuration directories against the tree (`diff -rq` over `home/i/.config`, `home/i/.local/share`, `etc/xdg`). Copy only the files the diff names, then rebuild the squashfs and the ISO as below.
 
-Measured example, 2026-10-09: a machine installed from an earlier image held the permission that keeps KDE from asking for every new remote screen session in `home/i/.local/share/flatpak/db/screencast`, a file the tree did not have, while the RustDesk configuration of that machine differed only in machine data. The two files show the rule: copy the state that records a decision, never the state that carries the identity of the other machine (the encrypted identity, the permanent password and the address of that machine).
+Measured example, 2026-10-09: a machine installed from an earlier image held the permission that keeps KDE from asking for every new remote screen session in `home/i/.local/share/flatpak/db/screencast`, a file the tree did not have. That file was copied into the tree, and the RustDesk files of that machine were left as they were.
 
 ## Rebuild
 
