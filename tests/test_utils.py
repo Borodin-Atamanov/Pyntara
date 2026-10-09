@@ -197,11 +197,13 @@ def test_package_is_installed_needs_the_installed_status(
     assert utils.package_is_installed("mc", 5.0) is False
 
 
-def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The install of one package, the index refresh and the noninteractive
-    # environment are declared values: the helpers run exactly the configured
-    # argv with the configured environment, so a derivative that installs
-    # packages another way edits only the config.
+def test_apt_calls_come_from_the_shared_factories(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Every apt argv is built by a factory of utils, so the wait for the package
+    # lock rides in each of them and a caller adds only its own flags. The bound
+    # is the declared engine value alone, and the noninteractive environment is
+    # a declared value too.
     calls: list[list[str]] = []
     envs: list[dict[str, str]] = []
 
@@ -219,21 +221,40 @@ def test_apt_calls_come_from_the_engine(monkeypatch: pytest.MonkeyPatch) -> None
     assert envs == [{"DEBIAN_FRONTEND": "noninteractive"}]
     utils.refresh_apt_index(30.0)
     assert calls[-1] == ["apt-get", "update", "-o", "DPkg::Lock::Timeout=600"]
+    assert utils.apt_install_package_command("firefox", ("--allow-downgrades",)) == [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        "--allow-downgrades",
+        "firefox",
+    ]
+    assert utils.apt_purge_packages_command(["snapd"]) == [
+        "apt-get",
+        "purge",
+        "--yes",
+        "-o",
+        "DPkg::Lock::Timeout=600",
+        "snapd",
+    ]
 
-    marker = "the install, the refresh and the environment are declared values"
-    monkeypatch.setattr(
-        engine_values, "APT_INSTALL_COMMAND", ("myinstall", "{package}", "--yes")
-    )
-    monkeypatch.setattr(engine_values, "APT_UPDATE_COMMAND", ("myupdate",))
+    monkeypatch.setattr(engine_values, "APT_LOCK_TIMEOUT_SECONDS", 42)
     monkeypatch.setattr(
         engine_values, "APT_NONINTERACTIVE_ENVIRONMENT", {"APT_ANSWER": "always"}
     )
-    assert marker
     assert utils.install_package_once("nc", 30.0) == (True, "")
-    assert calls[-1] == ["myinstall", "nc", "--yes"]
+    assert calls[-1] == [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        "DPkg::Lock::Timeout=42",
+        "nc",
+    ]
     assert envs[-1] == {"APT_ANSWER": "always"}
     utils.refresh_apt_index(30.0)
-    assert calls[-1] == ["myupdate"]
+    assert calls[-1] == ["apt-get", "update", "-o", "DPkg::Lock::Timeout=42"]
 
 
 def test_install_packages_refreshes_once_and_installs_each_missing(

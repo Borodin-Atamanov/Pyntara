@@ -53,26 +53,80 @@ def package_is_installed(package: str, timeout: float) -> bool:
     return result.returncode == 0 and "install ok installed" in result.stdout
 
 
+def apt_update_command() -> list[str]:
+    """The apt index refresh, carrying the wait for the package lock.
+
+    Every apt command of the code is built by this factory or by the two
+    below, so the DPkg::Lock::Timeout option cannot be forgotten by a caller: a
+    machine that runs its own periodic upgrade holds the lock, and a command
+    without the option fails on that lock alone with exit code 100
+    (docs/contracts/bootstrap.md).
+    """
+
+    return [
+        "apt-get",
+        "update",
+        "-o",
+        f"DPkg::Lock::Timeout={engine_values.APT_LOCK_TIMEOUT_SECONDS}",
+    ]
+
+
+def apt_install_package_command(
+    package: str, extra_flags: Sequence[str] = ()
+) -> list[str]:
+    """The install of one package, carrying the wait for the package lock.
+
+    The caller names only its own flags, such as the --allow-downgrades of a
+    package that replaces a transitional one, and never repeats the lock wait.
+    """
+
+    return [
+        "apt-get",
+        "install",
+        "-y",
+        "-o",
+        f"DPkg::Lock::Timeout={engine_values.APT_LOCK_TIMEOUT_SECONDS}",
+        *extra_flags,
+        package,
+    ]
+
+
+def apt_purge_packages_command(
+    packages: Sequence[str], extra_flags: Sequence[str] = ()
+) -> list[str]:
+    """The purge of packages, carrying the wait for the package lock.
+
+    The package names are the argument, so one call purges the whole list
+    without a placeholder that would have to carry a space between two names.
+    """
+
+    return [
+        "apt-get",
+        "purge",
+        "--yes",
+        "-o",
+        f"DPkg::Lock::Timeout={engine_values.APT_LOCK_TIMEOUT_SECONDS}",
+        *extra_flags,
+        *packages,
+    ]
+
+
 def install_package_once(
-    package: str, timeout: float, *, install_command: Sequence[str] | None = None
+    package: str, timeout: float, *, extra_flags: Sequence[str] = ()
 ) -> tuple[bool, str]:
     """Install one package; return (success, error_text).
 
     apt runs noninteractive through the declared environment so it never asks
-    questions. The argv of the install comes from the caller when it needs
-    another form, such as the --allow-downgrades of a package that replaces a
-    transitional one, and from the engine otherwise. Any nonzero exit or timeout
-    is a failure with the exception text; the caller decides whether to retry.
+    questions. The argv comes from the shared install factory, and the caller
+    adds only its own flags, such as the --allow-downgrades of a package that
+    replaces a transitional one, so the wait for the package lock is never
+    dropped. Any nonzero exit or timeout is a failure with the exception text;
+    the caller decides whether to retry.
     """
 
-    command = (
-        install_command
-        if install_command is not None
-        else engine_values.APT_INSTALL_COMMAND
-    )
     try:
         run_command(
-            substituted_command(command, {"package": package}),
+            apt_install_package_command(package, extra_flags),
             extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
             timeout=timeout,
         )
@@ -84,7 +138,7 @@ def install_package_once(
 def install_package_refreshing_index(
     package: str,
     *,
-    install_command: Sequence[str] | None = None,
+    extra_flags: Sequence[str] = (),
     skip_apt_update: bool,
     timeout: float,
 ) -> tuple[bool, str | None]:
@@ -92,8 +146,8 @@ def install_package_refreshing_index(
 
     Returns (installed, error). The shared steps of every task that installs one
     package on its own, so the browser sections and any future caller take the
-    same path; install_command selects another argv, such as one carrying
-    --allow-downgrades.
+    same path; extra_flags selects another form of the install, such as one
+    carrying --allow-downgrades.
     """
 
     try:
@@ -101,7 +155,7 @@ def install_package_refreshing_index(
             refresh_apt_index(timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         return False, f"cannot refresh the apt index: {exc}"
-    ok, error = install_package_once(package, timeout, install_command=install_command)
+    ok, error = install_package_once(package, timeout, extra_flags=extra_flags)
     if not ok:
         return False, f"cannot install {package}: {error}"
     return True, None
@@ -138,7 +192,7 @@ def refresh_apt_index(timeout: float) -> None:
     """
 
     run_command(
-        list(engine_values.APT_UPDATE_COMMAND),
+        apt_update_command(),
         extra_env=dict(engine_values.APT_NONINTERACTIVE_ENVIRONMENT),
         timeout=timeout,
     )

@@ -95,7 +95,16 @@ def test_removes_the_snap_packages(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.message is not None
     assert "snapd" in result.message
     purges = [command for command in calls if command[:2] == ["apt-get", "purge"]]
-    assert purges == [["apt-get", "purge", "--yes", *values.PACKAGE_NAMES]]
+    assert purges == [
+        [
+            "apt-get",
+            "purge",
+            "--yes",
+            "-o",
+            "DPkg::Lock::Timeout=600",
+            *values.PACKAGE_NAMES,
+        ]
+    ]
 
 
 def test_a_machine_without_snap_changes_nothing(

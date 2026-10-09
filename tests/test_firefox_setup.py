@@ -305,6 +305,8 @@ def test_transitional_package_does_not_count_as_installed(
     installs = [call for call in calls if call[:1] == ["apt-get"] and "install" in call]
     assert installs, "the install was skipped for a machine without the real browser"
     assert "--allow-downgrades" in installs[0]
+    assert "-o" in installs[0]
+    assert "DPkg::Lock::Timeout=600" in installs[0]
 
 
 def test_installed_browser_is_not_reinstalled(

@@ -171,7 +171,7 @@ def _ensure_firefox_installed(
         return False, None
     installed, note = install_package_refreshing_index(
         values.PACKAGE_NAME,
-        install_command=values.APT_INSTALL_COMMAND,
+        extra_flags=values.APT_INSTALL_EXTRA_FLAGS,
         skip_apt_update=skip_apt_update,
         timeout=timeout,
     )

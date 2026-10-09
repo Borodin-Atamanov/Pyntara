@@ -136,7 +136,9 @@ valualinux_setup -> src/pyntara/values/vocalinux_setup.py -> READ_VALUE_NAMES ->
 Shared helpers that tasks import instead of reimplementing. When you need a capability, check this list first.
 
 Module              Public functions
-utils.py            run_command, package_is_installed, install_package_once,
+utils.py            run_command, apt_update_command,
+                    apt_install_package_command, apt_purge_packages_command,
+                    package_is_installed, install_package_once,
                     install_package_refreshing_index,
                     read_os_release, os_family_is_debian, dpkg_architecture,
                     service_is_enabled, service_is_active, apply_owner,

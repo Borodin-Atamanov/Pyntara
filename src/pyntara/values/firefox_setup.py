@@ -72,13 +72,11 @@ SNAP_NAME: str = "firefox"
 # a machine that carries the transitional package alone still gets the Mozilla
 # build (measured on liveusb_test on 2026-10-08).
 BROWSER_BINARY_PATH: Path = Path("/usr/lib/firefox/firefox")
-APT_INSTALL_COMMAND: tuple[str, ...] = (
-    "apt-get",
-    "install",
-    "--yes",
-    "--allow-downgrades",
-    "{package}",
-)
+
+# The flags of the browser install that the shared install factory of utils.py
+# does not add itself. The wait for the package lock lives in that factory, so
+# it is not repeated here.
+APT_INSTALL_EXTRA_FLAGS: tuple[str, ...] = ("--allow-downgrades",)
 SNAP_REMOVE_COMMAND: tuple[str, ...] = ("snap", "remove", "--terminate", "{snap}")
 SNAP_LIST_COMMAND: tuple[str, ...] = ("snap", "list", "{snap}")
 
@@ -121,7 +119,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PROCESS_NAME",
     "SNAP_NAME",
     "BROWSER_BINARY_PATH",
-    "APT_INSTALL_COMMAND",
+    "APT_INSTALL_EXTRA_FLAGS",
     "SNAP_REMOVE_COMMAND",
     "SNAP_LIST_COMMAND",
     "DESKTOP_FILE_NAME",

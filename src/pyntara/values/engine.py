@@ -591,28 +591,15 @@ DPKG_CONFIGURE_PENDING_COMMAND: tuple[str, ...] = ("dpkg", "--configure", "-a")
 # lock for a while; a run that did not wait failed on that lock alone with exit
 # code 100. apt accepts the wait through its DPkg::Lock::Timeout option, which
 # makes it print "Waiting for cache lock" and retry instead of exiting, so the
-# value is generous: the holder is the machine's own upgrade.
+# value is generous: the holder is another apt, the machine's own upgrade or a
+# background service the run deployed.
 APT_LOCK_TIMEOUT_SECONDS: int = 600
 
-# The apt calls of the package helpers: the index refresh and the install of
-# one package. The environment is the variable apt needs to never ask a
-# question on the target machine, where nobody watches the terminal. The lock
-# wait rides in both commands, before the package name so the option and the
-# value it carries are declared once above, and no caller can forget them.
-APT_UPDATE_COMMAND: tuple[str, ...] = (
-    "apt-get",
-    "update",
-    "-o",
-    f"DPkg::Lock::Timeout={APT_LOCK_TIMEOUT_SECONDS}",
-)
-APT_INSTALL_COMMAND: tuple[str, ...] = (
-    "apt-get",
-    "install",
-    "-y",
-    "-o",
-    f"DPkg::Lock::Timeout={APT_LOCK_TIMEOUT_SECONDS}",
-    "{package}",
-)
+# The environment apt needs to never ask a question on the target machine,
+# where nobody watches the terminal. The apt commands that carry the lock wait
+# are built in utils.py (apt_update_command, apt_install_package_command,
+# apt_purge_packages_command), so the option and the value above are declared
+# once and no caller can forget them.
 APT_NONINTERACTIVE_ENVIRONMENT: dict[str, str] = {
     "DEBIAN_FRONTEND": "noninteractive",
 }
@@ -684,11 +671,9 @@ PORT_KILL_POLL_SECONDS: float = 0.2
 # The names the readers read. The list lives next to the values it names.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "APT_CLEAN_COMMAND",
-    "APT_INSTALL_COMMAND",
     "APT_LOCK_TIMEOUT_SECONDS",
     "APT_NONINTERACTIVE_ENVIRONMENT",
     "APT_PERIODIC_UPDATE_UNITS",
-    "APT_UPDATE_COMMAND",
     "ADDRESS_FAMILY_BY_FLAG",
     "AUGEAS_COMMENT_LINE",
     "AUGEAS_CONTAINER_DIRECTIVE_LINE",

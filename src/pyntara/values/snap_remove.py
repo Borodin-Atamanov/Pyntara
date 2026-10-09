@@ -34,16 +34,10 @@ SNAP_PATH_NAMES: tuple[Path, ...] = (
     Path("/var/lib/snapd"),
 )
 
-# The purge command of apt. The package names are appended at the call site, so
-# one command takes the whole list without a placeholder that would have to
-# carry a space between two names.
-APT_PURGE_COMMAND: tuple[str, ...] = ("apt-get", "purge", "--yes")
-
 # The names the task reads. The list lives next to the values it names, the task
 # reads it from here and reports the names this module does not declare, instead
 # of stopping on a Python error.
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGE_NAMES",
     "SNAP_PATH_NAMES",
-    "APT_PURGE_COMMAND",
 )

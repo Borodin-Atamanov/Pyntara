@@ -23,7 +23,7 @@ from pathlib import Path
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import package_is_installed, run_command
+from pyntara.utils import apt_purge_packages_command, package_is_installed, run_command
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import snap_remove as values
@@ -46,7 +46,7 @@ def _purge_snap_packages(timeout: float) -> str | None:
 
     try:
         result = run_command(
-            [*values.APT_PURGE_COMMAND, *values.PACKAGE_NAMES],
+            apt_purge_packages_command(values.PACKAGE_NAMES),
             check=False,
             capture=True,
             timeout=timeout,
