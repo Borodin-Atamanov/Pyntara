@@ -225,6 +225,7 @@ class TestCollectPublicAddresses:
             urls: tuple[str, ...],
             query_timeout: int,
             command_timeout: float,
+            **kwargs: object,
         ) -> str:
             calls.append((urls, query_timeout, command_timeout))
             return "203.0.113.5\n203.0.113.5\n2001:db8::1\n"
@@ -246,6 +247,41 @@ class TestCollectPublicAddresses:
 
         monkeypatch.setattr(public_address_module, "fetch_urls_in_parallel", fail_fetch)
         assert fetch_public_addresses((), 60, 1800.0).is_empty is True
+
+    def test_reports_every_service_answer(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # A run must show who answered and who stayed silent, so the query
+        # prints one line per service with the answer it gave. curl writes
+        # the source marker after the answer of its transfer.
+        answers = (
+            "203.0.113.5\n"
+            f"{engine_values.CURL_PARALLEL_SOURCE_MARKER} https://api4.ipify.org\n"
+            f"{engine_values.CURL_PARALLEL_SOURCE_MARKER} https://ipv6.ipify.org\n"
+        )
+        monkeypatch.setattr(
+            public_address_module, "fetch_urls_in_parallel", lambda *a, **k: answers
+        )
+        addresses = fetch_public_addresses(SERVICES, 60, 1800.0)
+        assert addresses.ipv4 == ("203.0.113.5",)
+        reported = capsys.readouterr().out
+        assert "echo service https://api4.ipify.org: 203.0.113.5" in reported
+        assert "echo service https://ipv6.ipify.org: no answer" in reported
+
+    def test_keeps_the_query_out_of_the_log_when_logging_is_off(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # A caller that prints a document on stdout turns the lines off, so
+        # no answer line can mix into the document.
+        answers = (
+            "203.0.113.5\n"
+            f"{engine_values.CURL_PARALLEL_SOURCE_MARKER} https://api4.ipify.org\n"
+        )
+        monkeypatch.setattr(
+            public_address_module, "fetch_urls_in_parallel", lambda *a, **k: answers
+        )
+        fetch_public_addresses(SERVICES, 60, 1800.0, log_command=False)
+        assert capsys.readouterr().out == ""
 
 
 class TestConfiguredQueries:

@@ -82,6 +82,23 @@ def test_main_prints_the_records(
     assert captured.err == ""
 
 
+def test_main_runs_the_query_without_log_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The command prints a JSON document on stdout, so it asks the shared
+    # detection to keep its log lines out of the document.
+    _use_the_ssh_port(monkeypatch, "30222")
+    seen: list[object] = []
+
+    def detect(*args: object, **kwargs: object) -> PublicAddresses:
+        seen.append(kwargs.get("log_command"))
+        return PublicAddresses(ipv4=("190.55.165.52",))
+
+    monkeypatch.setattr(public_address_report, "fetch_public_addresses", detect)
+    assert public_address_report.main(["public_address_report"]) == 0
+    assert seen == [False]
+
+
 def test_main_reports_a_silent_detection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

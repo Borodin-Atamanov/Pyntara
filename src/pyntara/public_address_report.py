@@ -94,10 +94,14 @@ def main(argv: list[str]) -> int:
     except RuntimeError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    # This command prints a JSON document on stdout, so the query runs
+    # without its log lines: a tracking or progress line would mix into the
+    # document and the collector would keep it as text instead of records.
     addresses = fetch_public_addresses(
         panel_values.SERVER_IP_SERVICES,
         panel_values.SERVER_IP_TIMEOUT_SECONDS,
         values.COLLECTOR.command_timeout_seconds,
+        log_command=False,
     )
     if addresses.is_empty:
         print(

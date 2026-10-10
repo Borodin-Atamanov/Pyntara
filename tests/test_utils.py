@@ -56,15 +56,20 @@ class _FakePopen:
         self.kill_before_output = kill_before_output
         self.killed = False
         self.timeout_used: float | None = None
+        self.returncode: int | None = None
 
     def communicate(self, timeout: float | None = None) -> tuple[str, str]:
         self.timeout_used = timeout
         if self.kill_before_output and not self.killed:
             raise subprocess.TimeoutExpired("curl", timeout or 0)
+        self.returncode = 0
         return (self.output, "")
 
     def kill(self) -> None:
         self.killed = True
+        # A real process killed by a signal carries the negative number of
+        # that signal as its return code.
+        self.returncode = -9
 
 
 def test_curl_flags_returns_retry_and_timeout_flags() -> None:
@@ -1388,6 +1393,39 @@ class TestFetchUrlsInParallel:
         monkeypatch.setattr("pyntara.utils.subprocess.Popen", lambda *a, **k: process)
         assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
         assert process.killed is True
+
+    def test_reports_the_command_pair_of_the_parallel_call(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # The parallel curl is the one process of a task that does not run
+        # through run_command, so the helper frames it itself; without the
+        # pair a slow query leaves a silent gap in the log.
+        process = _FakePopen("answer\n")
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", lambda *a, **k: process)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
+        reported = capsys.readouterr().out
+        assert "  run : curl --parallel" in reported
+        assert "  /run: 0 " in reported
+
+    def test_reports_the_timeout_when_the_command_timeout_kills_the_process(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # A killed process carries no exit code, so the end line names the
+        # timeout instead of a code that never existed.
+        process = _FakePopen("answer\n", kill_before_output=True)
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", lambda *a, **k: process)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0) == "answer\n"
+        assert "  /run: timeout " in capsys.readouterr().out
+
+    def test_keeps_the_query_out_of_the_log_when_logging_is_off(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # A caller that prints a document on stdout turns the pair off, so a
+        # tracking line cannot mix into the document.
+        process = _FakePopen("answer\n")
+        monkeypatch.setattr("pyntara.utils.subprocess.Popen", lambda *a, **k: process)
+        assert fetch_urls_in_parallel(URLS, 60, 1800.0, log_command=False) == "answer\n"
+        assert capsys.readouterr().out == ""
 
 
 def test_apply_owner_applies_the_configured_owner(

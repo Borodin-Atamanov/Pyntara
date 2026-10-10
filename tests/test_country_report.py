@@ -160,6 +160,29 @@ def test_main_prints_the_document(
     assert captured.err == ""
 
 
+def test_main_runs_the_detection_without_log_lines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The command prints a JSON document on stdout, so it asks the shared
+    # detection to keep its tracking line out of the document.
+    seen: list[object] = []
+
+    def detect(*args: object, **kwargs: object) -> CountryReport:
+        seen.append(kwargs.get("log_command"))
+        return _report(
+            ServiceAnswer(
+                source="https://ipwho.is/",
+                raw="Argentina",
+                values=("Argentina",),
+                fields=(),
+            )
+        )
+
+    monkeypatch.setattr(country_report, "detect_country", detect)
+    assert country_report.main(["country_report"]) == 0
+    assert seen == [False]
+
+
 def test_main_reports_a_silent_detection(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],

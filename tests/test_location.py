@@ -190,7 +190,9 @@ class TestDetectCountry:
     ) -> None:
         calls: list[tuple[tuple[str, ...], float, float]] = []
 
-        def fake_fetch(urls: tuple[str, ...], query: float, command: float) -> tuple:
+        def fake_fetch(
+            urls: tuple[str, ...], query: float, command: float, **kwargs: object
+        ) -> tuple:
             calls.append((urls, query, command))
             return (
                 ("https://ip2c.org/self", "1;RU;RUS;Russia"),

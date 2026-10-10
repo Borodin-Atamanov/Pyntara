@@ -21,9 +21,11 @@ import ipaddress
 import subprocess
 from dataclasses import dataclass
 
+from pyntara.logger import log_progress as _log
 from pyntara.utils import (
     fetch_urls_in_parallel,
     run_command,
+    split_url_answers,
     substituted_command,
 )
 from pyntara.values import engine as engine_values
@@ -174,6 +176,8 @@ def fetch_public_addresses(
     services: tuple[str, ...],
     query_timeout_seconds: int,
     command_timeout_seconds: float,
+    *,
+    log_command: bool = True,
 ) -> PublicAddresses:
     """Query every service in parallel and collect the addresses reported.
 
@@ -186,10 +190,25 @@ def fetch_public_addresses(
     bounds the whole process, so the call always returns. Returns empty
     lists when no service reports an address, when curl is missing or when
     the service list is empty.
+
+    log_command=True reports the query the way every other command is
+    reported: the tracking pair of the parallel call plus one progress
+    line per service with the answer it gave, so a run shows who answered
+    and who stayed silent instead of waiting without a word. A caller that
+    prints a document on stdout passes log_command=False, because a
+    progress line would mix into the document.
     """
 
     if not services:
         return PublicAddresses()
-    return parse_public_addresses(
-        fetch_urls_in_parallel(services, query_timeout_seconds, command_timeout_seconds)
+    text = fetch_urls_in_parallel(
+        services,
+        query_timeout_seconds,
+        command_timeout_seconds,
+        log_command=log_command,
     )
+    if log_command:
+        for source, answer in split_url_answers(text):
+            shown = " ".join(answer.split()) or "no answer"
+            _log(f"echo service {source}: {shown}")
+    return parse_public_addresses(text)

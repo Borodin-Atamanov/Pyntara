@@ -235,18 +235,25 @@ def detect_country(
     word: str,
     query_timeout_seconds: float,
     command_timeout_seconds: float,
+    *,
+    log_command: bool = True,
 ) -> CountryReport:
     """Ask every service, standardize and merge the answers, decide the country.
 
     An empty service list, an unreachable service list or answers that do
     not carry the word all end in matched_word=None, which the caller
-    reads as "not that country".
+    reads as "not that country". log_command is handed to the parallel
+    query, so a caller that prints a document on stdout turns the tracking
+    pair off with it.
     """
 
     answers = tuple(
         standardize_answer(source, raw)
         for source, raw in fetch_urls_by_source(
-            services, query_timeout_seconds, command_timeout_seconds
+            services,
+            query_timeout_seconds,
+            command_timeout_seconds,
+            log_command=log_command,
         )
     )
     values = merge_values(answers)

@@ -74,11 +74,15 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
+    # This command prints a JSON document on stdout, so the query runs
+    # without its log lines: a tracking line would mix into the document and
+    # the collector would keep it as text instead of records.
     report = detect_country(
         panel_values.COUNTRY_SERVICES,
         panel_values.COUNTRY_WORD,
         panel_values.COUNTRY_QUERY_TIMEOUT_SECONDS,
         panel_values.COUNTRY_COMMAND_TIMEOUT_SECONDS,
+        log_command=False,
     )
     if not report.answers:
         print(

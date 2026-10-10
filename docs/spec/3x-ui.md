@@ -111,6 +111,8 @@ After the installer runs (and on a rerun) the task brings the panel to the confi
 
 The task reports every action through `log_progress` before it runs, so the log reads as a description of what is being done, not as a wall of commands: querying the release, reading the installed version, checking the UPnP client package, checking the ports, downloading and running the installer, waiting for the service, waiting for the panel HTTP listener, waiting for the core to answer a routing question, probing the ACME port, generating or issuing a certificate, moving the panel port, syncing the env file, and each vault step name their target and their result. Command lines from `run_command` follow these messages, so a command always has a stated purpose above it.
 
+The parallel echo-service query of the run facts is reported the same way. The query is announced before it starts, and because it is the one process that does not run through `run_command`, the shared helper frames the single curl call with the same tracking pair and the query prints one line per service with the answer it gave. A query that waits for a slow service therefore shows its command, its duration and every answer instead of leaving a silent gap in the log.
+
 The final result line states the installer outcome and names every stage that changed something: the certificate stage, the panel port, the subscription paths, the inbound security data and the connection profile each append their own message. A rerun that reached the target state but rewrote the REALITY keys or the profile therefore reads as `target state already reached; inbound share data updated; connection profile stored` instead of claiming that nothing happened.
 
 ## Stage 5: client and connection profile

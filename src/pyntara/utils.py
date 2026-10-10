@@ -748,6 +748,8 @@ def fetch_urls_in_parallel(
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
+    *,
+    log_command: bool = True,
 ) -> str:
     """Query every URL in one parallel curl call and return the answers.
 
@@ -764,6 +766,15 @@ def fetch_urls_in_parallel(
     Returns an empty string for an empty URL list, when curl is missing or
     when the process cannot start.
 
+    log_command=True reports the call through the same tracking pair as
+    run_command: `  run : <command>` before the process and `  /run:
+    <exit_code> <seconds>s <command>` after it, with None in place of the
+    exit code when the command timeout killed the process. This helper is
+    the one process of a task that does not run through run_command, so
+    without the pair a single long query leaves a silent gap in the log. A
+    caller that prints a document on stdout, where a tracking line would
+    turn the document into text, passes log_command=False.
+
     The helper is shared by every service that must ask several addresses
     at once (the public address detection and the country detection), so
     the query shape and its timeout policy live in one place. The answers
@@ -773,20 +784,31 @@ def fetch_urls_in_parallel(
 
     if not urls:
         return ""
+    command_list = _parallel_curl_command(urls, query_timeout_seconds)
+    command_text = " ".join(command_list)
+    if log_command:
+        logger.log_run_start(command_text)
+    start = time.perf_counter()
+    return_code: int | None = None
     try:
         process = subprocess.Popen(
-            _parallel_curl_command(urls, query_timeout_seconds),
+            command_list,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
         )
     except OSError:
-        return ""
-    try:
-        output, _ = process.communicate(timeout=command_timeout_seconds)
-    except subprocess.TimeoutExpired:
-        process.kill()
-        output, _ = process.communicate()
+        output = ""
+    else:
+        try:
+            output, _ = process.communicate(timeout=command_timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            output, _ = process.communicate()
+        else:
+            return_code = process.returncode
+    if log_command:
+        logger.log_run_end(command_text, return_code, time.perf_counter() - start)
     return output
 
 
@@ -794,16 +816,25 @@ def fetch_urls_by_source(
     urls: tuple[str, ...],
     query_timeout_seconds: float,
     command_timeout_seconds: float,
+    *,
+    log_command: bool = True,
 ) -> tuple[tuple[str, str], ...]:
     """Query every URL in parallel; return (service URL, answer) pairs.
 
     The same call as fetch_urls_in_parallel, split per service, so a
     caller that must standardize and merge the answers of different
-    services knows which service produced which answer.
+    services knows which service produced which answer. log_command is
+    handed to the parallel query, so a caller that prints a document on
+    stdout turns the tracking pair off with it.
     """
 
     return split_url_answers(
-        fetch_urls_in_parallel(urls, query_timeout_seconds, command_timeout_seconds),
+        fetch_urls_in_parallel(
+            urls,
+            query_timeout_seconds,
+            command_timeout_seconds,
+            log_command=log_command,
+        ),
     )
 
 

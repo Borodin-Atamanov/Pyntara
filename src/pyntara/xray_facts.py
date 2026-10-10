@@ -55,9 +55,13 @@ def _public_addresses(timeout: float) -> PublicAddresses:
     """The public addresses the configured echo services report.
 
     The shared helper does the parallel query, so the task only decides
-    what to do with the addresses.
+    what to do with the addresses. The query is announced before it starts
+    and the helper reports its command and every answer, because the echo
+    services can take many seconds and the log must not stay silent while
+    they are asked.
     """
 
+    _log("querying the echo services for the public address")
     return fetch_public_addresses(
         panel_values.SERVER_IP_SERVICES,
         panel_values.SERVER_IP_TIMEOUT_SECONDS,
