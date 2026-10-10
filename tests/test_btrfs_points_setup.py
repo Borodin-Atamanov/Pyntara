@@ -71,6 +71,26 @@ GENERATOR_CONFIG_TEXT = (
     'GRUB_BTRFS_IGNORE_SPECIFIC_PATH=("@" "@points/Old-point")\n'
 )
 
+# The settings file of the boot loader, with the shape a desktop installation
+# leaves: the menu is hidden and waits nothing, and the file carries a comment
+# and settings of other owners that have to survive every write of a section.
+GRUB_DEFAULT_TEXT = (
+    "# a comment of the distribution\n"
+    "GRUB_DEFAULT=0\n"
+    "GRUB_TIMEOUT_STYLE=hidden\n"
+    "GRUB_TIMEOUT=0\n"
+    "GRUB_DISTRIBUTOR='Kubuntu'\n"
+    'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"\n'
+)
+
+
+def _visible_grub_default_text() -> str:
+    """The settings file of a machine whose boot menu is already visible."""
+
+    return GRUB_DEFAULT_TEXT.replace(
+        "GRUB_TIMEOUT_STYLE=hidden", "GRUB_TIMEOUT_STYLE=menu"
+    ).replace("GRUB_TIMEOUT=0", f"GRUB_TIMEOUT={values.GRUB_MENU_WAIT_SECONDS}")
+
 def _ctx(*, force: bool = False) -> Context:
     """Context of the task, with the force mode it was asked for."""
 
@@ -91,6 +111,8 @@ class _Machine:
         self.fstab.write_text(FSTAB_TEXT, encoding="utf-8")
         self.generator_config = tmp_path / "grub-btrfs-config"
         self.generator_config.write_text(GENERATOR_CONFIG_TEXT, encoding="utf-8")
+        self.grub_default_file = tmp_path / "grub-default"
+        self.grub_default_file.write_text(GRUB_DEFAULT_TEXT, encoding="utf-8")
         self.entry = tmp_path / "40_pyntara_permanent_entry"
         self.boot = tmp_path / "boot"
         self.boot.mkdir(parents=True, exist_ok=True)
@@ -147,6 +169,7 @@ def _use_values(monkeypatch: pytest.MonkeyPatch, machine: _Machine) -> None:
     monkeypatch.setattr(setup_values, "POINTS_MOUNT_POINT", machine.mount_point)
     monkeypatch.setattr(setup_values, "FSTAB_PATH", machine.fstab)
     monkeypatch.setattr(setup_values, "GRUB_BTRFS_CONFIG_PATH", machine.generator_config)
+    monkeypatch.setattr(values, "GRUB_DEFAULT_FILE_PATH", machine.grub_default_file)
     monkeypatch.setattr(values, "GRUB_D_ENTRY_PATH", machine.entry)
     monkeypatch.setattr(btrfs_points_setup, "_points_mounted", lambda: True)
 
@@ -549,16 +572,101 @@ def test_points_setup_leaves_a_session_of_the_point_alone(
     assert [call[0] for call in calls] == ["findmnt"]
 
 
+def test_points_setup_makes_the_boot_menu_visible_and_short(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A menu the machine never shows is a menu nobody can choose from, so the
+    # section makes it visible with a short wait. The key of the wait begins
+    # with the key of the style, so the line of the wait must not take the place
+    # of the line of the style, and every other line of the file must survive.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(monkeypatch, machine)
+
+    btrfs_points_setup.task(_ctx())
+
+    text = machine.grub_default_file.read_text(encoding="utf-8")
+    assert "GRUB_TIMEOUT_STYLE=menu\n" in text
+    assert f"GRUB_TIMEOUT={values.GRUB_MENU_WAIT_SECONDS}\n" in text
+    assert "GRUB_TIMEOUT_STYLE=hidden" not in text
+    assert "GRUB_TIMEOUT=0" not in text
+    for line in GRUB_DEFAULT_TEXT.splitlines():
+        if line in ("GRUB_TIMEOUT_STYLE=hidden", "GRUB_TIMEOUT=0"):
+            continue
+        assert line in text
+
+
+def test_points_setup_keeps_a_visible_menu_it_already_wrote(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The settings are read from the file, so a machine that already carries
+    # them is left alone: the section reports no change and writes nothing.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.grub_default_file.write_text(
+        _visible_grub_default_text(), encoding="utf-8"
+    )
+
+    changed = btrfs_points_setup._write_menu_visibility([])
+
+    assert changed is False
+    assert machine.grub_default_file.read_text(encoding="utf-8") == (
+        _visible_grub_default_text()
+    )
+
+
+def test_points_setup_activates_menu_settings_that_are_only_comments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A commented setting is an example and not a value in force, so the section
+    # writes lines of its own and leaves the examples where they are; the shell
+    # reads the file in order, so the line written last is the one in force.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.grub_default_file.write_text(
+        "#GRUB_TIMEOUT_STYLE=hidden\n#GRUB_TIMEOUT=0\n", encoding="utf-8"
+    )
+
+    changed = btrfs_points_setup._write_menu_visibility([])
+
+    assert changed is True
+    text = machine.grub_default_file.read_text(encoding="utf-8")
+    assert "#GRUB_TIMEOUT_STYLE=hidden\n" in text
+    assert "#GRUB_TIMEOUT=0\n" in text
+    assert "GRUB_TIMEOUT_STYLE=menu\n" in text
+    assert f"GRUB_TIMEOUT={values.GRUB_MENU_WAIT_SECONDS}\n" in text
+
+
+def test_points_setup_reports_a_settings_file_it_cannot_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine without that settings file is not a reason to fail the task: the
+    # reason is reported as a warning of a completed task, as everywhere else.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.grub_default_file.unlink()
+    warnings: list[str] = []
+
+    changed = btrfs_points_setup._write_menu_visibility(warnings)
+
+    assert changed is False
+    assert warnings
+    assert "cannot read" in warnings[0]
+
+
 def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A rerun finds the point, the work copy, the entry and the setting in
-    # place: it stores nothing, rewrites nothing and does not spend minutes on
-    # a menu rebuild.
+    # A rerun finds the point, the work copy, the entry, the setting and the
+    # visible menu in place: it stores nothing, rewrites nothing and does not
+    # spend minutes on a menu rebuild.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     machine.installed_packages.update(TEST_PACKAGES)
     machine.install_kernels(NEWER_KERNEL)
+    machine.grub_default_file.write_text(
+        _visible_grub_default_text(), encoding="utf-8"
+    )
     machine.generator_config.write_text(
         f'{values.GRUB_BTRFS_IGNORE_KEY}='
         f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")\n',
@@ -576,6 +684,32 @@ def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(
     ]
 
 
+def test_points_setup_rebuilds_the_menu_when_only_the_visibility_changed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine of an earlier version carries the point, the work copy, the
+    # entry and the ignore setting, and a hidden menu: the one piece of work
+    # left is the visibility of the menu, and the menu has to be rebuilt for
+    # that alone, or the entries stay invisible.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    machine.installed_packages.update(TEST_PACKAGES)
+    machine.install_kernels(NEWER_KERNEL)
+    machine.generator_config.write_text(
+        f'{values.GRUB_BTRFS_IGNORE_KEY}='
+        f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")\n',
+        encoding="utf-8",
+    )
+    calls = _commands_fake(monkeypatch, machine)
+    machine.already_stored(machine.point, machine.work_copy)
+    btrfs_points_setup._write_boot_entry(_ctx(), [])
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert result.changed is True
+    assert any(call[0] == "update-grub" for call in calls)
+
+
 def test_points_setup_rebuilds_the_menu_when_the_run_forces_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -585,6 +719,9 @@ def test_points_setup_rebuilds_the_menu_when_the_run_forces_it(
     _use_values(monkeypatch, machine)
     machine.installed_packages.update(TEST_PACKAGES)
     machine.install_kernels(NEWER_KERNEL)
+    machine.grub_default_file.write_text(
+        _visible_grub_default_text(), encoding="utf-8"
+    )
     machine.generator_config.write_text(
         f'{values.GRUB_BTRFS_IGNORE_KEY}='
         f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")\n',

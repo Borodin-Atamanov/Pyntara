@@ -67,6 +67,19 @@ WRITABLE_BOOT_MESSAGE: str = (
 # which is a rescue session and not a working system.
 OVERLAY_PARAMETER: str = "overlayroot=tmpfs:recurse=0"
 
+# The settings of the machine that decide whether the boot menu is shown at all.
+# The entries of both snapshots are of no use to a person who never sees them,
+# so the section makes the menu visible and gives it a short wait; a boot that
+# failed keeps the wait of the distribution, which the boot loader's own script
+# writes into the menu. The two settings are written by key, and the key of one
+# of them begins with the key of the other, so the writer is told the key
+# together with its assignment sign.
+GRUB_DEFAULT_FILE_PATH: Path = Path("/etc/default/grub")
+GRUB_MENU_STYLE_DIRECTIVE: str = "GRUB_TIMEOUT_STYLE=menu"
+GRUB_MENU_WAIT_DIRECTIVE_FORMAT: str = "GRUB_TIMEOUT={seconds}"
+GRUB_MENU_WAIT_SECONDS: int = 2
+CONFIG_ASSIGNMENT_SIGN: str = "="
+
 # How the entry finds the device of the kernels. The device is the filesystem
 # that carries the boot directory of the machine, and its UUID comes from the
 # boot loader's own tool, so the entry names the device the way this machine
@@ -165,6 +178,11 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "READ_ONLY_BOOT_MESSAGE",
     "WRITABLE_BOOT_MESSAGE",
     "OVERLAY_PARAMETER",
+    "GRUB_DEFAULT_FILE_PATH",
+    "GRUB_MENU_STYLE_DIRECTIVE",
+    "GRUB_MENU_WAIT_DIRECTIVE_FORMAT",
+    "GRUB_MENU_WAIT_SECONDS",
+    "CONFIG_ASSIGNMENT_SIGN",
     "GRUB_SEARCH_UUID_LINE",
     "GRUB_PROBE_UUID_COMMAND",
     "GRUB_MKRELPATH_COMMAND",

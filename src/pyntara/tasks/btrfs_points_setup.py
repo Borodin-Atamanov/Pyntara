@@ -126,6 +126,7 @@ def task(ctx: Context) -> TaskResult:
     if point_present:
         changed = _ensure_work_copy(warnings) or changed
         changed = _write_boot_entry(ctx, warnings) or changed
+        changed = _write_menu_visibility(warnings) or changed
     else:
         warnings.append(
             f"the save point {_point_directory()} is not present, so no boot "
@@ -704,6 +705,70 @@ def _ignored_subvolumes() -> tuple[str, ...]:
 
     prefix = setup_values.POINTS_SUBVOLUME_NAME
     return (f"{prefix}/{values.POINT_NAME}", f"{prefix}/{values.WORK_COPY_NAME}")
+
+
+def _assignment_needle(directive: str) -> str:
+    """The text that finds the line of one setting of a shell style file.
+
+    The line editor of this project compares substrings, and the key of the wait
+    of the boot menu begins with the key of its style: a needle of the bare key
+    would replace the line of the style with the line of the wait, and the style
+    would be lost. The needle therefore carries the assignment sign, which the
+    key of the other setting does not contain.
+    """
+
+    key = directive.split(values.CONFIG_ASSIGNMENT_SIGN, 1)[0]
+    return f"{key}{values.CONFIG_ASSIGNMENT_SIGN}"
+
+
+def _write_menu_visibility(warnings: list[str]) -> bool:
+    """Make the boot menu visible with a short wait, so a person can choose.
+
+    This section writes the entries of both snapshots into the boot menu, and a
+    person who cannot start the ordinary system reads them there: a menu the
+    machine never shows is a menu nobody can choose from. The wait stays short,
+    because the ordinary boot must not be held up, and the wait of a boot that
+    failed is left to the distribution. Every other line, comment and value of
+    the settings file survives.
+    """
+
+    wait_directive = values.GRUB_MENU_WAIT_DIRECTIVE_FORMAT.format(
+        seconds=values.GRUB_MENU_WAIT_SECONDS
+    )
+    path = values.GRUB_DEFAULT_FILE_PATH
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        warnings.append(f"cannot read {path}: {exc}")
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
+
+    new_text = text
+    for directive in (values.GRUB_MENU_STYLE_DIRECTIVE, wait_directive):
+        new_text, _ = replace_line_by_string(
+            new_text,
+            _assignment_needle(directive),
+            directive,
+            fstab.COMMENT_SIGN,
+        )
+    if new_text == text:
+        _log(
+            f"the boot menu is already visible and waits "
+            f"{values.GRUB_MENU_WAIT_SECONDS} seconds"
+        )
+        return False
+    try:
+        path.write_text(new_text, encoding="utf-8")
+    except OSError as exc:
+        warnings.append(f"cannot write {path}: {exc}")
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
+    _log(
+        f"the boot menu is visible and waits {values.GRUB_MENU_WAIT_SECONDS} "
+        f"seconds: a person can choose {values.POINT_NAME} or "
+        f"{values.WORK_COPY_NAME}"
+    )
+    return True
 
 
 def _write_ignore_setting(warnings: list[str]) -> bool:

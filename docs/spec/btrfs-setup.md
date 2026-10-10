@@ -42,6 +42,10 @@ The points section writes the boot entries of both snapshots into /etc/grub.d/40
 
 The menu is rebuilt with update-grub after the entries are written; the daemon of the generator is off, so a rebuild cannot race a write of the generated list. The rebuild happens when the section changed something, and always in the forced run, so a menu that went out of step with the machine can be rebuilt by hand.
 
+The section also makes that menu visible and gives it a short wait: the settings file of the boot loader receives GRUB_TIMEOUT_STYLE=menu and GRUB_TIMEOUT=2, written by key, so every other line, comment and value of that file survives. The entries of both snapshots are read by a person who cannot start the ordinary system, and a menu the machine never shows is a menu nobody can choose from; the wait stays short so that an ordinary boot is not held up. A boot that failed keeps the wait of the distribution, thirty seconds, because that branch of the boot loader's own script is not touched. The write counts as a change of the section, so the menu is rebuilt for it in the same run, which is what makes the setting reach a machine that was configured by an earlier version.
+
+The line of a setting is found with the assignment sign included, because the key of the wait GRUB_TIMEOUT begins with the key of the style GRUB_TIMEOUT_STYLE and the line editor compares substrings: a needle of the bare key would replace the line of the style with the line of the wait and the style would be lost.
+
 A session that was started from one of the two snapshots leaves the machine alone. The boot partition is shared by every session of the machine, so a boot menu rebuilt from a snapshot would name that snapshot and the machine would boot a copy of itself afterwards instead of its own system; the save point and the resume address of hibernation belong to the machine in the same way. The points section and the swap file section therefore tell such a session apart before they write: the root is an overlay when the session runs from the read-only point, and its subvolume lies inside the points subvolume when it runs from the work copy. The points section then reports the session as a completed task and stores nothing, and the swap file program reads the offset of the swap file but writes neither the kernel command line nor the boot menu. The swap file itself is shared with the machine, so it is still brought to its target size.
 
 ## Maintenance
@@ -89,6 +93,9 @@ grub_read_only_entry_name, grub_writable_entry_name - the name each group of boo
 grub_latest_kernel_suffix - the word the newest kernel of a group carries in its name, latest-core
 read_only_boot_message, writable_boot_message - the line each group of entries prints before it loads its kernel
 grub_d_entry_path, grub_d_entry_file_mode - the file of the boot entries of both snapshots and its mode
+grub_default_file_path - the settings file of the boot loader, the menu that shows the save points
+grub_menu_style_directive, grub_menu_wait_directive_format, grub_menu_wait_seconds - the visible menu and its wait of 2 seconds
+config_assignment_sign - the sign that separates a key from its value in that file, written into the needle of the line search because the key of the wait begins with the key of the style
 overlay_parameter - the kernel parameter that keeps the root filesystem in memory, overlayroot=tmpfs:recurse=0
 grub_btrfs_ignore_key - the setting that keeps both snapshots out of the generated list
 snapshot_timeout_seconds, update_grub_timeout_seconds - the bounds of the snapshot and of the menu rebuild
