@@ -51,10 +51,12 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
+    as_user_command,
     discard_downloaded_files,
     download_command,
     dpkg_architecture,
     hand_to_user,
+    home_environment,
     install_package_once,
     proquint_encode,
     refresh_apt_index,
@@ -410,19 +412,24 @@ def _config_text_with_restore_token(config_text: str, token: str) -> str:
 def _permission_record_exists(token: str, timeout: float) -> bool:
     """True when the permission store already holds the record of the token.
 
-    A failed query, a missing tool or a session without the store reads as no
-    record, so the step writes one and reports a failure when that write fails.
+    The store belongs to the desktop user and its session bus rejects the root
+    run, so the query runs as that user through the configured wrapper. A failed
+    query, a missing tool or a session without the store reads as no record, so
+    the step writes one and reports a failure when that write fails.
     """
 
     try:
         result = run_command(
-            substituted_command(
-                values.LOOKUP_PERMISSION_RECORD_COMMAND,
-                {"table": values.SCREENCAST_PERMISSION_TABLE, "token": token},
+            as_user_command(
+                substituted_command(
+                    values.LOOKUP_PERMISSION_RECORD_COMMAND,
+                    {"table": values.SCREENCAST_PERMISSION_TABLE, "token": token},
+                )
             ),
             check=False,
             capture=True,
             timeout=timeout,
+            extra_env=home_environment(),
         )
     except (subprocess.TimeoutExpired, OSError):
         return False
@@ -434,8 +441,8 @@ def _write_permission_record(token: str, timeout: float) -> str:
 
     The record is the RestoreData of one consent the desktop user gave once,
     written under the token the client presents, so the portal restores the
-    session instead of asking. The call reaches the permission store of the
-    desktop user over the session bus the run exports.
+    session instead of asking. The call runs as the desktop user, because the
+    permission store of that user answers only on its own session bus.
     """
 
     payload = bytes.fromhex(values.SCREENCAST_RESTORE_DATA_HEX)
@@ -444,18 +451,28 @@ def _write_permission_record(token: str, timeout: float) -> str:
         restore_version=values.SCREENCAST_RESTORE_VERSION,
         payload_bytes=", ".join(f"0x{byte:02x}" for byte in payload),
     )
-    command = substituted_command(
-        values.SET_PERMISSION_RECORD_COMMAND,
-        {
-            "table": values.SCREENCAST_PERMISSION_TABLE,
-            "token": token,
-            "app_permissions": values.SCREENCAST_PERMISSION_ARGUMENT,
-            "data": data,
-        },
+    command = as_user_command(
+        substituted_command(
+            values.SET_PERMISSION_RECORD_COMMAND,
+            {
+                "table": values.SCREENCAST_PERMISSION_TABLE,
+                "token": token,
+                "app_permissions": values.SCREENCAST_PERMISSION_ARGUMENT,
+                "data": data,
+            },
+        )
     )
     try:
-        run_command(command, check=True, capture=True, timeout=timeout)
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        run_command(
+            command,
+            check=True,
+            capture=True,
+            timeout=timeout,
+            extra_env=home_environment(),
+        )
+    except subprocess.CalledProcessError as exc:
+        return (exc.stderr or "").strip() or f"gdbus exited with status {exc.returncode}"
+    except (subprocess.TimeoutExpired, OSError) as exc:
         return str(exc)
     return ""
 

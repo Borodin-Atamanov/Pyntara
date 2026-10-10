@@ -200,10 +200,10 @@ def _fake_run(
                 rc = 1
         elif cmd[0] == "apt-get":
             pass  # update and install succeed
-        elif cmd[0] == "gdbus" and ".Lookup" in " ".join(cmd):
+        elif "gdbus" in cmd and ".Lookup" in " ".join(cmd):
             present = permission_record_present or cmd[-1] in written_tokens
             rc = 0 if present else 1
-        elif cmd[0] == "gdbus":
+        elif "gdbus" in cmd:
             written_tokens.add(cmd[-3])
         if rc != 0 and kwargs.get("check", False):
             raise subprocess.CalledProcessError(rc, command, stdout)
@@ -746,9 +746,7 @@ def test_writes_the_screen_share_consent_and_token(
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is True
-    set_calls = [
-        call for call in calls if call[0] == "gdbus" and ".Set" in " ".join(call)
-    ]
+    set_calls = [call for call in calls if "gdbus" in call and ".Set" in " ".join(call)]
     assert len(set_calls) == 1
     config_text = (values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME).read_text(
         encoding="utf-8"
@@ -775,9 +773,7 @@ def test_keeps_an_existing_screen_share_consent(
     result = rustdesk_setup.task(_ctx())
     assert result.success is True
     assert result.changed is False
-    assert not any(
-        call[0] == "gdbus" and ".Set" in " ".join(call) for call in calls
-    )
+    assert not any("gdbus" in call and ".Set" in " ".join(call) for call in calls)
 
 
 def test_force_rotates_the_screen_share_token(
