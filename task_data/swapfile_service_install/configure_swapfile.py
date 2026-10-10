@@ -147,6 +147,23 @@ FINDMNT_SOURCE_ARGUMENTS: tuple[str, ...] = (
 QUOTE_SIGNS: tuple[str, ...] = ("'", '"')
 SUBVOLUME_OPEN_SIGN: str = "["
 
+# The root of the running session, and what the root of a session started from a
+# snapshot looks like: a read-only snapshot runs its root as an overlay, and a
+# writable snapshot runs it from a subvolume inside the points subvolume of the
+# machine. Neither is the root the machine was installed on, and the resume
+# address together with the boot menu belong to the machine, so such a session
+# publishes neither. The columns findmnt writes are separated by a space.
+ROOT_MOUNT_POINT: str = "/"
+OVERLAY_FILESYSTEM_TYPE: str = "overlay"
+FINDMNT_COLUMN_SEPARATOR: str = " "
+ROOT_MOUNT_ARGUMENTS: tuple[str, ...] = (
+    "--noheadings",
+    "--output",
+    "FSTYPE,SOURCE",
+    "--target",
+    ROOT_MOUNT_POINT,
+)
+
 # Signs of an augtool string and of the line a printed node is written in.
 AUGEAS_ESCAPE_SIGNS: tuple[tuple[str, str], ...] = (("\\", "\\\\"), ('"', '\\"'))
 AUGEAS_ASSIGNMENT_SEPARATOR: str = " = "
@@ -171,6 +188,9 @@ class Config:
     the program itself carries no number a caller may want to change. The paths
     and the names of the resume address arrive the same way, because the caller
     owns where the address is published and which kernel parameters carry it.
+    The name of the points subvolume arrives the same way: the caller owns where
+    the snapshots of this machine live, and the program only asks whether the
+    session it runs in was started from one of them.
     """
 
     swapfile_path: Path
@@ -194,6 +214,7 @@ class Config:
     power_resume_file_path: Path
     power_resume_offset_file_path: Path
     update_grub_timeout_seconds: float
+    points_subvolume: str
     force: bool
 
 
@@ -882,6 +903,39 @@ def _write_power_resume(config: Config, offset_pages: int) -> None:
     print(f"this boot resumes from {device_number} at offset {offset_pages} pages")
 
 
+def _root_is_a_snapshot_session(config: Config) -> bool:
+    """Answer whether this session was started from a snapshot of the root.
+
+    A session started from a snapshot runs its root either as an overlay of a
+    read-only snapshot or from a subvolume inside the points subvolume, and
+    neither is the root the machine was installed on. The resume address and the
+    boot menu belong to the machine, so a session of a snapshot writes neither;
+    the swap file itself is shared and is still brought to its target size. A
+    root that cannot be read is treated as a snapshot session, because writing
+    the boot configuration of a machine whose root is unknown risks more than
+    skipping a step whose reason is printed.
+    """
+
+    command = [_tool_path(FINDMNT_TOOL), *ROOT_MOUNT_ARGUMENTS]
+    result = _run(command, config.command_timeout_seconds)
+    if result.returncode != 0:
+        print(
+            "the root of this session was not read, so the resume address of the "
+            f"machine is left alone: {_failure_sentence(result)}",
+            file=sys.stderr,
+        )
+        return True
+    filesystem_type, _, source = result.stdout.strip().partition(
+        FINDMNT_COLUMN_SEPARATOR
+    )
+    if filesystem_type == OVERLAY_FILESYSTEM_TYPE:
+        return True
+    points_path_prefix = (
+        f"{ROOT_MOUNT_POINT}{config.points_subvolume}{ROOT_MOUNT_POINT}"
+    )
+    return f"{SUBVOLUME_OPEN_SIGN}{points_path_prefix}" in source
+
+
 def _publish_resume_address(config: Config, offset_pages: int) -> None:
     """Make the resume address known to the boot and to this session.
 
@@ -990,10 +1044,16 @@ def configure_swapfile(config: Config) -> Outcome:
 
     offset_pages = _resume_offset_pages(config)
     if offset_pages is not None:
-        try:
-            _publish_resume_address(config, offset_pages)
-        except (SwapfileError, subprocess.TimeoutExpired) as exc:
-            print(f"the resume address was not published: {exc}", file=sys.stderr)
+        if _root_is_a_snapshot_session(config):
+            print(
+                "this session was started from a snapshot, so the resume address of "
+                "the machine and its boot menu are left alone"
+            )
+        else:
+            try:
+                _publish_resume_address(config, offset_pages)
+            except (SwapfileError, subprocess.TimeoutExpired) as exc:
+                print(f"the resume address was not published: {exc}", file=sys.stderr)
     return Outcome(
         changed=changed,
         skipped_reason=None,
@@ -1116,6 +1176,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="bound of the call that rebuilds the boot menu",
     )
     parser.add_argument(
+        "--points-subvolume",
+        required=True,
+        help="subvolume of the machine that holds the snapshots of its root",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="create the swap file again even where the target size is reached",
@@ -1149,6 +1214,7 @@ def _config_from_arguments(argv: list[str]) -> Config:
         power_resume_file_path=Path(arguments.power_resume_file),
         power_resume_offset_file_path=Path(arguments.power_resume_offset_file),
         update_grub_timeout_seconds=arguments.update_grub_timeout_seconds,
+        points_subvolume=arguments.points_subvolume,
         force=arguments.force,
     )
 

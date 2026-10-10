@@ -202,7 +202,6 @@ def _machine_that_changes_nothing(
     machine.installed_packages.update(TEST_PACKAGES)
     machine.generator.write_text("#!/bin/sh\n", encoding="utf-8")
     machine.enabled_timers.update(values.MAINTENANCE_ENABLED_TIMERS)
-    machine.enabled_timers.add(values.GRUB_BTRFS_DAEMON_UNIT_NAME)
     machine.fstab.write_text(
         "UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 / btrfs "
         f"{values.COMPRESSION_OPTION_ASSIGNMENT},noatime 0 0\n"
@@ -321,11 +320,38 @@ def test_btrfs_setup_brings_a_fresh_machine_to_the_declared_state(
     assert "# a comment of the generator" in generator_config
     assert machine.dropin.is_file()
     assert any(call[1] == "daemon-reload" for call in machine.calls_of("systemctl"))
-    assert any(
-        call[1:3] == ["enable", "--now"]
+    # The generator writes no entry on this machine, because both save points are
+    # ignored by its settings and the points section writes their entries itself:
+    # its daemon is not enabled, and a machine that carried it enabled loses it.
+    assert not any(
+        call[1] in ("enable", "start")
         and call[-1] == values.GRUB_BTRFS_DAEMON_UNIT_NAME
         for call in machine.calls_of("systemctl")
     )
+
+
+def test_btrfs_setup_stops_the_daemon_a_machine_of_an_earlier_run_carries(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An earlier version of the section enabled the daemon of the generator, and
+    # a daemon that rewrites the menu fights the points section for the same
+    # file: a machine that carries it enabled loses it on this run.
+    machine = _machine_that_changes_nothing(monkeypatch, tmp_path)
+    machine.enabled_timers.add(values.GRUB_BTRFS_DAEMON_UNIT_NAME)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch, machine, subvolume_answer=SUBDIR_ANSWER_WITH_THE_SUBVOLUMES
+    )
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: True
+    )
+
+    result = btrfs_setup.task(_ctx(skip_apt_update=True))
+
+    unit = values.GRUB_BTRFS_DAEMON_UNIT_NAME
+    assert ["systemctl", "disable", "--now", unit] in machine.calls_of("systemctl")
+    assert unit not in machine.enabled_timers
+    assert result.changed is True
 
 
 def test_btrfs_setup_changes_nothing_on_a_machine_that_is_already_configured(

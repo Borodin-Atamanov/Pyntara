@@ -164,6 +164,7 @@ def _config(tmp_path: Path, **overrides: Any) -> Any:
         "power_resume_file_path": tmp_path / "power-resume",
         "power_resume_offset_file_path": tmp_path / "power-resume-offset",
         "update_grub_timeout_seconds": 60.0,
+        "points_subvolume": "@points",
         "force": False,
     }
     settings.update(overrides)
@@ -217,6 +218,8 @@ def _arguments(config: Any, *, force: bool = False) -> list[str]:
         str(config.power_resume_offset_file_path),
         "--update-grub-timeout-seconds",
         str(config.update_grub_timeout_seconds),
+        "--points-subvolume",
+        config.points_subvolume,
     ]
     if force:
         arguments.append("--force")
@@ -373,13 +376,18 @@ def _address_run_double(
     findmnt_source: str = "/dev/null[/@swap]",
     update_grub_fails: bool = False,
     augeas_fails: bool = False,
+    root_mount: str = "btrfs /dev/mapper/pyntara-test",
+    root_mount_fails: bool = False,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
     """A run double that answers the tools of the resume address.
 
     The answers describe a machine whose settings file carries the given kernel
     command line: a read run of augtool prints that node and a write run saves.
     None as the value means the file carries no such node, and an empty source
-    means the device that holds the swap file cannot be read.
+    means the device that holds the swap file cannot be read. The answer about
+    the root of the session is the two columns findmnt writes for it, so a test
+    names the root the session was started from; root_mount_fails makes that
+    question fail.
     """
 
     def run(
@@ -397,6 +405,10 @@ def _address_run_double(
                 node = script.rsplit("print ", 1)[1].strip()
                 return _answered(command, 0, f'{node} = "{command_line_value}"\n')
             return _answered(command, 0, "Saved 1 file(s)\n")
+        if command[0] == "findmnt" and "FSTYPE,SOURCE" in command:
+            if root_mount_fails:
+                return _answered(command, 1, "", "findmnt: / is not a mount point")
+            return _answered(command, 0, f"{root_mount}\n")
         if command[0] == "findmnt" and "FSTYPE" in command:
             return _answered(command, 0, "ext4\n")
         if command[0] == "findmnt":
@@ -467,6 +479,89 @@ def test_the_resume_address_is_written_into_the_kernel_command_line(
     assert (tmp_path / "power-resume-offset").read_text(encoding="utf-8") == (
         "51615744\n"
     )
+
+
+def test_a_session_of_the_work_copy_publishes_no_resume_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The work copy and the machine itself share the boot partition, so a session
+    # that runs from the copy writes neither the kernel command line of the
+    # machine nor its boot menu: the menu would name the copy afterwards, and the
+    # machine would boot a snapshot instead of itself. The offset is still read,
+    # because the caller reports it.
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+    inputs: list[str | None] = []
+    monkeypatch.setattr(
+        program,
+        "_run",
+        _address_run_double(
+            calls,
+            inputs,
+            command_line_value=None,
+            root_mount="btrfs /dev/mapper/cryptroot[/@points/Pyntara-work]",
+        ),
+    )
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_offset_pages == 51615744
+    assert _augeas_write_scripts(inputs) == []
+    assert ["update-grub"] not in calls
+    assert not (tmp_path / "power-resume").exists()
+    assert "started from a snapshot" in capsys.readouterr().out
+
+
+def test_a_session_of_the_point_publishes_no_resume_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The immutable point carries a read-only snapshot and runs its root as an
+    # overlay of it, which is a root no machine was installed on: the resume
+    # address and the boot menu belong to the machine, so this session writes
+    # neither.
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+    inputs: list[str | None] = []
+    monkeypatch.setattr(
+        program,
+        "_run",
+        _address_run_double(
+            calls,
+            inputs,
+            command_line_value=None,
+            root_mount="overlay overlay",
+        ),
+    )
+    program.configure_swapfile(config)
+    assert _augeas_write_scripts(inputs) == []
+    assert ["update-grub"] not in calls
+    assert "started from a snapshot" in capsys.readouterr().out
+
+
+def test_a_root_that_cannot_be_read_publishes_no_resume_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A session whose root cannot be read may be a snapshot session, and a boot
+    # menu rebuilt from a snapshot stops the machine from booting on its own: the
+    # address is left alone and the reason is printed.
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+    inputs: list[str | None] = []
+    monkeypatch.setattr(
+        program,
+        "_run",
+        _address_run_double(
+            calls,
+            inputs,
+            command_line_value=None,
+            root_mount_fails=True,
+        ),
+    )
+    program.configure_swapfile(config)
+    assert _augeas_write_scripts(inputs) == []
+    assert ["update-grub"] not in calls
+    assert "was not read" in capsys.readouterr().err
 
 
 def test_a_stale_resume_address_is_replaced(
@@ -733,6 +828,7 @@ def test_the_creation_sequence_runs_on_accepted_storage(
             str(config.swapfile_path.parent),
         ],
         ["filefrag", "-v", str(config.swapfile_path)],
+        ["findmnt", *program.ROOT_MOUNT_ARGUMENTS],
     ]
 
 

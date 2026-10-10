@@ -79,6 +79,16 @@ POINTS_MOUNT_WARNING: str = (
     "stored: the points subvolume has to be mounted first"
 )
 
+# Message of a session that was started from one of the save points. The machine
+# and every session share the boot partition, so a session that runs from a
+# snapshot writes neither the save point nor the boot menu: the entries written
+# from there name the snapshot, and the machine would boot into a copy of itself
+# afterwards.
+SNAPSHOT_SESSION_MESSAGE: str = (
+    "this session was started from a save point, so the save point and the boot "
+    "menu of the machine are left alone"
+)
+
 
 def task(ctx: Context) -> TaskResult:
     """Store the immutable save point and its writable work copy."""
@@ -87,6 +97,11 @@ def task(ctx: Context) -> TaskResult:
     if mount is None:
         _log(ROOT_QUERY_WARNING)
         return TaskResult(success=True, changed=False, warnings=(ROOT_QUERY_WARNING,))
+    if _runs_from_a_snapshot(mount):
+        _log(SNAPSHOT_SESSION_MESSAGE)
+        return TaskResult(
+            success=True, changed=False, message=SNAPSHOT_SESSION_MESSAGE
+        )
     if mount.filesystem_type != setup_values.BTRFS_FILESYSTEM_TYPE:
         warning = NON_BTRFS_WARNING.format(
             filesystem_type=mount.filesystem_type,
@@ -173,6 +188,26 @@ def _root_filesystem() -> btrfs.MountedFilesystem | None:
     return btrfs.read_mounted_filesystem(
         command, setup_values.STORAGE_COMMAND_TIMEOUT_SECONDS
     )
+
+
+def _runs_from_a_snapshot(mount: btrfs.MountedFilesystem) -> bool:
+    """Answer whether this session was started from one of the save points.
+
+    A session of the immutable point runs its root as an overlay of that
+    snapshot, and a session of the work copy runs it from a subvolume inside the
+    points subvolume. Both roots are copies of the root the machine was installed
+    on, and the save point and the boot menu of the machine belong to the machine
+    rather than to a session that reads one of its copies. The subvolume of a
+    mount is reported with a leading slash, as in device[/@points/Pyntara-work].
+    """
+
+    if mount.filesystem_type == setup_values.OVERLAY_FILESYSTEM_TYPE:
+        return True
+    points_path_prefix = (
+        f"{setup_values.ROOT_MOUNT_POINT}{setup_values.POINTS_SUBVOLUME_NAME}"
+        f"{setup_values.ROOT_MOUNT_POINT}"
+    )
+    return mount.subvolume.startswith(points_path_prefix)
 
 
 def _point_is_stored() -> bool:
@@ -742,16 +777,12 @@ def _ignore_directive(entries: tuple[str, ...]) -> str:
 
 
 def _refresh_menu(warnings: list[str]) -> bool:
-    """Rebuild the boot menu, with the generator stopped around the rebuild.
+    """Rebuild the boot menu so that it shows the entries just written.
 
-    A rebuild that runs while the generator writes its list can leave the
-    generated file missing, and the menu then loses the submenu of the points.
-    Stopping the generator for the moment of the rebuild keeps the file in
-    place.
+    The daemon of the menu generator is off, so a rebuild cannot race a write of
+    the generated list any more and the generated file stays in place.
     """
 
-    unit = setup_values.GRUB_BTRFS_DAEMON_UNIT_NAME
-    stopped = _systemctl(values.SYSTEMCTL_STOP_COMMAND, unit, warnings)
     try:
         run_command(
             values.UPDATE_GRUB_COMMAND,
@@ -763,27 +794,5 @@ def _refresh_menu(warnings: list[str]) -> bool:
         warnings.append(f"the boot menu could not be rebuilt: {btrfs.failure_text(exc)}")
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
-    finally:
-        if stopped:
-            _systemctl(values.SYSTEMCTL_START_COMMAND, unit, warnings)
     _log("boot menu rebuilt")
-    return True
-
-
-def _systemctl(
-    command: tuple[str, ...], unit: str, warnings: list[str]
-) -> bool:
-    """Run one systemctl call of the section on one unit."""
-
-    try:
-        run_command(
-            substituted_command(command, {"unit": unit}),
-            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
-            check=True,
-            capture=True,
-        )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        warnings.append(f"the call on {unit} failed: {btrfs.failure_text(exc)}")
-        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
-        return False
     return True

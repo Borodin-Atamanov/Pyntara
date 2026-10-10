@@ -51,6 +51,12 @@ ROOT_MOUNT_POINT: Path = Path("/")
 # usable machine.
 BTRFS_FILESYSTEM_TYPE: str = "btrfs"
 
+# Filesystem type whose root is a read-only snapshot with a writable layer over
+# it. A session started from such a snapshot runs its root as an overlay, and
+# the sections that write the boot menu of the machine leave that menu alone
+# there.
+OVERLAY_FILESYSTEM_TYPE: str = "overlay"
+
 # Compression the machine writes new data with, in the form the fstab option
 # list carries it.
 COMPRESSION_OPTION_ASSIGNMENT: str = "compress=zstd:15"
@@ -160,13 +166,14 @@ GRUB_BTRFS_KERNEL_PARAMETERS_DIRECTIVE: str = (
     'GRUB_BTRFS_SNAPSHOT_KERNEL_PARAMETERS=""'
 )
 
-# The daemon that watches the points and regenerates the snapshot list: its
-# path, its unit, and the drop-in that points the watch at the points mount and
-# orders the unit after that mount. The watch is recursive, because a change
-# inside a work copy is a change the line of that copy should follow; it did not
-# on its own in the live probes, so the points section rebuilds the menu itself
-# after a change instead of relying on the daemon for that. The drop-in body
-# ships as a file of the section.
+# The daemon of the generator that watches the points: its path, its unit and
+# the drop-in that points the watch at the points mount. The section turns the
+# daemon off, because the generator writes no entry of its own on this machine:
+# both save points are ignored by its settings and the points section writes
+# their boot entries itself. The drop-in stays, so a hand enabled daemon watches
+# the right mount; the daemon is installed and kept, so a machine can turn it on
+# again without installing anything. The drop-in body ships as a file of the
+# section.
 GRUB_BTRFS_DAEMON_PATH: Path = Path("/usr/bin/grub-btrfsd")
 GRUB_BTRFS_DAEMON_UNIT_NAME: str = "grub-btrfsd.service"
 GRUB_BTRFS_DAEMON_DROPIN_PATH: Path = Path(
@@ -218,7 +225,6 @@ SYSTEMCTL_DISABLE_COMMAND: tuple[str, ...] = (
     "--now",
     "{unit}",
 )
-SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = ("systemctl", "restart", "{unit}")
 SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
 SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 
@@ -229,6 +235,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "FINDMNT_COMMAND",
     "ROOT_MOUNT_POINT",
     "BTRFS_FILESYSTEM_TYPE",
+    "OVERLAY_FILESYSTEM_TYPE",
     "COMPRESSION_OPTION_ASSIGNMENT",
     "COMPRESSED_MOUNT_POINTS",
     "REMOUNT_COMMAND",
@@ -273,7 +280,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
     "SYSTEMCTL_ENABLE_COMMAND",
     "SYSTEMCTL_DISABLE_COMMAND",
-    "SYSTEMCTL_RESTART_COMMAND",
     "SYSTEMCTL_STOP_COMMAND",
     "SYSTEMCTL_START_COMMAND",
 )

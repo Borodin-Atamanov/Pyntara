@@ -70,6 +70,7 @@ from pyntara.utils import (
     substituted_command,
     task_data_dir,
 )
+from pyntara.values import btrfs_setup as btrfs_setup_values
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
@@ -144,7 +145,10 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
     runs the program with this command line, so a name that drifts on one side
     fails the tests instead of failing on a target machine. The device of the
     resume address arrives with them, because the program writes that address
-    into the boot menu and an empty device means there is nothing to write.
+    into the boot menu and an empty device means there is nothing to write. The
+    name of the points subvolume arrives as well, because the snapshots of the
+    root live in that subvolume and the program leaves the boot menu of the
+    machine alone when it runs in a session started from one of them.
     """
 
     command = [
@@ -191,6 +195,8 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
         str(values.POWER_RESUME_OFFSET_FILE_PATH),
         "--update-grub-timeout-seconds",
         str(values.UPDATE_GRUB_TIMEOUT_SECONDS),
+        "--points-subvolume",
+        btrfs_setup_values.POINTS_SUBVOLUME_NAME,
     ]
     if force:
         command.append("--force")

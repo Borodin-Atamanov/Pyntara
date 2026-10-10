@@ -44,6 +44,12 @@ OLDER_KERNEL = "7.0.0-9-generic"
 BTRFS_ROOT_ANSWER = "/dev/vda2[/@] btrfs rw,compress=zstd:15\n"
 EXT4_ROOT_ANSWER = "/dev/vda2 ext4 rw,relatime\n"
 
+# The root of a session that was started from one of the two save points: the
+# work copy is a subvolume inside the points subvolume, and the immutable point
+# runs the root as an overlay of the read-only snapshot.
+WORK_COPY_ROOT_ANSWER = "/dev/vda2[/@points/Pyntara-work] btrfs rw,compress=zstd:15\n"
+OVERLAY_ROOT_ANSWER = "overlay overlay rw\n"
+
 # The fstab of the fixture machine, as a machine names its root device.
 FSTAB_TEXT = "UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 / btrfs defaults 0 0\n"
 
@@ -491,29 +497,56 @@ def test_points_setup_ignores_a_commented_setting_of_the_generator(
     )
 
 
-def test_points_setup_rebuilds_the_menu_with_the_generator_stopped(
+def test_points_setup_rebuilds_the_menu_without_a_generator_daemon(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # A rebuild that races the generator can leave the generated file missing,
-    # so the generator is stopped for the moment of the rebuild and started
-    # again afterwards.
+    # The daemon of the generator is off, so the rebuild stands alone: no unit
+    # is stopped before it and nothing is started again afterwards.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     calls = _commands_fake(monkeypatch, machine)
 
     btrfs_points_setup.task(_ctx())
 
-    order = [call[0] for call in calls]
-    stop = order.index("systemctl")
-    assert calls[stop][1:] == [
-        "stop",
-        setup_values.GRUB_BTRFS_DAEMON_UNIT_NAME,
-    ]
-    assert order.index("update-grub") > stop
-    assert calls[-1][1:] == [
-        "start",
-        setup_values.GRUB_BTRFS_DAEMON_UNIT_NAME,
-    ]
+    assert not [call for call in calls if call[0] == "systemctl"]
+    assert any(call[0] == "update-grub" for call in calls)
+
+
+def test_points_setup_leaves_a_session_of_the_work_copy_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The root of this session is the work copy, which lies in the points
+    # subvolume. The save point and the boot menu belong to the machine, so the
+    # section stores nothing and reports why instead.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    calls = _commands_fake(monkeypatch, machine, root_answer=WORK_COPY_ROOT_ANSWER)
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert result.success is True
+    assert result.changed is False
+    assert result.message == btrfs_points_setup.SNAPSHOT_SESSION_MESSAGE
+    assert [call[0] for call in calls] == ["findmnt"]
+
+
+def test_points_setup_leaves_a_session_of_the_point_alone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The immutable point runs its root as an overlay, so this session reads a
+    # copy of the machine and writes nothing into the machine itself. The task
+    # reports that instead of calling the machine an ordinary system, which is
+    # what a session without btrfs on its root would mean.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    calls = _commands_fake(monkeypatch, machine, root_answer=OVERLAY_ROOT_ANSWER)
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert result.changed is False
+    assert result.message == btrfs_points_setup.SNAPSHOT_SESSION_MESSAGE
+    assert result.warnings == ()
+    assert [call[0] for call in calls] == ["findmnt"]
 
 
 def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(

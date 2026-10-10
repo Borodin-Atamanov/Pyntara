@@ -133,8 +133,6 @@ SUBVOLUME_SHOW_COMMAND: tuple[str, ...] = (
     "{path}",
 )
 UPDATE_GRUB_COMMAND: tuple[str, ...] = ("update-grub",)
-SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 
 # Setting of the generator that keeps the point out of the generated list. The
 # menu then shows the point once, as the entry of this section with the
@@ -178,8 +176,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "READ_ONLY_PROPERTY_COMMAND",
     "SUBVOLUME_SHOW_COMMAND",
     "UPDATE_GRUB_COMMAND",
-    "SYSTEMCTL_STOP_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
     "GRUB_BTRFS_IGNORE_KEY",
     "GRUB_BTRFS_IGNORE_DIRECTIVE_FORMAT",
     "GRUB_BTRFS_IGNORE_ENTRY_FORMAT",

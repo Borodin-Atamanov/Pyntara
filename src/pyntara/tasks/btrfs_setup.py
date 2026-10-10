@@ -571,12 +571,19 @@ def _set_timer_state(name: str, *, enabled: bool, warnings: list[str]) -> bool:
 
 
 def _prepare_menu(ctx: Context, warnings: list[str]) -> bool:
-    """Install the menu generator, point it at the points and start its daemon."""
+    """Install the menu generator, point it at the points and turn it off.
+
+    The generator keeps its settings and its drop-in, while its daemon is
+    stopped and disabled: the entries that boot the two save points are written
+    by the points section itself, so the generator has nothing to add to the
+    menu, and a daemon that rewrites the menu would fight that section for the
+    same file.
+    """
 
     changed = _build_menu_generator(warnings)
     changed = _write_kernel_parameters(warnings) or changed
     dropin_changed = _deploy_daemon_dropin(ctx, warnings)
-    daemon_changed = _reload_and_start_daemon(dropin_changed, warnings)
+    daemon_changed = _reload_and_stop_daemon(warnings)
     return changed or dropin_changed or daemon_changed
 
 
@@ -711,8 +718,13 @@ def _deploy_daemon_dropin(ctx: Context, warnings: list[str]) -> bool:
     return True
 
 
-def _reload_and_start_daemon(dropin_changed: bool, warnings: list[str]) -> bool:
-    """Reload systemd, enable the menu daemon and restart it when it changed."""
+def _reload_and_stop_daemon(warnings: list[str]) -> bool:
+    """Reload systemd and stop and disable the daemon of the menu generator.
+
+    A machine that ran an earlier version of the section carries the daemon
+    enabled, so the call is made on every run and reports a change only when the
+    daemon was running or enabled.
+    """
 
     unit = values.GRUB_BTRFS_DAEMON_UNIT_NAME
     try:
@@ -730,31 +742,24 @@ def _reload_and_start_daemon(dropin_changed: bool, warnings: list[str]) -> bool:
         warnings.append(f"systemd could not reload its units: {btrfs.failure_text(exc)}")
         return False
 
-    already_enabled = service_is_enabled(
-        unit, values.STORAGE_COMMAND_TIMEOUT_SECONDS
-    )
-    changed = False
-    for template, needed in (
-        (values.SYSTEMCTL_ENABLE_COMMAND, not already_enabled),
-        (values.SYSTEMCTL_RESTART_COMMAND, dropin_changed or not already_enabled),
-    ):
-        if not needed:
-            continue
-        command = substituted_command(template, {"unit": unit})
-        try:
-            run_command(
-                command,
-                timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
-                check=True,
-                capture=True,
-            )
-        except (
-            OSError,
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-        ) as exc:
-            warnings.append(f"{unit} could not be started: {btrfs.failure_text(exc)}")
-            return changed
-        changed = True
-    _log(f"{unit} watches {values.POINTS_MOUNT_POINT}")
-    return changed
+    was_enabled = service_is_enabled(unit, values.STORAGE_COMMAND_TIMEOUT_SECONDS)
+    if not was_enabled:
+        _log(f"{unit} is off")
+        return False
+    command = substituted_command(values.SYSTEMCTL_DISABLE_COMMAND, {"unit": unit})
+    try:
+        run_command(
+            command,
+            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+            check=True,
+            capture=True,
+        )
+    except (
+        OSError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        warnings.append(f"{unit} could not be stopped: {btrfs.failure_text(exc)}")
+        return False
+    _log(f"{unit} stopped and disabled: the section writes the entries itself")
+    return True
