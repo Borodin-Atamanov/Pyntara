@@ -49,6 +49,7 @@ from pyntara.config_edit import replace_line_by_string
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     run_command,
     service_is_active,
@@ -101,10 +102,11 @@ def task(ctx: Context) -> TaskResult:
         return TaskResult(success=True, changed=False, warnings=(warning,))
 
     warnings: list[str] = []
+    changed = _install_tools(ctx, warnings)
     if not _point_is_stored():
         _wait_for_recompression(warnings)
 
-    changed = _ensure_point(warnings)
+    changed = _ensure_point(warnings) or changed
     point_present = _subvolume_exists(_point_directory())
     if point_present:
         changed = _ensure_work_copy(warnings) or changed
@@ -130,6 +132,30 @@ def task(ctx: Context) -> TaskResult:
     return TaskResult(
         success=True, changed=changed, message=message, warnings=tuple(warnings)
     )
+
+
+def _install_tools(ctx: Context, warnings: list[str]) -> bool:
+    """Install the packages the boot loader tools of the section come from.
+
+    The section asks the boot loader's own tools for the device and for the
+    path of a kernel, and those tools come from grub2-common. The install goes
+    through the shared package path, so the wait for the package lock, the
+    index refresh and the retries are the same as in every other section.
+    """
+
+    missing, installed, failures, package_warnings = install_missing_packages(
+        ctx, values.PACKAGES
+    )
+    warnings.extend(package_warnings)
+    warnings.extend(
+        f"package {package} could not be installed: {reason}"
+        for package, reason in failures
+    )
+    if installed:
+        _log(f"installed: {', '.join(installed)}")
+    if not missing:
+        _log("the boot loader tools of the section are installed")
+    return bool(installed)
 
 
 def _is_forced(ctx: Context) -> bool:
@@ -352,7 +378,7 @@ def _read_only(directory: Path) -> bool | None:
 def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
     """Write the boot entry of the immutable point into the grub.d directory."""
 
-    entries, error, notes = _render_entries(ctx, _point_directory())
+    entries, error, notes = _render_entries(ctx)
     warnings.extend(notes)
     for note in notes:
         _log(note, priority=engine_values.ERROR_PRIORITY)
@@ -376,14 +402,17 @@ def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
     return True
 
 
-def _render_entries(
-    ctx: Context, point_directory: Path
-) -> tuple[str, str | None, tuple[str, ...]]:
-    """Render one menu entry per kernel of the point.
+def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
+    """Render one menu entry per kernel of the machine.
 
-    The newest kernel carries the plain title of the point and every older
-    kernel carries the kernel version in its title, so the menu names what the
-    user chooses between. A kernel without its initial ramdisk is left out,
+    The kernels are read from the boot directory of the machine and not from
+    inside the point: a machine whose boot directory is a partition or a
+    subvolume of its own carries no kernel inside the point, because a snapshot
+    does not cross a mount. The device and the paths come from the boot loader's
+    own tools, so this one code writes a correct entry whatever layout the
+    machine has. The newest kernel carries the plain title of the point and
+    every older kernel carries its version in its title, so the menu names what
+    the user chooses between. A kernel without its initial ramdisk is left out,
     because such an entry cannot boot, and the section reports it.
     """
 
@@ -397,13 +426,12 @@ def _render_entries(
             ),
             (),
         )
-    boot_directory = point_directory / values.BOOT_DIRECTORY_NAME
     try:
-        names = tuple(os.listdir(boot_directory))
+        names = tuple(os.listdir(values.BOOT_MOUNT_POINT))
     except OSError as exc:
         return (
             "",
-            f"cannot read the kernels of the point {boot_directory}: {exc}",
+            f"cannot read the kernels of the machine {values.BOOT_MOUNT_POINT}: {exc}",
             (),
         )
 
@@ -419,34 +447,52 @@ def _render_entries(
     kept = tuple(
         version
         for version in versions
-        if (boot_directory / f"{values.INITRD_FILE_PREFIX}{version}").is_file()
+        if (values.BOOT_MOUNT_POINT / f"{values.INITRD_FILE_PREFIX}{version}").is_file()
     )
-    notes: tuple[str, ...] = ()
+    notes: list[str] = []
     left_out = tuple(version for version in versions if version not in kept)
     if left_out:
-        notes = (
-            (
-                f"the point {point_directory} carries kernels without their "
-                f"initial ramdisk, so they have no entry: {', '.join(left_out)}"
-            ),
+        notes.append(
+            f"the machine {values.BOOT_MOUNT_POINT} carries kernels without "
+            f"their initial ramdisk, so they have no entry: {', '.join(left_out)}"
         )
     if not kept:
         return (
             "",
             (
-                f"the point {point_directory} carries no kernel with its "
-                f"initial ramdisk, so no boot entry was written"
+                f"the machine {values.BOOT_MOUNT_POINT} carries no kernel with "
+                f"its initial ramdisk, so no boot entry was written"
             ),
-            notes,
+            tuple(notes),
         )
+
+    boot_uuid = _boot_device_uuid(notes)
+    if boot_uuid is None:
+        return (
+            "",
+            (
+                f"the device of {values.BOOT_MOUNT_POINT} could not be read, so "
+                f"no boot entry was written"
+            ),
+            tuple(notes),
+        )
+    search_line = values.GRUB_SEARCH_UUID_LINE.format(value=boot_uuid)
 
     body = _template_text(ctx, values.GRUB_D_ENTRY_BODY_FILE_NAME)
     subvolume = f"{setup_values.POINTS_SUBVOLUME_NAME}/{values.POINT_NAME}"
     rendered: list[str] = []
-    for index, version in enumerate(kept):
+    for version in kept:
+        kernel_path = _boot_loader_path(
+            values.BOOT_MOUNT_POINT / f"{values.KERNEL_FILE_PREFIX}{version}", notes
+        )
+        initrd_path = _boot_loader_path(
+            values.BOOT_MOUNT_POINT / f"{values.INITRD_FILE_PREFIX}{version}", notes
+        )
+        if kernel_path is None or initrd_path is None:
+            continue
         title = (
             values.POINT_NAME
-            if index == 0
+            if not rendered
             else f"{values.POINT_NAME} ({version})"
         )
         rendered.append(
@@ -456,20 +502,25 @@ def _render_entries(
                     "menu_title": title,
                     "entry_id": values.GRUB_D_ENTRY_ID,
                     "entry_class": values.GRUB_D_ENTRY_CLASS,
-                    "search_line": _search_line(root_spec),
-                    "kernel_path": _grub_path(
-                        point_directory, f"{values.KERNEL_FILE_PREFIX}{version}"
-                    ),
+                    "search_line": search_line,
+                    "kernel_path": kernel_path,
                     "root_spec": root_spec,
                     "subvolume": subvolume,
                     "overlay_parameter": values.OVERLAY_PARAMETER,
-                    "initrd_path": _grub_path(
-                        point_directory, f"{values.INITRD_FILE_PREFIX}{version}"
-                    ),
+                    "initrd_path": initrd_path,
                 },
             )
         )
-    return "".join(rendered), None, notes
+    if not rendered:
+        return (
+            "",
+            (
+                f"the paths of the kernels of {values.BOOT_MOUNT_POINT} could not "
+                f"be read, so no boot entry was written"
+            ),
+            tuple(notes),
+        )
+    return "".join(rendered), None, tuple(notes)
 
 
 def _template_text(ctx: Context, file_name: str) -> str:
@@ -478,44 +529,65 @@ def _template_text(ctx: Context, file_name: str) -> str:
     return task_data_dir(ctx.repo_root, ctx.task_name).joinpath(file_name).read_text(
         encoding="utf-8"
     )
-def _grub_path(directory: Path, file_name: str) -> str:
-    """The path of a file inside the point as the boot loader names it.
 
-    The boot loader reaches the point through the top level of the filesystem,
-    so the path starts at the points subvolume and not at the mount point of
-    that subvolume in the running system.
+
+def _boot_device_uuid(notes: list[str]) -> str | None:
+    """The UUID of the filesystem that carries the kernels of the machine.
+
+    The answer comes from grub-probe, the tool the boot menu itself uses, so the
+    entry names the device the way this machine names it, whichever layout the
+    machine has: a separate boot partition, a boot subvolume, or a boot
+    directory inside the root subvolume.
     """
 
-    return (
-        f"/{setup_values.POINTS_SUBVOLUME_NAME}/{directory.name}/"
-        f"{values.BOOT_DIRECTORY_NAME}/{file_name}"
+    command = substituted_command(
+        values.GRUB_PROBE_UUID_COMMAND, {"path": str(values.BOOT_MOUNT_POINT)}
     )
+    return _boot_loader_answer(command, notes, values.BOOT_MOUNT_POINT)
+
+
+def _boot_loader_path(path: Path, notes: list[str]) -> str | None:
+    """The path of a file as the boot loader names it on its own device."""
+
+    command = substituted_command(values.GRUB_MKRELPATH_COMMAND, {"path": str(path)})
+    return _boot_loader_answer(command, notes, path)
+
+
+def _boot_loader_answer(
+    command: list[str], notes: list[str], subject: Path
+) -> str | None:
+    """Run one boot loader tool and take its answer as it is.
+
+    The answer is used unchanged: the tool names the device and the path the way
+    the boot loader reads them, so the section must not post-process them. A
+    tool that fails or answers nothing is reported with the text it gave, and
+    the caller of the section logs every note.
+    """
+
+    try:
+        result = run_command(
+            command,
+            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+            check=True,
+            capture=True,
+        )
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        notes.append(
+            f"the boot loader tool could not read {subject}: "
+            f"{btrfs.failure_text(exc)}"
+        )
+        return None
+    answer = result.stdout.strip()
+    if not answer:
+        notes.append(f"the boot loader tool answered nothing for {subject}")
+        return None
+    return answer
 
 
 def _kernel_version_key(version: str) -> tuple[int, ...]:
     """Order kernel versions by their numbers and not by their text."""
 
     return tuple(int(part) for part in re.findall(r"\d+", version))
-
-
-def _search_line(root_spec: str) -> str:
-    """The line that makes the boot loader use the device of the root.
-
-    Which query the line carries follows the way the fstab names the device, so
-    the entry works whether the machine names it by UUID, by label or by its
-    device path.
-    """
-
-    if root_spec.startswith(values.UUID_SPEC_PREFIX):
-        template = values.GRUB_SEARCH_UUID_LINE
-        value = root_spec[len(values.UUID_SPEC_PREFIX) :]
-    elif root_spec.startswith(values.LABEL_SPEC_PREFIX):
-        template = values.GRUB_SEARCH_LABEL_LINE
-        value = root_spec[len(values.LABEL_SPEC_PREFIX) :]
-    else:
-        template = values.GRUB_SEARCH_DEVICE_LINE
-        value = root_spec
-    return template.format(value=value)
 
 
 def _root_spec() -> str | None:

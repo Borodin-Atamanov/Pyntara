@@ -16,6 +16,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+# Packages the section installs from the Ubuntu archive. grub2-common carries
+# the two tools of the boot loader the section asks for the device and for the
+# path of a kernel: grub-probe reports the device of the filesystem that holds
+# the kernels, and grub-mkrelpath writes the path of a file the way the boot
+# loader itself names it. Both are the tools update-grub uses, so the entry the
+# section writes names a kernel exactly as the machine's own boot menu does.
+PACKAGES: tuple[str, ...] = ("grub2-common",)
+
 # The two things the section stores in the points subvolume.
 POINT_NAME: str = "Pyntara-permanent"
 WORK_COPY_NAME: str = "Pyntara-work"
@@ -41,20 +49,34 @@ GRUB_D_ENTRY_CLASS: str = "pyntara"
 # which is a rescue session and not a working system.
 OVERLAY_PARAMETER: str = "overlayroot=tmpfs:recurse=0"
 
-# How the entry finds the device of the root filesystem. Which line is used
-# follows the device field of the root line of the fstab: a UUID, a label, or
-# the device path itself, so the entry names the device the way this machine
-# names it and no identifier is written into the code.
+# How the entry finds the device of the kernels. The device is the filesystem
+# that carries the boot directory of the machine, and its UUID comes from the
+# boot loader's own tool, so the entry names the device the way this machine
+# names it and the entry is correct on every layout of the boot directory.
 GRUB_SEARCH_UUID_LINE: str = "search --no-floppy --fs-uuid --set=root {value}"
-GRUB_SEARCH_LABEL_LINE: str = "search --no-floppy --label --set=root {value}"
-GRUB_SEARCH_DEVICE_LINE: str = "search --no-floppy --set=root {value}"
-UUID_SPEC_PREFIX: str = "UUID="
-LABEL_SPEC_PREFIX: str = "LABEL="
 
-# The files inside the point that carry a boot: the directory and the prefixes
-# of the kernel and of its initial ramdisk. The point is immutable, so the
-# kernel paths an entry names never change and the entry cannot go stale.
-BOOT_DIRECTORY_NAME: str = "boot"
+# The two tools of the boot loader the section asks for the device and for the
+# path of a kernel. grub-probe answers the UUID of the filesystem that carries a
+# path, and grub-mkrelpath answers the path of a file the way the boot loader
+# names it on that filesystem. Both are the tools update-grub uses, so the entry
+# names a kernel exactly as the machine's own boot menu does, whether the boot
+# directory is a separate partition, a subvolume of its own, or a directory
+# inside the root subvolume.
+GRUB_PROBE_UUID_COMMAND: tuple[str, ...] = (
+    "grub-probe",
+    "--target=fs_uuid",
+    "{path}",
+)
+GRUB_MKRELPATH_COMMAND: tuple[str, ...] = ("grub-mkrelpath", "{path}")
+
+# Mount point that carries the kernels of the machine. The section takes the
+# kernels it writes entries for from here and not from inside the point: a
+# machine whose boot directory is a partition or a subvolume of its own carries
+# no kernel inside the point, because a snapshot does not cross a mount.
+BOOT_MOUNT_POINT: Path = Path("/boot")
+
+# The prefixes of a kernel and of its initial ramdisk, as the boot directory of
+# the machine names them.
 KERNEL_FILE_PREFIX: str = "vmlinuz-"
 INITRD_FILE_PREFIX: str = "initrd.img-"
 
@@ -113,6 +135,7 @@ UPDATE_GRUB_TIMEOUT_SECONDS: int = 300
 
 # The value names this module declares.
 READ_VALUE_NAMES: tuple[str, ...] = (
+    "PACKAGES",
     "POINT_NAME",
     "WORK_COPY_NAME",
     "GRUB_D_ENTRY_PATH",
@@ -123,11 +146,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GRUB_D_ENTRY_CLASS",
     "OVERLAY_PARAMETER",
     "GRUB_SEARCH_UUID_LINE",
-    "GRUB_SEARCH_LABEL_LINE",
-    "GRUB_SEARCH_DEVICE_LINE",
-    "UUID_SPEC_PREFIX",
-    "LABEL_SPEC_PREFIX",
-    "BOOT_DIRECTORY_NAME",
+    "GRUB_PROBE_UUID_COMMAND",
+    "GRUB_MKRELPATH_COMMAND",
+    "BOOT_MOUNT_POINT",
     "KERNEL_FILE_PREFIX",
     "INITRD_FILE_PREFIX",
     "SNAPSHOT_COMMAND",
