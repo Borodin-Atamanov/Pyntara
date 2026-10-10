@@ -376,18 +376,52 @@ def _read_only(directory: Path) -> bool | None:
 
 
 def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
-    """Write the boot entry of the immutable point into the grub.d directory."""
+    """Write the boot entries of both snapshots into the grub.d directory.
 
-    entries, error, notes = _render_entries(ctx)
-    warnings.extend(notes)
-    for note in notes:
-        _log(note, priority=engine_values.ERROR_PRIORITY)
+    Each snapshot gets a group of entries, one per kernel, so the menu offers
+    every kernel for the read-only snapshot and for the writable one. A group
+    that cannot be rendered leaves the file untouched: a file that carried only
+    part of the entries would drop the other snapshot from the menu.
+    """
+
+    groups = (
+        (
+            values.GRUB_READ_ONLY_ENTRY_NAME,
+            values.POINT_NAME,
+            values.OVERLAY_PARAMETER,
+            values.READ_ONLY_BOOT_MESSAGE,
+        ),
+        (
+            values.GRUB_WRITABLE_ENTRY_NAME,
+            values.WORK_COPY_NAME,
+            "",
+            values.WRITABLE_BOOT_MESSAGE,
+        ),
+    )
+    rendered: list[str] = []
+    error: str | None = None
+    for entry_name, subvolume_name, kernel_parameter, boot_message in groups:
+        entries, group_error, notes = _render_entries(
+            ctx,
+            entry_name=entry_name,
+            subvolume_name=subvolume_name,
+            kernel_parameter=kernel_parameter,
+            boot_message=boot_message,
+        )
+        warnings.extend(notes)
+        for note in notes:
+            _log(note, priority=engine_values.ERROR_PRIORITY)
+        if group_error is not None:
+            if error is None:
+                error = group_error
+            warnings.append(group_error)
+            _log(group_error, priority=engine_values.ERROR_PRIORITY)
+            continue
+        rendered.append(entries)
     if error is not None:
-        warnings.append(error)
-        _log(error, priority=engine_values.ERROR_PRIORITY)
         return False
     header = _template_text(ctx, values.GRUB_D_ENTRY_HEADER_FILE_NAME)
-    content = header + entries
+    content = header + "".join(rendered)
     path = values.GRUB_D_ENTRY_PATH
     try:
         if path.is_file() and path.read_text(encoding="utf-8") == content:
@@ -402,18 +436,25 @@ def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
     return True
 
 
-def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
-    """Render one menu entry per kernel of the machine.
+def _render_entries(
+    ctx: Context,
+    *,
+    entry_name: str,
+    subvolume_name: str,
+    kernel_parameter: str,
+    boot_message: str,
+) -> tuple[str, str | None, tuple[str, ...]]:
+    """Render one group of menu entries, one per kernel of the machine.
 
     The kernels are read from the boot directory of the machine and not from
-    inside the point: a machine whose boot directory is a partition or a
-    subvolume of its own carries no kernel inside the point, because a snapshot
-    does not cross a mount. The device and the paths come from the boot loader's
-    own tools, so this one code writes a correct entry whatever layout the
-    machine has. The newest kernel carries the plain title of the point and
-    every older kernel carries its version in its title, so the menu names what
-    the user chooses between. A kernel without its initial ramdisk is left out,
-    because such an entry cannot boot, and the section reports it.
+    inside a snapshot: a machine whose boot directory is a partition or a
+    subvolume of its own carries no kernel inside the snapshot, because a
+    snapshot does not cross a mount. The device and the paths come from the boot
+    loader's own tools, so this one code writes a correct entry whatever layout
+    the machine has. The newest kernel carries the word of the newest kernel and
+    every older kernel carries its version, so the menu names what the user
+    chooses between. A kernel without its initial ramdisk is left out, because
+    such an entry cannot boot, and the section reports it.
     """
 
     root_spec = _root_spec()
@@ -479,7 +520,7 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
     search_line = values.GRUB_SEARCH_UUID_LINE.format(value=boot_uuid)
 
     body = _template_text(ctx, values.GRUB_D_ENTRY_BODY_FILE_NAME)
-    subvolume = f"{setup_values.POINTS_SUBVOLUME_NAME}/{values.POINT_NAME}"
+    subvolume = f"{setup_values.POINTS_SUBVOLUME_NAME}/{subvolume_name}"
     rendered: list[str] = []
     for version in kept:
         kernel_path = _boot_loader_path(
@@ -491,23 +532,20 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
         if kernel_path is None or initrd_path is None:
             continue
         newest = not rendered
-        title = (
-            values.POINT_NAME
-            if newest
-            else f"{values.POINT_NAME} ({version})"
-        )
+        name = _menu_entry_name(entry_name, version, newest=newest)
         rendered.append(
             btrfs.render_template(
                 body,
                 {
-                    "menu_title": title,
-                    "entry_id": _menu_entry_id(version, newest=newest),
+                    "menu_title": name,
+                    "entry_id": name,
                     "entry_class": values.GRUB_D_ENTRY_CLASS,
                     "search_line": search_line,
                     "kernel_path": kernel_path,
                     "root_spec": root_spec,
                     "subvolume": subvolume,
-                    "overlay_parameter": values.OVERLAY_PARAMETER,
+                    "overlay_parameter": kernel_parameter,
+                    "boot_message": boot_message,
                     "initrd_path": initrd_path,
                 },
             )
@@ -524,23 +562,23 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
     return "".join(rendered), None, tuple(notes)
 
 
-def _menu_entry_id(version: str, *, newest: bool) -> str:
-    """The identifier of one menu entry of the point.
+def _menu_entry_name(entry_name: str, version: str, *, newest: bool) -> str:
+    """The name of one menu entry, used as its identifier and as its title.
 
-    Every entry needs an identifier of its own, because the identifier is the
-    documented way to preselect an entry, and two entries that share one make
-    that choice depend on the order of the entries. The newest kernel carries the
-    plain identifier of the point, so a selection written once keeps pointing at
-    the newest kernel, and every older kernel carries its version in the
-    identifier. The boot loader accepts only letters, digits, underscores and
-    hyphens here and refuses an identifier that starts with a digit, so every
-    other character of the version becomes a hyphen.
+    Every entry needs a name of its own, because the name is the documented way
+    to preselect an entry, and two entries that share one make that choice depend
+    on the order of the entries. The newest kernel carries the word of the newest
+    kernel, so a selection written once keeps pointing at the newest kernel, and
+    every older kernel carries its version. The boot loader accepts only letters,
+    digits, underscores and hyphens in an identifier and refuses one that starts
+    with a digit, so every other character of the version becomes a hyphen.
     """
 
     if newest:
-        return values.GRUB_D_ENTRY_ID
-    suffix = re.sub(r"[^A-Za-z0-9_-]", "-", version)
-    return f"{values.GRUB_D_ENTRY_ID}-{suffix}"
+        suffix = values.GRUB_LATEST_KERNEL_SUFFIX
+    else:
+        suffix = re.sub(r"[^A-Za-z0-9_-]", "-", version)
+    return f"{entry_name}-{suffix}"
 
 
 def _template_text(ctx: Context, file_name: str) -> str:
@@ -620,12 +658,25 @@ def _root_spec() -> str | None:
     return fstab.spec_of_mount_point(text, str(setup_values.ROOT_MOUNT_POINT))
 
 
+def _ignored_subvolumes() -> tuple[str, ...]:
+    """The subvolumes the generator of snapshot entries must leave out.
+
+    The section writes the boot entries of both snapshots itself, so the
+    generator must not write entries of its own for them: the menu would show
+    every snapshot twice, and the generated entries carry a kernel parameter and
+    a name the section does not control.
+    """
+
+    prefix = setup_values.POINTS_SUBVOLUME_NAME
+    return (f"{prefix}/{values.POINT_NAME}", f"{prefix}/{values.WORK_COPY_NAME}")
+
+
 def _write_ignore_setting(warnings: list[str]) -> bool:
-    """Keep the immutable point out of the generated list.
+    """Keep both snapshots out of the generated list.
 
     The list is a setting of the generator of snapshot entries, and it may
-    already carry points of an earlier run, so the setting is read, the point
-    is added when it is missing, and every entry that is already there stays.
+    already carry subvolumes of an earlier run, so the setting is read, the
+    missing subvolumes are added, and every entry that is already there stays.
     """
 
     path = setup_values.GRUB_BTRFS_CONFIG_PATH
@@ -636,19 +687,21 @@ def _write_ignore_setting(warnings: list[str]) -> bool:
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
 
-    entry = f"{setup_values.POINTS_SUBVOLUME_NAME}/{values.POINT_NAME}"
     key = values.GRUB_BTRFS_IGNORE_KEY
     present = _ignore_entries(text, key)
-    if entry in present:
-        _log(f"the generator already ignores {entry}")
+    missing = tuple(
+        entry for entry in _ignored_subvolumes() if entry not in present
+    )
+    if not missing:
+        _log("the generator already ignores both snapshots")
         return False
 
-    directive = _ignore_directive((*present, entry))
+    directive = _ignore_directive((*present, *missing))
     new_text, changed = replace_line_by_string(
         text, key, directive, fstab.COMMENT_SIGN
     )
     if not changed:
-        _log(f"the generator already ignores {entry}")
+        _log("the generator already ignores both snapshots")
         return False
     try:
         path.write_text(new_text, encoding="utf-8")
@@ -656,7 +709,7 @@ def _write_ignore_setting(warnings: list[str]) -> bool:
         warnings.append(f"cannot write {path}: {exc}")
         _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
         return False
-    _log(f"the generator now ignores {entry}")
+    _log(f"the generator now ignores {', '.join(missing)}")
     return True
 
 

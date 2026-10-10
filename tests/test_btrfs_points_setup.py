@@ -321,12 +321,14 @@ def test_points_setup_stores_the_point_and_the_work_copy(
     ]
 
 
-def test_points_setup_writes_the_boot_entry_with_the_in_memory_root(
+def test_points_setup_writes_the_boot_entries_of_both_snapshots(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The entry is what the user chooses after a broken system, so it carries
-    # the in-memory root, the device the boot loader's tool answers, the point as
-    # the subvolume and the newest kernel under the plain name of the point.
+    # The section writes one group of entries per snapshot, one entry per kernel,
+    # so the menu offers every kernel for the read-only snapshot and for the
+    # writable one. The read-only group boots with the root filesystem in memory,
+    # the writable group without it, and both name the subvolume of their own
+    # snapshot.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(
@@ -338,30 +340,27 @@ def test_points_setup_writes_the_boot_entry_with_the_in_memory_root(
     entry = machine.entry.read_text(encoding="utf-8")
     assert machine.entry.stat().st_mode & 0o777 == values.GRUB_D_ENTRY_FILE_MODE
     assert "exec tail -n +3 $0" in entry
+    assert f"search --no-floppy --fs-uuid --set=root {BOOT_UUID}" in entry
     assert (
-        "search --no-floppy --fs-uuid --set=root "
-        f"{BOOT_UUID}" in entry
-    )
-    assert (
-        f'root=UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 ro '
+        f"root=UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 ro "
         f"rootflags=subvol=@points/{values.POINT_NAME} "
-        f"{values.OVERLAY_PARAMETER} quiet splash" in entry
+        f"{values.OVERLAY_PARAMETER}" in entry
     )
+    assert f"rootflags=subvol=@points/{values.WORK_COPY_NAME}" in entry
+    assert entry.count(values.OVERLAY_PARAMETER) == 2
     assert f'linux "/{values.KERNEL_FILE_PREFIX}{NEWER_KERNEL}"' in entry
     assert f'initrd "/{values.INITRD_FILE_PREFIX}{NEWER_KERNEL}"' in entry
-    assert f"menuentry '{values.POINT_NAME}'" in entry
-    assert f"menuentry '{values.POINT_NAME} ({OLDER_KERNEL})'" in entry
-    assert entry.index(NEWER_KERNEL) < entry.index(f"({OLDER_KERNEL})")
 
 
-def test_points_setup_gives_every_menu_entry_an_identifier_of_its_own(
+def test_points_setup_gives_every_menu_entry_a_name_of_its_own(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The identifier is the documented way to preselect an entry, so two entries
-    # that share one make the choice depend on the order of the entries. The
-    # newest kernel keeps the plain identifier of the point and every older kernel
-    # carries its version, with every character the boot loader refuses replaced
-    # by a hyphen.
+    # The name of an entry is both its identifier and its title, and the
+    # identifier is the documented way to preselect an entry, so two entries that
+    # share one make the choice depend on the order of the entries. The newest
+    # kernel carries the word of the newest kernel and every older kernel carries
+    # its version, with every character the boot loader refuses replaced by a
+    # hyphen.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     _commands_fake(
@@ -373,12 +372,15 @@ def test_points_setup_gives_every_menu_entry_an_identifier_of_its_own(
     entry = machine.entry.read_text(encoding="utf-8")
     identifiers = re.findall(r"--id (\S+)", entry)
     assert identifiers == [
-        values.GRUB_D_ENTRY_ID,
-        f"{values.GRUB_D_ENTRY_ID}-7-0-0-9-generic",
+        f"{values.GRUB_READ_ONLY_ENTRY_NAME}-{values.GRUB_LATEST_KERNEL_SUFFIX}",
+        f"{values.GRUB_READ_ONLY_ENTRY_NAME}-7-0-0-9-generic",
+        f"{values.GRUB_WRITABLE_ENTRY_NAME}-{values.GRUB_LATEST_KERNEL_SUFFIX}",
+        f"{values.GRUB_WRITABLE_ENTRY_NAME}-7-0-0-9-generic",
     ]
     assert len(set(identifiers)) == len(identifiers)
     for identifier in identifiers:
         assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", identifier)
+        assert f"menuentry '{identifier}'" in entry
 
 
 def test_points_setup_replaces_a_stale_boot_entry(
@@ -463,7 +465,7 @@ def test_points_setup_keeps_the_point_out_of_the_generated_list(
     )
     assert line == (
         f'{values.GRUB_BTRFS_IGNORE_KEY}=("@" "@points/Old-point" '
-        f'"@points/{values.POINT_NAME}")'
+        f'"@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")'
     )
 
 
@@ -484,7 +486,8 @@ def test_points_setup_ignores_a_commented_setting_of_the_generator(
     text = machine.generator_config.read_text(encoding="utf-8")
     assert f'#{values.GRUB_BTRFS_IGNORE_KEY}=("example")' in text
     assert (
-        f'{values.GRUB_BTRFS_IGNORE_KEY}=("@points/{values.POINT_NAME}")' in text
+        f'{values.GRUB_BTRFS_IGNORE_KEY}='
+        f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")' in text
     )
 
 
@@ -524,7 +527,8 @@ def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(
     machine.installed_packages.update(TEST_PACKAGES)
     machine.install_kernels(NEWER_KERNEL)
     machine.generator_config.write_text(
-        f'{values.GRUB_BTRFS_IGNORE_KEY}=("@points/{values.POINT_NAME}")\n',
+        f'{values.GRUB_BTRFS_IGNORE_KEY}='
+        f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")\n',
         encoding="utf-8",
     )
     _commands_fake(monkeypatch, machine)
@@ -549,7 +553,8 @@ def test_points_setup_rebuilds_the_menu_when_the_run_forces_it(
     machine.installed_packages.update(TEST_PACKAGES)
     machine.install_kernels(NEWER_KERNEL)
     machine.generator_config.write_text(
-        f'{values.GRUB_BTRFS_IGNORE_KEY}=("@points/{values.POINT_NAME}")\n',
+        f'{values.GRUB_BTRFS_IGNORE_KEY}='
+        f'("@points/{values.POINT_NAME}" "@points/{values.WORK_COPY_NAME}")\n',
         encoding="utf-8",
     )
     calls = _commands_fake(monkeypatch, machine)

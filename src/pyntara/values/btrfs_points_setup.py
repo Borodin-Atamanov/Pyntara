@@ -39,16 +39,26 @@ GRUB_D_ENTRY_PATH: Path = Path("/etc/grub.d/40_pyntara_permanent_entry")
 GRUB_D_ENTRY_FILE_MODE: int = 0o755
 GRUB_D_ENTRY_HEADER_FILE_NAME: str = "permanent_entry_header.in"
 GRUB_D_ENTRY_BODY_FILE_NAME: str = "permanent_entry_body.in"
-# Identifier of the boot entry of the point. The newest kernel carries it as it
-# is and every older kernel carries it with the version appended, so no two
-# entries of the point share an identifier: the identifier is the documented way
-# to preselect an entry, and two entries that share one make that choice depend
-# on the order of the entries. The boot loader accepts only letters, digits,
-# underscores and hyphens in an identifier and refuses one that starts with a
-# digit, so the version the task appends has every other character replaced by a
-# hyphen.
-GRUB_D_ENTRY_ID: str = "pyntara-permanent"
 GRUB_D_ENTRY_CLASS: str = "pyntara"
+
+# The name each group of boot entries carries, as both the identifier and the
+# title of the entry. The section writes one group per snapshot, and every entry
+# of a group carries the name of its snapshot with either the word of the newest
+# kernel or the kernel version appended, so no two entries of the machine share
+# a name and the name a script selects is the name the menu shows.
+GRUB_READ_ONLY_ENTRY_NAME: str = "Pyntara-permanent-ro"
+GRUB_WRITABLE_ENTRY_NAME: str = "Pyntara-work-rw"
+GRUB_LATEST_KERNEL_SUFFIX: str = "latest-core"
+
+# The line each group prints before it loads its kernel. The read-only snapshot
+# runs with the root filesystem in memory, the writable one writes to the disk,
+# and the menu says which is which.
+READ_ONLY_BOOT_MESSAGE: str = (
+    "Loading the read-only snapshot with the root filesystem in memory"
+)
+WRITABLE_BOOT_MESSAGE: str = (
+    "Loading the writable snapshot that writes to the disk"
+)
 
 # Parameter that keeps the root filesystem in memory for a session started from
 # the point. The point itself is never written to, so a session that went wrong
@@ -150,8 +160,12 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GRUB_D_ENTRY_FILE_MODE",
     "GRUB_D_ENTRY_HEADER_FILE_NAME",
     "GRUB_D_ENTRY_BODY_FILE_NAME",
-    "GRUB_D_ENTRY_ID",
     "GRUB_D_ENTRY_CLASS",
+    "GRUB_READ_ONLY_ENTRY_NAME",
+    "GRUB_WRITABLE_ENTRY_NAME",
+    "GRUB_LATEST_KERNEL_SUFFIX",
+    "READ_ONLY_BOOT_MESSAGE",
+    "WRITABLE_BOOT_MESSAGE",
     "OVERLAY_PARAMETER",
     "GRUB_SEARCH_UUID_LINE",
     "GRUB_PROBE_UUID_COMMAND",
