@@ -490,9 +490,10 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
         )
         if kernel_path is None or initrd_path is None:
             continue
+        newest = not rendered
         title = (
             values.POINT_NAME
-            if not rendered
+            if newest
             else f"{values.POINT_NAME} ({version})"
         )
         rendered.append(
@@ -500,7 +501,7 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
                 body,
                 {
                     "menu_title": title,
-                    "entry_id": values.GRUB_D_ENTRY_ID,
+                    "entry_id": _menu_entry_id(version, newest=newest),
                     "entry_class": values.GRUB_D_ENTRY_CLASS,
                     "search_line": search_line,
                     "kernel_path": kernel_path,
@@ -521,6 +522,25 @@ def _render_entries(ctx: Context) -> tuple[str, str | None, tuple[str, ...]]:
             tuple(notes),
         )
     return "".join(rendered), None, tuple(notes)
+
+
+def _menu_entry_id(version: str, *, newest: bool) -> str:
+    """The identifier of one menu entry of the point.
+
+    Every entry needs an identifier of its own, because the identifier is the
+    documented way to preselect an entry, and two entries that share one make
+    that choice depend on the order of the entries. The newest kernel carries the
+    plain identifier of the point, so a selection written once keeps pointing at
+    the newest kernel, and every older kernel carries its version in the
+    identifier. The boot loader accepts only letters, digits, underscores and
+    hyphens here and refuses an identifier that starts with a digit, so every
+    other character of the version becomes a hyphen.
+    """
+
+    if newest:
+        return values.GRUB_D_ENTRY_ID
+    suffix = re.sub(r"[^A-Za-z0-9_-]", "-", version)
+    return f"{values.GRUB_D_ENTRY_ID}-{suffix}"
 
 
 def _template_text(ctx: Context, file_name: str) -> str:

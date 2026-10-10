@@ -354,6 +354,33 @@ def test_points_setup_writes_the_boot_entry_with_the_in_memory_root(
     assert entry.index(NEWER_KERNEL) < entry.index(f"({OLDER_KERNEL})")
 
 
+def test_points_setup_gives_every_menu_entry_an_identifier_of_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The identifier is the documented way to preselect an entry, so two entries
+    # that share one make the choice depend on the order of the entries. The
+    # newest kernel keeps the plain identifier of the point and every older kernel
+    # carries its version, with every character the boot loader refuses replaced
+    # by a hyphen.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch, machine, machine_kernels=(NEWER_KERNEL, OLDER_KERNEL)
+    )
+
+    btrfs_points_setup.task(_ctx())
+
+    entry = machine.entry.read_text(encoding="utf-8")
+    identifiers = re.findall(r"--id (\S+)", entry)
+    assert identifiers == [
+        values.GRUB_D_ENTRY_ID,
+        f"{values.GRUB_D_ENTRY_ID}-7-0-0-9-generic",
+    ]
+    assert len(set(identifiers)) == len(identifiers)
+    for identifier in identifiers:
+        assert re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]*", identifier)
+
+
 def test_points_setup_replaces_a_stale_boot_entry(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

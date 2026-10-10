@@ -95,19 +95,6 @@ same wording is used for a missing source vault and for an unusable link. The
 line misleads whoever reads the run log, so the sentence should name the missing
 remote path instead.
 
-## The save point writes one menu id for every kernel
-
-Clean010 run of 2026-09-29: /boot/grub/grub.cfg carried two menu entries of the
-save point, 'Pyntara-permanent' and 'Pyntara-permanent (7.0.0-30-generic)',
-because the point holds two kernels, and both carry the same --id
-pyntara-permanent (GRUB_D_ENTRY_ID of src/pyntara/values/btrfs_points_setup.py,
-rendered into task_data/btrfs_points_setup/permanent_entry_body.in by the entry
-writer of the task). GRUB requires a unique id per menu entry, and the id is the
-documented way to preselect the entry (set default=pyntara-permanent), so with
-two kernels the selection depends on entry order. The fix needs a decision about
-the id shape (a per-kernel suffix), and docs/spec/btrfs-setup.md has to be
-updated with it.
-
 ## Third-party installers write credentials and noise into the run log
 
 Clean010 run of 2026-09-29, evidence from the log: the 3x-ui installer prints the

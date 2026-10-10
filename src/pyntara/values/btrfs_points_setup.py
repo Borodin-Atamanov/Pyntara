@@ -39,6 +39,14 @@ GRUB_D_ENTRY_PATH: Path = Path("/etc/grub.d/40_pyntara_permanent_entry")
 GRUB_D_ENTRY_FILE_MODE: int = 0o755
 GRUB_D_ENTRY_HEADER_FILE_NAME: str = "permanent_entry_header.in"
 GRUB_D_ENTRY_BODY_FILE_NAME: str = "permanent_entry_body.in"
+# Identifier of the boot entry of the point. The newest kernel carries it as it
+# is and every older kernel carries it with the version appended, so no two
+# entries of the point share an identifier: the identifier is the documented way
+# to preselect an entry, and two entries that share one make that choice depend
+# on the order of the entries. The boot loader accepts only letters, digits,
+# underscores and hyphens in an identifier and refuses one that starts with a
+# digit, so the version the task appends has every other character replaced by a
+# hyphen.
 GRUB_D_ENTRY_ID: str = "pyntara-permanent"
 GRUB_D_ENTRY_CLASS: str = "pyntara"
 
