@@ -9,6 +9,7 @@ fixture points them at the temporary directory of the test.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -133,6 +134,7 @@ def _fake_run(
     service_enabled_sequence: list[bool] | None = None,
     service_active_sequence: list[bool] | None = None,
     service_command_failure: str = "",
+    permission_record_present: bool = True,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
@@ -151,6 +153,7 @@ def _fake_run(
     """
 
     calls: list[list[str]] = []
+    written_tokens: set[str] = set()
     values = dict(option_values or {})
     current_installed = installed_version
     active_states = list(service_active_sequence or [service_active])
@@ -197,6 +200,11 @@ def _fake_run(
                 rc = 1
         elif cmd[0] == "apt-get":
             pass  # update and install succeed
+        elif cmd[0] == "gdbus" and ".Lookup" in " ".join(cmd):
+            present = permission_record_present or cmd[-1] in written_tokens
+            rc = 0 if present else 1
+        elif cmd[0] == "gdbus":
+            written_tokens.add(cmd[-3])
         if rc != 0 and kwargs.get("check", False):
             raise subprocess.CalledProcessError(rc, command, stdout)
         return _FakeProc(rc, stdout, stderr)
@@ -273,6 +281,13 @@ def test_installed_latest_is_unchanged(
 ) -> None:
     values.ID_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     values.ID_FILE_PATH.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
+    # The screen share consent and its token are already in place, so the
+    # consent step of an unchanged machine writes neither.
+    values.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    (values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME).write_text(
+        f"[options]\n{values.RESTORE_TOKEN_KEY} = 'stored-token'\n",
+        encoding="utf-8",
+    )
     calls = _fake_run(monkeypatch, installed_version=RELEASE_TAG)
     fake = _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
     ctx = _ctx()
@@ -696,3 +711,106 @@ def test_settle_delay_comes_from_the_values(
         result = rustdesk_setup.task(_ctx())
         assert result.success is True
     assert clock.sleeps == [2.5, 7.0]
+
+
+def _config_token(config_text: str) -> str:
+    """The restore token of a configuration text, for the assertions."""
+
+    for line in config_text.splitlines():
+        if line.strip().startswith(values.RESTORE_TOKEN_KEY):
+            return line.partition("=")[2].strip().strip("'\"")
+    return ""
+
+
+def test_screen_share_payload_is_the_measured_one() -> None:
+    # The bytes are the consent of one real session, measured on Kubuntu 26.04
+    # with KDE Plasma 6.6 on 2026-10-10; changing the constant without a new
+    # measurement would break the restore the record enables.
+    payload = bytes.fromhex(values.SCREENCAST_RESTORE_DATA_HEX)
+    assert len(payload) == 139
+    assert (
+        hashlib.sha256(payload).hexdigest()
+        == "ec77c84fe690c3a99e4113018ed04ce506139ea89e811cb5b0c8cd5601b03b26"
+    )
+
+
+def test_writes_the_screen_share_consent_and_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A machine with no consent and no token gets both: the record is written
+    # under a fresh token and the same token goes into the configuration of the
+    # client, so the first connection over a KDE Wayland session starts without
+    # the portal dialog.
+    calls = _fake_run(monkeypatch, permission_record_present=False)
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx())
+    assert result.success is True
+    assert result.changed is True
+    set_calls = [
+        call for call in calls if call[0] == "gdbus" and ".Set" in " ".join(call)
+    ]
+    assert len(set_calls) == 1
+    config_text = (values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME).read_text(
+        encoding="utf-8"
+    )
+    token = _config_token(config_text)
+    assert token
+    assert token in set_calls[0]
+    assert "0x00, 0x00, 0x00, 0x03" in set_calls[0][-1]
+
+
+def test_keeps_an_existing_screen_share_consent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The token and the record are already in place: a repeated run writes
+    # neither, so the task stays idempotent.
+    values.ID_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    values.ID_FILE_PATH.write_text(f"{MACHINE_ID}\n", encoding="utf-8")
+    values.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    (values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME).write_text(
+        f"[options]\n{values.RESTORE_TOKEN_KEY} = 'kept-token'\n", encoding="utf-8"
+    )
+    calls = _fake_run(monkeypatch, permission_record_present=True)
+    _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")
+    result = rustdesk_setup.task(_ctx())
+    assert result.success is True
+    assert result.changed is False
+    assert not any(
+        call[0] == "gdbus" and ".Set" in " ".join(call) for call in calls
+    )
+
+
+def test_force_rotates_the_screen_share_token(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Force mode rotates the token with the other credentials, so a forced rerun
+    # replaces the consent as well.
+    values.CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    config_path = values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME
+    config_path.write_text(
+        f"[options]\n{values.RESTORE_TOKEN_KEY} = 'old-token'\n", encoding="utf-8"
+    )
+    _fake_run(monkeypatch, permission_record_present=True)
+    _vault(monkeypatch)
+    result = rustdesk_setup.task(_ctx(force=True))
+    assert result.success is True
+    assert _config_token(config_path.read_text(encoding="utf-8")) != "old-token"
+
+
+def test_config_token_lines_are_edited_in_place() -> None:
+    # The line editor replaces one line and leaves every other line, comment and
+    # section of the client configuration alone; a file without the line receives
+    # it below the options heading, which is created when missing.
+    text = "# a comment\n[options]\nfoo = 'bar'\n"
+    updated = rustdesk_setup._config_text_with_restore_token(text, "tok-1")
+    assert (
+        updated
+        == "# a comment\n[options]\nwayland-restore-token = 'tok-1'\nfoo = 'bar'\n"
+    )
+    replaced = rustdesk_setup._config_text_with_restore_token(
+        "wayland-restore-token = 'old'\n", "tok-2"
+    )
+    assert replaced == "wayland-restore-token = 'tok-2'\n"
+    created = rustdesk_setup._config_text_with_restore_token("", "tok-3")
+    assert created == "[options]\nwayland-restore-token = 'tok-3'\n"
+    assert rustdesk_setup._read_restore_token(updated) == "tok-1"

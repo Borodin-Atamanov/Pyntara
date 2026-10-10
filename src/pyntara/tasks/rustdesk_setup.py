@@ -21,6 +21,11 @@ The client options come from the values module of this task and are applied
 through rustdesk --option; the task reads the current value and sets the option
 only when it differs, so the options are idempotent.
 
+The task also writes the KDE screen share consent of the portal and the restore
+token that consent needs in the local configuration of the client, so a machine
+whose desktop already allowed screen sharing once reaches a connection with no
+dialog, over a KDE Wayland session as well as over X11.
+
 The task is idempotent: a normal run keeps the installed version, the
 generated password and the machine ID (a persistent identity per the
 task model contract); force mode regenerates the password and removes the
@@ -36,6 +41,7 @@ import os
 import re
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 from pyntara import metrics, runtime_vault
@@ -48,6 +54,7 @@ from pyntara.utils import (
     discard_downloaded_files,
     download_command,
     dpkg_architecture,
+    hand_to_user,
     install_package_once,
     proquint_encode,
     refresh_apt_index,
@@ -361,6 +368,136 @@ def _write_id_file(
     values.ID_FILE_PATH.chmod(values.ID_FILE_MODE)
     _log(f"wrote rustdesk ID {machine_id} to {values.ID_FILE_PATH}")
     return True
+
+
+def _read_restore_token(config_text: str) -> str:
+    """The restore token of the local configuration, or an empty string.
+
+    The token sits on its own line of the options section of the client
+    configuration; a missing line reads as no token and the step writes one.
+    """
+
+    for line in config_text.splitlines():
+        if line.strip().startswith(values.RESTORE_TOKEN_KEY):
+            _, _, raw_value = line.partition("=")
+            return raw_value.strip().strip("'\"")
+    return ""
+
+
+def _config_text_with_restore_token(config_text: str, token: str) -> str:
+    """The configuration text with the token line set, inserted if missing.
+
+    A line already present is replaced where it stands, so every other option
+    and section of the client survives; a file without the line receives it
+    below the options heading, which is created when the file has none.
+    """
+
+    assignment = f"{values.RESTORE_TOKEN_KEY} = '{token}'"
+    lines = config_text.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip().startswith(values.RESTORE_TOKEN_KEY):
+            lines[index] = assignment
+            return "\n".join(lines) + "\n"
+    heading = f"[{values.RESTORE_TOKEN_OPTIONS_SECTION}]"
+    for index, line in enumerate(lines):
+        if line.strip() == heading:
+            lines.insert(index + 1, assignment)
+            return "\n".join(lines) + "\n"
+    lines.extend([heading, assignment])
+    return "\n".join(lines) + "\n"
+
+
+def _permission_record_exists(token: str, timeout: float) -> bool:
+    """True when the permission store already holds the record of the token.
+
+    A failed query, a missing tool or a session without the store reads as no
+    record, so the step writes one and reports a failure when that write fails.
+    """
+
+    try:
+        result = run_command(
+            substituted_command(
+                values.LOOKUP_PERMISSION_RECORD_COMMAND,
+                {"table": values.SCREENCAST_PERMISSION_TABLE, "token": token},
+            ),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return result.returncode == 0
+
+
+def _write_permission_record(token: str, timeout: float) -> str:
+    """Write the screen share record; return an error text or an empty string.
+
+    The record is the RestoreData of one consent the desktop user gave once,
+    written under the token the client presents, so the portal restores the
+    session instead of asking. The call reaches the permission store of the
+    desktop user over the session bus the run exports.
+    """
+
+    payload = bytes.fromhex(values.SCREENCAST_RESTORE_DATA_HEX)
+    data = values.SCREENCAST_RESTORE_DATA_ARGUMENT_TEMPLATE.format(
+        restore_session=values.SCREENCAST_RESTORE_SESSION,
+        restore_version=values.SCREENCAST_RESTORE_VERSION,
+        payload_bytes=", ".join(f"0x{byte:02x}" for byte in payload),
+    )
+    command = substituted_command(
+        values.SET_PERMISSION_RECORD_COMMAND,
+        {
+            "table": values.SCREENCAST_PERMISSION_TABLE,
+            "token": token,
+            "app_permissions": values.SCREENCAST_PERMISSION_ARGUMENT,
+            "data": data,
+        },
+    )
+    try:
+        run_command(command, check=True, capture=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return str(exc)
+    return ""
+
+
+def _ensure_screencast_permission(force: bool, timeout: float) -> tuple[bool, str]:
+    """Write the screen share consent and its token; return (changed, warning).
+
+    The token lives in the local configuration of the client: a normal run keeps
+    the stored one, force mode and a file without a token generate a fresh one.
+    The record is written when the token changed or the store does not hold it,
+    so a repeated run leaves both alone. A store that cannot be reached reports a
+    warning and leaves the configuration as it was, so an existing consent is
+    never lost silently.
+    """
+
+    config_path = values.CONFIG_DIR / values.LOCAL_CONFIG_FILE_NAME
+    try:
+        config_text = config_path.read_text(encoding="utf-8")
+    except OSError:
+        config_text = ""
+    stored_token = _read_restore_token(config_text)
+    token = "" if force else stored_token
+    if not token:
+        token = str(uuid.uuid4())
+    changed = False
+    if token != stored_token or not _permission_record_exists(token, timeout):
+        error = _write_permission_record(token, timeout)
+        if error:
+            return changed, f"cannot write the screen share consent: {error}"
+        _log("wrote the screen share consent of the portal")
+        changed = True
+    updated_text = _config_text_with_restore_token(config_text, token)
+    if updated_text != config_text:
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(updated_text, encoding="utf-8")
+        except OSError as exc:
+            return changed, f"cannot write the screen share token: {exc}"
+        hand_to_user(config_path, file_mode=values.LOCAL_CONFIG_FILE_MODE)
+        _log("wrote the screen share restore token")
+        changed = True
+    return changed, ""
 
 
 def _reset_identity() -> None:
@@ -680,6 +817,14 @@ def task(ctx: Context) -> TaskResult:
         _log(f"rustdesk machine ID: {machine_id}")
         if _write_id_file(machine_id, force, owner_uid, owner_gid):
             changed = True
+
+    permission_changed, permission_warning = _ensure_screencast_permission(
+        force, timeout
+    )
+    if permission_warning:
+        warnings.append(permission_warning)
+    if permission_changed:
+        changed = True
 
     # The settled check is the one the run reports: a service that stopped
     # itself is not a machine an operator can reach, whatever the state
