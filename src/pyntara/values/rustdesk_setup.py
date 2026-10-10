@@ -147,6 +147,84 @@ OPTIONS: tuple[RustdeskOption, ...] = (
     RustdeskOption(key="access-mode", value="password"),
 )
 
+# KDE Wayland screen sharing without a dialog. On a KDE Wayland session the
+# portal asks the person in front of the machine to allow a capture session, and
+# that question stands between an unattended machine and a remote operator, even
+# though the RustDesk access mode already accepts the connection by password. The
+# answer the desktop keeps is a record in the permission store of the desktop
+# user, keyed by a token the client presents; the task writes that record and the
+# token, so the first connection already starts with no dialog
+# (docs/spec/rustdesk-setup.md, Screen sharing without a dialog).
+
+# The permission store of the portal and the table the screen share record lives
+# in: a documented DBus interface of the desktop, reached through the session bus
+# the run exports for the desktop user.
+SCREENCAST_PERMISSION_TABLE: str = "screencast"
+
+# The permission the record carries and the data argument around the payload.
+# The map grants the screen share to the empty application name, which is the
+# name an application that is not sandboxed has, and RustDesk is such an
+# application. The data is the RestoreData struct of KDE: the session word, the
+# version and a variant holding the payload bytes.
+SCREENCAST_PERMISSION_ARGUMENT: str = "{'': ['yes']}"
+SCREENCAST_RESTORE_SESSION: str = "KDE"
+SCREENCAST_RESTORE_VERSION: int = 1
+SCREENCAST_RESTORE_DATA_ARGUMENT_TEMPLATE: str = (
+    "<('{restore_session}', uint32 {restore_version}, <@ay [{payload_bytes}]>)>"
+)
+
+# The RestoreData payload of one KDE screen share consent, measured on Kubuntu
+# 26.04 with KDE Plasma 6.6 on 2026-10-10: the payload names the output at the
+# origin, the position KDE gives the primary output, so the portal restores the
+# primary screen. The bytes are the QDataStream serialization of the payload map,
+# written as one string and split for reading only.
+SCREENCAST_RESTORE_DATA_HEX: str = (
+    "000000030000000e006f0075007400700075007400730000000900000000010000000a"
+    "00000000060030007800300000000c0072006500670069006f006e0000001300000000"
+    "0000000000ffffffffffffffff0000000e00770069006e0064006f0077007300010000"
+    "0000000019514c6973743c57696e646f77526573746f7265496e666f3e0000000000"
+)
+
+# The two DBus calls of the step, built by the same helper as every other
+# command. {table}, {token}, {app_permissions} and {data} are data.
+LOOKUP_PERMISSION_RECORD_COMMAND: tuple[str, ...] = (
+    "gdbus",
+    "call",
+    "--session",
+    "--dest",
+    "org.freedesktop.impl.portal.PermissionStore",
+    "--object-path",
+    "/org/freedesktop/impl/portal/PermissionStore",
+    "--method",
+    "org.freedesktop.impl.portal.PermissionStore.Lookup",
+    "{table}",
+    "{token}",
+)
+SET_PERMISSION_RECORD_COMMAND: tuple[str, ...] = (
+    "gdbus",
+    "call",
+    "--session",
+    "--dest",
+    "org.freedesktop.impl.portal.PermissionStore",
+    "--object-path",
+    "/org/freedesktop/impl/portal/PermissionStore",
+    "--method",
+    "org.freedesktop.impl.portal.PermissionStore.Set",
+    "{table}",
+    "true",
+    "{token}",
+    "{app_permissions}",
+    "{data}",
+)
+
+# The RustDesk local configuration of the desktop user, the section the client
+# keeps its own options in and the key that carries the restore token. The task
+# writes the token there, and the client presents it to the portal.
+LOCAL_CONFIG_FILE_NAME: str = "RustDesk_local.toml"
+LOCAL_CONFIG_FILE_MODE: int = 0o600
+RESTORE_TOKEN_KEY: str = "wayland-restore-token"
+RESTORE_TOKEN_OPTIONS_SECTION: str = "options"
+
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -177,4 +255,16 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "START_CHECK_RETRY_DELAY_SECONDS",
     "SERVICE_SETTLE_DELAY_SECONDS",
     "OPTIONS",
+    "SCREENCAST_PERMISSION_TABLE",
+    "SCREENCAST_PERMISSION_ARGUMENT",
+    "SCREENCAST_RESTORE_SESSION",
+    "SCREENCAST_RESTORE_VERSION",
+    "SCREENCAST_RESTORE_DATA_ARGUMENT_TEMPLATE",
+    "SCREENCAST_RESTORE_DATA_HEX",
+    "LOOKUP_PERMISSION_RECORD_COMMAND",
+    "SET_PERMISSION_RECORD_COMMAND",
+    "LOCAL_CONFIG_FILE_NAME",
+    "LOCAL_CONFIG_FILE_MODE",
+    "RESTORE_TOKEN_KEY",
+    "RESTORE_TOKEN_OPTIONS_SECTION",
 )
