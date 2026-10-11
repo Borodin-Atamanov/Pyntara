@@ -242,6 +242,13 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop",),
     ),
     TaskSpec(
+        "install_gui_apps",
+        "Install the graphical applications from the Ubuntu archive and pin "
+        "their launchers to the Plasma taskbar.",
+        (),
+        ("desktop", "fast_desktop"),
+    ),
+    TaskSpec(
         "snap_remove",
         "Remove the snap subsystem and every snap it carries, and return the "
         "space they held.",

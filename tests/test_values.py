@@ -60,6 +60,7 @@ VALUES_MODULE_NAMES: tuple[str, ...] = (
     "hostname",
     "i2pd_service_setup",
     "imagemagick_setup",
+    "install_gui_apps",
     "kde_keyboard_setup",
     "kde_settings",
     "local_vault_setup",
