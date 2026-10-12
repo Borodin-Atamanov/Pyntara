@@ -12,6 +12,7 @@ Configuration).
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -20,6 +21,7 @@ from pyntara.logger import log_progress
 from pyntara.utils import (
     run_command,
     service_is_active,
+    service_is_enabled,
     substituted_command,
     write_file_atomically,
 )
@@ -145,3 +147,56 @@ def wait_service_active(
         if service_is_active(service_name, timeout):
             return True
     return False
+
+
+def install_and_enable_unit(
+    unit_dir: Path,
+    service_name: str,
+    content: str,
+    *,
+    timeout: float,
+    reload_command: tuple[str, ...],
+    enable_command: tuple[str, ...],
+    enable_placeholder: str,
+) -> tuple[bool, bool, list[str]]:
+    """Write the unit, reload systemd and enable the service.
+
+    Returns (unit_ready, changed, warnings): unit_ready is False when the unit
+    file could not be written, so a caller that starts the unit afterwards skips
+    it; changed is True when the unit file was written or the service was
+    enabled. A step that fails is reported in warnings instead of raising, so
+    the task carries on with its remaining steps.
+    """
+
+    warnings: list[str] = []
+    changed = False
+    unit_ready = False
+    unit_changed, unit_error = write_unit_when_changed(unit_dir, service_name, content)
+    if unit_error is not None:
+        warnings.append(unit_error)
+    else:
+        unit_ready = True
+        if unit_changed:
+            changed = True
+            try:
+                run_command(list(reload_command), timeout=timeout)
+                log_progress("systemd reloaded")
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                warnings.append(f"systemd reload failed: {exc}")
+    enabled = service_is_enabled(service_name, timeout)
+    log_progress(
+        f"checking autorun service {service_name}: "
+        f"{'enabled' if enabled else 'disabled'}"
+    )
+    if not enabled:
+        try:
+            run_command(
+                substituted_command(enable_command, {enable_placeholder: service_name}),
+                timeout=timeout,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(f"systemd enable failed: {exc}")
+        else:
+            log_progress("service enabled")
+            changed = True
+    return unit_ready, changed, warnings

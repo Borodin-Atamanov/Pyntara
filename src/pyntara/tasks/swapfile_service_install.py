@@ -64,12 +64,11 @@ from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.systemd_unit import (
     deploy_program,
+    install_and_enable_unit,
     parse_program_result,
-    write_unit_when_changed,
 )
 from pyntara.utils import (
     run_command,
-    service_is_enabled,
     substituted_command,
     task_data_dir,
     write_file_atomically,
@@ -669,41 +668,17 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(f"cannot read the unit template: {exc}")
     unit_ready = False
     if content is not None:
-        unit_changed, unit_error = write_unit_when_changed(
-            engine_values.SYSTEMD_UNIT_DIR, service_name, content
+        unit_ready, unit_extra_changed, unit_warnings = install_and_enable_unit(
+            engine_values.SYSTEMD_UNIT_DIR,
+            service_name,
+            content,
+            timeout=timeout,
+            reload_command=values.SYSTEMCTL_DAEMON_RELOAD_COMMAND,
+            enable_command=values.SYSTEMCTL_ENABLE_COMMAND,
+            enable_placeholder="service_unit_name",
         )
-        if unit_error is not None:
-            warnings.append(unit_error)
-        else:
-            unit_ready = True
-            if unit_changed:
-                changed = True
-                try:
-                    run_command(
-                        list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND), timeout=timeout
-                    )
-                    _log("systemd reloaded")
-                except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                    warnings.append(f"systemd reload failed: {exc}")
-        enabled = service_is_enabled(service_name, timeout)
-        _log(
-            f"checking autorun service {service_name}: "
-            f"{'enabled' if enabled else 'disabled'}"
-        )
-        if not enabled:
-            try:
-                run_command(
-                    substituted_command(
-                        values.SYSTEMCTL_ENABLE_COMMAND,
-                        {"service_unit_name": service_name},
-                    ),
-                    timeout=timeout,
-                )
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-                warnings.append(f"systemd enable failed: {exc}")
-            else:
-                _log("service enabled")
-                changed = True
+        changed = changed or unit_extra_changed
+        warnings.extend(unit_warnings)
 
     offset_pages: int | None = None
     resume_file_before = _initramfs_resume_file_text()
