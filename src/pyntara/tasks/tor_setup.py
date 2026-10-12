@@ -79,6 +79,7 @@ from pyntara.utils import (
     install_package_once,
     package_is_installed,
     run_command,
+    saved_address_file_matches,
     service_is_active,
     service_is_enabled,
     substituted_command,
@@ -212,23 +213,6 @@ def _ensure_hidden_service_dir() -> None:
     apply_owner(values.HIDDEN_SERVICE_DIR, record.pw_uid, record.pw_gid)
 
 
-def _saved_address_matches(address_file_path: Path, address: str | None) -> bool:
-    """True when the saved address file carries exactly the address.
-
-    A missing address never matches, so the task stays active until the
-    hostname file exists and the address is written; a missing or
-    unreadable file is treated as not matching, so the task writes it.
-    """
-
-    if address is None:
-        return False
-    try:
-        saved = address_file_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return False
-    return saved == address
-
-
 def task(ctx: Context) -> TaskResult:
     """Install Tor and publish the SSH onion service; skip when done.
 
@@ -325,7 +309,7 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(
         f"checking saved address file {values.ADDRESS_FILE_PATH}: "
-        f"{'matches' if _saved_address_matches(values.ADDRESS_FILE_PATH, address) else 'missing or stale'}"
+        f"{'matches' if saved_address_file_matches(values.ADDRESS_FILE_PATH, address) else 'missing or stale'}"
     )
 
     enabled = service_is_enabled(values.SERVICE_UNIT_NAME, timeout)
@@ -344,7 +328,7 @@ def task(ctx: Context) -> TaskResult:
         and dir_exists
         and enabled
         and active
-        and _saved_address_matches(values.ADDRESS_FILE_PATH, address)
+        and saved_address_file_matches(values.ADDRESS_FILE_PATH, address)
     ):
         _log("target state already reached, skipping")
         return warned_result(changed=False, message="already configured", warnings=warnings)
@@ -430,7 +414,7 @@ def task(ctx: Context) -> TaskResult:
                 )
 
     address = onion_address_from_hostname_file(hostname_file_path)
-    if address and not _saved_address_matches(values.ADDRESS_FILE_PATH, address):
+    if address and not saved_address_file_matches(values.ADDRESS_FILE_PATH, address):
         try:
             values.ADDRESS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
             values.ADDRESS_FILE_PATH.write_text(f"{address}\n", encoding="utf-8")

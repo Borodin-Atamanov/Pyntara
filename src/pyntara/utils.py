@@ -1146,6 +1146,23 @@ def write_file_atomically(
     os.replace(temporary, path)
 
 
+def saved_address_file_matches(address_file_path: Path, address: str | None) -> bool:
+    """True when the saved address file carries exactly the address.
+
+    A missing address never matches, so the task that owns the file stays active
+    until the identity exists and the file is written; a missing or unreadable
+    file is treated as not matching, so the task writes it.
+    """
+
+    if address is None:
+        return False
+    try:
+        saved = address_file_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return saved == address
+
+
 def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
     """Set the given file owner when the process runs as root.
 

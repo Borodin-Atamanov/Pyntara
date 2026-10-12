@@ -75,6 +75,7 @@ from pyntara.utils import (
     os_family_is_debian,
     read_os_release,
     run_command,
+    saved_address_file_matches,
     service_is_active,
     service_is_enabled,
     substituted_command,
@@ -260,23 +261,6 @@ def _wait_tunnel_address() -> str | None:
     return address
 
 
-def _saved_address_matches(address_file_path: Path, address: str | None) -> bool:
-    """True when the saved address file carries exactly the address.
-
-    A missing address never matches, so the task stays active until the
-    identity exists and the file is written; a missing or unreadable
-    file is treated as not matching, so the task writes it.
-    """
-
-    if address is None:
-        return False
-    try:
-        saved = address_file_path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return False
-    return saved == address
-
-
 def task(ctx: Context) -> TaskResult:
     """Install the newest i2pd release and run it as a service; skip when done.
 
@@ -422,7 +406,7 @@ def task(ctx: Context) -> TaskResult:
     )
     _log(
         f"checking saved address file {values.ADDRESS_FILE_PATH}: "
-        f"{'matches' if _saved_address_matches(values.ADDRESS_FILE_PATH, address) else 'missing or stale'}"
+        f"{'matches' if saved_address_file_matches(values.ADDRESS_FILE_PATH, address) else 'missing or stale'}"
     )
 
     enabled = service_is_enabled(values.SERVICE_UNIT_NAME, timeout)
@@ -442,7 +426,7 @@ def task(ctx: Context) -> TaskResult:
         and keys_exist
         and enabled
         and active
-        and _saved_address_matches(values.ADDRESS_FILE_PATH, address)
+        and saved_address_file_matches(values.ADDRESS_FILE_PATH, address)
     ):
         _log("target state already reached, skipping")
         return warned_result(changed=False, message="already configured", warnings=warnings)
@@ -611,7 +595,7 @@ def task(ctx: Context) -> TaskResult:
                 f"appear after {values.ADDRESS_CHECK_ATTEMPTS} checks; the "
                 "machine is not reachable over I2P yet"
             )
-    if address and not _saved_address_matches(values.ADDRESS_FILE_PATH, address):
+    if address and not saved_address_file_matches(values.ADDRESS_FILE_PATH, address):
         try:
             values.ADDRESS_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
             values.ADDRESS_FILE_PATH.write_text(f"{address}\n", encoding="utf-8")
