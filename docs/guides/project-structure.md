@@ -167,6 +167,8 @@ systemd_unit.py     unit_matches, write_unit, write_unit_when_changed,
                     deploy_program, parse_program_result, service_is_failed,
                     wait_service_active
 
+address_report.py   run
+
 augeas.py           parse_augtool_print, sync_dropin, read_dropin,
                     dropin_exists, remove_dropin
 
@@ -180,7 +182,7 @@ yggdrasil.py        self_address_from_output
 
 tor.py              onion_address_from_hostname_file
 
-ssh.py              ssh_port_from_directives
+ssh.py              ssh_port_from_directives, effective_config_errors
 
 ## Adding a value to an existing section
 
