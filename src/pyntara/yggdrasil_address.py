@@ -20,10 +20,10 @@ never name a port the daemon does not listen on
 
 from __future__ import annotations
 
-import json
 import subprocess
 import sys
 
+from pyntara import address_report
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.ssh_access import ssh_command
 from pyntara.values import engine as engine_values
@@ -103,21 +103,7 @@ def access_record() -> tuple[dict[str, object] | None, str]:
 def main(argv: list[str]) -> int:
     """Print the record; 0 when found, 2 on a usage error, 1 otherwise."""
 
-    if len(argv) != 1:
-        print(f"usage: {argv[0]}", file=sys.stderr)
-        return 2
-    record, error = access_record()
-    if record is None:
-        print(error, file=sys.stderr)
-        return 1
-    print(
-        json.dumps(
-            record,
-            ensure_ascii=False,
-            indent=engine_values.REPORT_JSON_INDENT,
-        )
-    )
-    return 0
+    return address_report.run(argv, access_record)
 
 
 if __name__ == "__main__":
