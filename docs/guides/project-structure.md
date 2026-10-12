@@ -164,8 +164,10 @@ apt_repository.py   render_source_text, download_keyring, write_root_file
 deb_package.py      download_asset, install_deb
 
 systemd_unit.py     unit_matches, write_unit, write_unit_when_changed,
-                    deploy_program, parse_program_result, service_is_failed,
-                    wait_service_active
+                    deploy_program, parse_program_result,
+                    reported_program_warnings, run_program_and_read_outcome,
+                    install_and_enable_unit, start_deployed_unit,
+                    service_is_failed, wait_service_active
 
 address_report.py   run
 

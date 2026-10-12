@@ -2,11 +2,12 @@
 
 Several tasks deploy their boot service the same way: they compare a rendered
 unit with the deployed one, write the unit file when it changed, deploy the
-program next to it and read the one-line JSON result the program prints. The
-unit comparison, the two unit writes, the program deploy, the program result
-and the failed-state check live here once and the tasks import them, so a
-wording or a fix can never drift between the sections (architecture contract,
-Configuration).
+program next to it, run it once and read the one-line JSON result it prints, and
+start the unit so the artifact of the next boot proves itself in this run. The
+unit comparison, the two unit writes, the program deploy, the program run, the
+program result, the start of the unit and the failed-state check live here once
+and the tasks import them, so a wording or a fix can never drift between the
+sections (architecture contract, Configuration).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from pyntara.logger import log_progress
@@ -114,6 +115,85 @@ def parse_program_result(stdout: str) -> dict[str, object] | None:
             return {str(key): value for key, value in parsed.items()}
         return None
     return None
+
+
+def reported_program_warnings(outcome: Mapping[str, object]) -> list[str]:
+    """The warnings the program reported, each as its own sentence."""
+
+    reported = outcome.get("warnings")
+    if not isinstance(reported, list):
+        return []
+    return [str(item) for item in reported if str(item)]
+
+
+def run_program_and_read_outcome(
+    command: Sequence[str],
+    *,
+    program_label: str,
+    skipped_reason_sentence: str,
+    timeout: float,
+) -> tuple[dict[str, object] | None, bool, list[str]]:
+    """Run the deployed program once and turn its report into findings.
+
+    The program prints one line per step, its reasons to stderr and its result
+    as one JSON object on the last stdout line; the printed lines go into the
+    run log as they are, because they are what the user of the target machine
+    reads. A program that cannot run, one that reports nothing readable, one
+    that reports an error, one that skipped its work and every warning it
+    reported become sentences of the returned list, so the task completes with
+    warnings instead of stopping. program_label names the program inside those
+    sentences and skipped_reason_sentence says what was not configured, which
+    only the caller knows. Returns (outcome, changed, warnings); outcome is
+    None when nothing readable came back.
+    """
+
+    try:
+        result = run_command(list(command), check=False, capture=True, timeout=timeout)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return None, False, [f"{program_label} could not run: {exc}"]
+    for line in result.stdout.splitlines():
+        log_progress(line)
+    for line in result.stderr.splitlines():
+        reason = line.strip()
+        if reason:
+            log_progress(reason)
+    outcome = parse_program_result(result.stdout)
+    if outcome is None:
+        unreadable = (
+            f"{program_label} reported nothing readable, "
+            f"exit code {result.returncode}"
+        )
+        return None, False, [unreadable]
+    warnings: list[str] = []
+    error_text = outcome.get("error")
+    skipped_reason = outcome.get("skipped_reason")
+    if isinstance(error_text, str) and error_text:
+        warnings.append(f"{program_label} failed: {error_text}")
+    elif isinstance(skipped_reason, str) and skipped_reason:
+        warnings.append(f"{skipped_reason_sentence}: {skipped_reason}")
+    warnings.extend(reported_program_warnings(outcome))
+    return outcome, outcome.get("changed") is True, warnings
+
+
+def start_deployed_unit(
+    service_name: str, *, start_command: Sequence[str], timeout: float
+) -> list[str]:
+    """Start the deployed unit so an unusable unit is found in this run.
+
+    The unit is the artifact the next boot runs, and the program already did
+    the work of this run, so the start changes nothing: it proves that the
+    unit starts. Returns the warning of a start that failed, so the caller
+    keeps its findings and carries on.
+    """
+
+    try:
+        run_command(
+            substituted_command(start_command, {"unit": service_name}),
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        return [f"the boot service could not be started: {exc}"]
+    return []
 
 
 def service_is_failed(

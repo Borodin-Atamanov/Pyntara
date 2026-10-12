@@ -430,6 +430,30 @@ def test_an_unreadable_result_becomes_a_warning(
     assert "reported nothing readable" in result.warnings[0]
 
 
+def test_the_reported_warnings_of_the_program_reach_the_result(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The program reports a step it could not perform as a warning of its own,
+    # next to the result. Both tasks that run such a program now read that list
+    # through the same helper, so the sentence reaches the run log here exactly
+    # as it does in zram_service, and the two can no longer drift apart.
+    _write_data_files(tmp_path)
+    line = json.dumps(
+        {
+            "changed": True,
+            "skipped_reason": None,
+            "error": None,
+            "warnings": ["cannot read the resume device"],
+        }
+    )
+    _install_fake(monkeypatch, enabled=True, program_result=_FakeProc(0, line + "\n"))
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert result.success is True
+    assert any(
+        "cannot read the resume device" in warning for warning in result.warnings
+    )
+
+
 def test_the_shared_package_helper_installs_the_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -36,7 +36,6 @@ proved by this run instead of being trusted.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from string import Template
 
@@ -47,13 +46,10 @@ from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.systemd_unit import (
     deploy_program,
     install_and_enable_unit,
-    parse_program_result,
+    run_program_and_read_outcome,
+    start_deployed_unit,
 )
-from pyntara.utils import (
-    run_command,
-    substituted_command,
-    task_data_dir,
-)
+from pyntara.utils import task_data_dir
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
@@ -112,15 +108,6 @@ def _render_unit(template_path: Path, command: tuple[str, ...]) -> str:
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(exec_lines=f"ExecStart={' '.join(command)}")
-
-
-def _reported_warnings(outcome: dict[str, object]) -> list[str]:
-    """The warnings the program reported, each as its own sentence."""
-
-    reported = outcome.get("warnings")
-    if not isinstance(reported, list):
-        return []
-    return [str(item) for item in reported if str(item)]
 
 
 def task(ctx: Context) -> TaskResult:
@@ -205,45 +192,27 @@ def task(ctx: Context) -> TaskResult:
         changed = changed or unit_extra_changed
         warnings.extend(unit_warnings)
 
-    try:
-        result = run_command(list(command), check=False, capture=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        warnings.append(f"the zram program could not run: {exc}")
-    else:
-        for line in result.stdout.splitlines():
-            _log(line)
-        outcome = parse_program_result(result.stdout)
-        if outcome is None:
-            warnings.append(
-                "the zram program reported nothing readable, "
-                f"exit code {result.returncode}"
-            )
-        else:
-            error_text = outcome.get("error")
-            skipped_reason = outcome.get("skipped_reason")
-            if isinstance(error_text, str) and error_text:
-                warnings.append(f"the zram program failed: {error_text}")
-            elif isinstance(skipped_reason, str) and skipped_reason:
-                warnings.append(f"no zram device was configured: {skipped_reason}")
-            warnings.extend(_reported_warnings(outcome))
-            if outcome.get("changed") is True:
-                changed = True
+    _, program_changed, program_warnings = run_program_and_read_outcome(
+        command,
+        program_label="the zram program",
+        skipped_reason_sentence="no zram device was configured",
+        timeout=timeout,
+    )
+    changed = changed or program_changed
+    warnings.extend(program_warnings)
 
     if unit_ready:
         # The unit is the artifact the next boot runs, so it is started here as
         # well: a unit that cannot start is a finding of this run instead of a
         # surprise of the next boot. The program already did the work above, so
         # this start changes nothing.
-        try:
-            run_command(
-                substituted_command(
-                    engine_values.SYSTEMCTL_START_COMMAND,
-                    {"unit": service_name},
-                ),
+        warnings.extend(
+            start_deployed_unit(
+                service_name,
+                start_command=engine_values.SYSTEMCTL_START_COMMAND,
                 timeout=timeout,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"the boot service could not be started: {exc}")
+        )
 
     if changed:
         message = f"zram devices and service {service_name} configured"

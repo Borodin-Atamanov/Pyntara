@@ -98,11 +98,15 @@ item needs its own plan before any code is touched, because a copy silently chan
 in one place is a defect on the target machine.
 
 1. The wider service-task orchestration is copied across swapfile_service_install,
-zram_service and zswap_service: install the packages, deploy the program, render the
-unit, run the program and wait. The unit write, the daemon-reload and the enable
-step are shared now (systemd_unit.install_and_enable_unit); what is not shared is
-the rest of the flow, and zswap_service keeps its own sequence because it writes the
-unit plainly and enables the service without the autorun check.
+zram_service and zswap_service. Shared now: systemd_unit.install_and_enable_unit
+(the unit write, the daemon-reload and the enable step),
+run_program_and_read_outcome (the run of the deployed program, the logging of its
+lines and the findings of its report) and start_deployed_unit (the start that
+proves the unit of the next boot in this run). What remains unshared is the
+package install block, whose sentences name the tools of its own section, and the
+rendering of the unit template, which differs per task by design;
+zswap_service keeps its own sequence because it writes the unit plainly and
+enables the service without the autorun check.
 
 2. The browser task body is copied across chrome_setup and firefox_setup: the values
 guard, the settings repository sync, the deploy of the system tree, the profile

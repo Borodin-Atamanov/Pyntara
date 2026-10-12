@@ -341,6 +341,33 @@ def test_an_unreadable_result_becomes_a_warning(
     assert any("reported nothing readable" in warning for warning in result.warnings)
 
 
+def test_a_boot_service_that_cannot_start_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The unit is the artifact the next boot runs, so it is started at the end
+    # of the task; a start that systemd refuses is a finding of this run and
+    # never a failure of the task.
+    _write_data_files(tmp_path)
+    program_path = str(values.PROGRAM_DEPLOY_PATH)
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        if command[0] == "systemctl" and command[1] == "is-enabled":
+            return _FakeProc(0, "enabled\n")
+        if command[0] == "systemctl" and command[1] == "start":
+            raise subprocess.CalledProcessError(1, command)
+        if command[0] == program_path:
+            return _FakeProc(0, RESULT_LINE + "\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert any(
+        "the boot service could not be started" in warning
+        for warning in result.warnings
+    )
+
+
 def test_a_missing_template_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

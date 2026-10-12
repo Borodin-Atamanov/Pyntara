@@ -65,7 +65,8 @@ from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.systemd_unit import (
     deploy_program,
     install_and_enable_unit,
-    parse_program_result,
+    run_program_and_read_outcome,
+    start_deployed_unit,
 )
 from pyntara.utils import (
     run_command,
@@ -681,36 +682,16 @@ def task(ctx: Context) -> TaskResult:
 
     offset_pages: int | None = None
     resume_file_before = _initramfs_resume_file_text()
-    try:
-        result = run_command(list(command), check=False, capture=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        warnings.append(f"the swap program could not run: {exc}")
-    else:
-        for line in result.stdout.splitlines():
-            _log(line)
-        # The program prints the reason a step could not be performed to
-        # stderr; the reason is what the user reads, so it goes into the run
-        # log as well instead of being dropped.
-        for line in result.stderr.splitlines():
-            reason = line.strip()
-            if reason:
-                _log(reason)
-        outcome = parse_program_result(result.stdout)
-        if outcome is None:
-            warnings.append(
-                "the swap program reported nothing readable, "
-                f"exit code {result.returncode}"
-            )
-        else:
-            error_text = outcome.get("error")
-            skipped_reason = outcome.get("skipped_reason")
-            if isinstance(error_text, str) and error_text:
-                warnings.append(f"the swap program failed: {error_text}")
-            elif isinstance(skipped_reason, str) and skipped_reason:
-                warnings.append(f"no swap file was created: {skipped_reason}")
-            if outcome.get("changed") is True:
-                changed = True
-            offset_pages = _reported_offset_pages(outcome)
+    outcome, program_changed, program_warnings = run_program_and_read_outcome(
+        command,
+        program_label="the swap program",
+        skipped_reason_sentence="no swap file was created",
+        timeout=timeout,
+    )
+    changed = changed or program_changed
+    warnings.extend(program_warnings)
+    if outcome is not None:
+        offset_pages = _reported_offset_pages(outcome)
 
     if offset_pages is None or resume_device is None:
         warnings.append(
@@ -748,16 +729,13 @@ def task(ctx: Context) -> TaskResult:
         # well: a unit that cannot start is a finding of this run instead of a
         # surprise of the next boot. The program already did the work above, so
         # this start changes nothing.
-        try:
-            run_command(
-                substituted_command(
-                    engine_values.SYSTEMCTL_START_COMMAND,
-                    {"unit": service_name},
-                ),
+        warnings.extend(
+            start_deployed_unit(
+                service_name,
+                start_command=engine_values.SYSTEMCTL_START_COMMAND,
                 timeout=timeout,
             )
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            warnings.append(f"the boot service could not be started: {exc}")
+        )
 
     if changed:
         message = (
