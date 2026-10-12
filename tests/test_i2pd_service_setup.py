@@ -340,7 +340,7 @@ def test_download_curl_shows_progress_and_writes_summary(
         calls.append(list(command))
         return _FakeProc(0, "")
 
-    monkeypatch.setattr(deb_package, "run_command", fake_run)
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     deb_package.download_asset(
         tmp_path,
         "i2pd_2.61.0-1_amd64.deb",
@@ -357,7 +357,7 @@ def test_download_curl_shows_progress_and_writes_summary(
     assert download_call[download_call.index("--output") + 1] == str(
         tmp_path / "i2pd_2.61.0-1_amd64.deb"
     )
-    assert "--retry" in download_call
+    assert "--continue-at" in download_call
     assert download_call[-1] == "https://example.invalid/i2pd_2.61.0-1_amd64.deb"
 
 

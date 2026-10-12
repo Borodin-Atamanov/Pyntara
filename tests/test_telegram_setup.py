@@ -116,21 +116,17 @@ def _fake_run_factory(
     *,
     resolved_url: str = FINAL_URL,
     head_rc: int = 0,
-    probe_rc: int = 0,
     download_rc: int = 0,
 ) -> list[list[str]]:
     """Install a subprocess.run fake; return the recorded command calls.
 
-    The reachability probe is the only curl call of the task that carries
-    no retry flag, and the resolve is the engine curl call whose template
-    names the effective url: the probe answers probe_rc, the resolve answers
-    resolved_url (or fails with head_rc), and every other curl call writes
-    the sentinel bytes to its --output target (the icon or the archive
-    download). tar creates the extracted binaries under its --directory, in
-    the archive directory and under the names the values module names, so a
-    test that renames them exercises the same layout the task reads. A
-    nonzero download_rc makes every download fail, which stands for a failed
-    archive or icon download.
+    The resolve is the engine curl call whose template names the effective
+    url: it answers resolved_url or fails with head_rc. Every other curl call
+    is a download of the archive or of the icon and writes the sentinel bytes
+    to its --output target; a nonzero download_rc makes such a call fail. tar
+    creates the extracted binaries under its --directory, in the archive
+    directory and under the names the values module names, so a test that
+    renames them exercises the same layout the task reads.
     """
 
     calls: list[list[str]] = []
@@ -138,15 +134,13 @@ def _fake_run_factory(
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
         if command[0] == "curl":
-            if "--retry" not in command:
-                return _FakeProc(probe_rc, "")
             if any("%{url_effective}" in part for part in command):
                 return _FakeProc(head_rc, stdout=resolved_url if head_rc == 0 else "")
-            if download_rc != 0 and kwargs.get("check", False):
+            if download_rc != 0:
                 raise subprocess.CalledProcessError(download_rc, command)
             out_index = command.index("--output") + 1
             Path(command[out_index]).write_bytes(ICON_BYTES)
-            return _FakeProc(download_rc, stdout="Downloaded sentinel bytes\n")
+            return _FakeProc(0, stdout="Downloaded sentinel bytes\n")
         if command[0] == "tar":
             dir_index = command.index("--directory") + 1
             archive_dir = Path(command[dir_index]) / values.ARCHIVE_DIRECTORY_NAME
@@ -326,43 +320,12 @@ def test_resolve_failure_is_a_warning(
     assert _deployed_paths()[2].is_file()
 
 
-def test_a_silent_host_is_reported_without_spending_the_retry_budget(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # A host that never answers is a blocked destination: the probe reports
-    # it once, the resolve never runs, and its retry budget is not spent on
-    # silence. The launcher entry is still written, because it does not
-    # depend on the release url.
-    calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
-    result = telegram_setup.task(_ctx(tmp_path))
-    assert result.success is True
-    assert any("did not answer within" in warning for warning in result.warnings)
-    assert not any(any("%{url_effective}" in part for part in call) for call in calls)
-    assert not any(call[0] == "tar" for call in calls)
-    assert _deployed_paths()[2].is_file()
-
-
-def test_the_probe_budget_comes_from_the_values(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # The probe budget is a value: it reaches the probe call and the
-    # warning, so a slow machine is answered in the values module and not in
-    # code.
-    monkeypatch.setattr(values, "REACHABILITY_PROBE_TIMEOUT_SECONDS", 45)
-    calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
-    result = telegram_setup.task(_ctx(tmp_path))
-    probes = [call for call in calls if call[0] == "curl" and "--retry" not in call]
-    assert len(probes) == values.REACHABILITY_PROBE_ATTEMPTS
-    assert probes[0][probes[0].index("--connect-timeout") + 1] == "45"
-    assert any("within 45 s" in warning for warning in result.warnings)
-
-
 def test_a_slow_host_that_answers_is_still_resolved_and_downloaded(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The probe separates a reachable host from a silent one only: an answer,
-    # however slow, leaves the resolve with the retry settings of the engine
-    # table, and the archive of the release is downloaded.
+    # A host that answers, however slowly, is resolved with the retry settings
+    # of the engine table and its release archive is downloaded: nothing in the
+    # task calls such a host blocked.
     calls = _fake_run_factory(monkeypatch, tmp_path)
     result = telegram_setup.task(_ctx(tmp_path))
     resolves = [
@@ -440,27 +403,3 @@ def test_icon_failure_is_a_warning_when_install_is_current(
     # The install is current, so nothing is extracted and no archive is
     # downloaded; only the icon curl is attempted and fails.
     assert not any(call[0] == "tar" for call in calls)
-
-
-@pytest.fixture(autouse=True)
-def _no_probe_pause(monkeypatch: pytest.MonkeyPatch) -> None:
-    # The pause between the probe attempts is a value, and no test waits for
-    # it: the loop is what the tests cover, not the clock.
-    monkeypatch.setattr(values, "REACHABILITY_PROBE_PAUSE_SECONDS", 0)
-
-
-def test_the_probe_tries_again_before_it_calls_the_host_blocked(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # One silence is not a blocked destination: only a host that stays silent
-    # through every attempt is reported as blocked, and the reason names how
-    # many attempts were made.
-    calls = _fake_run_factory(monkeypatch, tmp_path, probe_rc=28)
-
-    reachable, reason = telegram_setup._probe_download_host()
-
-    probe_length = len(calls[0])
-    probes = [call for call in calls if len(call) == probe_length]
-    assert reachable is False
-    assert len(probes) == values.REACHABILITY_PROBE_ATTEMPTS
-    assert str(values.REACHABILITY_PROBE_ATTEMPTS) in reason

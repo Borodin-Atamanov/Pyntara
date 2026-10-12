@@ -27,7 +27,7 @@ from pyntara import xui as xui_client
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.utils import (
-    download_command,
+    download_file,
     ensure_port_free,
     proquint_encode,
     run_command,
@@ -101,10 +101,7 @@ def _download_installer(
     _fd, name = tempfile.mkstemp(prefix="x-ui-install-", suffix=".sh")
     script_path = Path(name)
     try:
-        run_command(
-            download_command(script_path, panel_values.INSTALL_SCRIPT_URL),
-            timeout=timeout,
-        )
+        download_file(script_path, panel_values.INSTALL_SCRIPT_URL, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         try:
             script_path.unlink()

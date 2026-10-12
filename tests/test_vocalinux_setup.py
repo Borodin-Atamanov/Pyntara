@@ -224,6 +224,7 @@ def _install_fakes(
             return [], [(package, "cannot install") for package in packages], []
         return packages, [], []
 
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     monkeypatch.setattr(task_module, "run_command", fake_run)
     monkeypatch.setattr(package_set, "package_is_installed", fake_installed)
     monkeypatch.setattr(package_set, "install_packages", fake_install)

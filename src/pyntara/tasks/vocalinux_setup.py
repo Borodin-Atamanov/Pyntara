@@ -37,7 +37,7 @@ from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
     as_user_command,
     discard_downloaded_files,
-    download_command,
+    download_file,
     dpkg_architecture,
     home_environment,
     release_asset_architecture,
@@ -233,10 +233,7 @@ def _install_appimage(
             asset_name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX
         )
         try:
-            run_command(
-                download_command(partial, url),
-                timeout=timeout,
-            )
+            download_file(partial, url, timeout=timeout)
             partial.replace(cache)
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             partial.unlink(missing_ok=True)

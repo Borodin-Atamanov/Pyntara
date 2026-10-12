@@ -15,10 +15,9 @@ import subprocess
 from pathlib import Path
 
 from pyntara.utils import (
-    download_command,
+    download_file,
     install_package_once,
     refresh_apt_index,
-    run_command,
 )
 
 
@@ -37,10 +36,7 @@ def download_asset(
 
     download_dir.mkdir(parents=True, exist_ok=True)
     try:
-        run_command(
-            download_command(download_dir / name, url),
-            timeout=timeout,
-        )
+        download_file(download_dir / name, url, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"cannot download {url}: {exc}") from None
 

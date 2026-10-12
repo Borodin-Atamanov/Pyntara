@@ -388,6 +388,7 @@ def _run_task(
             return FakeProc(0, "IP4.DNS[1]:192.168.1.1\nIP6.DNS[1]:2001:db8::1\n")
         return FakeProc(0, "")
 
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     monkeypatch.setattr(task_module, "run_command", fake_run)
     result = task_module.task(context)
     return result, service_path, calls

@@ -51,7 +51,7 @@ from pyntara.models import TaskResult
 from pyntara.tasks.local_vault_setup import open_source_vault
 from pyntara.utils import (
     apply_owner,
-    download_command,
+    download_file,
     port_listener_pid,
     run_command,
     user_session_environment,
@@ -236,7 +236,7 @@ def _fetch_the_bridge(
     _hand_the_work_directory_to_the_user(work_dir)
     archive = work_dir / f"{values.ARCHIVE_TEMP_PREFIX}{values.ARCHIVE_TEMP_SUFFIX}"
     try:
-        run_command(download_command(archive, values.ARCHIVE_URL), timeout=timeout)
+        download_file(archive, values.ARCHIVE_URL, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         warnings.append(f"the bridge archive was not downloaded: {exc}")
         shutil.rmtree(work_dir, ignore_errors=True)

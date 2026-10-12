@@ -20,12 +20,11 @@ the configured icon. Auto-update is enabled by default in the official
 build (docs/spec/telegram-setup.md); the user-writable install directory is
 what lets the built-in Updater apply releases on its own.
 
-Before the redirect is resolved, the download host is probed once with the
-short budget of reachability_probe_timeout_seconds: a host that does not
-answer within it is a blocked destination, which is reported as a warning
-at once instead of spending the retry budget of the resolve on silence,
-while a host that answers however slowly is resolved and downloaded with
-the retry settings of the engine values.
+Before the redirect is resolved, the download host is not asked separately:
+the resolve and the download carry the bounds of the engine values, so a host
+that answers nothing costs one connect timeout per attempt and the run reports
+the failing host instead of spending hours on it. The archive download resumes
+a partial transfer, so a slow link finishes the file (ptynara.utils.download_file).
 
 Force mode bypasses the already-installed shortcut and reinstalls the
 release the redirect points to; it never touches the user chat data, which
@@ -39,7 +38,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 from string import Template
 from typing import NamedTuple
@@ -50,7 +48,7 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     curl_command,
     discard_downloaded_files,
-    download_command,
+    download_file,
     run_command,
     substituted_command,
     task_data_dir,
@@ -133,52 +131,6 @@ def _resolve_latest_url() -> str:
     return url
 
 
-def _probe_download_host() -> tuple[bool, str]:
-    """Ask the download host to answer within a few short attempts.
-
-    A host that is blocked never answers, and the retry settings of the
-    resolve below turn that silence into one connect timeout per attempt,
-    which is minutes on a machine whose network drops the packets. The
-    probe is the configured reachability_probe_command without any retry
-    flag, so it costs its budget once, and it answers whether the host is
-    reachable at all: a slow but working link answers inside that budget
-    and the resolve then retries as usual (docs/spec/telegram-setup.md).
-    Returns (reachable, reason), and reason is empty when the host
-    answered.
-    """
-
-    command = substituted_command(
-        values.REACHABILITY_PROBE_COMMAND,
-        {"timeout_seconds": str(values.REACHABILITY_PROBE_TIMEOUT_SECONDS)},
-    )
-    last_exit = 0
-    for attempt in range(1, values.REACHABILITY_PROBE_ATTEMPTS + 1):
-        try:
-            result = run_command(
-                [*command, values.LATEST_URL],
-                check=False,
-                capture=True,
-                timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
-            )
-        except (subprocess.TimeoutExpired, OSError) as exc:
-            return False, (
-                f"cannot resolve {values.LATEST_URL}: the reachability probe "
-                f"could not be run: {exc}"
-            )
-        if result.returncode == 0:
-            return True, ""
-        last_exit = result.returncode
-        if attempt < values.REACHABILITY_PROBE_ATTEMPTS:
-            time.sleep(values.REACHABILITY_PROBE_PAUSE_SECONDS)
-    return False, (
-        f"cannot resolve {values.LATEST_URL}: the host did not answer within "
-        f"{values.REACHABILITY_PROBE_TIMEOUT_SECONDS} s in "
-        f"{values.REACHABILITY_PROBE_ATTEMPTS} attempts (last curl exit "
-        f"{last_exit}), so the download is skipped instead of retrying for "
-        f"up to {engine_values.CURL_RETRY_MAX_TIME_SECONDS} s"
-    )
-
-
 def _download_archive(
     url: str,
     name: str,
@@ -193,10 +145,7 @@ def _download_archive(
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     partial = values.DOWNLOAD_DIR / (name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     try:
-        run_command(
-            download_command(partial, url),
-            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
-        )
+        download_file(partial, url, timeout=engine_values.COMMAND_TIMEOUT_SECONDS)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"cannot download {url}: {exc}") from None
@@ -323,10 +272,7 @@ def _ensure_icon() -> tuple[bool, str | None]:
         return False, None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        run_command(
-            download_command(path, values.ICON_URL),
-            timeout=engine_values.COMMAND_TIMEOUT_SECONDS,
-        )
+        download_file(path, values.ICON_URL, timeout=engine_values.COMMAND_TIMEOUT_SECONDS)
         path.chmod(values.ICON_FILE_MODE)
         _own_to_user(common_values.DESKTOP_USERNAME, path)
         _own_to_user(common_values.DESKTOP_USERNAME, path.parent)
@@ -379,15 +325,10 @@ def task(ctx: Context) -> TaskResult:
     paths = _install_paths()
 
     url: str | None = None
-    reachable, probe_warning = _probe_download_host()
-    if not reachable:
-        _log(probe_warning)
-        warnings.append(probe_warning)
-    else:
-        try:
-            url = _resolve_latest_url()
-        except RuntimeError as exc:
-            warnings.append(str(exc))
+    try:
+        url = _resolve_latest_url()
+    except RuntimeError as exc:
+        warnings.append(str(exc))
     name = _cache_name(url) if url is not None else ""
     if url is not None:
         _log(f"checking the latest Telegram Desktop release: {name}")

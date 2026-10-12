@@ -104,10 +104,121 @@ def test_download_command_fills_the_template_and_appends_the_url(
     assert command[command.index("--write-out") + 1] == (
         engine_values.CURL_DOWNLOAD_WRITE_OUT
     )
-    assert "--retry" in command
-    assert str(engine_values.CURL_DOWNLOAD_TIMEOUT_SECONDS) in command
+    assert "--continue-at" in command
+    assert "--retry" not in command
+    assert str(engine_values.CURL_DOWNLOAD_SPEED_LIMIT_BYTES) in command
+    assert str(engine_values.CURL_DOWNLOAD_SPEED_TIME_SECONDS) in command
+    assert str(engine_values.CURL_CONNECT_TIMEOUT_SECONDS) in command
     assert command[-1] == "https://example.invalid/a.tar.gz"
     assert "{output_path}" not in command
+
+
+def test_download_command_without_resume_starts_the_file_over(tmp_path: Path) -> None:
+    # A server that refuses to continue a partial transfer needs a call that
+    # writes the file from its beginning: that call carries no --continue-at and
+    # keeps the stall limit that ends a transfer which stops moving.
+    command = utils.download_command(
+        tmp_path / "archive.tar.gz",
+        "https://example.invalid/a.tar.gz",
+        resume=False,
+    )
+    assert "--continue-at" not in command
+    assert str(engine_values.CURL_DOWNLOAD_SPEED_TIME_SECONDS) in command
+
+
+def test_download_file_asks_again_with_resume_after_a_break(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A transfer that breaks is repeated with the same output path and with
+    # --continue-at, so the second attempt continues the bytes already on disk.
+    # The repetition must be the run's own: measured on curl 8.18.0, curl
+    # deletes a partial output file before it retries on its own, so a download
+    # left to curl starts over.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(18, command)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    utils.download_file(
+        tmp_path / "archive.bin", "https://example.invalid/a.bin", timeout=30
+    )
+    assert len(calls) == 2
+    assert "--continue-at" in calls[1]
+
+
+def test_download_file_starts_over_when_the_server_refuses_ranges(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # curl answers the exit code of a server without byte ranges when a partial
+    # file is continued ("HTTP server does not seem to support byte ranges.
+    # Cannot resume."). The helper then fetches the file from its beginning
+    # instead of asking that server again, and the partial file is never
+    # appended to blindly.
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(
+                engine_values.CURL_RESUME_UNSUPPORTED_EXIT_CODE, command
+            )
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    utils.download_file(
+        tmp_path / "archive.bin", "https://example.invalid/a.bin", timeout=30
+    )
+    assert len(calls) == 2
+    assert "--continue-at" in calls[0]
+    assert "--continue-at" not in calls[1]
+
+
+def test_download_file_gives_up_after_the_declared_attempts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The number of attempts is a declared value: a host that never delivers
+    # costs that many attempts and then the failure of the last one is raised,
+    # so the caller reports it like any other command failure.
+    monkeypatch.setattr(engine_values, "CURL_DOWNLOAD_ATTEMPTS", 3)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        raise subprocess.CalledProcessError(28, command)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    with pytest.raises(subprocess.CalledProcessError):
+        utils.download_file(
+            tmp_path / "archive.bin", "https://example.invalid/a.bin", timeout=30
+        )
+    assert len(calls) == 3
+    assert all("--continue-at" in call for call in calls)
+
+
+def test_download_file_stops_at_the_declared_budget(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The budget bounds the case of a host that accepts the connection and then
+    # says nothing: once it is spent, the attempts stop even when the attempt
+    # count is not reached.
+    monkeypatch.setattr(engine_values, "CURL_DOWNLOAD_ATTEMPTS", 9)
+    monkeypatch.setattr(engine_values, "CURL_DOWNLOAD_BUDGET_SECONDS", 0)
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        raise subprocess.CalledProcessError(28, command)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    with pytest.raises(subprocess.CalledProcessError):
+        utils.download_file(
+            tmp_path / "archive.bin", "https://example.invalid/a.bin", timeout=30
+        )
+    assert len(calls) == 1
 
 
 def test_release_query_command_uses_the_query_template() -> None:

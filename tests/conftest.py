@@ -77,6 +77,19 @@ _JOURNAL_CONFIGURING_MODULES = (
 
 
 @pytest.fixture(autouse=True)
+def _no_wait_between_download_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every test from waiting for the pause between two download attempts.
+
+    The pause is a declared value of the download helper, and a test that makes
+    a download fail would otherwise spend the whole series of pauses. The
+    attempt count stays as declared, so a test still sees the bounded loop; a
+    test that checks the count controls it itself.
+    """
+
+    monkeypatch.setattr(engine_values, "CURL_DOWNLOAD_RETRY_DELAY_SECONDS", 0)
+
+
+@pytest.fixture(autouse=True)
 def _journal_forwarding_stays_off(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep every test out of the real system journal."""
 

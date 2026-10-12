@@ -50,7 +50,7 @@ from pyntara.models import TaskResult
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     discard_downloaded_files,
-    download_command,
+    download_file,
     dpkg_architecture,
     release_asset_architecture,
     run_command,
@@ -247,7 +247,7 @@ def _download_into_cache(
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     partial = values.DOWNLOAD_DIR / (name + engine_values.PARTIAL_DOWNLOAD_FILE_SUFFIX)
     try:
-        run_command(download_command(partial, url), timeout=timeout)
+        download_file(partial, url, timeout=timeout)
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         partial.unlink(missing_ok=True)
         raise RuntimeError(f"cannot download {url}: {exc}") from None

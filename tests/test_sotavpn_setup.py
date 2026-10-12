@@ -730,6 +730,7 @@ class TestFetchTheBridge:
             shutil.copyfile(prepared, target)
             return FakeProc(0, "")
 
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
         warnings: list[str] = []
         fetched = sotavpn._fetch_the_bridge(30.0, warnings)
@@ -757,6 +758,7 @@ class TestFetchTheBridge:
             shutil.copyfile(prepared, target)
             return FakeProc(0, "")
 
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
         warnings: list[str] = []
         fetched = sotavpn._fetch_the_bridge(30.0, warnings)
@@ -777,6 +779,7 @@ class TestFetchTheBridge:
             shutil.copyfile(prepared, target)
             return FakeProc(0, "")
 
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
         warnings: list[str] = []
         monkeypatch.setattr(common_values, "DESKTOP_USERNAME", "no-such-account")
@@ -794,6 +797,7 @@ class TestFetchTheBridge:
             target.write_text("not an archive", encoding="utf-8")
             return FakeProc(0, "")
 
+        monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
         monkeypatch.setattr(sotavpn, "run_command", fake_run)
         warnings: list[str] = []
         assert sotavpn._fetch_the_bridge(30.0, warnings) is None
@@ -802,11 +806,11 @@ class TestFetchTheBridge:
     def test_a_dead_address_is_a_warning(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
-        monkeypatch.setattr(
-            sotavpn,
-            "run_command",
-            lambda *_a, **_k: (_ for _ in ()).throw(OSError("no route")),
-        )
+        def failing_run(*_args: object, **_kwargs: object) -> FakeProc:
+            raise OSError("no route")
+
+        monkeypatch.setattr("pyntara.utils.subprocess.run", failing_run)
+        monkeypatch.setattr(sotavpn, "run_command", failing_run)
         warnings: list[str] = []
         assert sotavpn._fetch_the_bridge(30.0, warnings) is None
         assert any("not downloaded" in warning for warning in warnings)

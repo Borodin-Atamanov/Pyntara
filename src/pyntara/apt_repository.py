@@ -20,7 +20,7 @@ from string import Template
 
 from pyntara.utils import (
     apply_owner,
-    download_command,
+    download_file,
     run_command,
     substituted_command,
 )
@@ -61,7 +61,7 @@ def download_keyring(
     keyring_path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=temp_dir_prefix) as tmp:
         downloaded = Path(tmp) / armored_file_name
-        run_command(download_command(downloaded, url), timeout=timeout)
+        download_file(downloaded, url, timeout=timeout)
         if dearmor_command is None:
             keyring_path.write_bytes(downloaded.read_bytes())
         else:

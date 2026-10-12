@@ -23,7 +23,7 @@ from pyntara.models import TaskResult
 from pyntara.utils import (
     apply_owner,
     discard_downloaded_files,
-    download_command,
+    download_file,
     dpkg_architecture,
     run_command,
     service_is_active,
@@ -179,10 +179,7 @@ def _download_binary(
 ) -> Path:
     values.DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
     archive = values.DOWNLOAD_DIR / name
-    run_command(
-        download_command(archive, url),
-        timeout=timeout,
-    )
+    download_file(archive, url, timeout=timeout)
     extract_dir = values.DOWNLOAD_DIR / values.EXTRACT_DIR_NAME
     shutil.rmtree(extract_dir, ignore_errors=True)
     extract_dir.mkdir()

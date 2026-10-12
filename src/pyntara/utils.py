@@ -512,18 +512,22 @@ def curl_flags(
     retry_max_time_seconds: int,
     retry_delay_seconds: int,
 ) -> list[str]:
-    """Retry and timeout flags shared by every download or release query curl.
+    """Retry and timeout flags of a curl call that asks for a small answer.
 
-    --max-time bounds a single attempt and --connect-timeout bounds only
-    the connection phase, so an unreachable host fails fast instead of
-    eating the whole per-attempt budget. --retry repeats an attempt,
-    --retry-all-errors makes every failure retryable (a transfer dropped
-    after the connection is up, exit 56, is not a retry condition for
-    --retry on its own), --retry-delay spaces the attempts apart,
-    --retry-max-time bounds the total retry window and
-    --retry-connrefused adds refused connections to the retryable set.
-    The flags are the single definition for all task curl calls, so the
-    values come from one place and never diverge (architecture contract,
+    --max-time bounds a single attempt, so a metadata request that hangs is
+    ended instead of holding the run, and --connect-timeout bounds only the
+    connection phase, so an unreachable host fails fast instead of eating the
+    whole per-attempt budget. --retry repeats the attempt inside curl, which is
+    right for an answer that costs nothing to fetch again: --retry-all-errors
+    makes every failure retryable (a transfer dropped after the connection is
+    up, exit 56, is not a retry condition for --retry on its own),
+    --retry-delay spaces the attempts apart, --retry-max-time bounds the total
+    retry window and --retry-connrefused adds refused connections to the
+    retryable set. A file download does not use these flags, because curl
+    deletes a partial output file before it retries: the download resumes
+    instead, and the run counts its attempts (download_flags, download_file).
+    The flags are the single definition for all query curl calls, so the values
+    come from one place and never diverge (architecture contract,
     Configuration).
     """
 
@@ -541,6 +545,31 @@ def curl_flags(
         str(retry_max_time_seconds),
         "--retry-connrefused",
     ]
+
+
+def download_flags(*, resume: bool) -> list[str]:
+    """The flags of a curl call that downloads a file into one path.
+
+    The connection phase is bounded, so a host that answers nothing costs this
+    budget per attempt. There is no --max-time: a transfer that moves must be
+    allowed to finish, however slow the link is, and a transfer that stops
+    moving is caught by --speed-limit with --speed-time, which ends that attempt
+    with a timeout so the run asks again. resume adds --continue-at -, so the
+    attempt continues the bytes already on disk instead of starting over; it is
+    left out for a server that refuses to continue a partial transfer.
+    """
+
+    flags = [
+        "--connect-timeout",
+        str(engine_values.CURL_CONNECT_TIMEOUT_SECONDS),
+        "--speed-limit",
+        str(engine_values.CURL_DOWNLOAD_SPEED_LIMIT_BYTES),
+        "--speed-time",
+        str(engine_values.CURL_DOWNLOAD_SPEED_TIME_SECONDS),
+    ]
+    if resume:
+        return ["--continue-at", "-", *flags]
+    return flags
 
 
 # One-line summary curl prints after a completed download: the actual byte
@@ -585,23 +614,77 @@ def curl_command(
     ]
 
 
-def download_command(output_path: Path, url: str) -> list[str]:
+def download_command(output_path: Path, url: str, *, resume: bool = True) -> list[str]:
     """The curl call that downloads one URL into one file.
 
     The command comes from the declared CURL_DOWNLOAD_COMMAND template with
-    {output_path} replaced and the declared download timeout, so every task
-    that fetches a release asset downloads it the same way.
+    {output_path} replaced, the flags of a download and the URL after them, so
+    every task that fetches a file downloads it the same way. resume is False
+    for a server that refuses to continue a partial transfer: the call then
+    writes the file from its beginning over whatever is there.
     """
 
-    return curl_command(
+    body = substituted_command(
         engine_values.CURL_DOWNLOAD_COMMAND,
-        url,
-        timeout_seconds=engine_values.CURL_DOWNLOAD_TIMEOUT_SECONDS,
-        substitutions={
+        {
             "output_path": str(output_path),
             "write_out": engine_values.CURL_DOWNLOAD_WRITE_OUT,
         },
     )
+    return [*body, *download_flags(resume=resume), url]
+
+
+def download_file(path: Path, url: str, *, timeout: float) -> None:
+    """Download one file, continuing a partial transfer after a break.
+
+    curl resumes only when the run asks it again: this helper repeats the call
+    itself with the same output path, so every attempt continues the bytes
+    already on disk and a slow link finishes its file instead of starting over.
+    The attempts, the pause between two of them and the budget of the whole
+    series are declared values, and the budget ends the case of a host that
+    accepts the connection and then says nothing. A server that refuses to
+    continue a partial transfer is answered once from the beginning instead of
+    being asked again, because that answer is permanent. Raises the failure of
+    the last attempt, so a caller reports the reason exactly as it reports the
+    reason of any other command.
+    """
+
+    started = time.monotonic()
+    resume = True
+    attempt = 0
+    failure: subprocess.CalledProcessError | subprocess.TimeoutExpired | None = None
+    for attempt in range(1, engine_values.CURL_DOWNLOAD_ATTEMPTS + 1):
+        try:
+            run_command(download_command(path, url, resume=resume), timeout=timeout)
+        except subprocess.CalledProcessError as exc:
+            failure = exc
+            if (
+                resume
+                and exc.returncode
+                == engine_values.CURL_RESUME_UNSUPPORTED_EXIT_CODE
+            ):
+                logger.log_progress(
+                    f"the server does not continue a partial transfer of {url}; "
+                    "the file is fetched from its beginning"
+                )
+                resume = False
+        except subprocess.TimeoutExpired as exc:
+            failure = exc
+        else:
+            return
+        if time.monotonic() - started >= engine_values.CURL_DOWNLOAD_BUDGET_SECONDS:
+            break
+        time.sleep(engine_values.CURL_DOWNLOAD_RETRY_DELAY_SECONDS)
+    if failure is None:
+        # Only a declared attempt count of zero reaches this line, and no
+        # attempt means no file: the gap is named instead of reported as
+        # a completed download.
+        raise RuntimeError(f"no download attempt was made for {url}")
+    logger.log_progress(
+        f"gave up on {url} after {attempt} attempts in "
+        f"{int(time.monotonic() - started)} s"
+    )
+    raise failure
 
 
 def release_query_command(url: str) -> list[str]:

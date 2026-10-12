@@ -76,7 +76,7 @@ from pyntara.utils import (
     apply_owner,
     backoff_delay,
     discard_downloaded_files,
-    download_command,
+    download_file,
     dpkg_architecture,
     run_command,
     service_is_active,
@@ -308,10 +308,7 @@ def _download_peers(
     )
     os.close(tmp_fd)
     try:
-        run_command(
-            download_command(Path(tmp_name), values.PEERS_TARBALL_URL),
-            timeout=timeout,
-        )
+        download_file(Path(tmp_name), values.PEERS_TARBALL_URL, timeout=timeout)
         try:
             with tarfile.open(tmp_name, "r:gz") as archive:
                 members = [

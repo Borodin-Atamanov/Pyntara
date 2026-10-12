@@ -29,25 +29,6 @@ appearance into the running session.
 
 ## Настроить btrfs системы, чтобы появились нужные параметры при загрузке системы
 
-## Telegram Desktop is skipped when a single 15 s probe gets no answer
-
-Clean-machine run of 2026-09-25 17:56 with the default vault: the section resolved
-the release and then skipped the download and the installation, warning "cannot
-resolve https://telegram.org/dl/desktop/linux: the host did not answer within 15 s
-(curl exit 28), so the download is skipped instead of retrying for up to 7777 s", so
-the machine stayed without the program the mode asks for. The message is built in
-src/pyntara/tasks/telegram_setup.py. The behaviour is deliberate and written down in
-docs/spec/telegram-setup.md: a host that does not answer within
-reachability_probe_timeout_seconds (15, src/pyntara/values/telegram_setup.py) counts
-as a blocked destination, and its reason is reported at once instead of spending the
-retry budget of the resolve (curl_retry_max_time_seconds 7777,
-src/pyntara/values/engine.py), which is what a network that drops the packets would
-turn into one connect timeout per attempt. So this is not a defect but a choice of
-behaviour, and the choice is the user's: keep the short probe, raise its budget, or
-probe a silent host again before it is called blocked. The cost of the present choice
-is visible in the run above, where one silence of 15 s left the machine without the
-program.
-
 ## Хром, исправить в репозитарии настроек хрома, чтобы вначале там окна лишние - принять правила хрома - лишнее и второе, с галочками, предлагающими сделать его браузером по-умолчанию, надо чтобы они не поялвлись эти окна.
 
 ## A healthy desktop run ends with exit code 1

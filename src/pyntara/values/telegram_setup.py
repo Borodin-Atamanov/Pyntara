@@ -39,42 +39,6 @@ LATEST_URL_COMMAND: tuple[str, ...] = (
     "%{url_effective}",
 )
 
-# Single-attempt probe of the download host, run before the redirect is
-# resolved, with the url as its last argument. A host that is blocked never
-# answers, and the retry budget of the resolve above turns that silence into one
-# connect timeout per attempt, which is minutes on a machine whose network drops
-# the packets; the probe asks once with a short budget instead. It carries no
-# retry flag on purpose: an answer, however slow, means the host is reachable,
-# and the resolve then retries as usual, so a slow link is never mistaken for a
-# blocked one. The --head keeps the probe from transferring the archive it is
-# asking about.
-REACHABILITY_PROBE_COMMAND: tuple[str, ...] = (
-    "curl",
-    "--silent",
-    "--show-error",
-    "--head",
-    "--location",
-    "--output",
-    "/dev/null",
-    "--connect-timeout",
-    "{timeout_seconds}",
-    "--max-time",
-    "{timeout_seconds}",
-)
-
-# Seconds that probe may spend on its single attempt: one connection and one
-# answer. A slow but working link answers a handshake in a few seconds, so this
-# value separates a slow host from a blocked one without calling the slow one
-# blocked.
-REACHABILITY_PROBE_TIMEOUT_SECONDS: int = 15
-
-# A silent host is probed a few times before it counts as blocked. One silence
-# can be a moment of an unstable link, while a blocked destination stays silent
-# through every attempt, so both are bounded: three attempts of fifteen seconds
-# with two pauses of five seconds cost at most fifty five seconds.
-REACHABILITY_PROBE_ATTEMPTS: int = 3
-REACHABILITY_PROBE_PAUSE_SECONDS: int = 5
-
 # Official Telegram icon downloaded for the launcher entry.
 ICON_URL: str = (
     "https://raw.githubusercontent.com/telegramdesktop/tdesktop/dev/"
@@ -127,10 +91,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DOWNLOAD_DIR",
     "LATEST_URL",
     "LATEST_URL_COMMAND",
-    "REACHABILITY_PROBE_COMMAND",
-    "REACHABILITY_PROBE_TIMEOUT_SECONDS",
-    "REACHABILITY_PROBE_ATTEMPTS",
-    "REACHABILITY_PROBE_PAUSE_SECONDS",
     "ICON_URL",
     "INSTALL_DIR_RELATIVE_PATH",
     "LAUNCHER_RELATIVE_PATH",

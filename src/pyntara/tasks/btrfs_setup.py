@@ -33,7 +33,7 @@ from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
 from pyntara.package_set import install_missing_packages
 from pyntara.utils import (
-    download_command,
+    download_file,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -614,12 +614,7 @@ def _build_menu_generator(warnings: list[str]) -> bool:
     )
     _log(f"downloading the menu generator from {url}")
     try:
-        run_command(
-            download_command(archive, url),
-            timeout=engine_values.CURL_DOWNLOAD_TIMEOUT_SECONDS,
-            check=True,
-            capture=True,
-        )
+        download_file(archive, url, timeout=engine_values.COMMAND_TIMEOUT_SECONDS)
         run_command(
             substituted_command(
                 values.GRUB_BTRFS_EXTRACT_COMMAND,

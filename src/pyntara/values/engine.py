@@ -47,18 +47,16 @@ FORCE_ALL_KEYWORD: str = "all"
 COMMAND_TIMEOUT_SECONDS: int = 8000
 
 # Per-attempt timeout in seconds of a curl call that queries metadata, for
-# example the releases API. A simple request to a server gets at least 60
-# seconds before it is called unreachable.
+# example the releases API. A download carries no such bound: a transfer that
+# moves must be allowed to finish, so the download of a file is bounded by the
+# stall limit and the attempt series below instead.
 CURL_TIMEOUT_SECONDS: int = 777
 
-# Per-attempt timeout in seconds of a curl call that downloads a file. A
-# download carries megabytes and a slow link must still finish it, so the
-# download budget is far larger than the metadata budget.
-CURL_DOWNLOAD_TIMEOUT_SECONDS: int = 7777
-
-# How many times curl retries a download or release query before giving up. The
-# shared curl flags add --retry-all-errors, so every failure is retried, not
-# only timeouts and HTTP 5xx.
+# How many times curl retries a release query before giving up. The shared curl
+# flags add --retry-all-errors, so every failure is retried, not only timeouts
+# and HTTP 5xx. A download does not use this retry: curl deletes a partial
+# output file before it retries, so a retried download would start over, and
+# the run repeats the download itself instead (CURL_DOWNLOAD_ATTEMPTS).
 CURL_RETRIES: int = 17
 
 # Seconds curl waits before the next attempt of a download or release query.
@@ -66,22 +64,43 @@ CURL_RETRIES: int = 17
 # again without stalling the whole retry budget.
 CURL_RETRY_DELAY_SECONDS: int = 3
 
-# Seconds curl may spend establishing a connection before an attempt is
-# abandoned. A host that refuses fails at once, while a host that drops the
-# packets spends this whole value on every attempt (measured on the target
-# machine: a blocked telegram.org costs 60 s per attempt of the retry budget
-# above). A task that may meet a blocked destination therefore probes the host
-# with a short budget of its own first (telegram_setup,
-# REACHABILITY_PROBE_TIMEOUT_SECONDS) instead of leaning on this value, and a
-# simple request to a server that answers gets at least 60 seconds before it is
-# called unreachable.
-CURL_CONNECT_TIMEOUT_SECONDS: int = 60
+# Seconds a curl call may spend establishing a connection before an attempt is
+# abandoned. The connection phase is the name lookup, the TCP handshake and the
+# TLS handshake, so a server that answers passes long before this value, while a
+# host that drops the packets spends it on every attempt (measured on the target
+# machine: a blocked telegram.org costs one connect timeout per attempt). With
+# the retry count above, a dead host costs minutes and never hours.
+CURL_CONNECT_TIMEOUT_SECONDS: int = 15
 
-# Total seconds curl may keep retrying before it gives up on its own. The bound
-# keeps a dead link from retrying until the outer command timeout kills the
-# process; curl reports a clear give-up error first. It matches the download
-# budget, so a retry of a large download is not cut short by the total window.
+# Total seconds curl may keep retrying a release query before it gives up. The
+# bound keeps a dead link from retrying until the outer command timeout kills
+# the process; curl reports a clear give-up error first.
 CURL_RETRY_MAX_TIME_SECONDS: int = 7777
+
+# The download of a file, which the run repeats instead of letting curl do it:
+# curl continues a partial transfer only when the run asks again with
+# --continue-at, and it deletes the partial file when it retries on its own. A
+# transfer slower than CURL_DOWNLOAD_SPEED_LIMIT_BYTES for
+# CURL_DOWNLOAD_SPEED_TIME_SECONDS in a row counts as stalled: that attempt ends
+# and the next one continues where it stopped. A transfer above that speed is
+# left alone, however long it takes, because a slow link must finish its file.
+CURL_DOWNLOAD_SPEED_LIMIT_BYTES: int = 1024
+CURL_DOWNLOAD_SPEED_TIME_SECONDS: int = 120
+
+# Attempts one download gets, the pause between two of them, and the wall-clock
+# budget of the whole series. The budget is the answer to a host that accepts the
+# connection and then says nothing, which the stall limit alone would let repeat
+# for hours. The partial file stays on disk between attempts and between runs, so
+# a later run continues the same file.
+CURL_DOWNLOAD_ATTEMPTS: int = 20
+CURL_DOWNLOAD_RETRY_DELAY_SECONDS: int = 5
+CURL_DOWNLOAD_BUDGET_SECONDS: int = 3600
+
+# The curl exit code of a server that refuses to continue a partial transfer
+# ("HTTP server does not seem to support byte ranges. Cannot resume."). The run
+# then fetches the file from its beginning instead of asking again, so a server
+# without byte ranges costs one extra transfer and never a corrupt file.
+CURL_RESUME_UNSUPPORTED_EXIT_CODE: int = 33
 
 # The write-out text of a download: the byte count, the total time and the
 # average speed curl reports after the transfer. The leading newline separates
@@ -95,10 +114,10 @@ CURL_DOWNLOAD_WRITE_OUT: str = (
 
 # The two curl calls every task of the run uses to obtain a release asset or
 # release metadata, so the flags and the progress text of a download live in
-# one place and can never diverge between tasks. The retry and timeout flags
-# are inserted before the URL and the URL is always the last argument, because
-# curl reads its options before the URL. {output_path} of the download command
-# is the file the transfer writes and {write_out} is the text above.
+# one place and can never diverge between tasks. The flags of the call are
+# inserted before the URL and the URL is always the last argument, because curl
+# reads its options before the URL. {output_path} of the download command is the
+# file the transfer writes and {write_out} is the text above.
 CURL_DOWNLOAD_COMMAND: tuple[str, ...] = (
     "curl",
     "--fail",
@@ -718,13 +737,18 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "BYTES_PER_MIB",
     "COMMAND_TIMEOUT_SECONDS",
     "CURL_CONNECT_TIMEOUT_SECONDS",
+    "CURL_DOWNLOAD_ATTEMPTS",
+    "CURL_DOWNLOAD_BUDGET_SECONDS",
     "CURL_DOWNLOAD_COMMAND",
-    "CURL_DOWNLOAD_TIMEOUT_SECONDS",
+    "CURL_DOWNLOAD_RETRY_DELAY_SECONDS",
+    "CURL_DOWNLOAD_SPEED_LIMIT_BYTES",
+    "CURL_DOWNLOAD_SPEED_TIME_SECONDS",
     "CURL_DOWNLOAD_WRITE_OUT",
     "CURL_PARALLEL_COMMAND",
     "CURL_PARALLEL_SOURCE_MARKER",
     "CURL_PARALLEL_WRITE_OUT",
     "CURL_QUERY_COMMAND",
+    "CURL_RESUME_UNSUPPORTED_EXIT_CODE",
     "CURL_RETRIES",
     "CURL_RETRY_DELAY_SECONDS",
     "CURL_RETRY_MAX_TIME_SECONDS",
