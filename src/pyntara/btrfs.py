@@ -14,7 +14,6 @@ because a machine that cannot answer must still finish its provisioning.
 
 from __future__ import annotations
 
-import os
 import subprocess
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,11 +22,7 @@ from string import Template
 
 from pyntara.config_edit import replace_line_by_string
 from pyntara.utils import run_command, trim_whitespace
-
-# Suffix of the temporary file an atomic write goes through before it replaces
-# the target, so a machine that loses power in the middle of a write keeps the
-# old file instead of a truncated one.
-TEMPORARY_FILE_SUFFIX: str = ".tmp"
+from pyntara.utils import write_file_atomically as _shared_write_file_atomically
 
 # Words of the btrfs subvolume listing command that separate the fields of a
 # line from the path they carry.
@@ -196,18 +191,12 @@ def failure_text(error: BaseException) -> str:
 def write_file_atomically(path: Path, content: str, file_mode: int) -> None:
     """Write a file so that it is either the old content or the new one.
 
-    The content goes into a temporary file next to the target and replaces it
-    in one step, because a machine that loses power in the middle of an
-    in-place write would be left with a truncated file that the next boot or
-    the next menu build fails on. The mode is set on the temporary file, so the
-    target never appears with a permission of its own.
+    The atomic replacement itself lives in pyntara.utils, shared with the swap
+    and zram tasks that deploy a file the same way; this name stays so the
+    btrfs sections call it unchanged.
     """
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + TEMPORARY_FILE_SUFFIX)
-    temporary.write_text(content, encoding="utf-8")
-    temporary.chmod(file_mode)
-    os.replace(temporary, path)
+    _shared_write_file_atomically(path, content, file_mode)
 
 
 def write_config_directive(

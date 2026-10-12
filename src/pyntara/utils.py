@@ -1116,6 +1116,36 @@ def kglobalaccel_names() -> dict[str, str]:
     }
 
 
+# Suffix of the temporary file an atomic write goes through before it replaces
+# its target. Every module that deploys a file atomically shares it, so the
+# convention lives in one place.
+TEMPORARY_FILE_SUFFIX: str = ".tmp"
+
+
+def write_file_atomically(
+    path: Path, content: bytes | str, file_mode: int | None = None
+) -> None:
+    """Write a file so that it is either the old content or the new one.
+
+    The content goes into a temporary file next to the target and replaces it
+    in one step, because a machine that loses power in the middle of an
+    in-place write would be left with a truncated file that the next boot or
+    the next menu build fails on. The parent directory is created when it is
+    missing, and the mode, when given, is set on the temporary file so the
+    target never appears with a permission of its own.
+    """
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + TEMPORARY_FILE_SUFFIX)
+    if isinstance(content, bytes):
+        temporary.write_bytes(content)
+    else:
+        temporary.write_text(content, encoding="utf-8")
+    if file_mode is not None:
+        temporary.chmod(file_mode)
+    os.replace(temporary, path)
+
+
 def apply_owner(path: Path, owner_uid: int, owner_gid: int) -> None:
     """Set the given file owner when the process runs as root.
 

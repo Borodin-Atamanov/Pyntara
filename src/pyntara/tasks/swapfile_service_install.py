@@ -52,7 +52,6 @@ a machine whose hibernation fails without a word.
 from __future__ import annotations
 
 import json
-import os
 import platform
 import shutil
 import subprocess
@@ -69,16 +68,13 @@ from pyntara.utils import (
     service_is_enabled,
     substituted_command,
     task_data_dir,
+    write_file_atomically,
 )
 from pyntara.values import btrfs_setup as btrfs_setup_values
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
 from pyntara.values import swapfile_service_install as values
-
-# Suffix of the temporary file an atomic write goes through before it replaces
-# the deployed program or the rendered unit.
-TEMPORARY_FILE_SUFFIX: str = ".tmp"
 
 
 def _number_text(value: float) -> str:
@@ -96,22 +92,6 @@ def _command_path(command_name: str) -> str | None:
     """
 
     return shutil.which(command_name)
-
-
-def _write_file_atomically(path: Path, content: bytes | str) -> None:
-    """Write a file so that it is either the old content or the new one.
-
-    The content goes into a temporary file next to the target and replaces it
-    in one step, because a machine that loses power in the middle of an
-    in-place write would be left with a truncated file.
-    """
-
-    temporary = path.with_name(path.name + TEMPORARY_FILE_SUFFIX)
-    if isinstance(content, bytes):
-        temporary.write_bytes(content)
-    else:
-        temporary.write_text(content, encoding="utf-8")
-    os.replace(temporary, path)
 
 
 def _grub_command_line_node() -> str:
@@ -219,7 +199,7 @@ def _deploy_program(source: Path, target: Path) -> tuple[bool, str | None]:
             _log(f"program already deployed: {target}")
             return False, None
         target.parent.mkdir(parents=True, exist_ok=True)
-        _write_file_atomically(target, content)
+        write_file_atomically(target, content)
         target.chmod(values.PROGRAM_FILE_MODE)
     except OSError as exc:
         return False, f"cannot deploy the program to {target}: {exc}"
@@ -258,7 +238,7 @@ def _write_unit_file(
             _log(f"unit file already current: {path}")
             return False, None
         unit_dir.mkdir(parents=True, exist_ok=True)
-        _write_file_atomically(path, content)
+        write_file_atomically(path, content)
     except OSError as exc:
         return False, f"cannot write the unit file {path}: {exc}"
     _log(f"unit file written: {path}")
@@ -451,7 +431,7 @@ def _write_polkit_rule(data_dir: Path) -> tuple[bool, list[str]]:
             _log(f"the hibernation permission rule is current: {path}")
             return False, []
         path.parent.mkdir(parents=True, exist_ok=True)
-        _write_file_atomically(path, content)
+        write_file_atomically(path, content)
         path.chmod(values.POLKIT_RULE_FILE_MODE)
     except OSError as exc:
         return False, [f"cannot write {path}: {exc}"]
