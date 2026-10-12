@@ -14,7 +14,7 @@ When you receive a task and the user says "plan", follow this procedure.
 
 This comes before any planning and decides how long the plan needs to be.
 
-0.1 Write down every unknown fact that the choice of approach depends on: who owns the relevant state, which tool or client actually works, the exact API call needed, how a library behaves, whether a ready-made solution already exists.
+0.1 Write down every unknown fact that the choice of approach depends on: who owns the relevant state, which tool or client actually works, the exact API call needed, how a library behaves, whether a ready-made solution already exists, and which options of the tools you plan to use already do the job.
 
 0.2 For each unknown, use every available method to resolve it, not just one. Try things directly on the machine. Search the internet. When searching, try more than one query: use different wordings, synonyms, and also search in English even if the task or conversation is in another language, because English sources are often more complete. Do not stop at the first search result or the first attempt if it did not give a clear answer.
 
@@ -24,7 +24,9 @@ This comes before any planning and decides how long the plan needs to be.
 
 0.5 The unknowns that remain as assumptions after this stage determine how much of the following steps are required. If the key mechanism is confirmed by facts, keep the plan short and skip comparing alternative approaches where no real alternative exists. If important assumptions remain, step 4 (comparing approaches) and step 7 (test coverage) below are mandatory for those specific points.
 
-One rule applies throughout research: never guess at a mechanism that a quick probe or a search could settle. Never run a probe that disrupts the current working session (for example, restarting the window manager or the display session is forbidden).
+0.6 Read the manual of every tool and program you plan to use or configure, before any mechanism is designed around it: the man page, the help output of the command and the official documentation of the tool. Write down the options that already solve the problem, so a mechanism is never hand-rolled where the tool has a switch, a mode or an option for it. Building something of your own is allowed only after this reading, and the plan then names the option that was read and says why it does not serve the case.
+
+One rule applies throughout research: never guess at a mechanism that a quick probe, a search or the manual of the tool could settle. Never run a probe that disrupts the current working session (for example, restarting the window manager or the display session is forbidden).
 
 ### Stage 1. Restate the task
 
