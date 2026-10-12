@@ -143,7 +143,7 @@ utils.py            run_command, apt_update_command,
                     read_os_release, os_family_is_debian, dpkg_architecture,
                     service_is_enabled, service_is_active, apply_owner,
                     proquint_encode, proquint_decode, trim_whitespace,
-                    backoff_delay
+                    write_file_atomically, backoff_delay
 
 config_edit.py      replace_line_by_string, add_line_to_file,
                     sync_directives_by_key
@@ -160,6 +160,12 @@ settings_repo.py    sync_repository, deploy_tree, deploy_system_tree
 user_files.py       write_user_file
 
 apt_repository.py   render_source_text, download_keyring, write_root_file
+
+deb_package.py      download_asset, install_deb
+
+systemd_unit.py     unit_matches, write_unit, write_unit_when_changed,
+                    deploy_program, parse_program_result, service_is_failed,
+                    wait_service_active
 
 augeas.py           parse_augtool_print, sync_dropin, read_dropin,
                     dropin_exists, remove_dropin
