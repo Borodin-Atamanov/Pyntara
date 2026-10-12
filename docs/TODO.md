@@ -71,18 +71,6 @@ switches the profile through power-profiles-daemon when it differs, or it
 reports the difference as a non-failing notice, or the run keeps exiting nonzero
 and the behaviour is documented as intended.
 
-## The local proxy message names the wrong object
-
-Clean010 run of 2026-09-29: three_x_ui_xray_setup logged "no vless link in
-xray_client_profile of default.vault: the local proxy is not configured" while
-the local proxy inbound on 127.0.0.1:10800 was created in the same stage and the
-task result says "local proxy on 127.0.0.1:10800 configured". What is missing is
-the remote link the machine would leave through, not the local proxy. The
-message is built in src/pyntara/xray_local_proxy.py (_remote_profile), and the
-same wording is used for a missing source vault and for an unusable link. The
-line misleads whoever reads the run log, so the sentence should name the missing
-remote path instead.
-
 ## Third-party installers write credentials and noise into the run log
 
 Clean010 run of 2026-09-29, evidence from the log: the 3x-ui installer prints the

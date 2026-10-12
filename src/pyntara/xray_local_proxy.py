@@ -40,7 +40,11 @@ def _remote_profile(
     link is the single source of truth for the profile, because it already
     carries the REALITY public key, the short id and the spider path. The
     reason is an empty string when the profile is returned and a sentence
-    for the operator when it is not, so exactly one of the two is set.
+    for the operator when it is not, so exactly one of the two is set. Every
+    sentence names the object that is missing: the local proxy itself exists
+    on every machine, and what such a machine lacks is the remote exit its
+    traffic would leave through, which the sentence says instead of calling
+    the local proxy unconfigured.
     """
 
     source = open_source_vault(
@@ -51,7 +55,7 @@ def _remote_profile(
     )
     if source is None:
         return None, (
-            "no source vault could be opened: the local proxy is not configured"
+            "no source vault could be opened: the local proxy has no remote exit"
         )
     kp, path = source
     entry = kp.find_entries(
@@ -64,7 +68,7 @@ def _remote_profile(
     if not link:
         return None, (
             f"no vless link in {panel_values.CLIENT_PROFILE_ENTRY_TITLE} of {path.name}: "
-            "the local proxy is not configured"
+            "the local proxy has no remote exit"
         )
     profile = routing_policy.parse_vless_link(
         link,
@@ -76,7 +80,7 @@ def _remote_profile(
     if profile is None:
         return None, (
             f"the url of {panel_values.CLIENT_PROFILE_ENTRY_TITLE} is not a usable "
-            "vless link: the local proxy is not configured"
+            "vless link: the local proxy has no remote exit"
         )
     return profile, ""
 

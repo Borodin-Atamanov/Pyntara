@@ -3262,6 +3262,46 @@ def _profile_source(monkeypatch: pytest.MonkeyPatch, link: str = PROFILE_LINK) -
     )
 
 
+def test_local_proxy_reason_names_the_missing_remote_exit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The local proxy is created on every machine, so an absent link leaves
+    # the machine without the remote path its traffic would leave through.
+    # The reason must name that path: the wording that called the local proxy
+    # unconfigured is what misled the run log of the clean010 machine.
+    _profile_source(monkeypatch, link="")
+    profile, reason = xray_local_proxy._remote_profile(_ctx(monkeypatch, tmp_path))
+    assert profile is None
+    assert panel_values.CLIENT_PROFILE_ENTRY_TITLE in reason
+    assert "no remote exit" in reason
+    assert "the local proxy is not configured" not in reason
+
+
+def test_local_proxy_reason_names_the_remote_exit_without_a_source_vault(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A vault that does not open is the same honest place: the machine keeps
+    # its local proxy and stays without the remote exit.
+    monkeypatch.setattr(
+        "pyntara.xray_local_proxy.open_source_vault",
+        lambda repo_root, production, default, password: None,
+    )
+    profile, reason = xray_local_proxy._remote_profile(_ctx(monkeypatch, tmp_path))
+    assert profile is None
+    assert "no source vault could be opened" in reason
+    assert "no remote exit" in reason
+
+
+def test_local_proxy_reason_names_the_remote_exit_for_an_unusable_link(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _profile_source(monkeypatch, link="https://example.com/not-a-vless-link")
+    profile, reason = xray_local_proxy._remote_profile(_ctx(monkeypatch, tmp_path))
+    assert profile is None
+    assert "is not a usable" in reason
+    assert "no remote exit" in reason
+
+
 def _panel_env_fake(monkeypatch: pytest.MonkeyPatch) -> None:
     """Answer the panel environment read without a panel on the machine."""
 
