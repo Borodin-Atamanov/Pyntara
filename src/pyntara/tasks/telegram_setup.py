@@ -20,11 +20,11 @@ the configured icon. Auto-update is enabled by default in the official
 build (docs/spec/telegram-setup.md); the user-writable install directory is
 what lets the built-in Updater apply releases on its own.
 
-Before the redirect is resolved, the download host is not asked separately:
-the resolve and the download carry the bounds of the engine values, so a host
-that answers nothing costs one connect timeout per attempt and the run reports
-the failing host instead of spending hours on it. The archive download resumes
-a partial transfer, so a slow link finishes the file (ptynara.utils.download_file).
+The resolve and the download carry the bounds of the engine values, so a host
+that answers nothing costs one connect timeout per attempt and the task then
+reports the failing host instead of spending hours on it. The archive download
+resumes a partial transfer through pyntara.utils.download_file, so a slow link
+finishes its file and a transfer that breaks continues where it stopped.
 
 Force mode bypasses the already-installed shortcut and reinstalls the
 release the redirect points to; it never touches the user chat data, which
@@ -287,18 +287,15 @@ def task(ctx: Context) -> TaskResult:
 
     The target state is reached when the archive the redirect points to is
     cached, the Telegram binary and the launcher entry are present; the
-    task then returns changed=False. Otherwise it probes the download host
-    once with a short budget, resolves the latest archive from the redirect
-    when that host answered, downloads it when not cached, installs the
-    Telegram and Updater files under the user home, removes stale cached
+    task then returns changed=False. Otherwise it resolves the latest
+    archive from the redirect, downloads it when it is not cached, installs
+    the Telegram and Updater files under the user home, removes stale cached
     archives, writes the launcher entry and downloads the icon. Force mode
     reinstalls the current release instead of trusting the cached archive.
     A step that cannot run is reported as a warning of a completed task: a
-    host that does not answer within the probe budget is reported at once
-    and its retry budget is never spent, a release that cannot be resolved
-    and a failed download skip the install, and the launcher entry and the
-    icon are still handled, so the runner continues with the remaining
-    tasks and never stops here.
+    redirect that cannot be resolved and a download that fails skip the
+    install, and the launcher entry and the icon are still handled, so the
+    runner continues with the remaining tasks and never stops here.
     """
 
     absent = missing_value_names(values, values.READ_VALUE_NAMES) + missing_value_names(
