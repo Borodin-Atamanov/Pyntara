@@ -5,7 +5,7 @@ Description=System Metrics report collector timer
 [Timer]
 OnBootSec=$boot_delay_seconds
 $daily_send_calendar
-Unit=$service_unit_name
+Unit=$unit
 
 [Install]
 WantedBy=timers.target

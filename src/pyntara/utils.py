@@ -1043,7 +1043,7 @@ def substituted_command(command: Sequence[str], values: Mapping[str, str]) -> li
     """The configured command with its {placeholders} filled in.
 
     A command whose arguments are ours to choose lives in the values module with
-    placeholders such as {username} or {service_unit_name}; this helper is
+    placeholders such as {username} or {unit}; this helper is
     the one place that fills them, so every task renders its commands the
     same way.
     """

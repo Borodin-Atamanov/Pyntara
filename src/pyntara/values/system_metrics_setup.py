@@ -144,21 +144,21 @@ COLLECTOR_TIMER_TEMPLATE_FILE_NAME: str = "system_metrics_collector.timer"
 COMMIT_COMMAND_TEMPLATE_FILE_NAME: str = "commit_system_metrics.sh"
 
 # Commands the task runs against the units above: the reload of systemd and
-# the enable, restart and start of a unit, whose name is the {unit_name}
+# the enable, restart and start of a unit, whose name is the {unit}
 # placeholder of the template. One shape serves the service, the path unit and
 # the collector timer, because the task runs the same call on each of them.
 SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{unit_name}",
+    "{unit}",
 )
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit_name}")
+SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 
 # Commands the deployed units run: the send loop service, the ingest oneshot
 # service and the report collector service, each with the interpreter of the
@@ -329,7 +329,7 @@ class Collector:
     retry_max_seconds are the geometric backoff of the retries, in whole
     seconds; command_timeout_seconds bounds a single console command and one
     commit call; start_command starts the collector service once after
-    provisioning, with {service_unit_name} substituted, and is deliberately
+    provisioning, with {unit} substituted, and is deliberately
     non-blocking. journal_identifier is the journal identifier of the collector
     service; lock_file_path is the flock lock that keeps a second instance from
     committing. report_keys are the field names of the report document by the
@@ -428,7 +428,7 @@ COLLECTOR: Collector = Collector(
         "systemctl",
         "start",
         "--no-block",
-        "{service_unit_name}",
+        "{unit}",
     ),
     journal_identifier="system_metrics_collector",
     lock_file_path=Path("/run/pyntara/system_metrics_collector.lock"),

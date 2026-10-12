@@ -288,26 +288,26 @@ DAEMON_FLAG_TEMPLATES: dict[str, str] = {
 }
 
 # The four commands that stop, enable, start and restart the service unit;
-# {service_unit_name} is the unit of this section.
+# {unit} is the unit of this section.
 SERVICE_STOP_COMMAND: tuple[str, ...] = (
     "systemctl",
     "stop",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_START_COMMAND: tuple[str, ...] = (
     "systemctl",
     "start",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Characters of the failed verification output shown in the error text: a long

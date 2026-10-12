@@ -139,7 +139,7 @@ ASSET_NAME_TEMPLATE: str = "yggdrasil-{version}-{arch}.deb"
 RELEASE_TAG_PREFIX: str = "v"
 
 # Commands the task runs, and the admin socket calls the task and the deployed
-# address command share. {config_path} is CONFIG_PATH and {service_unit_name}
+# address command share. {config_path} is CONFIG_PATH and {unit}
 # the unit above; the journal query reads one probe window of the last
 # {probe_seconds} seconds in a timestamp format a machine can compare. The -json
 # flag is part of the admin calls, because the shared parser reads JSON and the
@@ -158,19 +158,19 @@ SELF_ADDRESS_COMMAND: tuple[str, ...] = ("yggdrasilctl", "-json", "getSelf")
 JOURNAL_CONNECTED_QUERY_COMMAND: tuple[str, ...] = (
     "journalctl",
     "-u",
-    "{service_unit_name}",
+    "{unit}",
     "--since",
     "-{probe_seconds}s",
     "--no-pager",
     "--output=short-iso",
 )
-SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{service_unit_name}")
+SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
-SERVICE_ENABLE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "{service_unit_name}")
+SERVICE_ENABLE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "{unit}")
 
 # NetworkManager and iproute2 calls of the unmanaged rule and of the leftover
 # interface cleanup, each carrying the name it acts on.

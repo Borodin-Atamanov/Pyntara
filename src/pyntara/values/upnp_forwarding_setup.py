@@ -60,23 +60,23 @@ SERVICE_MODULE_NAME: str = "pyntara.upnp_forwarding"
 MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}")
 
 # The systemctl calls of the task, each carrying the unit name as its
-# {unit_name} placeholder except the daemon reload.
+# {unit} placeholder except the daemon reload.
 SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
     "systemctl",
     "start",
     "--no-block",
-    "{unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = (
     "systemctl",
     "is-failed",
-    "{unit_name}",
+    "{unit}",
 )
 
 # Delay after boot before the first run and the pause between two runs. The

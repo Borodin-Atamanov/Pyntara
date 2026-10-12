@@ -800,7 +800,7 @@ def _revert(
         run_command(
             substituted_command(
                 values.SERVICE_STOP_COMMAND,
-                {"service_unit_name": values.SERVICE_UNIT_NAME},
+                {"unit": values.SERVICE_UNIT_NAME},
             ),
             check=False,
             timeout=timeout,
@@ -939,7 +939,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_ENABLE_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -953,7 +953,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     service_command,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -963,7 +963,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SERVICE_STOP_COMMAND,
-                        {"service_unit_name": values.SERVICE_UNIT_NAME},
+                        {"unit": values.SERVICE_UNIT_NAME},
                     ),
                     check=False,
                     timeout=timeout,
@@ -978,7 +978,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SERVICE_STOP_COMMAND,
-                        {"service_unit_name": values.SERVICE_UNIT_NAME},
+                        {"unit": values.SERVICE_UNIT_NAME},
                     ),
                     check=False,
                     timeout=timeout,

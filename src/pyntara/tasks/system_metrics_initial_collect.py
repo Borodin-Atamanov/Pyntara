@@ -32,7 +32,7 @@ def task(ctx: Context) -> TaskResult:
 
     The unit name and the command are declared values: the collector
     service unit name and the start command of the collector table, with
-    {service_unit_name} substituted. When the unit file is absent, the
+    {unit} substituted. When the unit file is absent, the
     deployment did not happen and the task skips with changed=False.
     Otherwise the service is started through the shared run_command with
     the engine timeout; a failed start is a warning of a completed task,
@@ -51,7 +51,7 @@ def task(ctx: Context) -> TaskResult:
             message="collector unit not deployed",
         )
     start_argv = substituted_command(
-        collector.start_command, {"service_unit_name": service_name}
+        collector.start_command, {"unit": service_name}
     )
     _log(f"starting collector once: {' '.join(start_argv)}")
     try:

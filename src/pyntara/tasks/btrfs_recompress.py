@@ -300,7 +300,7 @@ def _window_is_open(username: str, timeout: float) -> bool:
 
     command = substituted_command(
         values.WINDOW_IS_ACTIVE_COMMAND,
-        {"username": username, "unit_name": values.WINDOW_UNIT_NAME},
+        {"username": username, "unit": values.WINDOW_UNIT_NAME},
     )
     try:
         result = run_command(

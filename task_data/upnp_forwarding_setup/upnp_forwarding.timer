@@ -5,7 +5,7 @@ Description=Router port forwarding timer
 [Timer]
 OnBootSec=$boot_delay_seconds
 OnUnitActiveSec=$interval_seconds
-Unit=$service_unit_name
+Unit=$unit
 
 [Install]
 WantedBy=timers.target

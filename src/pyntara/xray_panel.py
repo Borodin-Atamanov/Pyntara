@@ -430,7 +430,7 @@ def _converge_panel_port(
         run_command(
             substituted_command(
                 panel_values.SERVICE_RESTART_COMMAND,
-                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
+                {"unit": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
@@ -638,7 +638,7 @@ def _takeover_credentials(
         run_command(
             substituted_command(
                 panel_values.SERVICE_RESTART_COMMAND,
-                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
+                {"unit": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )

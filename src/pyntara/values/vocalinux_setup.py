@@ -83,14 +83,14 @@ GROUP_MEMBERS_COMMAND: tuple[str, ...] = ("id", "-nG", "{username}")
 GROUP_ADD_COMMAND: tuple[str, ...] = ("usermod", "-aG", "{input_group}", "{username}")
 
 # Commands of the user manager of the desktop session; {username} and
-# {service_unit_name} are filled in at the call site.
+# {unit} are filled in at the call site.
 SERVICE_ACTIVE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "--user",
     "--machine",
     "{username}@.host",
     "is-active",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
@@ -99,7 +99,7 @@ SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "{username}@.host",
     "enable",
     "--now",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # The names the task reads. The list lives next to the values it names, the task

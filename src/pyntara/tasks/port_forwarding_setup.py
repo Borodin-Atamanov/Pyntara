@@ -106,7 +106,7 @@ def _started_ok(
             return True
         if service_is_failed(
             values.SYSTEMCTL_IS_FAILED_COMMAND,
-            {"service_unit_name": service_name},
+            {"unit": service_name},
             timeout,
         ):
             return False
@@ -128,7 +128,7 @@ def _last_run_result(service_name: str, timeout: float) -> str:
         result = run_command(
             substituted_command(
                 values.SYSTEMCTL_SHOW_RESULT_COMMAND,
-                {"service_unit_name": service_name},
+                {"unit": service_name},
             ),
             check=False,
             capture=True,
@@ -277,7 +277,7 @@ def task(ctx: Context) -> TaskResult:
 
     if not enabled:
         enable_argv = substituted_command(
-            values.SYSTEMCTL_ENABLE_COMMAND, {"service_unit_name": service_name}
+            values.SYSTEMCTL_ENABLE_COMMAND, {"unit": service_name}
         )
         try:
             run_command(enable_argv, timeout=timeout)
@@ -295,7 +295,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     restart_argv = substituted_command(
-        values.SYSTEMCTL_RESTART_COMMAND, {"service_unit_name": service_name}
+        values.SYSTEMCTL_RESTART_COMMAND, {"unit": service_name}
     )
     try:
         run_command(restart_argv, timeout=timeout)

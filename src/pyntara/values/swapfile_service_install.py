@@ -68,12 +68,12 @@ SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload"
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
     "systemctl",
     "start",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Name of the tool the unit stops the swap with. The task resolves its absolute

@@ -505,7 +505,7 @@ def _service_command_result(
 
     try:
         result = run_command(
-            substituted_command(command, {"service_unit_name": unit}),
+            substituted_command(command, {"unit": unit}),
             check=False,
             capture=True,
             timeout=timeout,
@@ -683,7 +683,7 @@ def task(ctx: Context) -> TaskResult:
         run_command(
             substituted_command(
                 values.SERVICE_STOP_COMMAND,
-                {"service_unit_name": values.SERVICE_UNIT_NAME},
+                {"unit": values.SERVICE_UNIT_NAME},
             ),
             check=False,
             timeout=timeout,

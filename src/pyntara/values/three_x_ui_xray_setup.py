@@ -113,7 +113,7 @@ ACME_INSTALLCERT_COMMAND: tuple[str, ...] = (
         "{reload_command}",
     )
 ACME_UPGRADE_COMMAND: tuple[str, ...] = ("{acme}", "--upgrade", "--auto-upgrade",)
-ACME_RELOAD_COMMAND: str = "systemctl restart {service_unit_name} 2>/dev/null || true"
+ACME_RELOAD_COMMAND: str = "systemctl restart {unit} 2>/dev/null || true"
 OPENSSL_CHECK_COMMAND: tuple[str, ...] = ("openssl", "x509", "-in", "{fullchain}", "-noout", "-checkend", "0",)
 OPENSSL_GENERATE_COMMAND: tuple[str, ...] = (
         "openssl",
@@ -132,7 +132,7 @@ OPENSSL_GENERATE_COMMAND: tuple[str, ...] = (
         "{fullchain_file}",
     )
 OPENSSL_SUBJECT_TEMPLATE: str = "/CN={subject}"
-SERVICE_RESTART_COMMAND: tuple[str, ...] = ("systemctl", "restart", "{service_unit_name}",)
+SERVICE_RESTART_COMMAND: tuple[str, ...] = ("systemctl", "restart", "{unit}",)
 
 # Name of the systemd service unit the official installer creates.
 SERVICE_UNIT_NAME: str = "x-ui.service"

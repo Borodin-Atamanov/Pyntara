@@ -365,7 +365,7 @@ def task(ctx: Context) -> TaskResult:
     if not enabled:
         enable_argv = substituted_command(
             values.SERVICE_ENABLE_COMMAND,
-            {"service_unit_name": values.SERVICE_UNIT_NAME},
+            {"unit": values.SERVICE_UNIT_NAME},
         )
         _log(f"enabling service: {' '.join(enable_argv)}")
         try:
@@ -384,7 +384,7 @@ def task(ctx: Context) -> TaskResult:
             else values.SERVICE_START_COMMAND
         )
         service_argv = substituted_command(
-            service_command, {"service_unit_name": values.SERVICE_UNIT_NAME}
+            service_command, {"unit": values.SERVICE_UNIT_NAME}
         )
         _log(f"{action}ing service: {' '.join(service_argv)}")
         started = True

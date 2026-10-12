@@ -43,7 +43,7 @@ Description=Router port forwarding timer
 [Timer]
 OnBootSec=$boot_delay_seconds
 OnUnitActiveSec=$interval_seconds
-Unit=$service_unit_name
+Unit=$unit
 
 [Install]
 WantedBy=timers.target
@@ -129,7 +129,7 @@ def _expected_timer_unit(version: str = __version__) -> str:
     return Template(TIMER_TEMPLATE).substitute(
         boot_delay_seconds=values.TIMER_BOOT_DELAY_SECONDS,
         interval_seconds=values.TIMER_INTERVAL_SECONDS,
-        service_unit_name=values.SERVICE_UNIT_NAME,
+        unit=values.SERVICE_UNIT_NAME,
         version=version,
     )
 

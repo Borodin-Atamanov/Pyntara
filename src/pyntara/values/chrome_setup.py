@@ -153,7 +153,7 @@ MOUNT_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
     "--now",
-    "{unit_name}",
+    "{unit}",
 )
 
 # Command that rebuilds the KDE menu cache for the desktop user, with the HOME

@@ -482,7 +482,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_ENABLE_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -507,7 +507,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_START_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -540,7 +540,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_RESTART_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -561,7 +561,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_RELOAD_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )

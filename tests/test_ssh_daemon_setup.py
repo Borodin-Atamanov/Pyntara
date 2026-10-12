@@ -647,13 +647,13 @@ def test_commands_come_from_the_config(
         "SERVICE_ENABLE_COMMAND": (
             "systemctl",
             "enable",
-            "{service_unit_name}",
+            "{unit}",
             "--quiet",
         ),
         "SERVICE_START_COMMAND": (
             "systemctl",
             "start",
-            "{service_unit_name}",
+            "{unit}",
             "--no-block",
         ),
     }
@@ -709,12 +709,12 @@ def test_restart_and_reload_commands_come_from_the_config(
             "systemctl",
             "restart",
             "--no-block",
-            "{service_unit_name}",
+            "{unit}",
         ),
         "SERVICE_RELOAD_COMMAND": (
             "systemctl",
             "reload",
-            "{service_unit_name}",
+            "{unit}",
             "--quiet",
         ),
     }

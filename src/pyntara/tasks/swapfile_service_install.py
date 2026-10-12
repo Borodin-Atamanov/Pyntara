@@ -675,7 +675,6 @@ def task(ctx: Context) -> TaskResult:
             timeout=timeout,
             reload_command=values.SYSTEMCTL_DAEMON_RELOAD_COMMAND,
             enable_command=values.SYSTEMCTL_ENABLE_COMMAND,
-            enable_placeholder="service_unit_name",
         )
         changed = changed or unit_extra_changed
         warnings.extend(unit_warnings)
@@ -753,7 +752,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SYSTEMCTL_START_COMMAND,
-                    {"service_unit_name": service_name},
+                    {"unit": service_name},
                 ),
                 timeout=timeout,
             )

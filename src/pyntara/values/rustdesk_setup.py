@@ -59,22 +59,22 @@ SET_OPTION_COMMAND: tuple[str, ...] = (
 )
 SET_PASSWORD_COMMAND: tuple[str, ...] = ("rustdesk", "--password", "{password}")
 
-# Commands that stop, enable and start the service unit; {service_unit_name} is
+# Commands that stop, enable and start the service unit; {unit} is
 # the unit of this section.
 SERVICE_STOP_COMMAND: tuple[str, ...] = (
     "systemctl",
     "stop",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_START_COMMAND: tuple[str, ...] = (
     "systemctl",
     "start",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Name of the identity file inside CONFIG_DIR. Force mode removes it, so the

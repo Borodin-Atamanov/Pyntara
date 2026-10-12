@@ -93,7 +93,7 @@ Description=System Metrics report collector timer
 [Timer]
 OnBootSec=$boot_delay_seconds
 $daily_send_calendar
-Unit=$service_unit_name
+Unit=$unit
 
 [Install]
 WantedBy=timers.target
@@ -272,7 +272,7 @@ def _expected_collector_timer_unit(
     return Template(COLLECTOR_TIMER_TEMPLATE).substitute(
         boot_delay_seconds=collector.boot_delay_seconds,
         daily_send_calendar=calendar,
-        service_unit_name=collector.service_unit_name,
+        unit=collector.service_unit_name,
         version=version,
     )
 
@@ -1123,17 +1123,17 @@ def test_systemctl_commands_come_from_the_config(
     monkeypatch.setattr(
         values,
         "SYSTEMCTL_ENABLE_COMMAND",
-        ("systemctl", "enable", "{unit_name}", "--quiet"),
+        ("systemctl", "enable", "{unit}", "--quiet"),
     )
     monkeypatch.setattr(
         values,
         "SYSTEMCTL_RESTART_COMMAND",
-        ("systemctl", "restart", "{unit_name}", "--no-block"),
+        ("systemctl", "restart", "{unit}", "--no-block"),
     )
     monkeypatch.setattr(
         values,
         "SYSTEMCTL_START_COMMAND",
-        ("systemctl", "start", "{unit_name}", "--no-block"),
+        ("systemctl", "start", "{unit}", "--no-block"),
     )
     result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True

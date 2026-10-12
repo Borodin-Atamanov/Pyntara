@@ -176,7 +176,7 @@ def _issue_ip_certificate(
     # itself; the installer creates it with mkdir -p before the call.
     panel_values.CERT_DIR.mkdir(parents=True, exist_ok=True)
     acme = str(_acme_path())
-    reload_cmd = panel_values.ACME_RELOAD_COMMAND.format(service_unit_name=panel_values.SERVICE_UNIT_NAME)
+    reload_cmd = panel_values.ACME_RELOAD_COMMAND.format(unit=panel_values.SERVICE_UNIT_NAME)
     steps = [
         substituted_command(panel_values.ACME_SET_DEFAULT_CA_COMMAND, {"acme": acme}),
         substituted_command(
@@ -230,7 +230,7 @@ def _issue_ip_certificate(
         run_command(
             substituted_command(
                 panel_values.SERVICE_RESTART_COMMAND,
-                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
+                {"unit": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
@@ -365,7 +365,7 @@ def _ensure_self_signed_cert(
         run_command(
             substituted_command(
                 panel_values.SERVICE_RESTART_COMMAND,
-                {"service_unit_name": panel_values.SERVICE_UNIT_NAME},
+                {"unit": panel_values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )

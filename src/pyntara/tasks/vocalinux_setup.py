@@ -339,7 +339,7 @@ def _enable_user_service(*, timeout: float) -> tuple[bool, str | None]:
             values.SERVICE_ACTIVE_COMMAND,
             {
                 "username": username,
-                "service_unit_name": values.SERVICE_UNIT_NAME,
+                "unit": values.SERVICE_UNIT_NAME,
             },
         ),
         check=False,
@@ -357,7 +357,7 @@ def _enable_user_service(*, timeout: float) -> tuple[bool, str | None]:
                 values.SERVICE_ENABLE_COMMAND,
                 {
                     "username": username,
-                    "service_unit_name": values.SERVICE_UNIT_NAME,
+                    "unit": values.SERVICE_UNIT_NAME,
                 },
             ),
             timeout=timeout,

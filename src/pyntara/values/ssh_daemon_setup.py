@@ -124,18 +124,18 @@ SOCKET_DISABLE_COMMAND: tuple[str, ...] = (
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
-SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{service_unit_name}")
+SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
 SERVICE_RELOAD_COMMAND: tuple[str, ...] = (
     "systemctl",
     "reload",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # sshd_config directives guaranteed by the task, written through augeas into the

@@ -70,7 +70,7 @@ SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = (
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # The names the task reads. The list lives next to the values it names, the

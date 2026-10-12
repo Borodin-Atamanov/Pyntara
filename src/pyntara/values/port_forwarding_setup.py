@@ -131,22 +131,22 @@ SERVICE_MODULE_NAME: str = "pyntara.port_forwarding"
 MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}")
 
 # The systemctl calls of the task, each carrying the unit name as its
-# {service_unit_name} placeholder except the daemon reload.
+# {unit} placeholder except the daemon reload.
 SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
 SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
 SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = (
     "systemctl",
     "is-failed",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Query of the result of the last run of the unit. A service that exited nonzero
@@ -160,7 +160,7 @@ SYSTEMCTL_SHOW_RESULT_COMMAND: tuple[str, ...] = (
     "--property",
     "Result",
     "--value",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # The word systemd reports for a unit whose last run ended cleanly. Every other

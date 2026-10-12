@@ -413,7 +413,7 @@ def _ensure_profile_mirror(
             apply_owner(unit_file, owner_uid, owner_gid)
             run_command(values.MOUNT_RELOAD_COMMAND, timeout=timeout)
         run_command(
-            substituted_command(values.MOUNT_ENABLE_COMMAND, {"unit_name": unit_name}),
+            substituted_command(values.MOUNT_ENABLE_COMMAND, {"unit": unit_name}),
             timeout=timeout,
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:

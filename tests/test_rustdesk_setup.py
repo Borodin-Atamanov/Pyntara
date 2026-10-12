@@ -367,7 +367,7 @@ def test_client_commands_come_from_the_values(
     monkeypatch.setattr(
         values,
         "SERVICE_START_COMMAND",
-        ("systemctl", "--user", "start", "{service_unit_name}"),
+        ("systemctl", "--user", "start", "{unit}"),
     )
     calls = _fake_run(monkeypatch, installed_version=RELEASE_TAG, service_active=False)
     _vault(monkeypatch, password="kofub vifuf midot nudog zodum hobir")

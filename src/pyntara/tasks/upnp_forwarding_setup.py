@@ -88,7 +88,7 @@ def _render_timer_unit(
     return template.substitute(
         boot_delay_seconds=values.TIMER_BOOT_DELAY_SECONDS,
         interval_seconds=values.TIMER_INTERVAL_SECONDS,
-        service_unit_name=values.SERVICE_UNIT_NAME,
+        unit=values.SERVICE_UNIT_NAME,
         version=version,
     )
 
@@ -190,7 +190,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SYSTEMCTL_ENABLE_COMMAND,
-                    {"unit_name": values.TIMER_UNIT_NAME},
+                    {"unit": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -205,7 +205,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SYSTEMCTL_START_COMMAND,
-                    {"unit_name": values.TIMER_UNIT_NAME},
+                    {"unit": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -219,7 +219,7 @@ def task(ctx: Context) -> TaskResult:
         run_command(
             substituted_command(
                 values.SYSTEMCTL_START_COMMAND,
-                {"unit_name": values.SERVICE_UNIT_NAME},
+                {"unit": values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
@@ -231,7 +231,7 @@ def task(ctx: Context) -> TaskResult:
         try:
             failed = service_is_failed(
                 values.SYSTEMCTL_IS_FAILED_COMMAND,
-                {"unit_name": values.SERVICE_UNIT_NAME},
+                {"unit": values.SERVICE_UNIT_NAME},
                 timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:

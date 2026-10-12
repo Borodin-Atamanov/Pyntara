@@ -92,7 +92,7 @@ KWIN_PROCESS_NAME: str = "kwin_wayland"
 
 # The session manager of the desktop user. KWin does not restart it, so the
 # caller starts it after the compositor restart and waits for it; {username} is
-# the account of the machine and {unit_name} the unit.
+# the account of the machine and {unit} the unit.
 SESSION_MANAGER_UNIT_NAME: str = "plasma-ksmserver.service"
 SESSION_MANAGER_IS_ACTIVE_COMMAND: tuple[str, ...] = (
     "systemctl",
@@ -100,7 +100,7 @@ SESSION_MANAGER_IS_ACTIVE_COMMAND: tuple[str, ...] = (
     "--machine",
     "{username}@.host",
     "is-active",
-    "{unit_name}",
+    "{unit}",
 )
 SESSION_MANAGER_START_COMMAND: tuple[str, ...] = (
     "systemctl",
@@ -108,7 +108,7 @@ SESSION_MANAGER_START_COMMAND: tuple[str, ...] = (
     "--machine",
     "{username}@.host",
     "start",
-    "{unit_name}",
+    "{unit}",
 )
 
 # How long a caller waits for the restarted compositor and the session manager,

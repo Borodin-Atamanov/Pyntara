@@ -230,7 +230,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SYSTEMCTL_ENABLE_COMMAND,
-                        {"service_unit_name": service_name},
+                        {"unit": service_name},
                     ),
                     timeout=timeout,
                 )

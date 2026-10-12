@@ -110,18 +110,18 @@ OS_RELEASE_CODENAME_KEY: str = "VERSION_CODENAME"
 # Command that prints the installed version; the task reads the first dotted
 # version triple from its output. A missing binary or a nonzero exit means i2pd
 # is not installed, so the task reinstalls it. The three systemctl calls carry
-# the unit name as their {service_unit_name} placeholder.
+# the unit name as their {unit} placeholder.
 VERSION_COMMAND: tuple[str, ...] = ("i2pd", "--version")
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
-SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{service_unit_name}")
+SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Name of the two templates under task_data/i2pd_service_setup/ of the clone:

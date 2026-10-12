@@ -343,7 +343,7 @@ def _render_collector_timer_unit(
     return template.substitute(
         boot_delay_seconds=boot_delay_seconds,
         daily_send_calendar=calendar,
-        service_unit_name=service_unit_name,
+        unit=service_unit_name,
         version=version,
     )
 
@@ -666,7 +666,7 @@ def task(ctx: Context) -> TaskResult:
                     run_command(
                         substituted_command(
                             values.SYSTEMCTL_ENABLE_COMMAND,
-                            {"unit_name": name},
+                            {"unit": name},
                         ),
                         timeout=timeout,
                     )
@@ -677,7 +677,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SYSTEMCTL_RESTART_COMMAND,
-                        {"unit_name": service_name},
+                        {"unit": service_name},
                     ),
                     timeout=timeout,
                 )
@@ -687,7 +687,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SYSTEMCTL_START_COMMAND,
-                        {"unit_name": service_name},
+                        {"unit": service_name},
                     ),
                     timeout=timeout,
                 )
@@ -699,7 +699,7 @@ def task(ctx: Context) -> TaskResult:
                     run_command(
                         substituted_command(
                             values.SYSTEMCTL_RESTART_COMMAND,
-                            {"unit_name": ingest_path_name},
+                            {"unit": ingest_path_name},
                         ),
                         timeout=timeout,
                     )
@@ -709,7 +709,7 @@ def task(ctx: Context) -> TaskResult:
                     run_command(
                         substituted_command(
                             values.SYSTEMCTL_START_COMMAND,
-                            {"unit_name": ingest_path_name},
+                            {"unit": ingest_path_name},
                         ),
                         timeout=timeout,
                     )
@@ -724,7 +724,7 @@ def task(ctx: Context) -> TaskResult:
                     run_command(
                         substituted_command(
                             values.SYSTEMCTL_RESTART_COMMAND,
-                            {"unit_name": collector_timer_name},
+                            {"unit": collector_timer_name},
                         ),
                         timeout=timeout,
                     )
@@ -737,7 +737,7 @@ def task(ctx: Context) -> TaskResult:
                     run_command(
                         substituted_command(
                             values.SYSTEMCTL_START_COMMAND,
-                            {"unit_name": collector_timer_name},
+                            {"unit": collector_timer_name},
                         ),
                         timeout=timeout,
                     )

@@ -106,7 +106,7 @@ HOSTNAME_FILE_NAME: str = "hostname"
 # main file and every included file, as the Tor system user, because Tor
 # validates the ownership of every hidden service directory against the
 # process user. The three systemctl calls carry the unit name as their
-# {service_unit_name} placeholder.
+# {unit} placeholder.
 VERIFY_CONFIG_COMMAND: tuple[str, ...] = (
     "runuser",
     "-u",
@@ -118,13 +118,13 @@ VERIFY_CONFIG_COMMAND: tuple[str, ...] = (
 SERVICE_ENABLE_COMMAND: tuple[str, ...] = (
     "systemctl",
     "enable",
-    "{service_unit_name}",
+    "{unit}",
 )
-SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{service_unit_name}")
+SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
     "restart",
-    "{service_unit_name}",
+    "{unit}",
 )
 
 # Name the record of this channel carries in the network report, so a reader

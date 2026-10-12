@@ -1850,7 +1850,7 @@ class TestStageSsl:
         monkeypatch.setattr(
             panel_values,
             "ACME_RELOAD_COMMAND",
-            "my-restart {service_unit_name} || true",
+            "my-restart {unit} || true",
         )
 
         def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
@@ -1896,7 +1896,7 @@ class TestStageSsl:
         monkeypatch.setattr(
             panel_values,
             "SERVICE_RESTART_COMMAND",
-            ("systemctl", "restart", "{service_unit_name}", "--no-block"),
+            ("systemctl", "restart", "{unit}", "--no-block"),
         )
 
         def fake_run(command: list[str], **kwargs: object) -> _FakeProc:

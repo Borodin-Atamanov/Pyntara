@@ -205,7 +205,7 @@ def _session_manager_is_active(username: str, timeout: float) -> bool:
 
     command = substituted_command(
         values.SESSION_MANAGER_IS_ACTIVE_COMMAND,
-        {"username": username, "unit_name": values.SESSION_MANAGER_UNIT_NAME},
+        {"username": username, "unit": values.SESSION_MANAGER_UNIT_NAME},
     )
     try:
         result = run_command(
@@ -272,7 +272,7 @@ def _restart_compositor_for_layouts(
                 values.SESSION_MANAGER_START_COMMAND,
                 {
                     "username": username,
-                    "unit_name": values.SESSION_MANAGER_UNIT_NAME,
+                    "unit": values.SESSION_MANAGER_UNIT_NAME,
                 },
             ),
             timeout=timeout,

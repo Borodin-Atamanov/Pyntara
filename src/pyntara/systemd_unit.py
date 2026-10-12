@@ -157,7 +157,6 @@ def install_and_enable_unit(
     timeout: float,
     reload_command: tuple[str, ...],
     enable_command: tuple[str, ...],
-    enable_placeholder: str,
 ) -> tuple[bool, bool, list[str]]:
     """Write the unit, reload systemd and enable the service.
 
@@ -191,7 +190,7 @@ def install_and_enable_unit(
     if not enabled:
         try:
             run_command(
-                substituted_command(enable_command, {enable_placeholder: service_name}),
+                substituted_command(enable_command, {"unit": service_name}),
                 timeout=timeout,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:

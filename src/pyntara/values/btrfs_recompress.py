@@ -82,7 +82,7 @@ WINDOW_IS_ACTIVE_COMMAND: tuple[str, ...] = (
     "--machine",
     "{username}@.host",
     "is-active",
-    "{unit_name}",
+    "{unit}",
 )
 SYSTEMD_RUN_WINDOW_COMMAND: tuple[str, ...] = (
     "systemd-run",

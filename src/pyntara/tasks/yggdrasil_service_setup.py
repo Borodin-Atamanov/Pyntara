@@ -407,7 +407,7 @@ def _journal_connected_addrs(
         substituted_command(
             values.JOURNAL_CONNECTED_QUERY_COMMAND,
             {
-                "service_unit_name": values.SERVICE_UNIT_NAME,
+                "unit": values.SERVICE_UNIT_NAME,
                 "probe_seconds": str(int(probe_seconds)),
             },
         ),
@@ -650,7 +650,7 @@ def _restart_service(timeout: float) -> None:
         run_command(
             substituted_command(
                 values.SERVICE_RESTART_COMMAND,
-                {"service_unit_name": values.SERVICE_UNIT_NAME},
+                {"unit": values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
         )
@@ -659,7 +659,7 @@ def _restart_service(timeout: float) -> None:
     run_command(
         substituted_command(
             values.SERVICE_START_COMMAND,
-            {"service_unit_name": values.SERVICE_UNIT_NAME},
+            {"unit": values.SERVICE_UNIT_NAME},
         ),
         timeout=timeout,
     )
@@ -918,7 +918,7 @@ def task(ctx: Context) -> TaskResult:
             run_command(
                 substituted_command(
                     values.SERVICE_ENABLE_COMMAND,
-                    {"service_unit_name": values.SERVICE_UNIT_NAME},
+                    {"unit": values.SERVICE_UNIT_NAME},
                 ),
                 timeout=timeout,
             )
@@ -958,7 +958,7 @@ def task(ctx: Context) -> TaskResult:
                 run_command(
                     substituted_command(
                         values.SERVICE_START_COMMAND,
-                        {"service_unit_name": values.SERVICE_UNIT_NAME},
+                        {"unit": values.SERVICE_UNIT_NAME},
                     ),
                     timeout=timeout,
                 )

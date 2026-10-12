@@ -123,7 +123,7 @@ def test_start_command_comes_from_the_declared_value(
                 "systemctl",
                 "start",
                 "--no-block",
-                "{service_unit_name}",
+                "{unit}",
             ),
         ),
     )

@@ -1061,7 +1061,7 @@ def test_journal_query_follows_the_configured_command(
         (
             "journal-reader",
             "--unit",
-            "{service_unit_name}",
+            "{unit}",
             "--window",
             "{probe_seconds}",
         ),

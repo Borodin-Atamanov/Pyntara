@@ -401,7 +401,7 @@ def trigger_collection() -> bool:
     collector = values.COLLECTOR
     command = substituted_command(
         collector.start_command,
-        {"service_unit_name": collector.service_unit_name},
+        {"unit": collector.service_unit_name},
     )
     try:
         result = run_command(
