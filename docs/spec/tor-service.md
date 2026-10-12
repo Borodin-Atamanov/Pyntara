@@ -66,7 +66,7 @@ INCLUDE_DIRECTIVE - the directive that pulls the drop-in into the main configura
 TORRC_COMMENT_SIGN - the sign that marks a comment in the main configuration, so a directive the operator commented out stays commented when the include line is appended
 HOSTNAME_FILE_NAME - the file Tor writes the onion hostname into inside HIDDEN_SERVICE_DIR
 VERIFY_CONFIG_COMMAND - the command that checks the whole configuration, with {tor_user} as its placeholder
-SERVICE_ENABLE_COMMAND - the command that enables the unit, with {service_unit_name} as its placeholder
+SERVICE_ENABLE_COMMAND - the command that enables the unit, with {unit} as its placeholder
 SERVICE_START_COMMAND - the command that starts the unit when it is inactive
 SERVICE_RESTART_COMMAND - the command that restarts the unit when it is active
 INSTALL_RETRIES - retry attempts after a failed package install

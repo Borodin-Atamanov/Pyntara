@@ -65,10 +65,10 @@ PORT_DIRECTIVE - the directive whose change needs a restart instead of a reload
 EFFECTIVE_CONFIG_COMMAND - the daemon query that prints the effective configuration (sshd -T)
 LISTENING_SOCKETS_COMMAND - the listener query the task reads the port from (ss -tlnp)
 SOCKET_DISABLE_COMMAND - the disable and stop of the socket unit, with {socket_unit_name}
-SERVICE_ENABLE_COMMAND - the enable of the service unit, with {service_unit_name}
-SERVICE_START_COMMAND - the start of the service unit, with {service_unit_name}
-SERVICE_RESTART_COMMAND - the restart of the service unit, with {service_unit_name}
-SERVICE_RELOAD_COMMAND - the reload of the service unit, with {service_unit_name}
+SERVICE_ENABLE_COMMAND - the enable of the service unit, with {unit}
+SERVICE_START_COMMAND - the start of the service unit, with {unit}
+SERVICE_RESTART_COMMAND - the restart of the service unit, with {unit}
+SERVICE_RELOAD_COMMAND - the reload of the service unit, with {unit}
 PRIVATE_KEY_FILE_NAME - the repository name of the server private key
 PUBLIC_KEY_FILE_NAME - the repository name of the server public key
 PRIVATE_KEY_FILE_MODE - the file mode of the deployed private key, as an octal string

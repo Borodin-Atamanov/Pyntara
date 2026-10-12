@@ -111,46 +111,41 @@ the protection.
 
 ## Duplication that still needs a deduplication plan
 
-The branch deduplicate-shared-task-helpers (2026-10-12) extracted the shared
-helpers warned_result, write_file_atomically, deb_package, systemd_unit,
-address_report.run, ssh.effective_config_errors and saved_address_file_matches,
-merged the two SshDirective classes, and shared the unit write, reload and enable
-sequence as systemd_unit.install_and_enable_unit. What remains is listed here; each
+The branch unify-unit-placeholder (2026-10-12) then made the unit name uniform: every
+placeholder spelling ({unit_name}, {service_unit_name}) became {unit} across src,
+task_data and the specs, and the systemctl command vocabulary now lives once in
+values/engine.py, so the seven sections that drive a unit of their own
+(btrfs_setup, port_forwarding_setup, swapfile_service_install, system_metrics_setup,
+upnp_forwarding_setup, zram_service, zswap_service) and their tasks read those values
+instead of keeping their own copies. What remains is listed here; each
 item needs its own plan before any code is touched, because a copy silently changed
 in one place is a defect on the target machine.
 
-1. The systemctl command vocabulary is declared in seven values modules
-(btrfs_setup, port_forwarding_setup, swapfile_service_install, system_metrics_setup,
-upnp_forwarding_setup, zram_service, zswap_service) with three placeholder spellings
-({unit}, {unit_name}, {service_unit_name}). A single source in values/engine.py
-needs a decision on the placeholder, because the rest of the project uses
-{service_unit_name} while the engine helpers already use {unit}.
-
-2. The wider service-task orchestration is copied across swapfile_service_install,
+1. The wider service-task orchestration is copied across swapfile_service_install,
 zram_service and zswap_service: install the packages, deploy the program, render the
 unit, run the program and wait. The unit write, the daemon-reload and the enable
 step are shared now (systemd_unit.install_and_enable_unit); what is not shared is
 the rest of the flow, and zswap_service keeps its own sequence because it writes the
 unit plainly and enables the service without the autorun check.
 
-3. The browser task body is copied across chrome_setup and firefox_setup: the values
+2. The browser task body is copied across chrome_setup and firefox_setup: the values
 guard, the settings repository sync, the deploy of the system tree, the profile
 apply and the launcher pin.
 
-4. The release-service orchestration is copied across i2pd_service_setup, tor_setup,
+3. The release-service orchestration is copied across i2pd_service_setup, tor_setup,
 yggdrasil_service_setup and rustdesk_setup: the service enable, the status check and
 the start with the wait for active. The saved address match is shared now
 (utils.saved_address_file_matches).
 
-5. Values modules repeat comment and constant blocks: swapfile_service_install
+4. Values modules repeat comment and constant blocks: swapfile_service_install
 against zram_service, ssh_client_setup against ssh_daemon_setup, ssh_daemon_setup
 against tor_setup, dnsproxy_setup against rustdesk_setup, scrcpy_setup against
 vocalinux_setup.
 
-6. The btrfs sections (btrfs_setup, btrfs_points_setup, btrfs_recompress) share
+5. The btrfs sections (btrfs_setup, btrfs_points_setup, btrfs_recompress) share
 short blocks that one shared btrfs helper could take.
 
-7. The test suite repeats fixtures and fake runs: most in
+6. The test suite repeats fixtures and fake runs: most in
 test_swapfile_service_install against test_zram_service, then test_kde_keyboard_setup
 against test_kde_settings, test_i2pd_service_setup against
 test_yggdrasil_service_setup, test_cli_tools_heavy_setup against

@@ -56,7 +56,7 @@ machine_id_command - the client machine ID query
 get_option_command - the option read, with {key}
 set_option_command - the option write, with {key} and {value}
 set_password_command - the permanent password write, with {password}; the command is never logged
-service_stop_command - the stop of the service unit, with {service_unit_name}
+service_stop_command - the stop of the service unit, with {unit}
 service_enable_command - the enable of the unit
 service_start_command - the start of the unit
 identity_file_name - the identity file inside config_dir that force mode removes to regenerate the machine ID
