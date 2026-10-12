@@ -25,3 +25,20 @@ class TaskResult:
     message: str | None = None
     error: str | None = None
     warnings: tuple[str, ...] = ()
+
+
+def warned_result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
+    """Build a completed task result that carries the warnings of its steps.
+
+    A task whose steps could not all be performed still completes: it reports
+    success with the warnings of the steps it skipped, and the entry point
+    counts them and exits nonzero. The warnings are folded into the message
+    here, once, so every task that uses this helper words that outcome the
+    same way and the wording can never drift between tasks.
+    """
+
+    if warnings:
+        message = f"{message}; warnings: {'; '.join(warnings)}"
+    return TaskResult(
+        success=True, changed=changed, message=message, warnings=tuple(warnings)
+    )

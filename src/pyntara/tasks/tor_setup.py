@@ -71,7 +71,7 @@ from string import Template
 from pyntara.config_edit import add_line_to_file
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.ssh import ssh_port_from_directives
 from pyntara.tor import onion_address_from_hostname_file
 from pyntara.utils import (
@@ -248,16 +248,6 @@ def _saved_address_matches(address_file_path: Path, address: str | None) -> bool
     return saved == address
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Install Tor and publish the SSH onion service; skip when done.
 
@@ -376,7 +366,7 @@ def task(ctx: Context) -> TaskResult:
         and _saved_address_matches(values.ADDRESS_FILE_PATH, address)
     ):
         _log("target state already reached, skipping")
-        return _result(changed=False, message="already configured", warnings=warnings)
+        return warned_result(changed=False, message="already configured", warnings=warnings)
 
     if include_changed:
         _log(f"adding {values.INCLUDE_DIRECTIVE} line to {values.TORRC_PATH}")
@@ -490,4 +480,4 @@ def task(ctx: Context) -> TaskResult:
             f"virtual port {values.ONION_SSH_PORT}"
         )
 
-    return _result(changed=changed, message=message, warnings=warnings)
+    return warned_result(changed=changed, message=message, warnings=warnings)

@@ -52,7 +52,7 @@ from string import Template
 from pyntara import __version__, deployment
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.utils import (
     apply_owner,
     run_command,
@@ -456,16 +456,6 @@ def _ensure_spool_dir(
     apply_owner(spool_dir, owner_uid, owner_gid)
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Deploy the System Metrics service; skip when the goal is reached.
 
@@ -606,7 +596,7 @@ def task(ctx: Context) -> TaskResult:
         and spool_ok
     ):
         _log("target state already reached, skipping")
-        return _result(changed=False, message="already configured", warnings=warnings)
+        return warned_result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     uv = _uv_path()
@@ -801,4 +791,4 @@ def task(ctx: Context) -> TaskResult:
             changed = True
 
     message = f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
-    return _result(changed=changed, message=message, warnings=warnings)
+    return warned_result(changed=changed, message=message, warnings=warnings)

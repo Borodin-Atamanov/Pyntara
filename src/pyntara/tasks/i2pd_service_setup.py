@@ -64,7 +64,7 @@ from pyntara.context import Context
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.i2pd import b32_address
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     apply_owner,
@@ -352,16 +352,6 @@ def _saved_address_matches(address_file_path: Path, address: str | None) -> bool
     return saved == address
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Install the newest i2pd release and run it as a service; skip when done.
 
@@ -530,7 +520,7 @@ def task(ctx: Context) -> TaskResult:
         and _saved_address_matches(values.ADDRESS_FILE_PATH, address)
     ):
         _log("target state already reached, skipping")
-        return _result(changed=False, message="already configured", warnings=warnings)
+        return warned_result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
     if needs_install:
@@ -725,4 +715,4 @@ def task(ctx: Context) -> TaskResult:
             "SSH tunnel address not available yet"
         )
 
-    return _result(changed=changed, message=message, warnings=warnings)
+    return warned_result(changed=changed, message=message, warnings=warnings)

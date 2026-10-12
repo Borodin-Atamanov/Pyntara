@@ -44,7 +44,7 @@ from string import Template
 
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     run_command,
@@ -205,16 +205,6 @@ def _reported_warnings(outcome: dict[str, object]) -> list[str]:
     return [str(item) for item in reported if str(item)]
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Deploy the ZRAM program and its boot service; the program does the work.
 
@@ -268,7 +258,7 @@ def task(ctx: Context) -> TaskResult:
         # devices, so the task reports the reason and leaves the rest of the
         # machine alone instead of installing a service that cannot start.
         warnings.append(program_error)
-        return _result(
+        return warned_result(
             changed=False,
             message="the zram program could not be deployed",
             warnings=warnings,
@@ -367,4 +357,4 @@ def task(ctx: Context) -> TaskResult:
         message = f"zram devices and service {service_name} configured"
     else:
         message = "already configured"
-    return _result(changed=changed, message=message, warnings=warnings)
+    return warned_result(changed=changed, message=message, warnings=warnings)

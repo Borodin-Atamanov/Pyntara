@@ -62,7 +62,7 @@ from string import Template
 from pyntara import fstab
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.utils import (
     run_command,
@@ -651,16 +651,6 @@ def _remove_fstab_swap_entry(path: str, timeout: float, warnings: list[str]) -> 
     return True
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Deploy the swap program and its boot service; the program does the work.
 
@@ -716,7 +706,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(
             f"{values.SWAPOFF_COMMAND_NAME} is not installed on this machine"
         )
-        return _result(
+        return warned_result(
             changed=False,
             message="the swap tool is not installed",
             warnings=warnings,
@@ -739,7 +729,7 @@ def task(ctx: Context) -> TaskResult:
         # so the task reports the reason and leaves the rest of the machine
         # alone instead of installing a service that cannot start.
         warnings.append(program_error)
-        return _result(
+        return warned_result(
             changed=False,
             message="the swap program could not be deployed",
             warnings=warnings,
@@ -884,4 +874,4 @@ def task(ctx: Context) -> TaskResult:
             f"; hibernation resumes from {resume_device} at offset {offset_pages}"
         )
         message += f"; {values.SESSION_RELOAD_MESSAGE}"
-    return _result(changed=changed, message=message, warnings=warnings)
+    return warned_result(changed=changed, message=message, warnings=warnings)

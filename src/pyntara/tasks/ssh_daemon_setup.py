@@ -59,7 +59,7 @@ from pyntara.augeas import (
 )
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
-from pyntara.models import TaskResult
+from pyntara.models import TaskResult, warned_result
 from pyntara.utils import (
     apply_owner,
     install_package_once,
@@ -309,16 +309,6 @@ def _wait_active(
     return False
 
 
-def _result(*, changed: bool, message: str, warnings: list[str]) -> TaskResult:
-    """Build the result of the task, carrying the warning of a skipped step."""
-
-    if warnings:
-        message = f"{message}; warnings: {'; '.join(warnings)}"
-    return TaskResult(
-        success=True, changed=changed, message=message, warnings=tuple(warnings)
-    )
-
-
 def task(ctx: Context) -> TaskResult:
     """Install the SSH server, patch its config and deploy the keys.
 
@@ -508,7 +498,7 @@ def task(ctx: Context) -> TaskResult:
 
     if not force and not changed and not socket_needs_disable and enabled and active:
         _log("target state already reached, skipping")
-        return _result(changed=False, message="already configured", warnings=warnings)
+        return warned_result(changed=False, message="already configured", warnings=warnings)
 
     socket_changed = False
     if socket_needs_disable:
@@ -623,7 +613,7 @@ def task(ctx: Context) -> TaskResult:
             _log("service reloaded")
             changed = True
 
-    return _result(
+    return warned_result(
         changed=changed,
         message=(
             f"SSH server {values.PACKAGE_NAME} configured, service "
