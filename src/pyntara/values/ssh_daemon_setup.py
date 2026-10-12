@@ -17,23 +17,10 @@ guarantees the public key in authorized_keys.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
 
 from pyntara.values import common as common_values
-
-
-@dataclass(frozen=True)
-class SshDirective:
-    """One sshd_config directive: a keyword and its value.
-
-    The value is kept as a single string and joined as-is into the rendered
-    drop-in, so the directive spelling stays exactly as declared.
-    """
-
-    name: str
-    value: str
-
+from pyntara.values.common import SshDirective
 
 # Package that provides the SSH server daemon and the package that provides
 # the augtool command line tool used to write the drop-in. The task installs

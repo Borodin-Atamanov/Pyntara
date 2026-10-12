@@ -51,6 +51,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from pyntara import ssh
 from pyntara.augeas import (
     ensure_augtool,
     include_covers_dropin,
@@ -74,7 +75,7 @@ from pyntara.utils import (
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import ssh_daemon_setup as values
-from pyntara.values.ssh_daemon_setup import SshDirective
+from pyntara.values.common import SshDirective
 
 
 def _verify_effective_config(
@@ -83,38 +84,14 @@ def _verify_effective_config(
 ) -> str | None:
     """Error text when a configured directive is not effective; None when OK.
 
-    sshd -T prints the effective configuration after every file of the
-    Include chain is applied, so the check is independent of the version
-    and of other files in the drop-in directory: a directive that a
-    later file overrides, or a keyword the daemon does not know, is
-    reported as an error, never silently accepted.
+    The shared check in pyntara.ssh probes the effective daemon configuration
+    with "sshd -T" and reports the first directive the configuration does not
+    carry.
     """
 
-    try:
-        result = run_command(
-            list(values.EFFECTIVE_CONFIG_COMMAND),
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"cannot run sshd -T: {exc}"
-    if result.returncode != 0:
-        return f"sshd -T exited {result.returncode}: {result.stderr.strip()}"
-    effective: dict[str, str] = {}
-    for line in result.stdout.splitlines():
-        key, sep, value = line.partition(" ")
-        if sep:
-            effective[key.casefold()] = value.strip()
-    for directive in directives:
-        key = directive.name.casefold()
-        actual = effective.get(key)
-        if actual is None or actual.casefold() != directive.value.casefold():
-            return (
-                f"sshd -T reports {key} as {actual or 'unset'}, "
-                f"expected {directive.value}"
-            )
-    return None
+    return ssh.effective_config_errors(
+        values.EFFECTIVE_CONFIG_COMMAND, directives, timeout, "sshd -T"
+    )
 
 
 def _verify_listening_port(

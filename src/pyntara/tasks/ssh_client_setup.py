@@ -22,13 +22,11 @@ augeas; force mode rewrites the drop-in and verifies it again.
 
 from __future__ import annotations
 
-import subprocess
-
+from pyntara import ssh
 from pyntara.augeas import ensure_augtool, include_covers_dropin, sync_dropin
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.utils import run_command
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
@@ -42,39 +40,14 @@ def _verify_effective_config(
 ) -> str | None:
     """Error text when a configured directive is not effective; None when OK.
 
-    The configured probe command prints the effective client configuration
-    after every file of the Include chain is applied, so the check is
-    independent of the version and of other files in the drop-in
-    directory: a directive that a later file overrides, or a keyword the
-    client does not know, is reported as an error instead of being
-    silently accepted.
+    The shared check in pyntara.ssh probes the effective client configuration
+    with "ssh -G" and reports the first directive the configuration does not
+    carry.
     """
 
-    try:
-        result = run_command(
-            list(values.EFFECTIVE_CONFIG_COMMAND),
-            check=False,
-            capture=True,
-            timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        return f"cannot probe the effective client configuration: {exc}"
-    if result.returncode != 0:
-        return f"ssh -G exited {result.returncode}: {result.stderr.strip()}"
-    effective: dict[str, str] = {}
-    for line in result.stdout.splitlines():
-        key, sep, value = line.partition(" ")
-        if sep:
-            effective[key.casefold()] = value.strip()
-    for directive in directives:
-        key = directive.name.casefold()
-        actual = effective.get(key)
-        if actual is None or actual.casefold() != directive.value.casefold():
-            return (
-                f"ssh -G reports {key} as {actual or 'unset'}, "
-                f"expected {directive.value}"
-            )
-    return None
+    return ssh.effective_config_errors(
+        values.EFFECTIVE_CONFIG_COMMAND, directives, timeout, "ssh -G"
+    )
 
 
 def task(ctx: Context) -> TaskResult:
