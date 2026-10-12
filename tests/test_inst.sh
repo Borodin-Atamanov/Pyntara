@@ -1746,6 +1746,11 @@ EOF
         rm -rf "$tmp"
         return 1
     }
+    if [[ "$output" == *"the run takes the secrets of this machine from the default vault"* ]]; then
+        echo "no default vault notice on the production path" >&2
+        rm -rf "$tmp"
+        return 1
+    fi
     local stdin_content
     stdin_content="$(cat "$uv_stdin")"
     assert_equals "correct-password" "$stdin_content" "password delivered via stdin" || {
@@ -1756,8 +1761,9 @@ EOF
 }
 
 inst_prompt_vault_password_uses_environment_autodetect_default() {
-    # PYNTARA_VAULT_PASSWORD matching default.password auto-detects default
-    # as the source without any uv call: production.vault is absent.
+    # PYNTARA_VAULT_PASSWORD matching default.password resolves the source to
+    # default without any uv call (production.vault is absent) and shows the
+    # countdown notice of the default vault before it returns.
     local tmp
     tmp="$(mktemp -d)"
     local logfile="$tmp/install.log"
@@ -1777,14 +1783,23 @@ EOF
         PYNTARA_DEFAULT_VAULT="$tmp/repo/secrets/default.vault" \
         PYNTARA_DEFAULT_PASSWORD_FILE="$tmp/repo/secrets/default.password" \
         PYNTARA_LOG_FILE="$logfile" PYNTARA_MESSAGE_TIMEOUT=0 \
+        PYNTARA_FALLBACK_NOTICE_TIMEOUT=0 \
         UV_CALLS_FILE="$uv_calls" \
         PYNTARA_VAULT_PASSWORD="fallback-password" \
-        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"' _ "$INSTALLER" 2>&1)"
-    assert_contains "$output" "auto-detected source: default" "autodetect message" || {
+        bash -c 'source "$1"; prompt_vault_password; echo "VAULT_SOURCE=$PYNTARA_VAULT_SOURCE"; echo "VAULT_PASSWORD=$PYNTARA_VAULT_PASSWORD"' _ "$INSTALLER" 2>&1)"
+    assert_contains "$output" "the run takes the secrets of this machine from the default vault" "default vault notice on terminal" || {
         rm -rf "$tmp"
         return 1
     }
-    assert_contains "$output" "VAULT_SOURCE=default" "autodetect default" || {
+    assert_contains "$(cat "$logfile")" "the run takes the secrets of this machine from the default vault" "default vault warning in the log" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_SOURCE=default" "default source export" || {
+        rm -rf "$tmp"
+        return 1
+    }
+    assert_contains "$output" "VAULT_PASSWORD=fallback-password" "default password export" || {
         rm -rf "$tmp"
         return 1
     }

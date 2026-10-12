@@ -36,12 +36,12 @@ The vault password is the PYNTARA_VAULT_PASSWORD line. The value shipped there i
 published password of the default vault, and a user who knows the production vault password
 replaces it before the run; the production password is never committed and never written to
 a log. The installer runs non-interactively and never asks the user anything: the vault
-source is auto-detected from the password, production when it opens production.vault and
-default when it matches default.password, which the shipped value does. A password that
-opens no vault, and a run without a password at all, cannot use the production secrets:
-for those the installer shows a short countdown notice, so the user can interrupt with
-Ctrl-C, and falls back to the default vault; the installer writes a WARNING line for that
-fallback into the run log and the run reports it as a warning of its own, so a run that
+source is auto-detected from the password, production when it opens production.vault, and
+every other outcome resolves to the default vault. Those outcomes are the shipped password
+matching default.password, a password that opens no vault, and a run without a password at
+all; for each of them the installer shows a short countdown notice before it resolves the
+source, so the user can interrupt with Ctrl-C. The installer writes a WARNING line for that
+outcome into the run log and the run reports it as a warning of its own, so a run that
 took the secrets of the machine from the repository test vault never passes silently.
 
 PYNTARA_INSTALL_MODE — one of the mode names declared in the task catalog

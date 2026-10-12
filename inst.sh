@@ -421,9 +421,14 @@ fi
 PRODUCTION_VAULT="${PYNTARA_PRODUCTION_VAULT:-$SOURCE_DIR/secrets/production.vault}"
 DEFAULT_VAULT="${PYNTARA_DEFAULT_VAULT:-$SOURCE_DIR/secrets/default.vault}"
 DEFAULT_VAULT_PASSWORD_FILE="${PYNTARA_DEFAULT_PASSWORD_FILE:-$SOURCE_DIR/secrets/default.password}"
-# Countdown for the default vault fallback notice. The notice requires no
-# input; the user may interrupt with Ctrl-C.
+# Countdown for the default vault notice. The notice is shown whenever the
+# run resolves to the default vault, whichever password led there; it requires
+# no input and the user may interrupt with Ctrl-C.
 FALLBACK_NOTICE_TIMEOUT="${PYNTARA_FALLBACK_NOTICE_TIMEOUT:-7}"
+# The warning of a run whose secrets come from the default vault. It is the
+# countdown notice text and the log line of the fallback, written once so the
+# two cannot drift apart.
+DEFAULT_VAULT_WARNING="WARNING: the run takes the secrets of this machine from the default vault $DEFAULT_VAULT, which is the repository test vault; provide the production vault password in PYNTARA_VAULT_PASSWORD to avoid this"
 
 # Guard so the test harness can inject a mock via source (bootstrap contract, Testability).
 if ! declare -f show_message &>/dev/null; then
@@ -496,7 +501,7 @@ fallback_to_default_vault() {
     # that is already configured: its runtime secrets are rebuilt from the
     # repository test vault. The line is written for all of them, so the
     # fallback is never a detail of the log.
-    log "WARNING: the run takes the secrets of this machine from the default vault $DEFAULT_VAULT, which is the repository test vault; provide the production vault password in PYNTARA_VAULT_PASSWORD to avoid this"
+    log "$DEFAULT_VAULT_WARNING"
     # A status line, not a confirmation: nothing follows that needs an
     # explicit Enter, so log_status does not block on read.
     log_status "Using default vault $DEFAULT_VAULT with password from $DEFAULT_VAULT_PASSWORD_FILE"
@@ -509,10 +514,11 @@ prompt_vault_password() {
     # Resolve the vault password and source for the Python engine.
     # Non-interactive: a password from the environment is used as-is when
     # PYNTARA_VAULT_SOURCE is set, otherwise the source is auto-detected:
-    # production wins when the password opens production.vault, default
-    # when it matches the well-known default.password. An unmatched
-    # password falls back to the default vault after a countdown notice,
-    # same as when no password is provided at all.
+    # production wins when the password opens production.vault, and every
+    # other outcome resolves to the default vault after a countdown notice,
+    # so the user can interrupt with Ctrl-C. Those outcomes are a password
+    # matching the well-known default.password, a password that opens no
+    # vault, and no password at all.
     if [[ -n "${PYNTARA_VAULT_PASSWORD:-}" ]]; then
         if [[ -n "${PYNTARA_VAULT_SOURCE:-}" ]]; then
             log_status "Vault password from environment, source: $PYNTARA_VAULT_SOURCE"
@@ -527,9 +533,9 @@ prompt_vault_password() {
             local env_default_password
             env_default_password="$(head -n 1 "$DEFAULT_VAULT_PASSWORD_FILE")"
             if [[ "$PYNTARA_VAULT_PASSWORD" == "$env_default_password" ]]; then
-                export PYNTARA_VAULT_SOURCE="default"
-                log_status "Vault password from environment, auto-detected source: default"
-                return 0
+                show_countdown "$FALLBACK_NOTICE_TIMEOUT" "$DEFAULT_VAULT_WARNING"
+                fallback_to_default_vault
+                return $?
             fi
         fi
         show_countdown "$FALLBACK_NOTICE_TIMEOUT" "ERROR: PYNTARA_VAULT_PASSWORD does not match any vault. Falling back to default vault."
