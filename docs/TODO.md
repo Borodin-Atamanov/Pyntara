@@ -27,10 +27,6 @@ survives a reboot. What remains open is the overwrite by the other owners
 (plasmashell over appletsrc, powerdevil over powerdevilrc) and the reload of the
 appearance into the running session.
 
-## Install antivirus antirootkit.
-
-Find the best solutions, choose the best, create task to install it.
-
 ## Настроить btrfs системы, чтобы появились нужные параметры при загрузке системы
 
 ## Telegram Desktop is skipped when a single 15 s probe gets no answer
