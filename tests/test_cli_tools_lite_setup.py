@@ -551,3 +551,160 @@ def test_zero_threshold_never_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.success is True
     assert "0/1" in (result.message or "")
     assert any("mc" in warning for warning in result.warnings)
+
+
+def _scheduler_fake(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    installed: set[str],
+    enabled: bool = False,
+    active: bool = False,
+    scheduler_installed: bool = True,
+    enable_fails: bool = False,
+    start_fails: bool = False,
+    becomes_active: bool = True,
+) -> list[list[str]]:
+    """Install a subprocess.run fake with the deferred scheduler states.
+
+    dpkg-query answers from the installed set and answers for the package of
+    the scheduler from scheduler_installed; systemctl answers is-enabled and
+    is-active from the state of the fake, while enable and start move that
+    state, so a test walks the machine from a disabled scheduler to a running
+    one. enable_fails, start_fails and becomes_active describe a machine that
+    does not reach the wanted state. The readiness pause is set to zero, so no
+    test waits.
+    """
+
+    unit = lite_values.DEFERRED_COMMAND_SERVICE_UNIT_NAME
+    package = lite_values.DEFERRED_COMMAND_PACKAGE_NAME
+    state = {"enabled": enabled, "active": active}
+    calls: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "dpkg-query":
+            name = command[-1]
+            if name == package:
+                if scheduler_installed:
+                    return _FakeProc(0, "install ok installed\n")
+                return _FakeProc(1, "")
+            if name in installed:
+                return _FakeProc(0, "install ok installed\n")
+            return _FakeProc(1, "")
+        if command[0] == "systemctl" and command[-1] == unit:
+            action = command[1]
+            if action == "is-enabled":
+                return _FakeProc(
+                    0 if state["enabled"] else 1,
+                    "enabled\n" if state["enabled"] else "disabled\n",
+                )
+            if action == "is-active":
+                return _FakeProc(
+                    0 if state["active"] else 3,
+                    "active\n" if state["active"] else "inactive\n",
+                )
+            if action == "enable":
+                if enable_fails:
+                    raise subprocess.CalledProcessError(1, command)
+                state["enabled"] = True
+                return _FakeProc(0)
+            if action == "start":
+                if start_fails:
+                    raise subprocess.CalledProcessError(1, command)
+                if becomes_active:
+                    state["active"] = True
+                return _FakeProc(0)
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    monkeypatch.setattr(lite_values, "START_CHECK_RETRY_DELAY_SECONDS", 0.0)
+    return calls
+
+
+def test_deferred_scheduler_is_enabled_and_started_when_it_is_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The package is on the machine while the scheduler is neither enabled nor
+    # running, so at and batch would queue commands that never run. The task
+    # enables and starts the unit and reports the change.
+    calls = _scheduler_fake(monkeypatch, installed=set(TEST_PACKAGES))
+    result = cli_tools_lite_setup.task(_ctx())
+    unit = lite_values.DEFERRED_COMMAND_SERVICE_UNIT_NAME
+    assert result.success is True
+    assert result.changed is True
+    assert ["systemctl", "enable", unit] in calls
+    assert ["systemctl", "start", unit] in calls
+    assert unit in (result.message or "")
+    assert result.warnings == ()
+
+
+def test_deferred_scheduler_already_running_stays_untouched(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An enabled and running scheduler is the wanted state: the task changes
+    # nothing and keeps the message of the install path.
+    calls = _scheduler_fake(
+        monkeypatch, installed=set(TEST_PACKAGES), enabled=True, active=True
+    )
+    result = cli_tools_lite_setup.task(_ctx())
+    assert result.changed is False
+    assert result.message == "already installed"
+    mutations = [
+        call
+        for call in calls
+        if call[0] == "systemctl" and call[1] in ("enable", "start")
+    ]
+    assert mutations == []
+
+
+def test_deferred_scheduler_step_is_skipped_without_its_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A machine whose at package is missing has no unit to start; the install
+    # shortfall already names the package, so no systemd call is made.
+    calls = _scheduler_fake(
+        monkeypatch, installed=set(TEST_PACKAGES), scheduler_installed=False
+    )
+    result = cli_tools_lite_setup.task(_ctx())
+    assert result.success is True
+    assert not any(call[0] == "systemctl" for call in calls)
+
+
+def test_deferred_scheduler_enable_failure_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # systemd refuses the enable: the task keeps the installed packages and
+    # reports the scheduler as a warning of the completed task.
+    _scheduler_fake(monkeypatch, installed=set(TEST_PACKAGES), enable_fails=True)
+    result = cli_tools_lite_setup.task(_ctx())
+    unit = lite_values.DEFERRED_COMMAND_SERVICE_UNIT_NAME
+    assert result.success is True
+    assert any(f"cannot enable {unit}" in warning for warning in result.warnings)
+
+
+def test_deferred_scheduler_start_failure_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _scheduler_fake(
+        monkeypatch, installed=set(TEST_PACKAGES), enabled=True, start_fails=True
+    )
+    result = cli_tools_lite_setup.task(_ctx())
+    unit = lite_values.DEFERRED_COMMAND_SERVICE_UNIT_NAME
+    assert result.success is True
+    assert any(f"cannot start {unit}" in warning for warning in result.warnings)
+
+
+def test_deferred_scheduler_that_never_reports_active_is_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # systemctl start returns success while the unit stays inactive, so the
+    # readiness loop runs out and names the scheduler.
+    _scheduler_fake(
+        monkeypatch,
+        installed=set(TEST_PACKAGES),
+        enabled=True,
+        becomes_active=False,
+    )
+    result = cli_tools_lite_setup.task(_ctx())
+    assert result.success is True
+    assert any("did not report active" in warning for warning in result.warnings)

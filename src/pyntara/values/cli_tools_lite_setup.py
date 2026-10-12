@@ -23,12 +23,27 @@ from __future__ import annotations
 # detectable as incomplete either way.
 PACKAGE_SUCCESS_THRESHOLD_PERCENT: int = 70
 
+# The deferred command scheduler: at queues a command, batch runs it when the
+# system load is low. The unit belongs to the package, so the task writes no
+# unit of its own and only makes sure the scheduler is enabled and running,
+# because at and batch do nothing while it is not, and a machine whose package
+# arrived with the scheduler disabled or stopped would keep its queued
+# commands without ever running them.
+DEFERRED_COMMAND_PACKAGE_NAME: str = "at"
+DEFERRED_COMMAND_SERVICE_UNIT_NAME: str = "atd.service"
+
+# The readiness loop that follows a start of the scheduler: atd is a simple
+# service that normally reports active at once, and the bounded loop reports a
+# scheduler that cannot start instead of waiting without end.
+START_CHECK_ATTEMPTS: int = 5
+START_CHECK_RETRY_DELAY_SECONDS: float = 1.0
+
 # The everyday console utilities. A name here must be the real package,
 # because dpkg-query cannot see a virtual name: a virtual name would look
 # missing forever and be reinstalled on every run.
 PACKAGES: tuple[str, ...] = (
     # deferred commands: at queues one, batch runs it when the load is low
-    "at",  # queues commands to run later, batch runs them when the system is idle
+    DEFERRED_COMMAND_PACKAGE_NAME,
     # shell completion
     "bash-completion",  # programmable completion for the bash shell
     "hstr",  # better history in console
@@ -106,4 +121,8 @@ PACKAGES: tuple[str, ...] = (
 READ_VALUE_NAMES: tuple[str, ...] = (
     "PACKAGES",
     "PACKAGE_SUCCESS_THRESHOLD_PERCENT",
+    "DEFERRED_COMMAND_PACKAGE_NAME",
+    "DEFERRED_COMMAND_SERVICE_UNIT_NAME",
+    "START_CHECK_ATTEMPTS",
+    "START_CHECK_RETRY_DELAY_SECONDS",
 )
