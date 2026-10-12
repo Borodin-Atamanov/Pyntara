@@ -63,19 +63,6 @@ SERVICE_UNIT_NAME: str = "swapfile.service"
 # swapfile path.
 UNIT_TEMPLATE_FILE_NAME: str = "swapfile.service"
 
-# systemctl calls of the task, each carrying the unit name as its placeholder.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "start",
-    "{unit}",
-)
-
 # Name of the tool the unit stops the swap with. The task resolves its absolute
 # path at run time and renders it into the unit, so no path has to be kept in
 # step by hand and the boot service takes nothing from PATH.
@@ -235,9 +222,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PROGRAM_FILE_MODE",
     "SERVICE_UNIT_NAME",
     "UNIT_TEMPLATE_FILE_NAME",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
     "SWAPOFF_COMMAND_NAME",
     "SWAP_SHOW_COMMAND",
     "SWAP_FILE_TYPE",

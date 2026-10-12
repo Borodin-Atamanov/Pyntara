@@ -179,7 +179,7 @@ def task(ctx: Context) -> TaskResult:
     if written:
         try:
             run_command(
-                substituted_command(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
+                substituted_command(engine_values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
                 timeout=timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:
@@ -189,7 +189,7 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(
                 substituted_command(
-                    values.SYSTEMCTL_ENABLE_COMMAND,
+                    engine_values.SYSTEMCTL_ENABLE_COMMAND,
                     {"unit": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
@@ -204,7 +204,7 @@ def task(ctx: Context) -> TaskResult:
         try:
             run_command(
                 substituted_command(
-                    values.SYSTEMCTL_START_COMMAND,
+                    engine_values.SYSTEMCTL_START_NO_BLOCK_COMMAND,
                     {"unit": values.TIMER_UNIT_NAME},
                 ),
                 timeout=timeout,
@@ -218,7 +218,7 @@ def task(ctx: Context) -> TaskResult:
     try:
         run_command(
             substituted_command(
-                values.SYSTEMCTL_START_COMMAND,
+                engine_values.SYSTEMCTL_START_NO_BLOCK_COMMAND,
                 {"unit": values.SERVICE_UNIT_NAME},
             ),
             timeout=timeout,
@@ -230,7 +230,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
         try:
             failed = service_is_failed(
-                values.SYSTEMCTL_IS_FAILED_COMMAND,
+                engine_values.SYSTEMCTL_IS_FAILED_COMMAND,
                 {"unit": values.SERVICE_UNIT_NAME},
                 timeout,
             )

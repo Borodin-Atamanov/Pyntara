@@ -242,7 +242,7 @@ def _ensure_swap_subvolume(
     swap_was_active = service_is_active(swap_unit, timeout)
     changed = False
     if swap_was_active:
-        changed = _systemctl(values.SYSTEMCTL_STOP_COMMAND, swap_unit, warnings)
+        changed = _systemctl(engine_values.SYSTEMCTL_STOP_COMMAND, swap_unit, warnings)
     try:
         if _remove_swap_file_of_the_root_subvolume(swapfile_path, warnings):
             changed = (
@@ -256,7 +256,7 @@ def _ensure_swap_subvolume(
             )
     finally:
         if swap_was_active:
-            _systemctl(values.SYSTEMCTL_START_COMMAND, swap_unit, warnings)
+            _systemctl(engine_values.SYSTEMCTL_START_COMMAND, swap_unit, warnings)
     return changed
 
 
@@ -547,9 +547,9 @@ def _set_timer_state(name: str, *, enabled: bool, warnings: list[str]) -> bool:
         _log(f"{name} is already {state_word}")
         return False
     template = (
-        values.SYSTEMCTL_ENABLE_COMMAND
+        engine_values.SYSTEMCTL_ENABLE_NOW_COMMAND
         if enabled
-        else values.SYSTEMCTL_DISABLE_COMMAND
+        else engine_values.SYSTEMCTL_DISABLE_NOW_COMMAND
     )
     command = substituted_command(template, {"unit": name})
     try:
@@ -729,7 +729,7 @@ def _reload_and_stop_daemon(warnings: list[str]) -> bool:
     unit = values.GRUB_BTRFS_DAEMON_UNIT_NAME
     try:
         run_command(
-            values.SYSTEMCTL_DAEMON_RELOAD_COMMAND,
+            engine_values.SYSTEMCTL_DAEMON_RELOAD_COMMAND,
             timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
             check=True,
             capture=True,
@@ -746,7 +746,7 @@ def _reload_and_stop_daemon(warnings: list[str]) -> bool:
     if not was_enabled:
         _log(f"{unit} is off")
         return False
-    command = substituted_command(values.SYSTEMCTL_DISABLE_COMMAND, {"unit": unit})
+    command = substituted_command(engine_values.SYSTEMCTL_DISABLE_NOW_COMMAND, {"unit": unit})
     try:
         run_command(
             command,

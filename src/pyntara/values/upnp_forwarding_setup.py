@@ -59,26 +59,6 @@ SERVICE_MODULE_NAME: str = "pyntara.upnp_forwarding"
 # needs ships with the values package it imports.
 MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}")
 
-# The systemctl calls of the task, each carrying the unit name as its
-# {unit} placeholder except the daemon reload.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "start",
-    "--no-block",
-    "{unit}",
-)
-SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "is-failed",
-    "{unit}",
-)
-
 # Delay after boot before the first run and the pause between two runs. The
 # first run waits for the network to come up; every later run re-asserts the
 # rule, so a changed address of the machine or of the router heals by itself.
@@ -112,10 +92,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "TIMER_TEMPLATE_FILE_NAME",
     "SERVICE_MODULE_NAME",
     "MODULE_RUN_COMMAND",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
-    "SYSTEMCTL_IS_FAILED_COMMAND",
     "TIMER_BOOT_DELAY_SECONDS",
     "TIMER_INTERVAL_SECONDS",
     "JOURNAL_IDENTIFIER",

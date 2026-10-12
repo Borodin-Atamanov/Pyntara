@@ -105,7 +105,7 @@ def _started_ok(
         if service_is_active(service_name, timeout):
             return True
         if service_is_failed(
-            values.SYSTEMCTL_IS_FAILED_COMMAND,
+            engine_values.SYSTEMCTL_IS_FAILED_COMMAND,
             {"unit": service_name},
             timeout,
         ):
@@ -269,7 +269,7 @@ def task(ctx: Context) -> TaskResult:
         if unit_written:
             try:
                 run_command(
-                    substituted_command(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
+                    substituted_command(engine_values.SYSTEMCTL_DAEMON_RELOAD_COMMAND, {}),
                     timeout=timeout,
                 )
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
@@ -277,7 +277,7 @@ def task(ctx: Context) -> TaskResult:
 
     if not enabled:
         enable_argv = substituted_command(
-            values.SYSTEMCTL_ENABLE_COMMAND, {"unit": service_name}
+            engine_values.SYSTEMCTL_ENABLE_COMMAND, {"unit": service_name}
         )
         try:
             run_command(enable_argv, timeout=timeout)
@@ -295,7 +295,7 @@ def task(ctx: Context) -> TaskResult:
         changed = True
 
     restart_argv = substituted_command(
-        values.SYSTEMCTL_RESTART_COMMAND, {"unit": service_name}
+        engine_values.SYSTEMCTL_RESTART_COMMAND, {"unit": service_name}
     )
     try:
         run_command(restart_argv, timeout=timeout)

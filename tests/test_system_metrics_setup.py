@@ -1116,22 +1116,22 @@ def test_systemctl_commands_come_from_the_config(
     # the task runs.
     _fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
     monkeypatch.setattr(
-        values,
+        engine_values,
         "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
         ("systemctl", "daemon-reload", "--quiet"),
     )
     monkeypatch.setattr(
-        values,
+        engine_values,
         "SYSTEMCTL_ENABLE_COMMAND",
         ("systemctl", "enable", "{unit}", "--quiet"),
     )
     monkeypatch.setattr(
-        values,
+        engine_values,
         "SYSTEMCTL_RESTART_COMMAND",
         ("systemctl", "restart", "{unit}", "--no-block"),
     )
     monkeypatch.setattr(
-        values,
+        engine_values,
         "SYSTEMCTL_START_COMMAND",
         ("systemctl", "start", "{unit}", "--no-block"),
     )

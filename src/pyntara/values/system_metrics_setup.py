@@ -143,23 +143,6 @@ COLLECTOR_UNIT_TEMPLATE_FILE_NAME: str = "system_metrics_collector.service"
 COLLECTOR_TIMER_TEMPLATE_FILE_NAME: str = "system_metrics_collector.timer"
 COMMIT_COMMAND_TEMPLATE_FILE_NAME: str = "commit_system_metrics.sh"
 
-# Commands the task runs against the units above: the reload of systemd and
-# the enable, restart and start of a unit, whose name is the {unit}
-# placeholder of the template. One shape serves the service, the path unit and
-# the collector timer, because the task runs the same call on each of them.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "restart",
-    "{unit}",
-)
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
-
 # Commands the deployed units run: the send loop service, the ingest oneshot
 # service and the report collector service, each with the interpreter of the
 # venv as its {python} placeholder. A module takes no other argument, because
@@ -560,10 +543,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "COLLECTOR_UNIT_TEMPLATE_FILE_NAME",
     "COLLECTOR_TIMER_TEMPLATE_FILE_NAME",
     "COMMIT_COMMAND_TEMPLATE_FILE_NAME",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_RESTART_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
     "SEND_SERVICE_COMMAND",
     "INGEST_SERVICE_COMMAND",
     "COLLECTOR_SERVICE_COMMAND",

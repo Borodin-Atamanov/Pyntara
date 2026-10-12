@@ -222,14 +222,14 @@ def task(ctx: Context) -> TaskResult:
             try:
                 _log("reloading systemd: systemctl daemon-reload")
                 run_command(
-                    list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
+                    list(engine_values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
                     timeout=timeout,
                 )
                 _log("systemd reloaded")
                 _log(f"enabling service: systemctl enable {service_name}")
                 run_command(
                     substituted_command(
-                        values.SYSTEMCTL_ENABLE_COMMAND,
+                        engine_values.SYSTEMCTL_ENABLE_COMMAND,
                         {"unit": service_name},
                     ),
                     timeout=timeout,

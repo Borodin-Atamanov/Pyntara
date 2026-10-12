@@ -76,19 +76,6 @@ SERVICE_UNIT_NAME: str = "zram.service"
 # renders it with the command line of the program.
 UNIT_TEMPLATE_FILE_NAME: str = "zram.service"
 
-# systemctl calls of the task, each carrying the unit name as its placeholder.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "start",
-    "{unit}",
-)
-
 # The names the task reads. The list lives next to the values it names and is
 # read by the guard of the task before its first step.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -108,7 +95,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PROGRAM_FILE_MODE",
     "SERVICE_UNIT_NAME",
     "UNIT_TEMPLATE_FILE_NAME",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
 )

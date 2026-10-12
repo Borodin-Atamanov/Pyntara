@@ -651,6 +651,34 @@ SYSTEMCTL_MAIN_PID_COMMAND: tuple[str, ...] = (
 )
 SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
 
+# The systemctl commands the sections run on the unit of their own service.
+# They carry the unit name as the {unit} placeholder and live here once, so a
+# flag of a command, for example the --now of an enable, can never drift
+# between the sections that use it.
+SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
+SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "{unit}")
+SYSTEMCTL_ENABLE_NOW_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "enable",
+    "--now",
+    "{unit}",
+)
+SYSTEMCTL_DISABLE_NOW_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "disable",
+    "--now",
+    "{unit}",
+)
+SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
+SYSTEMCTL_START_NO_BLOCK_COMMAND: tuple[str, ...] = (
+    "systemctl",
+    "start",
+    "--no-block",
+    "{unit}",
+)
+SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = ("systemctl", "restart", "{unit}")
+SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = ("systemctl", "is-failed", "{unit}")
+
 # The stop call of the periodic package updaters: it never asks for a password,
 # so a run that is not root fails at once instead of opening a polkit prompt on
 # the desktop of the target machine.
@@ -782,6 +810,14 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SYSTEMCTL_MAIN_PID_COMMAND",
     "SYSTEMCTL_STOP_COMMAND",
     "SYSTEMCTL_STOP_NO_PROMPT_COMMAND",
+    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
+    "SYSTEMCTL_ENABLE_COMMAND",
+    "SYSTEMCTL_ENABLE_NOW_COMMAND",
+    "SYSTEMCTL_DISABLE_NOW_COMMAND",
+    "SYSTEMCTL_START_COMMAND",
+    "SYSTEMCTL_START_NO_BLOCK_COMMAND",
+    "SYSTEMCTL_RESTART_COMMAND",
+    "SYSTEMCTL_IS_FAILED_COMMAND",
     "SYSTEM_PYTHON",
     "SOCKET_LISTENER_COMMAND",
     "TASK_DATA_ROOT",

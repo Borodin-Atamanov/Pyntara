@@ -130,25 +130,6 @@ SERVICE_MODULE_NAME: str = "pyntara.port_forwarding"
 # needs ships with the values package it imports.
 MODULE_RUN_COMMAND: tuple[str, ...] = ("{python}", "-m", "{module}")
 
-# The systemctl calls of the task, each carrying the unit name as its
-# {unit} placeholder except the daemon reload.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-SYSTEMCTL_RESTART_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "restart",
-    "{unit}",
-)
-SYSTEMCTL_IS_FAILED_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "is-failed",
-    "{unit}",
-)
-
 # Query of the result of the last run of the unit. A service that exited nonzero
 # and waits for the next systemd attempt is neither active nor failed, so the
 # two questions above cannot see it; this word is the one that shows the loop
@@ -289,10 +270,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "SERVICE_TEMPLATE_FILE_NAME",
     "SERVICE_MODULE_NAME",
     "MODULE_RUN_COMMAND",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_RESTART_COMMAND",
-    "SYSTEMCTL_IS_FAILED_COMMAND",
     "SYSTEMCTL_SHOW_RESULT_COMMAND",
     "SUCCESSFUL_SERVICE_RESULT",
     "START_CHECK_ATTEMPTS",

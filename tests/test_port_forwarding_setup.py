@@ -256,7 +256,7 @@ def test_renders_the_configured_module_and_commands(
     )
     monkeypatch.setattr(values, "SERVICE_MODULE_NAME", "other.module")
     monkeypatch.setattr(
-        values,
+        engine_values,
         "SYSTEMCTL_RESTART_COMMAND",
         (
             "systemctl",

@@ -62,17 +62,6 @@ UNIT_EXEC_LINE_TEMPLATE: str = "ExecStart=/bin/sh -c 'echo {value} > {path}'"
 # Name of the systemd oneshot service unit that repeats the writes at boot.
 SERVICE_UNIT_NAME: str = "zswap.service"
 
-# systemctl calls of the task, each carrying the unit name as its placeholder.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "daemon-reload",
-)
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "enable",
-    "{unit}",
-)
-
 # The names the task reads. The list lives next to the values it names, the
 # task reads it from here and reports the names this module does not declare,
 # instead of stopping on a Python error.
@@ -82,6 +71,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "UNIT_TEMPLATE_FILE_NAME",
     "UNIT_EXEC_LINE_TEMPLATE",
     "SERVICE_UNIT_NAME",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
 )

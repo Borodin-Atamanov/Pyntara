@@ -213,21 +213,6 @@ MAINTENANCE_DISABLED_TIMERS: tuple[str, ...] = (
     "btrfs-trim.timer",
 )
 
-# systemctl calls of the section, each carrying the unit name where it needs
-# one. The swap calls serve the move of the swap area into its subvolume: the
-# swap file has to be inactive before it can be removed from the root
-# subvolume, and the swap service starts again once the subvolume is mounted.
-SYSTEMCTL_DAEMON_RELOAD_COMMAND: tuple[str, ...] = ("systemctl", "daemon-reload")
-SYSTEMCTL_ENABLE_COMMAND: tuple[str, ...] = ("systemctl", "enable", "--now", "{unit}")
-SYSTEMCTL_DISABLE_COMMAND: tuple[str, ...] = (
-    "systemctl",
-    "disable",
-    "--now",
-    "{unit}",
-)
-SYSTEMCTL_STOP_COMMAND: tuple[str, ...] = ("systemctl", "stop", "{unit}")
-SYSTEMCTL_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
-
 # The value names this module declares, so the values guard of the test suite
 # applies its rules to every one of them.
 READ_VALUE_NAMES: tuple[str, ...] = (
@@ -277,9 +262,4 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "MAINTENANCE_DIRECTIVES",
     "MAINTENANCE_ENABLED_TIMERS",
     "MAINTENANCE_DISABLED_TIMERS",
-    "SYSTEMCTL_DAEMON_RELOAD_COMMAND",
-    "SYSTEMCTL_ENABLE_COMMAND",
-    "SYSTEMCTL_DISABLE_COMMAND",
-    "SYSTEMCTL_STOP_COMMAND",
-    "SYSTEMCTL_START_COMMAND",
 )

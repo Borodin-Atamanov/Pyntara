@@ -656,7 +656,7 @@ def task(ctx: Context) -> TaskResult:
         try:
             _log("reloading systemd: systemctl daemon-reload")
             run_command(
-                list(values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
+                list(engine_values.SYSTEMCTL_DAEMON_RELOAD_COMMAND),
                 timeout=timeout,
             )
             _log("systemd reloaded")
@@ -665,7 +665,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"enabling unit: systemctl enable {name}")
                     run_command(
                         substituted_command(
-                            values.SYSTEMCTL_ENABLE_COMMAND,
+                            engine_values.SYSTEMCTL_ENABLE_COMMAND,
                             {"unit": name},
                         ),
                         timeout=timeout,
@@ -676,7 +676,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"restarting service: systemctl restart {service_name}")
                 run_command(
                     substituted_command(
-                        values.SYSTEMCTL_RESTART_COMMAND,
+                        engine_values.SYSTEMCTL_RESTART_COMMAND,
                         {"unit": service_name},
                     ),
                     timeout=timeout,
@@ -686,7 +686,7 @@ def task(ctx: Context) -> TaskResult:
                 _log(f"starting service: systemctl start {service_name}")
                 run_command(
                     substituted_command(
-                        values.SYSTEMCTL_START_COMMAND,
+                        engine_values.SYSTEMCTL_START_COMMAND,
                         {"unit": service_name},
                     ),
                     timeout=timeout,
@@ -698,7 +698,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"restarting path unit: systemctl restart {ingest_path_name}")
                     run_command(
                         substituted_command(
-                            values.SYSTEMCTL_RESTART_COMMAND,
+                            engine_values.SYSTEMCTL_RESTART_COMMAND,
                             {"unit": ingest_path_name},
                         ),
                         timeout=timeout,
@@ -708,7 +708,7 @@ def task(ctx: Context) -> TaskResult:
                     _log(f"starting path unit: systemctl start {ingest_path_name}")
                     run_command(
                         substituted_command(
-                            values.SYSTEMCTL_START_COMMAND,
+                            engine_values.SYSTEMCTL_START_COMMAND,
                             {"unit": ingest_path_name},
                         ),
                         timeout=timeout,
@@ -723,7 +723,7 @@ def task(ctx: Context) -> TaskResult:
                     )
                     run_command(
                         substituted_command(
-                            values.SYSTEMCTL_RESTART_COMMAND,
+                            engine_values.SYSTEMCTL_RESTART_COMMAND,
                             {"unit": collector_timer_name},
                         ),
                         timeout=timeout,
@@ -736,7 +736,7 @@ def task(ctx: Context) -> TaskResult:
                     )
                     run_command(
                         substituted_command(
-                            values.SYSTEMCTL_START_COMMAND,
+                            engine_values.SYSTEMCTL_START_COMMAND,
                             {"unit": collector_timer_name},
                         ),
                         timeout=timeout,

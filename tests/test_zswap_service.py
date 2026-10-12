@@ -280,7 +280,7 @@ def test_enable_command_comes_from_the_values(
     fixtures = _install_fixtures(tmp_path, current=TARGET)
     calls, _writes = _install_fake(monkeypatch, fixtures, enabled=False)
     monkeypatch.setattr(
-        values, "SYSTEMCTL_ENABLE_COMMAND", ("my-enable", "{unit}")
+        engine_values, "SYSTEMCTL_ENABLE_COMMAND", ("my-enable", "{unit}")
     )
     result = zswap_service.task(_ctx(tmp_path))
     assert result.success is True
