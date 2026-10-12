@@ -64,7 +64,6 @@ from __future__ import annotations
 import os
 import pwd
 import subprocess
-import time
 from pathlib import Path
 from string import Template
 
@@ -73,6 +72,7 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult, warned_result
 from pyntara.ssh import ssh_port_from_directives
+from pyntara.systemd_unit import wait_service_active
 from pyntara.tor import onion_address_from_hostname_file
 from pyntara.utils import (
     apply_owner,
@@ -210,25 +210,6 @@ def _ensure_hidden_service_dir() -> None:
     except KeyError:
         raise RuntimeError(f"tor user {values.TOR_USER} does not exist")
     apply_owner(values.HIDDEN_SERVICE_DIR, record.pw_uid, record.pw_gid)
-
-
-def _wait_active(
-    service_name: str,
-    attempts: int,
-    retry_delay_seconds: float,
-    timeout: float,
-) -> bool:
-    """True when the service reports active within the readiness loop.
-
-    The forking service may report activating for a moment after start,
-    so the check is repeated with a pause until attempts run out.
-    """
-
-    for _ in range(attempts):
-        time.sleep(retry_delay_seconds)
-        if service_is_active(service_name, timeout):
-            return True
-    return False
 
 
 def _saved_address_matches(address_file_path: Path, address: str | None) -> bool:
@@ -434,7 +415,7 @@ def task(ctx: Context) -> TaskResult:
                 f"waiting for service to become active (up to "
                 f"{values.START_CHECK_ATTEMPTS} checks)"
             )
-            if _wait_active(
+            if wait_service_active(
                 values.SERVICE_UNIT_NAME,
                 values.START_CHECK_ATTEMPTS,
                 values.START_CHECK_RETRY_DELAY_SECONDS,

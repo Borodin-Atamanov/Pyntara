@@ -12,11 +12,17 @@ Configuration).
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Mapping
 from pathlib import Path
 
 from pyntara.logger import log_progress
-from pyntara.utils import run_command, substituted_command, write_file_atomically
+from pyntara.utils import (
+    run_command,
+    service_is_active,
+    substituted_command,
+    write_file_atomically,
+)
 
 
 def unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
@@ -120,3 +126,22 @@ def service_is_failed(
         timeout=timeout,
     )
     return result.returncode == 0
+
+
+def wait_service_active(
+    service_name: str,
+    attempts: int,
+    retry_delay_seconds: float,
+    timeout: float,
+) -> bool:
+    """True when the service reports active within the readiness loop.
+
+    The service may report activating for a moment after a start, so the check
+    is repeated with a pause until the attempts run out.
+    """
+
+    for _ in range(attempts):
+        time.sleep(retry_delay_seconds)
+        if service_is_active(service_name, timeout):
+            return True
+    return False

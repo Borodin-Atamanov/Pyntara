@@ -49,7 +49,6 @@ import os
 import pwd
 import re
 import subprocess
-import time
 from pathlib import Path
 
 from pyntara.augeas import (
@@ -60,6 +59,7 @@ from pyntara.augeas import (
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult, warned_result
+from pyntara.systemd_unit import wait_service_active
 from pyntara.utils import (
     apply_owner,
     install_package_once,
@@ -288,25 +288,6 @@ def _ensure_package(
         if ok:
             break
     return ok, error
-
-
-def _wait_active(
-    service_name: str,
-    attempts: int,
-    retry_delay_seconds: float,
-    timeout: float,
-) -> bool:
-    """True when the service reports active within the readiness loop.
-
-    The service may report activating for a moment after start, so the
-    check is repeated with a pause until attempts run out.
-    """
-
-    for _ in range(attempts):
-        time.sleep(retry_delay_seconds)
-        if service_is_active(service_name, timeout):
-            return True
-    return False
 
 
 def task(ctx: Context) -> TaskResult:
@@ -557,7 +538,7 @@ def task(ctx: Context) -> TaskResult:
             warnings.append(f"systemctl start failed: {exc}")
         else:
             _log("service started")
-            if not _wait_active(
+            if not wait_service_active(
                 values.SERVICE_UNIT_NAME,
                 values.START_CHECK_ATTEMPTS,
                 values.START_CHECK_RETRY_DELAY_SECONDS,
