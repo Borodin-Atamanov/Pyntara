@@ -113,10 +113,11 @@ the protection.
 
 The branch deduplicate-shared-task-helpers (2026-10-12) extracted the shared
 helpers warned_result, write_file_atomically, deb_package, systemd_unit,
-address_report.run and ssh.effective_config_errors, and merged the two SshDirective
-classes. What remains is listed here; each item needs its own plan before any code
-is touched, because a copy silently changed in one place is a defect on the target
-machine.
+address_report.run, ssh.effective_config_errors and saved_address_file_matches,
+merged the two SshDirective classes, and shared the unit write, reload and enable
+sequence as systemd_unit.install_and_enable_unit. What remains is listed here; each
+item needs its own plan before any code is touched, because a copy silently changed
+in one place is a defect on the target machine.
 
 1. The systemctl command vocabulary is declared in seven values modules
 (btrfs_setup, port_forwarding_setup, swapfile_service_install, system_metrics_setup,
@@ -125,19 +126,21 @@ upnp_forwarding_setup, zram_service, zswap_service) with three placeholder spell
 needs a decision on the placeholder, because the rest of the project uses
 {service_unit_name} while the engine helpers already use {unit}.
 
-2. The service-task orchestration is copied across swapfile_service_install,
+2. The wider service-task orchestration is copied across swapfile_service_install,
 zram_service and zswap_service: install the packages, deploy the program, render the
-unit, write it when changed, daemon-reload, enable the service, start it and wait
-for active. The shared helpers now exist; a shared deploy-and-enable-unit flow does
-not.
+unit, run the program and wait. The unit write, the daemon-reload and the enable
+step are shared now (systemd_unit.install_and_enable_unit); what is not shared is
+the rest of the flow, and zswap_service keeps its own sequence because it writes the
+unit plainly and enables the service without the autorun check.
 
 3. The browser task body is copied across chrome_setup and firefox_setup: the values
 guard, the settings repository sync, the deploy of the system tree, the profile
 apply and the launcher pin.
 
 4. The release-service orchestration is copied across i2pd_service_setup, tor_setup,
-yggdrasil_service_setup and rustdesk_setup, and _saved_address_matches is a verbatim
-copy in i2pd_service_setup.py:263 and tor_setup.py:215.
+yggdrasil_service_setup and rustdesk_setup: the service enable, the status check and
+the start with the wait for active. The saved address match is shared now
+(utils.saved_address_file_matches).
 
 5. Values modules repeat comment and constant blocks: swapfile_service_install
 against zram_service, ssh_client_setup against ssh_daemon_setup, ssh_daemon_setup
