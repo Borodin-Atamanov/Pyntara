@@ -51,7 +51,6 @@ a machine whose hibernation fails without a word.
 
 from __future__ import annotations
 
-import json
 import platform
 import shutil
 import subprocess
@@ -63,6 +62,11 @@ from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
+from pyntara.systemd_unit import (
+    deploy_program,
+    parse_program_result,
+    write_unit_when_changed,
+)
 from pyntara.utils import (
     run_command,
     service_is_enabled,
@@ -183,30 +187,6 @@ def _program_command(*, force: bool, resume_device: str) -> tuple[str, ...]:
     return tuple(command)
 
 
-def _deploy_program(source: Path, target: Path) -> tuple[bool, str | None]:
-    """Put the program at its deployed path with the declared mode.
-
-    The file is written only when its content differs, so a rerun leaves the
-    deployed program alone and reports no change of its own.
-    """
-
-    try:
-        content = source.read_bytes()
-    except OSError as exc:
-        return False, f"cannot read the program {source}: {exc}"
-    try:
-        if target.is_file() and target.read_bytes() == content:
-            _log(f"program already deployed: {target}")
-            return False, None
-        target.parent.mkdir(parents=True, exist_ok=True)
-        write_file_atomically(target, content)
-        target.chmod(values.PROGRAM_FILE_MODE)
-    except OSError as exc:
-        return False, f"cannot deploy the program to {target}: {exc}"
-    _log(f"program deployed: {target}")
-    return True, None
-
-
 def _render_unit(
     template_path: Path,
     command: tuple[str, ...],
@@ -225,46 +205,6 @@ def _render_unit(
         swapfile_path=str(swapfile_path),
         swapoff_path=swapoff_path,
     )
-
-
-def _write_unit_file(
-    unit_dir: Path, service_name: str, content: str
-) -> tuple[bool, str | None]:
-    """Write the unit file when it differs from the rendered content."""
-
-    path = unit_dir / service_name
-    try:
-        if path.is_file() and path.read_text(encoding="utf-8") == content:
-            _log(f"unit file already current: {path}")
-            return False, None
-        unit_dir.mkdir(parents=True, exist_ok=True)
-        write_file_atomically(path, content)
-    except OSError as exc:
-        return False, f"cannot write the unit file {path}: {exc}"
-    _log(f"unit file written: {path}")
-    return True, None
-
-
-def _parse_program_result(stdout: str) -> dict[str, object] | None:
-    """The result object the program prints as its last line, or None.
-
-    The program answers with one JSON object; anything else means the caller
-    cannot know what happened, and the task then reports that instead of
-    guessing from the sentences.
-    """
-
-    for line in reversed(stdout.splitlines()):
-        text = line.strip()
-        if not text:
-            continue
-        try:
-            parsed: object = json.loads(text)
-        except json.JSONDecodeError:
-            return None
-        if isinstance(parsed, dict):
-            return {str(key): value for key, value in parsed.items()}
-        return None
-    return None
 
 
 def _reported_offset_pages(outcome: dict[str, object]) -> int | None:
@@ -701,8 +641,10 @@ def task(ctx: Context) -> TaskResult:
     command = _program_command(force=force, resume_device=resume_device or "")
 
     _log(f"deploying the swap program to {values.PROGRAM_DEPLOY_PATH}")
-    program_changed, program_error = _deploy_program(
-        data_dir / values.PROGRAM_FILE_NAME, values.PROGRAM_DEPLOY_PATH
+    program_changed, program_error = deploy_program(
+        data_dir / values.PROGRAM_FILE_NAME,
+        values.PROGRAM_DEPLOY_PATH,
+        values.PROGRAM_FILE_MODE,
     )
     if program_error is not None:
         # Without the program neither this run nor a boot can set the swap up,
@@ -727,7 +669,7 @@ def task(ctx: Context) -> TaskResult:
         warnings.append(f"cannot read the unit template: {exc}")
     unit_ready = False
     if content is not None:
-        unit_changed, unit_error = _write_unit_file(
+        unit_changed, unit_error = write_unit_when_changed(
             engine_values.SYSTEMD_UNIT_DIR, service_name, content
         )
         if unit_error is not None:
@@ -779,7 +721,7 @@ def task(ctx: Context) -> TaskResult:
             reason = line.strip()
             if reason:
                 _log(reason)
-        outcome = _parse_program_result(result.stdout)
+        outcome = parse_program_result(result.stdout)
         if outcome is None:
             warnings.append(
                 "the swap program reported nothing readable, "

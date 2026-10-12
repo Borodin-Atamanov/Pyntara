@@ -28,6 +28,7 @@ from pyntara import __version__, deployment
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.systemd_unit import service_is_failed, unit_matches, write_unit
 from pyntara.utils import (
     run_command,
     service_is_active,
@@ -92,39 +93,6 @@ def _render_timer_unit(
     )
 
 
-def _unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
-    """True when the deployed unit file equals the expected content."""
-
-    unit_path = unit_dir / name
-    try:
-        if not unit_path.is_file():
-            return False
-        return unit_path.read_text(encoding="utf-8") == expected
-    except OSError:
-        return False
-
-
-def _write_unit(unit_dir: Path, name: str, content: str) -> None:
-    """Write the rendered unit file into the systemd unit directory."""
-
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    (unit_dir / name).write_text(content, encoding="utf-8")
-
-
-def _service_is_failed(
-    command: tuple[str, ...], service_name: str, timeout: float
-) -> bool:
-    """True when the systemd service is in the failed state."""
-
-    result = run_command(
-        substituted_command(command, {"unit_name": service_name}),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    return result.returncode == 0
-
-
 def task(ctx: Context) -> TaskResult:
     """Deploy the units and the timer; skip when the goal is reached.
 
@@ -171,7 +139,7 @@ def task(ctx: Context) -> TaskResult:
 
     units_ok = True
     for name, content in rendered.items():
-        matches = _unit_matches(unit_dir, name, content)
+        matches = unit_matches(unit_dir, name, content)
         units_ok = units_ok and matches
         _log(f"checking unit {name}: {'ok' if matches else 'missing or stale'}")
     timer_enabled = service_is_enabled(values.TIMER_UNIT_NAME, timeout)
@@ -197,10 +165,10 @@ def task(ctx: Context) -> TaskResult:
     changed = False
     written = False
     for name, content in rendered.items():
-        if not force and _unit_matches(unit_dir, name, content):
+        if not force and unit_matches(unit_dir, name, content):
             continue
         try:
-            _write_unit(unit_dir, name, content)
+            write_unit(unit_dir, name, content)
         except OSError as exc:
             warnings.append(f"cannot write unit {name}: {exc}")
         else:
@@ -261,8 +229,10 @@ def task(ctx: Context) -> TaskResult:
         _log(f"service {values.SERVICE_UNIT_NAME} started")
         changed = True
         try:
-            failed = _service_is_failed(
-                values.SYSTEMCTL_IS_FAILED_COMMAND, values.SERVICE_UNIT_NAME, timeout
+            failed = service_is_failed(
+                values.SYSTEMCTL_IS_FAILED_COMMAND,
+                {"unit_name": values.SERVICE_UNIT_NAME},
+                timeout,
             )
         except (subprocess.SubprocessError, OSError) as exc:
             warnings.append(f"cannot check {values.SERVICE_UNIT_NAME}: {exc}")

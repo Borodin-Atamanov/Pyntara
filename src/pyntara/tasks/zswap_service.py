@@ -25,6 +25,7 @@ from string import Template
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
+from pyntara.systemd_unit import write_unit
 from pyntara.utils import (
     run_command,
     service_is_enabled,
@@ -113,13 +114,6 @@ def _render_unit(
     ]
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(exec_lines="\n".join(lines))
-
-
-def _write_unit_file(unit_dir: Path, service_name: str, content: str) -> None:
-    """Write the rendered unit file into the systemd unit directory."""
-
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    (unit_dir / service_name).write_text(content, encoding="utf-8")
 
 
 def task(ctx: Context) -> TaskResult:
@@ -220,7 +214,7 @@ def task(ctx: Context) -> TaskResult:
         unit_dir = engine_values.SYSTEMD_UNIT_DIR
         _log(f"writing unit file {unit_dir / service_name}")
         try:
-            _write_unit_file(unit_dir, service_name, content)
+            write_unit(unit_dir, service_name, content)
         except OSError as exc:
             warnings.append(f"cannot write unit file: {exc}")
         else:

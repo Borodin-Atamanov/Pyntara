@@ -53,6 +53,7 @@ from pyntara import __version__, deployment
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult, warned_result
+from pyntara.systemd_unit import unit_matches, write_unit
 from pyntara.utils import (
     apply_owner,
     run_command,
@@ -369,25 +370,6 @@ def _render_commit_command(
     )
 
 
-def _unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
-    """True when the deployed unit file equals the expected content."""
-
-    unit_path = unit_dir / name
-    try:
-        if not unit_path.is_file():
-            return False
-        return unit_path.read_text(encoding="utf-8") == expected
-    except OSError:
-        return False
-
-
-def _write_unit(unit_dir: Path, name: str, content: str) -> None:
-    """Write the rendered unit file into the systemd unit directory."""
-
-    unit_dir.mkdir(parents=True, exist_ok=True)
-    (unit_dir / name).write_text(content, encoding="utf-8")
-
-
 def _command_file_matches(
     command_path: Path, expected: str, mode: int, permission_mask: int
 ) -> bool:
@@ -541,15 +523,15 @@ def task(ctx: Context) -> TaskResult:
     )
 
     unit_dir = engine_values.SYSTEMD_UNIT_DIR
-    service_unit_ok = _unit_matches(unit_dir, service_name, service_unit)
-    ingest_service_unit_ok = _unit_matches(
+    service_unit_ok = unit_matches(unit_dir, service_name, service_unit)
+    ingest_service_unit_ok = unit_matches(
         unit_dir, ingest_service_name, ingest_service_unit
     )
-    ingest_path_unit_ok = _unit_matches(unit_dir, ingest_path_name, ingest_path_unit)
-    collector_service_unit_ok = _unit_matches(
+    ingest_path_unit_ok = unit_matches(unit_dir, ingest_path_name, ingest_path_unit)
+    collector_service_unit_ok = unit_matches(
         unit_dir, collector_service_name, collector_service_unit
     )
-    collector_timer_unit_ok = _unit_matches(
+    collector_timer_unit_ok = unit_matches(
         unit_dir, collector_timer_name, collector_timer_unit
     )
     service_enabled = service_is_enabled(service_name, timeout)
@@ -650,11 +632,11 @@ def task(ctx: Context) -> TaskResult:
     )
     if not all(unit_states) or force:
         for name, content in units:
-            if not force and _unit_matches(unit_dir, name, content):
+            if not force and unit_matches(unit_dir, name, content):
                 continue
             _log(f"writing unit {name}")
             try:
-                _write_unit(unit_dir, name, content)
+                write_unit(unit_dir, name, content)
             except OSError as exc:
                 warnings.append(f"cannot write unit file {name}: {exc}")
                 continue
