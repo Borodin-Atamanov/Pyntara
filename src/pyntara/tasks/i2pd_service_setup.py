@@ -61,6 +61,7 @@ from pathlib import Path
 from string import Template
 
 from pyntara.context import Context
+from pyntara.deb_package import download_asset, install_deb
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.i2pd import b32_address
 from pyntara.logger import log_progress as _log
@@ -69,12 +70,9 @@ from pyntara.ssh import ssh_port_from_directives as _ssh_port_from_ssh_config
 from pyntara.utils import (
     apply_owner,
     discard_downloaded_files,
-    download_command,
     dpkg_architecture,
-    install_package_once,
     os_family_is_debian,
     read_os_release,
-    refresh_apt_index,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -195,61 +193,6 @@ def _installed_version(timeout: float) -> str | None:
     if result.returncode != 0:
         return None
     return version_from_output(result.stdout + "\n" + result.stderr)
-
-
-def _download_asset(
-    download_dir: Path,
-    name: str,
-    url: str,
-    timeout: float,
-) -> None:
-    """Download the package into the download directory.
-
-    The command is the declared download call, so the flags and the
-    progress text are the same as in every other download of the run.
-    Raises RuntimeError when curl fails, so the caller reports the
-    reason.
-    """
-
-    download_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        run_command(
-            download_command(download_dir / name, url),
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"cannot download {url}: {exc}") from None
-
-
-def _install_deb(
-    download_dir: Path,
-    name: str,
-    *,
-    install_timeout: float,
-    update_timeout: float,
-    retries: int,
-    skip_update: bool,
-) -> tuple[bool, str]:
-    """Install the downloaded deb; return (success, error_text).
-
-    The apt index is refreshed once before the install, so dependencies
-    resolve from a fresh index; skip_update=True disables the refresh for
-    test or offline runs. Each attempt uses the shared noninteractive
-    apt environment; total attempts are one initial plus retries.
-    """
-
-    if not skip_update:
-        try:
-            refresh_apt_index(update_timeout)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return False, f"apt index refresh: {exc}"
-    ok = False
-    error = ""
-    for _ in range(retries + 1):
-        ok, error = install_package_once(str(download_dir / name), install_timeout)
-        if ok:
-            break
-    return ok, error
 
 
 def _read_config(config_path: Path) -> str | None:
@@ -527,7 +470,7 @@ def task(ctx: Context) -> TaskResult:
         _log(f"downloading {asset_name} into {values.DOWNLOAD_DIR}")
         downloaded = True
         try:
-            _download_asset(
+            download_asset(
                 values.DOWNLOAD_DIR,
                 asset_name,
                 asset_url,
@@ -539,7 +482,7 @@ def task(ctx: Context) -> TaskResult:
         if downloaded:
             _log("package downloaded")
             _log(f"installing package: apt-get install -y {asset_name}")
-            ok, error = _install_deb(
+            ok, error = install_deb(
                 values.DOWNLOAD_DIR,
                 asset_name,
                 install_timeout=timeout,

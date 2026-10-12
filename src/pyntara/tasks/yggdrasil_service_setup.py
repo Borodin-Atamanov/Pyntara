@@ -68,6 +68,7 @@ import urllib.parse
 from pathlib import Path
 
 from pyntara.context import Context
+from pyntara.deb_package import download_asset, install_deb
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -77,7 +78,6 @@ from pyntara.utils import (
     discard_downloaded_files,
     download_command,
     dpkg_architecture,
-    install_package_once,
     run_command,
     service_is_active,
     service_is_enabled,
@@ -147,55 +147,6 @@ def _installed_version(timeout: float) -> str | None:
     if result.returncode != 0:
         return None
     return version_from_output(result.stdout + "\n" + result.stderr)
-
-
-def _download_asset(
-    download_dir: Path,
-    name: str,
-    url: str,
-    timeout: float,
-) -> None:
-    """Download the package into the download directory.
-
-    The command is the declared download call, so the flags and the
-    progress text are the same as in every other download of the run.
-    Raises RuntimeError when curl fails, so the caller reports the
-    reason.
-    """
-
-    download_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        run_command(
-            download_command(download_dir / name, url),
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"cannot download {url}: {exc}") from None
-
-
-def _install_deb(
-    download_dir: Path,
-    name: str,
-    *,
-    install_timeout: float,
-    retries: int,
-) -> tuple[bool, str]:
-    """Install the downloaded deb; return (success, error_text).
-
-    The apt index is not refreshed: the package depends only on systemd,
-    which is always installed, so a refresh would add a failure point
-    without resolving anything. Each attempt uses the shared
-    noninteractive apt environment; total attempts are one initial plus
-    retries.
-    """
-
-    ok = False
-    error = ""
-    for _ in range(retries + 1):
-        ok, error = install_package_once(str(download_dir / name), install_timeout)
-        if ok:
-            break
-    return ok, error
 
 
 def _render_config(peers: list[str]) -> str:
@@ -921,7 +872,7 @@ def task(ctx: Context) -> TaskResult:
     if needs_install:
         _log(f"downloading {asset_name} into {values.DOWNLOAD_DIR}")
         try:
-            _download_asset(
+            download_asset(
                 values.DOWNLOAD_DIR,
                 asset_name,
                 asset_url,
@@ -932,7 +883,7 @@ def task(ctx: Context) -> TaskResult:
             return done("yggdrasil not configured", changed)
         _log("package downloaded")
         _log(f"installing package: apt-get install -y {asset_name}")
-        ok, error = _install_deb(
+        ok, error = install_deb(
             values.DOWNLOAD_DIR,
             asset_name,
             install_timeout=timeout,

@@ -42,10 +42,10 @@ import re
 import subprocess
 import time
 import uuid
-from pathlib import Path
 
 from pyntara import metrics, runtime_vault
 from pyntara.context import Context
+from pyntara.deb_package import download_asset, install_deb
 from pyntara.github_release import asset_name_urls, fetch_latest_release, release_tag
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
@@ -53,13 +53,10 @@ from pyntara.utils import (
     apply_owner,
     as_user_command,
     discard_downloaded_files,
-    download_command,
     dpkg_architecture,
     hand_to_user,
     home_environment,
-    install_package_once,
     proquint_encode,
-    refresh_apt_index,
     release_asset_architecture,
     run_command,
     service_is_active,
@@ -116,61 +113,6 @@ def _installed_version(timeout: float) -> str | None:
         return None
     match = VERSION_PATTERN.search(result.stdout)
     return match.group(1) if match else None
-
-
-def _download_deb(
-    download_dir: Path,
-    name: str,
-    url: str,
-    timeout: float,
-) -> None:
-    """Download the package into the download directory.
-
-    The command is the declared download call, so the flags and the
-    progress text are the same as in every other download of the run.
-    Raises RuntimeError when curl fails, so the caller reports the
-    reason.
-    """
-
-    download_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        run_command(
-            download_command(download_dir / name, url),
-            timeout=timeout,
-        )
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"cannot download {url}: {exc}") from None
-
-
-def _install_deb(
-    download_dir: Path,
-    name: str,
-    *,
-    install_timeout: float,
-    update_timeout: float,
-    retries: int,
-    skip_update: bool,
-) -> tuple[bool, str]:
-    """Install the downloaded deb; return (success, error_text).
-
-    The apt index is refreshed once before the install, so dependencies
-    resolve from a fresh index; skip_update=True disables the refresh for
-    test or offline runs. Each attempt uses the shared noninteractive
-    apt environment; total attempts are one initial plus retries.
-    """
-
-    if not skip_update:
-        try:
-            refresh_apt_index(update_timeout)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            return False, f"apt index refresh: {exc}"
-    ok = False
-    error = ""
-    for _ in range(retries + 1):
-        ok, error = install_package_once(str(download_dir / name), install_timeout)
-        if ok:
-            break
-    return ok, error
 
 
 def _machine_id(timeout: float) -> str | None:
@@ -704,7 +646,7 @@ def task(ctx: Context) -> TaskResult:
             _log(f"downloading rustdesk {tag} deb")
             downloaded = True
             try:
-                _download_deb(
+                download_asset(
                     values.DOWNLOAD_DIR,
                     name,
                     url,
@@ -715,7 +657,7 @@ def task(ctx: Context) -> TaskResult:
                 downloaded = False
             if downloaded:
                 _log("installing rustdesk deb")
-                ok, error = _install_deb(
+                ok, error = install_deb(
                     values.DOWNLOAD_DIR,
                     name,
                     install_timeout=values.INSTALL_TIMEOUT_SECONDS,

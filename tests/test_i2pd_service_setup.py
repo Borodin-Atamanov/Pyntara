@@ -21,6 +21,7 @@ from support import (
     make_context,
 )
 
+from pyntara import deb_package
 from pyntara.context import Context
 from pyntara.i2pd import b32_address
 from pyntara.tasks import i2pd_service_setup
@@ -339,8 +340,8 @@ def test_download_curl_shows_progress_and_writes_summary(
         calls.append(list(command))
         return _FakeProc(0, "")
 
-    monkeypatch.setattr(i2pd_service_setup, "run_command", fake_run)
-    i2pd_service_setup._download_asset(
+    monkeypatch.setattr(deb_package, "run_command", fake_run)
+    deb_package.download_asset(
         tmp_path,
         "i2pd_2.61.0-1_amd64.deb",
         "https://example.invalid/i2pd_2.61.0-1_amd64.deb",
