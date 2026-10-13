@@ -73,19 +73,21 @@ class _FakePopen:
 
 
 def test_curl_flags_returns_retry_and_timeout_flags() -> None:
-    flags = curl_flags(777, 17, 60, 7777, 3)
+    # The arguments are arbitrary numbers: this test fixes the shape and the
+    # order of the flags, not the values the engine declares.
+    flags = curl_flags(41, 3, 7, 101, 2)
     assert flags == [
         "--max-time",
-        "777",
+        "41",
         "--connect-timeout",
-        "60",
+        "7",
         "--retry",
-        "17",
+        "3",
         "--retry-all-errors",
         "--retry-delay",
-        "3",
+        "2",
         "--retry-max-time",
-        "7777",
+        "101",
         "--retry-connrefused",
     ]
 

@@ -47,17 +47,26 @@ FORCE_ALL_KEYWORD: str = "all"
 COMMAND_TIMEOUT_SECONDS: int = 8000
 
 # Per-attempt timeout in seconds of a curl call that queries metadata, for
-# example the releases API. A download carries no such bound: a transfer that
-# moves must be allowed to finish, so the download of a file is bounded by the
-# stall limit and the attempt series below instead.
-CURL_TIMEOUT_SECONDS: int = 777
+# example the releases API. A metadata answer is a small document, so a service
+# that has not produced it within this time will not produce it at all; the
+# value is therefore what a user waits for one answer before the next attempt.
+# A download carries no such bound: a transfer that moves must be allowed to
+# finish, so the download of a file is bounded by the stall limit and the
+# attempt series below instead.
+CURL_TIMEOUT_SECONDS: int = 33
 
-# How many times curl retries a release query before giving up. The shared curl
-# flags add --retry-all-errors, so every failure is retried, not only timeouts
-# and HTTP 5xx. A download does not use this retry: curl deletes a partial
-# output file before it retries, so a retried download would start over, and
-# the run repeats the download itself instead (CURL_DOWNLOAD_ATTEMPTS).
-CURL_RETRIES: int = 17
+# How many times curl retries a release query before giving up, so one query
+# makes CURL_RETRIES + 1 attempts. The shared curl flags add
+# --retry-all-errors, so every failure is retried, not only timeouts and HTTP
+# 5xx. The count is small because the condition a query usually meets on the
+# target machine is permanent and not random: a blocked or closed host refuses
+# every attempt in the same way, so the second attempt is what tells a
+# permanent refusal apart from a single lost packet, and the attempts after it
+# only repeat the same wait. A download does not use this retry: curl deletes a
+# partial output file before it retries, so a retried download would start
+# over, and the run repeats the download itself instead
+# (CURL_DOWNLOAD_ATTEMPTS).
+CURL_RETRIES: int = 2
 
 # Seconds curl waits before the next attempt of a download or release query.
 # Three seconds give a flapping server or a short outage the time to answer
@@ -68,9 +77,10 @@ CURL_RETRY_DELAY_SECONDS: int = 3
 # abandoned. The connection phase is the name lookup, the TCP handshake and the
 # TLS handshake, so a server that answers passes long before this value, while a
 # host that drops the packets spends it on every attempt (measured on the target
-# machine: a blocked telegram.org costs one connect timeout per attempt). With
-# the retry count above, a dead host costs minutes and never hours.
-CURL_CONNECT_TIMEOUT_SECONDS: int = 15
+# machine: a blocked telegram.org costs one connect timeout per attempt). The
+# value equals the metadata timeout above, so one answer is waited for the same
+# time whether it is lost before or after the connection is up.
+CURL_CONNECT_TIMEOUT_SECONDS: int = 33
 
 # Total seconds curl may keep retrying a release query before it gives up. The
 # bound keeps a dead link from retrying until the outer command timeout kills
@@ -88,11 +98,14 @@ CURL_DOWNLOAD_SPEED_LIMIT_BYTES: int = 1024
 CURL_DOWNLOAD_SPEED_TIME_SECONDS: int = 120
 
 # Attempts one download gets, the pause between two of them, and the wall-clock
-# budget of the whole series. The budget is the answer to a host that accepts the
-# connection and then says nothing, which the stall limit alone would let repeat
-# for hours. The partial file stays on disk between attempts and between runs, so
-# a later run continues the same file.
-CURL_DOWNLOAD_ATTEMPTS: int = 20
+# budget of the whole series. The count is small for the same reason as the retry
+# count of a query: a host that is blocked or closed refuses every attempt in the
+# same way, so the second attempt is the one that confirms a permanent refusal,
+# and further attempts only repeat the wait. The budget is the answer to a host
+# that accepts the connection and then says nothing, which the stall limit alone
+# would let repeat for hours. The partial file stays on disk between attempts and
+# between runs, so a later run continues the same file.
+CURL_DOWNLOAD_ATTEMPTS: int = 2
 CURL_DOWNLOAD_RETRY_DELAY_SECONDS: int = 5
 CURL_DOWNLOAD_BUDGET_SECONDS: int = 3600
 
