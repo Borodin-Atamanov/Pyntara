@@ -66,6 +66,14 @@ COMPRESSION_OPTION_ASSIGNMENT: str = "compress=zstd:15"
 # is already compressed.
 COMPRESSED_MOUNT_POINTS: tuple[str, ...] = ("/", "/home")
 
+# Mount options the section removes from the lines of the compressed mount
+# points. autodefrag is removed because it defragments continuously, and a
+# defragmentation breaks the extents a save point shares with the root, which
+# costs the machine the space the sharing saves: the recompression section
+# rewrites the data once, before the points exist, and no continuous
+# defragmentation may undo that.
+MOUNT_OPTIONS_REMOVED: tuple[str, ...] = ("autodefrag",)
+
 # Command that applies the fstab options of a mounted filesystem again, so the
 # new compression option is in force without a reboot.
 REMOUNT_COMMAND: tuple[str, ...] = ("mount", "-o", "remount", "{mount_point}")
@@ -188,8 +196,10 @@ GRUB_BTRFS_DAEMON_DROPIN_FILE_MODE: int = 0o644
 # the lines the section owns there, and the timers it turns on and off. The
 # lines cover every setting the task declares, so a machine that carries the
 # file with other values receives the declared ones. Defragmentation and the
-# periodic trim stay off: the one-off recompression task owns defragmentation,
-# and a trim of an SSD happens at the settings of the device itself.
+# trim of btrfsmaintenance stay off: the one-off recompression task owns
+# defragmentation, and the weekly trim is the fstrim.timer of the distribution,
+# which the section keeps on. Enabling the trim of btrfsmaintenance as well
+# would trim twice, which its own README warns against.
 MAINTENANCE_CONFIG_PATH: Path = Path("/etc/default/btrfsmaintenance")
 MAINTENANCE_DIRECTIVES: tuple[str, ...] = (
     'BTRFS_LOG_OUTPUT="journal"',
@@ -207,6 +217,7 @@ MAINTENANCE_DIRECTIVES: tuple[str, ...] = (
 MAINTENANCE_ENABLED_TIMERS: tuple[str, ...] = (
     "btrfs-scrub.timer",
     "btrfs-balance.timer",
+    "fstrim.timer",
 )
 MAINTENANCE_DISABLED_TIMERS: tuple[str, ...] = (
     "btrfs-defrag.timer",
@@ -223,6 +234,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "OVERLAY_FILESYSTEM_TYPE",
     "COMPRESSION_OPTION_ASSIGNMENT",
     "COMPRESSED_MOUNT_POINTS",
+    "MOUNT_OPTIONS_REMOVED",
     "REMOUNT_COMMAND",
     "FSTAB_PATH",
     "POINTS_SUBVOLUME_NAME",

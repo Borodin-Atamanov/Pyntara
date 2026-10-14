@@ -77,7 +77,7 @@ def task(ctx: Context) -> TaskResult:
     changed = False
 
     changed = _install_tools(ctx, warnings) or changed
-    changed = _turn_on_compression(warnings) or changed
+    changed = _apply_mount_options(warnings) or changed
     changed = _ensure_points_subvolume(mount, warnings) or changed
     changed = _ensure_swap_subvolume(mount, warnings) or changed
     changed = _write_maintenance_schedule(warnings) or changed
@@ -126,8 +126,15 @@ def _install_tools(ctx: Context, warnings: list[str]) -> bool:
     return bool(installed)
 
 
-def _turn_on_compression(warnings: list[str]) -> bool:
-    """Put the compression option on the fstab lines and remount them."""
+def _apply_mount_options(warnings: list[str]) -> bool:
+    """Write the mount options of the section and remount the lines that changed.
+
+    The section adds the declared compression to the compressed mount points and
+    removes the declared unwanted options from the same lines: an option that a
+    continuous defragmentation would turn on is taken away, because it would
+    break the extents a save point shares with the root and cost the machine the
+    space the sharing saves.
+    """
 
     try:
         text = values.FSTAB_PATH.read_text(encoding="utf-8")
@@ -136,20 +143,28 @@ def _turn_on_compression(warnings: list[str]) -> bool:
         return False
 
     changed = False
-    remounted: list[str] = []
+    changed_mount_points: list[str] = []
     for mount_point in values.COMPRESSED_MOUNT_POINTS:
         text, line_changed = fstab.text_with_option(
             text, mount_point, values.COMPRESSION_OPTION_ASSIGNMENT
         )
         if line_changed:
             changed = True
-            remounted.append(mount_point)
+            changed_mount_points.append(mount_point)
             _log(
                 f"compression {values.COMPRESSION_OPTION_ASSIGNMENT} written "
                 f"for {mount_point}"
             )
         else:
             _log(f"compression already set for {mount_point}")
+        for option_name in values.MOUNT_OPTIONS_REMOVED:
+            text, option_removed = fstab.text_without_option(
+                text, mount_point, option_name
+            )
+            if option_removed:
+                changed = True
+                changed_mount_points.append(mount_point)
+                _log(f"mount option {option_name} removed from {mount_point}")
 
     if changed:
         try:
@@ -158,7 +173,7 @@ def _turn_on_compression(warnings: list[str]) -> bool:
             warnings.append(f"cannot write {values.FSTAB_PATH}: {exc}")
             return False
 
-    for mount_point in remounted or ():
+    for mount_point in dict.fromkeys(changed_mount_points):
         _remount(mount_point, warnings)
     return changed
 

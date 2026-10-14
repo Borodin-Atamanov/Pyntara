@@ -15,6 +15,8 @@ mount point, and a comment line is never one.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 # Sign that marks a comment line of the fstab.
 COMMENT_SIGN: str = "#"
 
@@ -76,14 +78,32 @@ def options_with_assignment(options_text: str, assignment: str) -> tuple[str, bo
     return new_options, new_options != options_text
 
 
-def text_with_option(
-    text: str, mount_point: str, assignment: str
-) -> tuple[str, bool]:
-    """Return the fstab text with one option on the line of one mount point.
+def options_without_option(options_text: str, option_name: str) -> tuple[str, bool]:
+    """Remove one option from a comma separated option list.
 
-    Only the options field of that line changes: the device, the mount point,
-    the filesystem type and the check fields stay as the machine wrote them, and
-    the first line that names the mount point is the one that changes.
+    The option is named by the part before the equals sign, so an option that
+    carries a value is removed by its name. An option list that would become
+    empty reads "defaults", the option list a line with no options means. The
+    answer is the new option list and whether it differs from the one that came
+    in.
+    """
+
+    words = tuple(word for word in options_text.split(",") if word)
+    kept = tuple(word for word in words if word.split("=", 1)[0] != option_name)
+    new_options = ",".join(kept) or "defaults"
+    return new_options, new_options != options_text
+
+
+def _text_with_transformed_options(
+    text: str,
+    mount_point: str,
+    transform: Callable[[str], tuple[str, bool]],
+) -> tuple[str, bool]:
+    """Return the fstab text with the options field of one line transformed.
+
+    Only the options field of the first line that names the mount point changes:
+    the device, the mount point, the filesystem type and the check fields stay as
+    the machine wrote them.
     """
 
     lines = text.splitlines()
@@ -92,9 +112,7 @@ def text_with_option(
         fields = field_values(line)
         if fields is None or fields[MOUNT_POINT_FIELD] != mount_point:
             continue
-        new_options, option_changed = options_with_assignment(
-            fields[OPTIONS_FIELD], assignment
-        )
+        new_options, option_changed = transform(fields[OPTIONS_FIELD])
         if option_changed:
             changed_fields = list(fields)
             changed_fields[OPTIONS_FIELD] = new_options
@@ -105,3 +123,36 @@ def text_with_option(
     if text.endswith("\n") or changed:
         result += "\n"
     return result, changed
+
+
+def text_with_option(
+    text: str, mount_point: str, assignment: str
+) -> tuple[str, bool]:
+    """Return the fstab text with one option on the line of one mount point.
+
+    Only the options field of that line changes: the device, the mount point,
+    the filesystem type and the check fields stay as the machine wrote them, and
+    the first line that names the mount point is the one that changes.
+    """
+
+    return _text_with_transformed_options(
+        text,
+        mount_point,
+        lambda options: options_with_assignment(options, assignment),
+    )
+
+
+def text_without_option(
+    text: str, mount_point: str, option_name: str
+) -> tuple[str, bool]:
+    """Return the fstab text with one option removed from the line of a mount point.
+
+    Only the options field of the first line that names the mount point changes,
+    exactly as when an option is added.
+    """
+
+    return _text_with_transformed_options(
+        text,
+        mount_point,
+        lambda options: options_without_option(options, option_name),
+    )

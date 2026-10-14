@@ -552,3 +552,44 @@ def test_the_shipped_daemon_dropin_carries_the_placeholders_the_task_fills() -> 
         "watch_option",
     ):
         assert f"${placeholder}" in text, placeholder
+
+
+def test_btrfs_setup_removes_autodefrag_from_the_mount_lines(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A continuous defragmentation would break the extents a save point shares
+    # with the root, so the section takes autodefrag away from the lines of the
+    # compressed mount points and remounts them.
+    machine = _Machine(tmp_path)
+    machine.fstab.write_text(
+        "UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 / btrfs "
+        "rw,noatime,autodefrag 0 0\n"
+        "UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 /home btrfs "
+        "rw,noatime,autodefrag 0 0\n",
+        encoding="utf-8",
+    )
+    _use_values(monkeypatch, machine)
+    _commands_fake(monkeypatch, machine)
+    monkeypatch.setattr(
+        btrfs_setup, "_mount_point_is_mounted", lambda mount_point: True
+    )
+
+    result = btrfs_setup.task(_ctx())
+
+    assert result.success is True
+    assert result.changed is True
+    fstab = machine.fstab.read_text(encoding="utf-8")
+    assert "autodefrag" not in fstab
+    assert fstab.count(values.COMPRESSION_OPTION_ASSIGNMENT) == 2
+    remounts = [call[1:] for call in machine.calls_of("mount")]
+    assert ["-o", "remount", "/"] in remounts
+    assert ["-o", "remount", "/home"] in remounts
+
+
+def test_btrfs_setup_keeps_the_weekly_trim_timer_on_and_the_btrfsmaintenance_trim_off() -> None:
+    # The weekly trim is the fstrim.timer of the distribution, which the section
+    # keeps on; the trim of btrfsmaintenance stays off so the machine never
+    # trims twice.
+    assert "fstrim.timer" in values.MAINTENANCE_ENABLED_TIMERS
+    assert "btrfs-trim.timer" in values.MAINTENANCE_DISABLED_TIMERS
+    assert "btrfs-trim.timer" not in values.MAINTENANCE_ENABLED_TIMERS

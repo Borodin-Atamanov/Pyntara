@@ -305,3 +305,63 @@ def test_fstab_text_with_option_reports_a_missing_mount_point() -> None:
 
     assert changed is False
     assert new_text == text
+
+
+def test_fstab_options_without_option_removes_one_option() -> None:
+    options, changed = fstab.options_without_option("rw,autodefrag,noatime", "autodefrag")
+
+    assert changed is True
+    assert options == "rw,noatime"
+
+
+def test_fstab_options_without_option_removes_an_option_by_its_name() -> None:
+    # An option that carries a value is named by the part before the equals
+    # sign, so the whole assignment leaves the list.
+    options, changed = fstab.options_without_option(
+        "rw,compress=zstd:15,noatime", "compress"
+    )
+
+    assert changed is True
+    assert options == "rw,noatime"
+
+
+def test_fstab_options_without_option_reports_an_absent_option() -> None:
+    options, changed = fstab.options_without_option("rw,noatime", "autodefrag")
+
+    assert changed is False
+    assert options == "rw,noatime"
+
+
+def test_fstab_options_without_option_falls_back_to_defaults() -> None:
+    # An option list that would become empty reads defaults, so the line keeps a
+    # valid options field.
+    options, changed = fstab.options_without_option("autodefrag", "autodefrag")
+
+    assert changed is True
+    assert options == "defaults"
+
+
+def test_fstab_text_without_option_changes_only_the_named_line() -> None:
+    text = (
+        "# comment\n"
+        "UUID=abc / btrfs rw,autodefrag,noatime 0 0\n"
+        "UUID=abc /home btrfs rw,autodefrag 0 0\n"
+    )
+
+    new_text, changed = fstab.text_without_option(text, "/", "autodefrag")
+
+    assert changed is True
+    assert new_text == (
+        "# comment\n"
+        "UUID=abc / btrfs rw,noatime 0 0\n"
+        "UUID=abc /home btrfs rw,autodefrag 0 0\n"
+    )
+
+
+def test_fstab_text_without_option_reports_an_absent_option() -> None:
+    text = "UUID=abc / btrfs rw,noatime 0 0\n"
+
+    new_text, changed = fstab.text_without_option(text, "/", "autodefrag")
+
+    assert changed is False
+    assert new_text == text

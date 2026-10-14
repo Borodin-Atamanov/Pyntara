@@ -3,15 +3,21 @@
 
 The program is deployed by the btrfs_recompress task and started as a transient
 unit, so its output reaches the journal and a window on the desktop can follow
-it while the rest of the provisioning continues. It runs two steps: it
-rewrites every declared mount point with the declared compression, and it then
-balances the data chunks that are filled below the declared percentage, which
-collects the space the rewrite freed.
+it while the rest of the provisioning continues. It runs four steps: it asks
+the device to release the blocks that are already free, which gives the rewrite
+room to allocate its new extents; it rewrites every declared mount point with
+the declared compression; it balances the data chunks that are filled below the
+declared percentage, which collects the space the rewrite freed; and it asks the
+device again to release the blocks those steps freed, so a thin-provisioned
+device or a virtual machine image really gives the space back.
 
-The program writes the marker file only after every step succeeded, so the
-marker means the one-off work is done and a later run skips it. A failing step
-is printed, the remaining steps still run, and the program exits nonzero without
-the marker, so a later run tries the work again.
+The program writes the marker file only after every rewrite step succeeded, so
+the marker means the one-off work is done and a later run skips it. A failing
+rewrite step is printed, the remaining steps still run, and the program exits
+nonzero without the marker, so a later run tries the work again. A discard the
+device refuses is only a note: it is printed and recorded in the marker summary
+and it never repeats the rewrite, because giving the freed space back is an
+optimisation of the device and not a condition of the rewrite.
 """
 
 from __future__ import annotations
@@ -47,6 +53,38 @@ def run_step(command: list[str], timeout_seconds: int) -> int:
         flush=True,
     )
     return completed.returncode
+
+
+def discard_free_blocks(
+    paths: list[str], timeout_seconds: int, notes: list[str]
+) -> None:
+    """Ask the device to release the blocks of every mount point that are free.
+
+    The tool for this is fstrim of util-linux, the documented one; btrfs-progs
+    has no trim subcommand any more. Every storage layer between the filesystem
+    and the medium must support discard for the space to be given back, so a
+    device that refuses it is only a note and never a failure of the rewrite.
+    """
+
+    for path in paths:
+        if not Path(path).exists():
+            print(f"skip: {path} is not present on this machine", flush=True)
+            continue
+        print(
+            f"discarding the free blocks of {path}: fstrim prints its result "
+            f"when the step ends",
+            flush=True,
+        )
+        code = run_step(["fstrim", "-v", path], timeout_seconds)
+        if code != 0:
+            note = f"fstrim on {path} answered status {code}"
+            notes.append(note)
+            print(
+                f"note: {note}; the free blocks of {path} stay allocated in "
+                f"the device",
+                flush=True,
+            )
+        print(f"free space after the discard of {path}: {free_mib()} MiB", flush=True)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -96,6 +134,18 @@ def main() -> int:
         )
         return 2
 
+    discard_notes: list[str] = []
+    print(
+        "discarding the free blocks before the rewrite, so the rewrite has "
+        "room to allocate its new extents",
+        flush=True,
+    )
+    discard_free_blocks(
+        arguments.defragment_path,
+        arguments.defragment_timeout_seconds,
+        discard_notes,
+    )
+
     print(
         f"compression: {arguments.algorithm} level {arguments.level}",
         flush=True,
@@ -144,11 +194,23 @@ def main() -> int:
         failures.append(f"balance failed with status {code}")
     print(f"free space after the balance: {free_mib()} MiB", flush=True)
 
+    print(
+        "discarding the free blocks the rewrite and the balance released, so "
+        "the device or the image gives the space back",
+        flush=True,
+    )
+    discard_free_blocks(
+        arguments.defragment_path,
+        arguments.defragment_timeout_seconds,
+        discard_notes,
+    )
+
     free_after_bytes = shutil.disk_usage("/").free
     summary = {
         "free_before_mib": free_bytes // (1024 * 1024),
         "free_after_mib": free_after_bytes // (1024 * 1024),
         "failures": failures,
+        "discard_notes": discard_notes,
     }
 
     if failures:

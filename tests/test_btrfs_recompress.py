@@ -313,18 +313,22 @@ def test_recompress_runs_the_program_with_the_options_it_reads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The option names are the interface between the task and the program, so
-    # the real program runs with the command line the task builds and a
-    # stand-in for btrfs records what it asked for.
+    # the real program runs with the command line the task builds and stand-ins
+    # for btrfs and fstrim record what it asked for. The discard of the free
+    # blocks runs before the rewrite and again after the balance.
     marker = _use_values(monkeypatch, tmp_path)
-    btrfs_log = tmp_path / "btrfs.log"
+    call_log = tmp_path / "calls.log"
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    stand_in = bin_dir / "btrfs"
-    stand_in.write_text(
-        "#!/bin/sh\n" f'printf "%s\\n" "$*" >> "{btrfs_log}"\n' "exit 0\n",
-        encoding="utf-8",
-    )
-    stand_in.chmod(0o755)
+    for program in ("btrfs", "fstrim"):
+        stand_in = bin_dir / program
+        stand_in.write_text(
+            "#!/bin/sh\n"
+            f'printf "{program} %s\\n" "$*" >> "{call_log}"\n'
+            "exit 0\n",
+            encoding="utf-8",
+        )
+        stand_in.chmod(0o755)
 
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
     completed = subprocess.run(
@@ -336,33 +340,40 @@ def test_recompress_runs_the_program_with_the_options_it_reads(
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    asked = btrfs_log.read_text(encoding="utf-8").splitlines()
-    assert asked[0] == (
-        f"filesystem defragment -r -c{values.COMPRESSION_ALGORITHM} "
-        f"-L {values.COMPRESSION_LEVEL} -f /"
-    )
-    assert asked[-1] == (
-        f"balance start -dusage={values.BALANCE_USAGE_PERCENT} --full-balance /"
-    )
+    asked = call_log.read_text(encoding="utf-8").splitlines()
+    assert asked == [
+        "fstrim -v /",
+        (
+            f"btrfs filesystem defragment -r -c{values.COMPRESSION_ALGORITHM} "
+            f"-L {values.COMPRESSION_LEVEL} -f /"
+        ),
+        f"btrfs balance start -dusage={values.BALANCE_USAGE_PERCENT} --full-balance /",
+        "fstrim -v /",
+    ]
     assert "free space after the rewrite of /" in completed.stdout
     assert "free space after the balance" in completed.stdout
+    assert "free space after the discard of /" in completed.stdout
     assert marker.is_file()
     summary = json.loads(marker.read_text(encoding="utf-8"))
     assert summary["failures"] == []
+    assert summary["discard_notes"] == []
     assert summary["free_before_mib"] > 0
 
 
 def test_recompress_program_reports_a_failing_step_and_leaves_no_marker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # The marker means the one-off work is done, so a failing step must not
-    # leave one; the exit code carries the failure.
+    # The marker means the one-off work is done, so a failing rewrite step must
+    # not leave one; the exit code carries the failure.
     marker = _use_values(monkeypatch, tmp_path)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    stand_in = bin_dir / "btrfs"
-    stand_in.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
-    stand_in.chmod(0o755)
+    btrfs_stand_in = bin_dir / "btrfs"
+    btrfs_stand_in.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    btrfs_stand_in.chmod(0o755)
+    fstrim_stand_in = bin_dir / "fstrim"
+    fstrim_stand_in.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fstrim_stand_in.chmod(0o755)
 
     environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
     completed = subprocess.run(
@@ -376,6 +387,41 @@ def test_recompress_program_reports_a_failing_step_and_leaves_no_marker(
     assert completed.returncode == 1
     assert marker.exists() is False
     assert "did not finish" in completed.stdout
+
+
+def test_recompress_program_records_a_refused_discard_without_repeating_the_work(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Giving the freed space back is an optimisation of the device, so a device
+    # that refuses the discard is a note in the marker summary and the marker is
+    # still written: repeating the whole rewrite for it would be pointless work.
+    marker = _use_values(monkeypatch, tmp_path)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    btrfs_stand_in = bin_dir / "btrfs"
+    btrfs_stand_in.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    btrfs_stand_in.chmod(0o755)
+    fstrim_stand_in = bin_dir / "fstrim"
+    fstrim_stand_in.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    fstrim_stand_in.chmod(0o755)
+
+    environment = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}")
+    completed = subprocess.run(
+        [sys.executable, str(PROGRAM_PATH), *btrfs_recompress.program_command()],
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert marker.is_file()
+    summary = json.loads(marker.read_text(encoding="utf-8"))
+    assert summary["failures"] == []
+    assert summary["discard_notes"] == [
+        "fstrim on / answered status 1",
+        "fstrim on / answered status 1",
+    ]
 
 
 def test_recompress_program_refuses_a_machine_without_room(
