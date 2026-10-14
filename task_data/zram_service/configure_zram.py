@@ -297,7 +297,7 @@ def _read_disksize(index: int, module_name: str) -> int | None:
             .strip()
         )
         return int(text)
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return None
 
 

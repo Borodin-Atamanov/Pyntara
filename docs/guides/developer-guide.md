@@ -28,7 +28,7 @@ Minimum required per task: one success scenario test and one realistic error sce
 
 Secrets store must have a test proving that reloading an existing store returns the same values (no regeneration).
 
-Testing MUST cover both the Python application and the bootstrap installer.
+Deployed helper programs under task_data/ are copied to the target machine and started by their boot service with the system interpreter of that machine, which the project does not control. Their syntax must therefore be understandable by the declared minimum interpreter (Python 3.10), never by the newest one: a helper using newer syntax cannot even be parsed there and its task fails on a machine whose interpreter is older. tests/test_deployed_helper_compatibility.py parses every helper under that grammar and fails on anything newer, and the same file proves the check rejects newer syntax so it cannot silently pass.
 
 Recommended, not required: a run on a virtual machine, because a task must reach its goal on a real machine and no unit test shows that.  
 Keep an image of a machine that answers ssh on port 22 with a password login, has every package already installed, carries the guest agent so commands run from the host without a console, and holds no configuration from Pyntara, so every test starts from an unconfigured machine.  
