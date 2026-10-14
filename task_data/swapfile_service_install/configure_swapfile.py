@@ -45,6 +45,8 @@ The last line this program prints is one JSON object for the caller:
         "skipped_reason": str | null,
         "error": str | null,
         "resume_offset": int | null,
+        "resume_address_published": bool,
+        "warnings": [str, ...],
     }
 
 The caller reads the result from that line and never parses the sentences. The
@@ -93,6 +95,15 @@ AUGEAS_LOAD_TAG: str = "pyntara"
 # would arrive as two arguments at boot.
 AUGEAS_TOOL: str = "augtool"
 AUGEAS_NO_AUTOLOAD_ARGUMENT: str = "--noautoload"
+
+# Where the tool keeps the reason a file could not be parsed, next to the node
+# of that file in its own tree, and the prefix of the tree path it prints for a
+# loaded file. A file no lens could read has no nodes at all, so every question
+# about its nodes is answered with nothing and the reason would be lost; the
+# reason and the line it starts at are read from there and named in the report.
+AUGEAS_FILES_NODE_PREFIX: str = "/files"
+AUGEAS_PARSE_ERROR_MESSAGE_SUFFIX: str = "error/message"
+AUGEAS_PARSE_ERROR_LINE_SUFFIX: str = "error/line"
 
 # The no-copy-on-write attribute. A btrfs swap file needs it, and a filesystem
 # without copy-on-write answers the request with "Operation not supported", so
@@ -224,12 +235,19 @@ class Outcome:
 
     The resume offset is the number of pages into the device that holds the swap
     file at which the kernel finds a hibernation image; None means the offset
-    was not read, which the caller is told by a printed sentence as well.
+    was not read, which the caller is told by a printed sentence as well. The
+    warnings are the steps that failed without stopping the run, the parts of
+    the resume address that could not be published among them, and
+    resume_address_published says whether every part of that address was written,
+    so the caller reads the fact instead of the sentences and never tells the
+    machine its hibernation is ready when it is not.
     """
 
     changed: bool
     skipped_reason: str | None
     resume_offset_pages: int | None
+    resume_address_published: bool
+    warnings: tuple[str, ...]
 
 
 def _tool_path(tool_name: str) -> str:
@@ -663,6 +681,49 @@ def _augeas_string(text: str) -> str:
     return f'"{quoted}"'
 
 
+def _augeas_parse_error(config: Config, timeout_seconds: float) -> str | None:
+    """Why augeas could not parse the settings file, or None when it could.
+
+    A file that no lens could read has no nodes in the tree of the tool, so the
+    answer to every question about its nodes is empty and the cause would stay
+    hidden behind a sentence that names a missing node. The cause stands in the
+    tree of the tool next to the file, with the line the failure starts at, and
+    both are named here so the operator learns what to fix instead of reading
+    that a node is absent.
+    """
+
+    base = f"{AUGEAS_FILES_NODE_PREFIX}{config.grub_default_file_path}"
+    script = (
+        "\n".join(
+            (
+                *_augeas_load_lines(config),
+                f"print {base}/{AUGEAS_PARSE_ERROR_MESSAGE_SUFFIX}",
+                f"print {base}/{AUGEAS_PARSE_ERROR_LINE_SUFFIX}",
+            )
+        )
+        + "\n"
+    )
+    result = _run(_augeas_command(), timeout_seconds, input_text=script)
+    if result.returncode != 0:
+        return None
+    message = ""
+    line = ""
+    for text in result.stdout.splitlines():
+        node, separator, value = text.partition(AUGEAS_ASSIGNMENT_SEPARATOR)
+        if not separator:
+            continue
+        node = node.strip()
+        if node.endswith(AUGEAS_PARSE_ERROR_MESSAGE_SUFFIX):
+            message = value.strip().strip('"')
+        elif node.endswith(AUGEAS_PARSE_ERROR_LINE_SUFFIX):
+            line = value.strip().strip('"')
+    if not message:
+        return None
+    if line:
+        return f"{message} at line {line}"
+    return message
+
+
 def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
     """Value of the kernel command line node, and why it was not read.
 
@@ -670,6 +731,11 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
     that file around the words, because augeas models a shell value that way: the
     tool parses the file and this program changes one node of the parsed tree
     instead of the syntax of the file.
+
+    A node that is not in the tree is either a settings file without that
+    setting or a file the lens could not parse at all; the two are told apart by
+    asking the tool for its parse error, because only the second one is a reason
+    to name the lens and the line in the report.
     """
 
     script = (
@@ -689,6 +755,12 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
         node, separator, value = line.partition(AUGEAS_ASSIGNMENT_SEPARATOR)
         if separator and node.strip() == config.grub_command_line_node:
             return value.strip().strip('"'), None
+    parse_error = _augeas_parse_error(config, config.command_timeout_seconds)
+    if parse_error is not None:
+        return None, (
+            f"{config.augeas_lens} cannot parse {config.grub_default_file_path}: "
+            f"{parse_error}"
+        )
     return None, (
         f"{AUGEAS_TOOL} reported no {config.grub_command_line_node}"
     )
@@ -717,19 +789,23 @@ def _command_line_with_resume_address(
     return f"{opening}{' '.join(words)}{closing}"
 
 
-def _write_command_line(config: Config, offset_pages: int) -> None:
+def _write_command_line(
+    config: Config, offset_pages: int, warnings: list[str]
+) -> None:
     """Set the resume address in the settings file of the boot menu.
 
     Augeas parses the file, this program replaces the value of one node and the
     tool writes the file back, so every other line, every comment and the
     quoting style of the machine survive. The menu is rebuilt only when the value
     changed, so a machine whose address is already published costs the read
-    alone.
+    alone. Every part that could not be written is added to the warnings as well
+    as printed, because the caller reports the warnings of the machine and the
+    journal of a boot keeps the printed line.
     """
 
     current_value, reason = _augeas_command_line_value(config)
     if current_value is None:
-        print(f"the resume address was not published: {reason}", file=sys.stderr)
+        _report_unpublished(warnings, reason or "the reason was not read")
         return
     wanted_value = _command_line_with_resume_address(
         config, current_value, offset_pages
@@ -753,30 +829,34 @@ def _write_command_line(config: Config, offset_pages: int) -> None:
         input_text=script,
     )
     if result.returncode != 0:
-        print(
-            f"the resume address was not published: {_failure_sentence(result)}",
-            file=sys.stderr,
-        )
+        _report_unpublished(warnings, _failure_sentence(result))
         return
     print(f"resume address written into {config.grub_default_file_path}")
-    _rebuild_boot_menu(config)
+    _rebuild_boot_menu(config, warnings)
 
 
-def _rebuild_boot_menu(config: Config) -> None:
+def _report_unpublished(warnings: list[str], reason: str) -> None:
+    """Tell the operator and the caller that a part of the address is missing."""
+
+    sentence = f"the resume address was not published: {reason}"
+    print(sentence, file=sys.stderr)
+    warnings.append(sentence)
+
+
+def _rebuild_boot_menu(config: Config, warnings: list[str]) -> None:
     """Rebuild the boot menu from the settings file that was just written."""
 
     command = [_tool_path(UPDATE_GRUB_TOOL)]
     result = _run(command, config.update_grub_timeout_seconds)
     if result.returncode != 0:
-        print(
-            f"the boot menu was not rebuilt: {_failure_sentence(result)}",
-            file=sys.stderr,
-        )
+        sentence = f"the boot menu was not rebuilt: {_failure_sentence(result)}"
+        print(sentence, file=sys.stderr)
+        warnings.append(sentence)
         return
     print("boot menu rebuilt")
 
 
-def _swap_device_node(config: Config) -> str | None:
+def _swap_device_node(config: Config, warnings: list[str]) -> str | None:
     """Device node that holds the swap file, as the machine names it."""
 
     command = [
@@ -786,19 +866,21 @@ def _swap_device_node(config: Config) -> str | None:
     ]
     result = _run(command, config.command_timeout_seconds)
     if result.returncode != 0:
-        print(
+        sentence = (
             "the running kernel was not told the resume device: "
-            f"{_failure_sentence(result)}",
-            file=sys.stderr,
+            f"{_failure_sentence(result)}"
         )
+        print(sentence, file=sys.stderr)
+        warnings.append(sentence)
         return None
     device_node = result.stdout.strip().split(SUBVOLUME_OPEN_SIGN, 1)[0].strip()
     if not device_node:
-        print(
+        sentence = (
             "the running kernel was not told the resume device: "
-            f"{FINDMNT_TOOL} reported no device",
-            file=sys.stderr,
+            f"{FINDMNT_TOOL} reported no device"
         )
+        print(sentence, file=sys.stderr)
+        warnings.append(sentence)
         return None
     return device_node
 
@@ -817,7 +899,7 @@ def _initramfs_offset_node(config: Config) -> str:
     return f"{parent}/{config.resume_offset_parameter}"
 
 
-def _write_initramfs_resume(config: Config) -> None:
+def _write_initramfs_resume(config: Config, warnings: list[str]) -> None:
     """Set the resume device in the file the initramfs reads.
 
     Augeas parses that file and creates it on a machine that does not carry it
@@ -855,16 +937,19 @@ def _write_initramfs_resume(config: Config) -> None:
         input_text=script,
     )
     if result.returncode != 0:
-        print(
+        sentence = (
             "the initramfs resume file was not written: "
-            f"{_failure_sentence(result)}",
-            file=sys.stderr,
+            f"{_failure_sentence(result)}"
         )
+        print(sentence, file=sys.stderr)
+        warnings.append(sentence)
         return
     print(f"initramfs resume file written: {config.initramfs_resume_file_path}")
 
 
-def _write_power_resume(config: Config, offset_pages: int) -> None:
+def _write_power_resume(
+    config: Config, offset_pages: int, warnings: list[str]
+) -> None:
     """Hand this boot the device and the offset of the active swap file.
 
     The attribute takes the major and minor number of the device, the way the
@@ -873,17 +958,18 @@ def _write_power_resume(config: Config, offset_pages: int) -> None:
     that installed the swap file agree with the boots that follow.
     """
 
-    device_node = _swap_device_node(config)
+    device_node = _swap_device_node(config, warnings)
     if device_node is None:
         return
     try:
         device_numbers = os.stat(device_node).st_rdev
     except OSError as exc:
-        print(
+        sentence = (
             "the running kernel was not told the resume device: cannot read "
-            f"{device_node}: {exc}",
-            file=sys.stderr,
+            f"{device_node}: {exc}"
         )
+        print(sentence, file=sys.stderr)
+        warnings.append(sentence)
         return
     device_number = f"{os.major(device_numbers)}:{os.minor(device_numbers)}"
     written = (
@@ -894,11 +980,12 @@ def _write_power_resume(config: Config, offset_pages: int) -> None:
         try:
             path.write_text(f"{text}\n", encoding="utf-8")
         except OSError as exc:
-            print(
+            sentence = (
                 f"the running kernel was not told the resume {what}: cannot "
-                f"write {path}: {exc}",
-                file=sys.stderr,
+                f"write {path}: {exc}"
             )
+            print(sentence, file=sys.stderr)
+            warnings.append(sentence)
             return
     print(f"this boot resumes from {device_number} at offset {offset_pages} pages")
 
@@ -936,7 +1023,7 @@ def _root_is_a_snapshot_session(config: Config) -> bool:
     return f"{SUBVOLUME_OPEN_SIGN}{points_path_prefix}" in source
 
 
-def _publish_resume_address(config: Config, offset_pages: int) -> None:
+def _publish_resume_address(config: Config, offset_pages: int) -> list[str]:
     """Make the resume address known to the boot and to this session.
 
     The boot reads the device from the kernel command line of the boot menu and
@@ -944,18 +1031,19 @@ def _publish_resume_address(config: Config, offset_pages: int) -> None:
     the offset from the kernel command line alone; this session takes both from
     the attributes of the running kernel. An empty device means the caller could
     not name the filesystem that holds the swap file, so nothing is published and
-    the reason is printed instead of an address that names nothing.
+    the reason is printed instead of an address that names nothing. Returns the
+    parts that could not be published, so the caller reports them as warnings of
+    its own instead of promising a hibernation the machine does not have.
     """
 
+    warnings: list[str] = []
     if not config.resume_device:
-        print(
-            "the resume address was not published: no device was given",
-            file=sys.stderr,
-        )
-        return
-    _write_command_line(config, offset_pages)
-    _write_initramfs_resume(config)
-    _write_power_resume(config, offset_pages)
+        _report_unpublished(warnings, "no device was given")
+        return warnings
+    _write_command_line(config, offset_pages, warnings)
+    _write_initramfs_resume(config, warnings)
+    _write_power_resume(config, offset_pages, warnings)
+    return warnings
 
 
 def configure_swapfile(config: Config) -> Outcome:
@@ -1035,6 +1123,8 @@ def configure_swapfile(config: Config) -> Outcome:
                 changed=False,
                 skipped_reason=reason,
                 resume_offset_pages=None,
+                resume_address_published=False,
+                warnings=(),
             )
 
         _deactivate_swap_if_active(config, active)
@@ -1043,6 +1133,8 @@ def configure_swapfile(config: Config) -> Outcome:
         changed = True
 
     offset_pages = _resume_offset_pages(config)
+    warnings: list[str] = []
+    published = False
     if offset_pages is not None:
         if _root_is_a_snapshot_session(config):
             print(
@@ -1051,13 +1143,16 @@ def configure_swapfile(config: Config) -> Outcome:
             )
         else:
             try:
-                _publish_resume_address(config, offset_pages)
+                warnings.extend(_publish_resume_address(config, offset_pages))
             except (SwapfileError, subprocess.TimeoutExpired) as exc:
-                print(f"the resume address was not published: {exc}", file=sys.stderr)
+                _report_unpublished(warnings, str(exc))
+            published = not warnings
     return Outcome(
         changed=changed,
         skipped_reason=None,
         resume_offset_pages=offset_pages,
+        resume_address_published=published,
+        warnings=tuple(warnings),
     )
 
 
@@ -1234,6 +1329,8 @@ def main(argv: list[str]) -> int:
                     "skipped_reason": None,
                     "error": str(exc),
                     "resume_offset": None,
+                    "resume_address_published": False,
+                    "warnings": [],
                 }
             )
         )
@@ -1245,6 +1342,8 @@ def main(argv: list[str]) -> int:
                 "skipped_reason": outcome.skipped_reason,
                 "error": None,
                 "resume_offset": outcome.resume_offset_pages,
+                "resume_address_published": outcome.resume_address_published,
+                "warnings": list(outcome.warnings),
             }
         )
     )

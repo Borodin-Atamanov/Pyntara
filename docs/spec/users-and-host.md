@@ -145,11 +145,25 @@ augeas: the tool parses the file with the lens the values name, the program
 replaces the value of one node of the parsed tree and the tool writes the file
 back. Every other line, every comment and the quoting style of the machine
 therefore survive, and the section never spells the syntax of a machine file
-itself. The lens is Sysconfig and not the shell lens, because the shell lens
-cannot write back a file that carries an empty quoted value such as
-GRUB_CMDLINE_LINUX="": it answers put_failed on save, so the resume address is
-then never published (measured on Kubuntu 26.04). The kernel command line is one node whose value carries the quotes of the
-file, so the words inside that quoting are what changes. The menu is rebuilt only
+itself. The lens is the shell lens, because a settings file whose value carries
+a command substitution, which is the shape the GRUB_DISTRIBUTOR line has on a
+machine whose distribution name is read at boot, is not parsed by the
+configuration lens at all: measured on 2026-10-14 with augeas 1.14.1, the
+configuration lens answered parse_skel_failed on that line, the parsed tree
+stayed empty and the resume address was therefore never published, while the
+shell lens parsed and wrote both settings files of the section, on that machine
+and on a machine whose value is a quoted word. The kernel command line is one node whose value carries the quotes of the
+file, so the words inside that quoting are what changes. The program reports
+whether every part of the address was published, and the task reads the settings
+file, the menu and the initial ramdisk back before it speaks of hibernation: the
+closing line claims that the machine resumes from its swap file only when the
+program answered that it published the whole address and all three artifacts
+carry the offset, and it says that the machine cannot resume from that file
+otherwise. A settings file that no lens could parse is reported with the lens,
+the file, the message of the tool and the line it starts at, because a file that
+was not parsed has no nodes at all and the missing node alone tells the operator
+nothing (measured 2026-10-14: the address of that machine was never published for
+this reason alone, while the closing line claimed a working hibernation). The menu is rebuilt only
 when the value changed, and the program rebuilds it when it runs at boot as well,
 because a boot that created the swap file again carries a new offset. A resume
 offset the initramfs settings file carries anyway, from an older experiment or

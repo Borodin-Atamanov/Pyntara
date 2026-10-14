@@ -115,11 +115,17 @@ FSTAB_SWAP_REMOVE_LINE: str = (
 # never edits the syntax of a machine file itself: it replaces one node of the
 # parsed tree and the tool writes the file back, which keeps every other line,
 # every comment and the quoting style of the file as the machine wrote them
-# (docs/spec/users-and-host.md). The lens is Sysconfig and not Shellvars,
-# because Shellvars cannot write back a file that carries an empty quoted value
-# such as GRUB_CMDLINE_LINUX="": it answers put_failed on save, so the resume
-# address is then never published (measured on Kubuntu 26.04).
-AUGEAS_LENS: str = "Sysconfig.lns"
+# (docs/spec/users-and-host.md). The lens is Shellvars and not Sysconfig: a
+# settings file whose value carries a command substitution, which is the shape
+# Debian and Ubuntu ship in the GRUB_DISTRIBUTOR line, is not parsed by Sysconfig
+# at all, so no node of that file can be read or written there. Measured on
+# 2026-10-14 with augeas 1.14.1 on a machine whose line reads
+# GRUB_DISTRIBUTOR=`( . /etc/os-release; echo ${NAME:-Ubuntu} ) 2>/dev/null ||
+# echo Ubuntu`: Sysconfig answered parse_skel_failed at that line, the tree stayed
+# empty and the resume address was never published, while Shellvars parsed and
+# wrote that file and the file the initramfs reads, on that machine and on the
+# machine whose value is a quoted word.
+AUGEAS_LENS: str = "Shellvars.lns"
 INITRAMFS_RESUME_KEY: str = "RESUME"
 
 # The mount point a path belongs to, which is how the task reaches the fstab

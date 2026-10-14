@@ -222,6 +222,19 @@ def _reported_offset_pages(outcome: dict[str, object]) -> int | None:
     return reported
 
 
+def _reported_resume_address_published(outcome: dict[str, object]) -> bool:
+    """True when the program reported that it published the whole address.
+
+    The program is the only part that knows which pieces of the address it
+    managed to write, and it answers with one key instead of leaving the caller
+    to read its sentences, exactly as it answers for the offset it read. A key
+    that is absent or not true is read as not published, because a machine whose
+    hibernation cannot resume must never be told that it can.
+    """
+
+    return outcome.get("resume_address_published") is True
+
+
 def _mount_point_of(path: Path, timeout: float) -> tuple[str | None, str | None]:
     """Mount point that holds a path, and the reason it was not read."""
 
@@ -315,16 +328,32 @@ def _rebuild_initramfs() -> list[str]:
     return []
 
 
-def _verify_resume_artifacts(offset_pages: int, warnings: list[str]) -> None:
-    """Read back what was published and report what does not hold.
+def _verify_resume_artifacts(offset_pages: int) -> list[str]:
+    """Read back what was published; the findings, one for each artifact.
 
-    The boot menu is what the next boot reads and the initial ramdisk is what
-    carries the resume file the initramfs reads before it mounts anything. Both
-    are read here instead of being trusted, because an address that is published
-    halfway leaves a machine whose hibernation fails without a word.
+    The settings file of the boot menu is what the menu is generated from, the
+    menu is what the next boot reads and the initial ramdisk is what carries the
+    resume file the initramfs reads before it mounts anything. All three are read
+    here instead of being trusted, because an address published halfway leaves a
+    machine whose hibernation fails without a word (measured 2026-10-14: a
+    machine whose settings file carried no resume parameter at all, whose menu
+    carried none either, while the program reported nothing but a sentence of
+    its own log). An empty list means the address was found in every artifact.
     """
 
+    warnings: list[str] = []
     wanted_parameter = f"{values.RESUME_OFFSET_PARAMETER}={offset_pages}"
+    try:
+        settings_text = values.GRUB_DEFAULT_FILE_PATH.read_text(encoding="utf-8")
+    except OSError as exc:
+        warnings.append(f"cannot read {values.GRUB_DEFAULT_FILE_PATH}: {exc}")
+    else:
+        if wanted_parameter in settings_text:
+            _log(f"the settings file carries {wanted_parameter}")
+        else:
+            warnings.append(
+                f"{values.GRUB_DEFAULT_FILE_PATH} carries no {wanted_parameter}"
+            )
     try:
         menu_text = values.GRUB_CONFIG_FILE_PATH.read_text(encoding="utf-8")
     except OSError as exc:
@@ -353,13 +382,14 @@ def _verify_resume_artifacts(offset_pages: int, warnings: list[str]) -> None:
         )
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
         warnings.append(f"cannot list the initial ramdisk: {exc}")
-        return
+        return warnings
     if wanted_file in result.stdout:
         _log(f"the initial ramdisk carries {wanted_file}")
     else:
         warnings.append(
             f"the initial ramdisk of {platform.release()} carries no {wanted_file}"
         )
+    return warnings
 
 
 def _write_polkit_rule(data_dir: Path) -> tuple[bool, list[str]]:
@@ -714,9 +744,12 @@ def task(ctx: Context) -> TaskResult:
     )
     changed = changed or program_changed
     warnings.extend(program_warnings)
+    published_by_the_program = False
     if outcome is not None:
         offset_pages = _reported_offset_pages(outcome)
+        published_by_the_program = _reported_resume_address_published(outcome)
 
+    resume_address_published = False
     if offset_pages is None or resume_device is None:
         warnings.append(
             "the resume address was not published: "
@@ -730,7 +763,12 @@ def task(ctx: Context) -> TaskResult:
         if _initramfs_resume_file_text() != resume_file_before:
             changed = True
             warnings.extend(_rebuild_initramfs())
-        _verify_resume_artifacts(offset_pages, warnings)
+        # The program says what it wrote and the artifacts are read back here: the
+        # claim that this machine can resume from its swap file stands only when
+        # both agree, because a machine told otherwise hibernates into nothing.
+        findings = _verify_resume_artifacts(offset_pages)
+        warnings.extend(findings)
+        resume_address_published = published_by_the_program and not findings
         rule_changed, rule_warnings = _write_polkit_rule(data_dir)
         warnings.extend(rule_warnings)
         if rule_changed:
@@ -767,9 +805,17 @@ def task(ctx: Context) -> TaskResult:
         )
     else:
         message = "already configured"
-    if offset_pages is not None and resume_device is not None:
+    if resume_address_published:
         message += (
             f"; hibernation resumes from {resume_device} at offset {offset_pages}"
         )
         message += f"; {values.SESSION_RELOAD_MESSAGE}"
+    elif offset_pages is not None and resume_device is not None:
+        # The swap file and the service are configured, but this machine cannot
+        # resume from that file, so the closing line says so and the reasons
+        # stand in the warnings beside it.
+        message += (
+            "; the boot does not carry the resume address, so this machine cannot "
+            "resume from its swap file; the reason stands in the warnings"
+        )
     return warned_result(changed=changed, message=message, warnings=warnings)

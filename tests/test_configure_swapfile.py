@@ -368,6 +368,15 @@ def test_an_offset_that_is_not_a_whole_number_is_reported_as_unread(
     assert outcome.resume_offset_pages is None
 
 
+def _printed_node(script: str, suffix: str) -> str:
+    """The node of the first print line of an augtool program that names it."""
+
+    for text in script.splitlines():
+        if text.startswith("print ") and text.endswith(suffix):
+            return text[len("print ") :].strip()
+    raise AssertionError(f"no print line for {suffix}")
+
+
 def _address_run_double(
     calls: list[list[str]],
     inputs: list[str | None],
@@ -376,6 +385,7 @@ def _address_run_double(
     findmnt_source: str = "/dev/null[/@swap]",
     update_grub_fails: bool = False,
     augeas_fails: bool = False,
+    parse_error_message: str | None = None,
     root_mount: str = "btrfs /dev/mapper/pyntara-test",
     root_mount_fails: bool = False,
 ) -> Callable[..., subprocess.CompletedProcess[str]]:
@@ -384,10 +394,12 @@ def _address_run_double(
     The answers describe a machine whose settings file carries the given kernel
     command line: a read run of augtool prints that node and a write run saves.
     None as the value means the file carries no such node, and an empty source
-    means the device that holds the swap file cannot be read. The answer about
-    the root of the session is the two columns findmnt writes for it, so a test
-    names the root the session was started from; root_mount_fails makes that
-    question fail.
+    means the device that holds the swap file cannot be read. A given
+    parse_error_message models the other reason there is no node: the lens could
+    not parse the file at all, so the tool answers with its parse error and the
+    line it starts at. The answer about the root of the session is the two
+    columns findmnt writes for it, so a test names the root the session was
+    started from; root_mount_fails makes that question fail.
     """
 
     def run(
@@ -400,6 +412,15 @@ def _address_run_double(
             if augeas_fails:
                 return _answered(command, 1, "", "augeas: cannot read the file")
             if "print " in script:
+                if parse_error_message is not None and "error/message" in script:
+                    message_node = _printed_node(script, "error/message")
+                    line_node = _printed_node(script, "error/line")
+                    return _answered(
+                        command,
+                        0,
+                        f'{message_node} = "{parse_error_message}"\n'
+                        f'{line_node} = "9"\n',
+                    )
                 if command_line_value is None:
                     return _answered(command, 0, "")
                 node = script.rsplit("print ", 1)[1].strip()
@@ -635,6 +656,44 @@ def test_a_settings_file_without_the_command_line_node_is_reported(
     assert (
         f"reported no {config.grub_command_line_node}" in capsys.readouterr().err
     )
+
+
+def test_a_settings_file_the_lens_cannot_parse_is_reported_with_its_cause(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A settings file whose value carries a command substitution is not parsed by
+    # every lens, and a file that was not parsed has no nodes at all: without the
+    # cause of the parse the report names a missing node and the operator learns
+    # nothing (measured 2026-10-14 on a machine whose GRUB_DISTRIBUTOR line is a
+    # command substitution, where the address was never published for that
+    # reason alone). The lens, the file, the message of the tool and the line it
+    # starts at are all named here, and the address counts as unpublished.
+    config = _config(tmp_path)
+    config.swapfile_path.write_bytes(b"\0" * (1024 * 1024))
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        program,
+        "_run",
+        _address_run_double(
+            calls,
+            [],
+            command_line_value=None,
+            parse_error_message="Get did not match entire input",
+        ),
+    )
+    outcome = program.configure_swapfile(config)
+    assert outcome.resume_address_published is False
+    assert outcome.warnings and all(
+        "the resume address was not published" in warning
+        for warning in outcome.warnings
+    )
+    reported = capsys.readouterr().err
+    assert config.augeas_lens in reported
+    assert str(config.grub_default_file_path) in reported
+    assert "Get did not match entire input at line 9" in reported
+    assert ["update-grub"] not in calls
 
 
 def test_an_address_that_is_already_published_rebuilds_no_menu(
@@ -948,6 +1007,8 @@ def test_an_unchanged_run_prints_its_result_line(
         "skipped_reason": None,
         "error": None,
         "resume_offset": None,
+        "resume_address_published": False,
+        "warnings": [],
     }
     assert "target state already reached" in printed
 

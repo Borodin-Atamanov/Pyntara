@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -46,8 +47,10 @@ WantedBy=multi-user.target
 PROGRAM_TEXT = "#!/usr/bin/python3\nprint('program')\n"
 
 # The resume offset the fake program reports and the parameter the fixture puts
-# into the boot menu file, so the address the task reads back is the address it
-# published.
+# into the settings file and the boot menu, so the address the task reads back is
+# the address it published. The result line carries the two keys the shared
+# runner reads besides the offset: whether the program published the whole
+# address and the warnings it reported.
 REPORTED_OFFSET = 1234
 
 RESULT_LINE = json.dumps(
@@ -56,6 +59,27 @@ RESULT_LINE = json.dumps(
         "skipped_reason": None,
         "error": None,
         "resume_offset": REPORTED_OFFSET,
+        "resume_address_published": True,
+        "warnings": [],
+    }
+)
+
+# A program that read the offset and could not publish the address: it says so in
+# its own warning and answers that the address is not published, which is what a
+# machine whose lens cannot parse the settings file reports.
+UNPUBLISHED_RESULT_LINE = json.dumps(
+    {
+        "changed": True,
+        "skipped_reason": None,
+        "error": None,
+        "resume_offset": REPORTED_OFFSET,
+        "resume_address_published": False,
+        "warnings": [
+            (
+                "the resume address was not published: Shellvars.lns cannot "
+                "parse /etc/default/grub: Get did not match entire input at line 9"
+            )
+        ],
     }
 )
 UNCHANGED_LINE = json.dumps(
@@ -64,6 +88,8 @@ UNCHANGED_LINE = json.dumps(
         "skipped_reason": None,
         "error": None,
         "resume_offset": REPORTED_OFFSET,
+        "resume_address_published": True,
+        "warnings": [],
     }
 )
 
@@ -95,6 +121,14 @@ def _point_the_values_at_the_temporary_tree(
     monkeypatch.setattr(values, "FSTAB_PATH", tmp_path / "fstab")
     values.FSTAB_PATH.write_text(FSTAB_TEXT, encoding="utf-8")
     monkeypatch.setattr(values, "GRUB_DEFAULT_FILE_PATH", tmp_path / "default-grub")
+    # The settings file the boot menu is generated from carries the address as
+    # well, because the task reads all three artifacts back before it tells the
+    # machine that it can resume.
+    values.GRUB_DEFAULT_FILE_PATH.write_text(
+        f'{values.GRUB_COMMAND_LINE_KEY}="quiet splash '
+        f'{values.RESUME_OFFSET_PARAMETER}={REPORTED_OFFSET}"\n',
+        encoding="utf-8",
+    )
     monkeypatch.setattr(values, "GRUB_CONFIG_FILE_PATH", tmp_path / "grub.cfg")
     values.GRUB_CONFIG_FILE_PATH.write_text(
         f"linux /vmlinuz-1 root=UUID=test-root "
@@ -374,6 +408,100 @@ def test_a_configured_machine_reports_no_change(
     assert ["systemctl", "enable", values.SERVICE_UNIT_NAME] not in calls
 
 
+def test_a_program_that_did_not_publish_the_address_is_quoted_and_not_promised(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The program read the offset and answered that it published no address, with
+    # its own warning beside it: the task reports that sentence and its closing
+    # line says that the machine cannot resume from its swap file, because a
+    # machine told otherwise hibernates into nothing (measured 2026-10-14 on a
+    # machine whose boot carried no resume address at all while the closing line
+    # claimed hibernation).
+    _write_data_files(tmp_path)
+    _install_fake(
+        monkeypatch, enabled=True, program_result=_FakeProc(0, UNPUBLISHED_RESULT_LINE + "\n")
+    )
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert result.success is True
+    message = result.message or ""
+    assert "hibernation resumes" not in message
+    assert "cannot resume from its swap file" in message
+    assert any(
+        "Shellvars.lns cannot parse" in warning for warning in result.warnings
+    ), result.warnings
+
+
+def test_a_settings_file_without_the_address_is_reported(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The program says it published the address, but the settings file the boot
+    # menu is generated from carries no offset: the two are read against each
+    # other, so a half published address is named instead of being believed.
+    _write_data_files(tmp_path)
+    values.GRUB_DEFAULT_FILE_PATH.write_text(
+        f'{values.GRUB_COMMAND_LINE_KEY}="quiet splash"\n', encoding="utf-8"
+    )
+    _install_fake(monkeypatch, enabled=True)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert result.success is True
+    message = result.message or ""
+    assert "hibernation resumes" not in message
+    assert "cannot resume from its swap file" in message
+    assert any(
+        f"{values.GRUB_DEFAULT_FILE_PATH} carries no "
+        f"{values.RESUME_OFFSET_PARAMETER}={REPORTED_OFFSET}" in warning
+        for warning in result.warnings
+    ), result.warnings
+
+
+def test_the_declared_lens_parses_a_settings_file_with_a_command_substitution(
+    tmp_path: Path,
+) -> None:
+    # Why the lens is the shell lens and not the configuration lens: a settings
+    # file whose value carries a command substitution, the shape the
+    # GRUB_DISTRIBUTOR line has on a machine that reads its distribution name at
+    # boot, is not parsed by the configuration lens at all, and a file no lens
+    # parsed answers every question about its nodes with nothing, so the resume
+    # address is never published (measured 2026-10-14 on such a machine). No
+    # stand-in can prove anything about a lens, so the real tool runs here over a
+    # file this test writes itself; a machine without the tool skips the check,
+    # which leaves the live run of the task as the proof of the mechanism.
+    if shutil.which(engine_values.AUGTOOL_COMMAND[0]) is None:
+        pytest.skip("augtool is not installed on the machine that runs the tests")
+    settings = tmp_path / "grub"
+    settings.write_text(
+        "GRUB_DEFAULT=0\n"
+        "GRUB_DISTRIBUTOR=`( . /etc/os-release; echo ${NAME:-Ubuntu} ) "
+        "2>/dev/null || echo Ubuntu`\n"
+        f'{values.GRUB_COMMAND_LINE_KEY}="quiet splash"\n',
+        encoding="utf-8",
+    )
+    node = (
+        f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{settings}/"
+        f"{values.GRUB_COMMAND_LINE_KEY}"
+    )
+    script = (
+        "\n".join(
+            (
+                engine_values.AUGEAS_LENS_LINE.format(lens=values.AUGEAS_LENS),
+                engine_values.AUGEAS_INCL_LINE.format(path=settings),
+                engine_values.AUGEAS_LOAD_LINE,
+                engine_values.AUGEAS_PRINT_LINE.format(node=node),
+            )
+        )
+        + "\n"
+    )
+    result = subprocess.run(
+        list(engine_values.AUGTOOL_COMMAND),
+        input=script,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert f"{node} = " in result.stdout, result.stdout
+
+
 def test_the_result_of_the_program_drives_the_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -582,6 +710,12 @@ def test_the_mount_of_a_swap_directory_that_is_not_there_yet_is_read(
             return _FakeProc(0, "/\n")
         if command[0] == "systemctl" and command[1] == "is-enabled":
             return _FakeProc(1, "disabled")
+        if command[0] == "lsinitramfs":
+            return _FakeProc(
+                0,
+                f"{values.INITRAMFS_CONF_DIRECTORY_IN_IMAGE}/"
+                f"{values.INITRAMFS_RESUME_FILE_PATH.name}\n",
+            )
         if command[0] == program_path:
             _write_resume_file_like_the_program(command, RESULT_LINE)
             return _FakeProc(0, RESULT_LINE + "\n")
