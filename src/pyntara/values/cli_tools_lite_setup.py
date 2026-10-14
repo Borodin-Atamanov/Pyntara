@@ -101,6 +101,7 @@ PACKAGES: tuple[str, ...] = (
     "iptraf-ng",  # interactive IP network traffic monitor
     # disk and file tools
     "exfat-fuse",  # read and write exFAT filesystems through FUSE
+    "qemu-utils",  # qemu-img, qemu-nbd and qemu-io: disk images and NBD devices
     "fdupes",  # find and remove duplicate files
     "lynx",  # text mode web browser, html to text
     # automation and configuration

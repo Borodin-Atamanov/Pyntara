@@ -454,11 +454,11 @@ def test_the_two_cli_package_lists_hold_the_toolset_once() -> None:
     # lists would be installed twice per run and a package that vanished from
     # both would silently stop being installed. The two counts are the measured
     # partition of the toolset, so a change is a deliberate act: a package
-    # moved between the sections or left the set.
+    # added to the set, moved between the sections or left the set.
     lite = cli_tools_lite_values.PACKAGES
     heavy = cli_tools_heavy_values.PACKAGES
     assert not set(lite) & set(heavy)
-    assert (len(lite), len(heavy)) == (56, 23)
+    assert (len(lite), len(heavy)) == (57, 23)
 
 
 def test_the_parallel_marker_is_part_of_the_parallel_write_out() -> None:
