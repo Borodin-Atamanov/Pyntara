@@ -150,6 +150,77 @@ Boot in QEMU. The key exported with the tree logs into the live session, which t
 
 Checks that have caught real defects: the size and the file count of the squashfs against the tree, the boot record of the rebuilt ISO (El Torito, the hidden EFI image and the GPT), the md5sum lines inside the ISO, the payload in /usr/local/share/pyntara-installer of the live session, and then a full installation in a virtual machine: the fstab of the target, the mount options of its root, the files of the ESP, and a boot of the installed system with its services active. Mount the produced squashfs read-only and look inside before it becomes an ISO: /usr/bin/snap, the four files of /usr/local/share/pyntara-installer, the wallpapers the Plasma configuration names, and /proc, /sys and /dev as empty directories. A tree that lost /var/lib/snapd and a tree that lost /proc both looked complete until the image was mounted and its directories were counted.
 
+## Server image from the same recipe
+
+The desktop image is a live USB that also installs to disk. A server image that is written
+straight onto a disk needs none of that: it carries the same storage layout and the same
+provisioning on a plain Ubuntu Server base without the desktop packages, and it is produced
+without the casper tree, the squashfs and the installer payload. Walked on 2026-10-14 with
+Ubuntu Server 26.04.1.
+
+The source is the server ISO of the same release the desktop base uses,
+ubuntu-26.04.1-live-server-amd64.iso. Its installer and curtin are the same programs the
+desktop image carries, so the storage schema of the autoinstall behaves identically.
+
+The machine is created with the shape of the target: firmware BIOS, the i440fx chipset, a
+random number generator device, a disk of the target size and the default bridge. The disk size
+equals the size of the target disk, so the produced image needs no partition table fix after it
+is written.
+
+virt-install --connect qemu:///system --name NAME --memory 3072 --vcpus 12 --cpu host-model
+--disk path=DISK.qcow2,format=qcow2,bus=virtio --cdrom SERVER.iso
+--disk path=SEED.iso,device=cdrom --network bridge=virbr0,model=virtio
+--graphics spice,listen=127.0.0.1 --video virtio --rng /dev/urandom --noautoconsole
+
+Three traps of this path, all met on 2026-10-14. The hypervisor runs as the user libvirt-qemu
+and cannot traverse a home directory, so media kept there are unreadable by the guest and
+virt-install says so; move the media into the images directory instead of widening the
+permissions of the home directory. The medium needs a boot order, otherwise the firmware starts
+the hard disk and reports "Boot failed: not a bootable disk". The medium also needs its file in
+the persistent definition: the running instance may hold it while the saved definition does
+not, which `virsh domblklist` shows as an empty Source, and the firmware then reports
+"Boot failed: Could not read from CDROM (code 0003)"; supply it with
+`virsh change-media DOMAIN hda ISO --insert --config`.
+
+The installer reads an autoinstall from a cloud-init NoCloud data source, so a small ISO with
+the label CIDATA carrying user-data and meta-data is enough and the server ISO needs no
+rebuild. Build the seed with
+
+```sh
+genisoimage -output seed.iso -volid CIDATA -joliet -rock user-data meta-data
+```
+
+The user-data is a cloud-config whose top-level key is `autoinstall`: the identity (hostname,
+the human account, its password hash and the authorized key), the `ssh` section that installs
+the openssh server, the storage section and the late commands.
+
+The installer does not apply the autoinstall on its own: it asks on its own console whether to
+continue and proceeds only after the answer yes is typed there. The desktop image answers that
+question by piping yes into the installer client; a run driven from the console answers it at
+the console, and it is the single interaction of this path.
+
+The storage layout is the one of the desktop autoinstall with the boot partition reduced for
+space: a 1 MiB bios_grub partition, a 1 GiB ESP, a 512 MiB ext4 /boot, and the rest of the disk
+as one LUKS2 partition holding a btrfs root mounted with compress=zstd:15,noatime,autodefrag.
+The storage section carries swap size zero for the reason the desktop autoinstall does. The
+separate unencrypted /boot is what makes the automatic unlock possible, because the boot loader
+reads the kernel and its initial ramdisk before anything is decrypted.
+
+The automatic unlock is the same as the desktop image and is added by the late commands: copy
+the passphrase onto /boot/pyntara.tmp, point the crypttab entry at it, add
+KEYFILE_PATTERN=/boot/pyntara.tmp to /etc/cryptsetup-initramfs/conf-hook, and rebuild the
+initramfs with update-initramfs -u -k all. Write the key file from a base64 form of the
+passphrase, so no quoting of the passphrase can break the command. Build the user-data with a
+script that reads the passphrase file, so the value never reaches a command line.
+
+The installer reboots when it finishes, and with the medium first in the boot order the machine
+starts the installer again; place the disk before the medium in the persistent boot order
+(`virsh dumpxml --inactive`, raise the order of the medium, `virsh define`).
+
+The installed machine is a plain Ubuntu Server and its provisioning is the ordinary run of the
+project with the install mode set to server, as README.md and docs/spec/install-modes.md
+describe.
+
 ## Installer payload files
 
 The build copies these files into the tree at /usr/local/share/pyntara-installer, and the apt file into /etc/apt/apt.conf.d, so the image can be rebuilt from this record alone. This is the payload of the build that produced pyntara-live-2026-10-09n.iso on 2026-10-09.
