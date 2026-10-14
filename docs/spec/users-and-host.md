@@ -153,7 +153,13 @@ configuration lens answered parse_skel_failed on that line, the parsed tree
 stayed empty and the resume address was therefore never published, while the
 shell lens parsed and wrote both settings files of the section, on that machine
 and on a machine whose value is a quoted word. The kernel command line is one node whose value carries the quotes of the
-file, so the words inside that quoting are what changes. The program reports
+file, so the words inside that quoting are what changes. A value the machine wrote
+without quotes gains them as soon as the words of the resume address put a space
+inside it, because the shell lens refuses to write a value that carries a space
+and no quotes at all (measured 2026-10-14: that write answered "Failed to match
+tree" and the address was lost, while the same value with the quotes of the file
+was written, which is also why the value is read back exactly as the tool prints
+it, with the escapes of that printing removed). The program reports
 whether every part of the address was published, and the task reads the settings
 file, the menu and the initial ramdisk back before it speaks of hibernation: the
 closing line claims that the machine resumes from its swap file only when the

@@ -501,6 +501,46 @@ def test_the_declared_lens_parses_a_settings_file_with_a_command_substitution(
     assert result.returncode == 0, result.stderr
     assert f"{node} = " in result.stdout, result.stdout
 
+    # The write is checked here as well, because the tool accepts a value it
+    # cannot write back: measured 2026-10-14, a value whose quotes were dropped
+    # was written as an unquoted line with spaces in it and the save answered
+    # "Failed to match tree", which no stand-in of the tool can show.
+    written = tmp_path / "grub-written"
+    written.write_text(settings.read_text(encoding="utf-8"), encoding="utf-8")
+    written_node = (
+        f"{engine_values.AUGEAS_FILES_NODE_PREFIX}{written}/"
+        f"{values.GRUB_COMMAND_LINE_KEY}"
+    )
+    write_script = (
+        "\n".join(
+            (
+                engine_values.AUGEAS_LENS_LINE.format(lens=values.AUGEAS_LENS),
+                engine_values.AUGEAS_INCL_LINE.format(path=written),
+                engine_values.AUGEAS_LOAD_LINE,
+                (
+                    f"set {written_node} "
+                    f'"\\"quiet splash '
+                    f'{values.RESUME_OFFSET_PARAMETER}=1234\\""'
+                ),
+                "save",
+            )
+        )
+        + "\n"
+    )
+    saved = subprocess.run(
+        list(engine_values.AUGTOOL_COMMAND),
+        input=write_script,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert saved.returncode == 0, saved.stderr
+    assert saved.stdout.strip(), saved.stdout
+    written_text = written.read_text(encoding="utf-8")
+    assert f'{values.GRUB_COMMAND_LINE_KEY}="' in written_text
+    assert f"{values.RESUME_OFFSET_PARAMETER}=1234" in written_text
+    assert "quiet splash" in written_text
+
 
 def test_the_result_of_the_program_drives_the_change(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

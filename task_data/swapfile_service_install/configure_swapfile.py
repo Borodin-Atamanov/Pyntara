@@ -153,10 +153,28 @@ FINDMNT_SOURCE_ARGUMENTS: tuple[str, ...] = (
     "--target",
 )
 
+# The double quote the tool prints a value with, and the escape it writes for a
+# double quote inside that value. They are the printing convention of the tool,
+# so they are removed again before anything is done with the text the file
+# carries: a value left escaped would be written back with the escape characters
+# inside it, and a value whose quotes were dropped is refused on save as soon as
+# it carries a space (measured 2026-10-14: such a write answered "Failed to match
+# tree" and the address was lost, while the value with the quotes of the file
+# was written).
+AUGEAS_PRINTED_QUOTE: str = '"'
+AUGEAS_PRINTED_QUOTE_ESCAPE: str = '\\"'
+
 # The signs a value of a settings line may be written with, and the bracket the
 # device of a btrfs mount carries its subvolume in.
 QUOTE_SIGNS: tuple[str, ...] = ("'", '"')
 SUBVOLUME_OPEN_SIGN: str = "["
+
+# The sign this program puts around the value of the kernel command line when
+# the machine wrote that value without quotes and the two words of the resume
+# address put a space inside it. A value written without quotes is one word to
+# the file, so it needs no quotes there; a value with a space in it does, and the
+# shell lens refuses to write one that carries none (measured 2026-10-14).
+COMMAND_LINE_QUOTE_SIGN: str = '"'
 
 # The root of the running session, and what the root of a session started from a
 # snapshot looks like: a read-only snapshot runs its root as an overlay, and a
@@ -724,6 +742,23 @@ def _augeas_parse_error(config: Config, timeout_seconds: float) -> str | None:
     return message
 
 
+def _augeas_value_text(printed: str) -> str:
+    """The text of one printed node, as the settings file carries it.
+
+    The tool prints a node as `path = "value"` and escapes a double quote inside
+    that value with a backslash. The quotes the tool wrapped around the value are
+    its own and are removed, while the quotes the file itself carries survive as
+    characters, because the lens models them as part of the value.
+    """
+
+    text = printed.strip()
+    if text.startswith(AUGEAS_PRINTED_QUOTE) and text.endswith(
+        AUGEAS_PRINTED_QUOTE
+    ):
+        text = text[1:-1]
+    return text.replace(AUGEAS_PRINTED_QUOTE_ESCAPE, AUGEAS_PRINTED_QUOTE)
+
+
 def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
     """Value of the kernel command line node, and why it was not read.
 
@@ -737,7 +772,6 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
     asking the tool for its parse error, because only the second one is a reason
     to name the lens and the line in the report.
     """
-
     script = (
         "\n".join(
             (*_augeas_load_lines(config), f"print {config.grub_command_line_node}")
@@ -754,7 +788,7 @@ def _augeas_command_line_value(config: Config) -> tuple[str | None, str | None]:
     for line in result.stdout.splitlines():
         node, separator, value = line.partition(AUGEAS_ASSIGNMENT_SEPARATOR)
         if separator and node.strip() == config.grub_command_line_node:
-            return value.strip().strip('"'), None
+            return _augeas_value_text(value), None
     parse_error = _augeas_parse_error(config, config.command_timeout_seconds)
     if parse_error is not None:
         return None, (
@@ -773,7 +807,11 @@ def _command_line_with_resume_address(
 
     The words inside the quoting of the file are read and written back and the
     quotes are kept, because they belong to the syntax of that file; every other
-    word, the words of the machine and of other sections among them, survives.
+    word, the words of the machine and of other sections among them, survives. A
+    value the file writes without quotes receives them as soon as the new words
+    put a space inside it, because the shell lens refuses to write an unquoted
+    value that carries a space: measured 2026-10-14, that write ended in
+    "Failed to match tree" while the quoted form of the same value was written.
     """
 
     opening = current_value[:1] if current_value[:1] in QUOTE_SIGNS else ""
@@ -786,7 +824,10 @@ def _command_line_with_resume_address(
     words = [word for word in words_text.split() if not word.startswith(owned)]
     words.append(f"{config.resume_device_parameter}={config.resume_device}")
     words.append(f"{config.resume_offset_parameter}={offset_pages}")
-    return f"{opening}{' '.join(words)}{closing}"
+    text = " ".join(words)
+    if not opening and not closing and " " in text:
+        return f"{COMMAND_LINE_QUOTE_SIGN}{text}{COMMAND_LINE_QUOTE_SIGN}"
+    return f"{opening}{text}{closing}"
 
 
 def _write_command_line(

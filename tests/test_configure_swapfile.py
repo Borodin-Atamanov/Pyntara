@@ -424,7 +424,11 @@ def _address_run_double(
                 if command_line_value is None:
                     return _answered(command, 0, "")
                 node = script.rsplit("print ", 1)[1].strip()
-                return _answered(command, 0, f'{node} = "{command_line_value}"\n')
+                # The tool escapes the double quotes inside a printed value and
+                # wraps the value in quotes of its own, which is what the program
+                # has to read back.
+                escaped = command_line_value.replace('"', '\\"')
+                return _answered(command, 0, f'{node} = "{escaped}"\n')
             return _answered(command, 0, "Saved 1 file(s)\n")
         if command[0] == "findmnt" and "FSTYPE,SOURCE" in command:
             if root_mount_fails:
@@ -500,6 +504,48 @@ def test_the_resume_address_is_written_into_the_kernel_command_line(
     assert (tmp_path / "power-resume-offset").read_text(encoding="utf-8") == (
         "51615744\n"
     )
+
+
+def test_the_value_is_read_back_as_the_settings_file_writes_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The tool prints the value between quotes of its own and escapes the quotes
+    # the file carries inside it: the file's quotes have to survive that, because
+    # they are part of the value and a value without them is refused on save as
+    # soon as it carries a space (measured 2026-10-14).
+    config = _config(tmp_path)
+    calls: list[list[str]] = []
+    monkeypatch.setattr(
+        program,
+        "_run",
+        _address_run_double(calls, [], command_line_value='"quiet splash"'),
+    )
+    value, reason = program._augeas_command_line_value(config)
+    assert reason is None
+    assert value == '"quiet splash"'
+
+
+def test_the_written_value_keeps_the_quotes_of_the_file_or_gains_them(
+    tmp_path: Path,
+) -> None:
+    # A machine writes this value with or without quotes, and the words of the
+    # resume address put a space inside it either way. The quotes of the file
+    # survive, and a value the machine wrote unquoted gains them, because the
+    # shell lens refuses to write a value that carries a space and no quotes at
+    # all (measured 2026-10-14: that write answered "Failed to match tree" and the
+    # address was never published).
+    config = _config(tmp_path, resume_device="/dev/mapper/luks-1")
+    assert program._command_line_with_resume_address(
+        config, '"quiet splash"', 7
+    ) == '"quiet splash resume=/dev/mapper/luks-1 resume_offset=7"'
+    assert program._command_line_with_resume_address(
+        config, "'quiet splash'", 7
+    ) == "'quiet splash resume=/dev/mapper/luks-1 resume_offset=7'"
+    assert program._command_line_with_resume_address(
+        config, "quiet", 7
+    ) == '"quiet resume=/dev/mapper/luks-1 resume_offset=7"'
+    already = '"quiet resume=/dev/mapper/luks-1 resume_offset=7"'
+    assert program._command_line_with_resume_address(config, already, 7) == already
 
 
 def test_a_session_of_the_work_copy_publishes_no_resume_address(
