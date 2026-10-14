@@ -229,14 +229,36 @@ loader onto the disk and places its core image in the bios_grub partition. The d
 does not meet this trap because its machine boots in EFI mode, where curtin installs x86_64-efi
 into the ESP and never attempts the i386-pc install. Verified 2026-10-14.
 
-A package the server base lacks. The automatic unlock needs the file
-/etc/cryptsetup-initramfs/conf-hook and the initramfs hook that reads it,
-/usr/share/initramfs-tools/hooks/cryptroot. A plain Ubuntu Server install from this ISO carries
-the cryptsetup package but not cryptsetup-initramfs, so neither file exists: the late command
-that writes conf-hook fails, the initramfs learns nothing about the key file, and the installed
-machine could not open its encrypted root at boot even if the commands had run. Add
-`cryptsetup-initramfs` to the packages of the autoinstall. Verified on the target of the first
-attempt on 2026-10-14.
+A package the server base lacks. The automatic unlock writes into
+/etc/cryptsetup-initramfs/conf-hook and relies on the initramfs hook that reads it,
+/usr/share/initramfs-tools/hooks/cryptroot. A plain Ubuntu Server install from this ISO does not
+carry those files, so a late command that writes into that directory fails and the machine is
+left without the entry that names its key file; add `cryptsetup-initramfs` to the packages of
+the autoinstall and the file and the hook appear. Verified 2026-10-14 on an install that
+reached the end: the package is installed, the conf-hook file carries the KEYFILE_PATTERN line,
+and /etc/crypttab names the key file.
+
+The initramfs generator decides how the key gets inside. The hook and the KEYFILE_PATTERN
+setting above belong to initramfs-tools, and a system whose initramfs is built by dracut ignores
+them: the image then carries its /etc/crypttab but not the key file itself, and the machine asks
+for the passphrase at boot even though every file on disk is right. The server base of this
+release builds its initramfs with dracut (verified 2026-10-14: the initrd contains
+usr/lib/dracut-lib.sh and an etc/crypttab, and no /boot/pyntara.tmp). dracut takes a file into
+the image through its own configuration, so the late commands also write
+/etc/dracut.conf.d/90-pyntara-unlock.conf with the line install_items+=" /boot/pyntara.tmp ",
+and the initramfs is rebuilt afterwards.
+
+The security updates of the installer. After the system is written, the installer runs its own
+step postinstall/run_unattended_upgrades, which downloads and installs the security updates from
+the network. It prints one line and then works in silence for minutes (observed 2026-10-14: the
+disk kept writing long after the step named itself), it changes the very configuration the image
+exists to carry, and it runs only when the installer sees a network, so two machines can produce
+two different systems. The desktop build turns the step off with the apt configuration file the
+desktop section above describes, whose package blacklist holds regular expressions (`.*`, never
+`*`), and removes that file from the target in a late command. This path can carry the same file
+and the same late command when the speed and the exact configuration matter more than the
+updates themselves; the image then ships without them, and a machine that wants them takes them
+in its first ordinary update.
 
 Reading a failure. A failed install leaves the live environment at an error prompt and writes
 the report /var/crash/TIMESTAMP.install_fail.crash inside the live environment, which is a
@@ -252,11 +274,13 @@ write lock"), then `losetup --read-only --partscan`, then `cryptsetup open --rea
 that stage ran: /etc/crypttab still holding `none`, a missing /etc/cryptsetup-initramfs and a
 missing /boot/pyntara.tmp all say it did not run.
 
-Open point about the root subvolume. The root of the installed system came out on the top level
-of the btrfs file system, without the @ subvolume the desktop layout names; `btrfs subvolume
-list` named none on the target of the first attempt (2026-10-14). The points section snapshots
-the root, and whether a top level root is snapshotted the same way was not verified. Check this
-before this path is called finished.
+The root subvolume. The root of the installed system lies on the top level of the btrfs file
+system, without the @ subvolume the desktop layout names; `btrfs subvolume list` named none on
+the target (2026-10-14). The points section snapshots the root, so the question a top level root
+raises is whether that snapshot is taken the same way. Verified on a separate btrfs image on
+2026-10-14: `btrfs subvolume snapshot -r` of a mounted top level succeeds with exit code 0 and
+the snapshot is listed, so the layout difference does not by itself stop the points section. The
+end to end answer comes from the provisioning run on this image.
 
 The installer reboots when it finishes, and with the medium first in the boot order the machine
 starts the installer again; place the disk before the medium in the persistent boot order
