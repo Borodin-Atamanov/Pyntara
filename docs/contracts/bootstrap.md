@@ -45,8 +45,10 @@ All directories follow POSIX Linux standards as adopted by Ubuntu:
 
 ## Python environment
 
+The project interpreter is pinned to 3.14 by the .python-version file of the repository, so uv never selects an interpreter whose wheels are missing from the lockfile.  
 uv sync in the cloned repository directory.  
 If lockfile is current, use --locked. Otherwise sync without it.  
+Every uv invocation that creates the environment excludes the dev dependency group (--no-dev), because that group carries developer tooling (mypy, which pulls the compiled package librt) that the target machine must not install and cannot build without a C compiler.  
 After sync, launch: uv run pyntara (no timeout).
 
 ## Verbose execution and timing

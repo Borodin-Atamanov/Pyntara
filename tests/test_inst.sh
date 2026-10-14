@@ -1227,13 +1227,13 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
-    if ! grep -q '^sync --locked$' "$calls"; then
-        echo "uv sync --locked not called" >&2
+    if ! grep -q '^sync --locked --no-dev$' "$calls"; then
+        echo "uv sync --locked without the dev group not called" >&2
         cat "$calls" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if grep -q '^sync$' "$calls"; then
+    if grep -q '^sync --no-dev$' "$calls"; then
         echo "plain sync must not run when lockfile is current" >&2
         rm -rf "$tmp"
         return 1
@@ -1259,8 +1259,8 @@ EOF
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
         PYNTARA_SOURCE_DIR="$tmp/repo" \
         bash -c 'source "$1"; setup_python' _ "$INSTALLER"
-    if ! grep -q '^sync$' "$calls"; then
-        echo "plain sync not called when lockfile is missing" >&2
+    if ! grep -q '^sync --no-dev$' "$calls"; then
+        echo "plain sync without the dev group not called when lockfile is missing" >&2
         cat "$calls" >&2
         rm -rf "$tmp"
         return 1
@@ -1270,7 +1270,7 @@ EOF
         rm -rf "$tmp"
         return 1
     fi
-    if grep -q '^sync --locked$' "$calls"; then
+    if grep -q '^sync --locked' "$calls"; then
         echo "sync --locked must not run when lockfile is missing" >&2
         rm -rf "$tmp"
         return 1
@@ -1299,13 +1299,13 @@ EOF
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
         PYNTARA_SOURCE_DIR="$tmp/repo" \
         bash -c 'source "$1"; setup_python' _ "$INSTALLER"
-    if ! grep -q '^sync$' "$calls"; then
-        echo "plain sync not called when lockfile is stale" >&2
+    if ! grep -q '^sync --no-dev$' "$calls"; then
+        echo "plain sync without the dev group not called when lockfile is stale" >&2
         cat "$calls" >&2
         rm -rf "$tmp"
         return 1
     fi
-    if grep -q '^sync --locked$' "$calls"; then
+    if grep -q '^sync --locked' "$calls"; then
         echo "sync --locked must not run when lockfile is stale" >&2
         rm -rf "$tmp"
         return 1
@@ -1347,6 +1347,23 @@ EOF
     rm -rf "$tmp"
 }
 
+inst_python_version_file_pins_interpreter() {
+    # The project interpreter must be pinned so uv never selects a version
+    # whose wheels are missing from the lockfile. The project supports 3.14,
+    # the interpreter Kubuntu 26.04 ships as python3.14.
+    local version_file="$SCRIPT_DIR/../.python-version"
+    if [[ ! -f "$version_file" ]]; then
+        echo ".python-version file is missing" >&2
+        return 1
+    fi
+    local pinned
+    pinned="$(head -n 1 "$version_file")"
+    if [[ "$pinned" != "3.14" ]]; then
+        echo "expected .python-version to pin 3.14, got [$pinned]" >&2
+        return 1
+    fi
+}
+
 inst_run_pyntara_launches_in_source_dir() {
     # run_pyntara must run uv pyntara from the source directory.
     local tmp
@@ -1365,8 +1382,8 @@ EOF
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
         PYNTARA_SOURCE_DIR="$tmp/repo" \
         bash -c 'source "$1"; run_pyntara' _ "$INSTALLER"
-    if ! grep -q '^run pyntara$' "$calls"; then
-        echo "uv run pyntara not called" >&2
+    if ! grep -q '^run --no-dev pyntara$' "$calls"; then
+        echo "uv run without the dev group not called" >&2
         cat "$calls" >&2
         rm -rf "$tmp"
         return 1
@@ -1397,7 +1414,7 @@ EOF
     PATH="$bin:$PATH" PYNTARA_LOG_FILE="$logfile" UV_CALLS_FILE="$calls" \
         PYNTARA_SOURCE_DIR="$tmp/repo" \
         bash -c 'source "$1"; run_pyntara --help' _ "$INSTALLER"
-    if ! grep -q '^run pyntara --help$' "$calls"; then
+    if ! grep -q '^run --no-dev pyntara --help$' "$calls"; then
         echo "arguments not forwarded to uv run pyntara" >&2
         cat "$calls" >&2
         rm -rf "$tmp"
@@ -1907,6 +1924,7 @@ run_test inst_setup_python_syncs_locked_when_lock_current
 run_test inst_setup_python_syncs_without_locked_when_lock_missing
 run_test inst_setup_python_syncs_without_locked_when_lock_stale
 run_test inst_setup_python_fails_when_source_missing
+run_test inst_python_version_file_pins_interpreter
 run_test inst_run_pyntara_launches_in_source_dir
 run_test inst_run_pyntara_forwards_arguments
 run_test inst_run_pyntara_preserves_failing_exit_code

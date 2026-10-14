@@ -273,6 +273,15 @@ fi
 UV_INSTALL_URL="https://astral.sh/uv/install.sh"
 export UV_CACHE_DIR="$CACHE_DIR/uv-cache"
 
+# The dev dependency group carries the developer tooling (pytest, mypy, ruff).
+# It must never be installed on the target machine: mypy pulls the compiled
+# package librt, which needs a C compiler the target does not have, so a
+# machine whose interpreter has no matching wheel would fail on a source build.
+# Every uv invocation that creates the environment excludes the group. This
+# mirrors the engine, whose deployed venv sync also passes --no-dev
+# (src/pyntara/values/system_metrics_setup.py).
+UV_RUNTIME_ONLY_FLAGS=(--no-dev)
+
 # curl timeout, retries and retry bounds of the uv installer download,
 # mirroring the declared values curl_download_timeout_seconds, curl_retries,
 # curl_retry_delay_seconds, curl_connect_timeout_seconds and
@@ -366,6 +375,8 @@ if ! declare -f setup_python &>/dev/null; then
 setup_python() {
     # Bootstrap contract, Python environment: uv sync in the repo directory.
     # Use --locked when the lockfile is current, plain sync otherwise.
+    # Every sync excludes the dev dependency group (UV_RUNTIME_ONLY_FLAGS), so
+    # the target installs runtime dependencies only and needs no C compiler.
     # cd runs in a subshell so the caller's working directory never changes.
     if [[ ! -d "$SOURCE_DIR" ]]; then
         log "Source directory missing: $SOURCE_DIR"
@@ -375,13 +386,13 @@ setup_python() {
         # No lockfile yet: sync generates it. Avoids a confusing uv error
         # from `lock --check` on the very first run.
         log "No uv.lock found, syncing without --locked"
-        ( cd "$SOURCE_DIR" && run_timed uv sync )
+        ( cd "$SOURCE_DIR" && run_timed uv sync "${UV_RUNTIME_ONLY_FLAGS[@]}" )
     elif ( cd "$SOURCE_DIR" && run_timed uv lock --check ); then
         log "Lockfile is current, syncing with --locked"
-        ( cd "$SOURCE_DIR" && run_timed uv sync --locked )
+        ( cd "$SOURCE_DIR" && run_timed uv sync --locked "${UV_RUNTIME_ONLY_FLAGS[@]}" )
     else
         log "Lockfile outdated, syncing without --locked"
-        ( cd "$SOURCE_DIR" && run_timed uv sync )
+        ( cd "$SOURCE_DIR" && run_timed uv sync "${UV_RUNTIME_ONLY_FLAGS[@]}" )
     fi
     log "Python environment ready in $SOURCE_DIR"
 }
@@ -405,7 +416,7 @@ run_pyntara() {
     # The engine owns the run log: it copies its own output and the output of
     # every command it starts into the log file itself, so this shell does not
     # tee the engine. run_timed_untied still logs the duration and the exit code.
-    if ( cd "$SOURCE_DIR" && run_timed_untied uv run pyntara "$@" ); then
+    if ( cd "$SOURCE_DIR" && run_timed_untied uv run "${UV_RUNTIME_ONLY_FLAGS[@]}" pyntara "$@" ); then
         rc=0
     else
         rc=$?
@@ -477,7 +488,7 @@ check_vault_password() {
     # pykeepass. The password travels through stdin, never as an argument,
     # so it cannot leak into the process list or the run_timed log line.
     local password="$1"
-    ( cd "$SOURCE_DIR" && printf '%s' "$password" | run_timed uv run pyntara check-vault --vault "$PRODUCTION_VAULT" )
+    ( cd "$SOURCE_DIR" && printf '%s' "$password" | run_timed uv run "${UV_RUNTIME_ONLY_FLAGS[@]}" pyntara check-vault --vault "$PRODUCTION_VAULT" )
 }
 fi
 
