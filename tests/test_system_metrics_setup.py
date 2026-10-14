@@ -329,9 +329,18 @@ def _install_fake(
             return _FakeProc(1, "inactive")
         if command[0] == "uv" and len(command) > 1:
             if command[1] == "venv":
-                created_python = Path(command[2]) / "bin" / "python"
+                venv_dir = Path(command[2])
+                created_python = venv_dir / "bin" / "python"
                 created_python.parent.mkdir(parents=True, exist_ok=True)
                 created_python.write_text("#!/bin/sh\n", encoding="utf-8")
+                # uv writes this file next to the interpreter it built the
+                # venv from, so the fake writes it too and the tests read the
+                # report of the task against the same names it declares.
+                (venv_dir / values.VENV_CONFIG_FILE_NAME).write_text(
+                    f"{values.VENV_CONFIG_INTERPRETER_KEY} = /usr/lib/python3.14\n"
+                    f"{values.VENV_CONFIG_VERSION_KEY} = 3.14.8\n",
+                    encoding="utf-8",
+                )
             elif command[1] == "sync":
                 synced = True
             return _FakeProc(0)
@@ -467,8 +476,12 @@ def test_deploys_service_ingest_and_command(
     # Nothing is deployed: the task creates the venv, installs the package
     # from the clone, copies the config, writes the five units, enables
     # and starts the service, the path unit and the collector timer,
-    # writes the commit command and creates the spool directory.
-    fixtures, calls = _deploy_fixture(monkeypatch, tmp_path)
+    # writes the commit command and creates the spool directory. The venv
+    # answers once its package is installed, so the run reaches its goal
+    # and reports a finished deployment.
+    fixtures, calls = _deploy_fixture(
+        monkeypatch, tmp_path, the_venv_answers_after_the_sync=True
+    )
     result = system_metrics_setup.task(_ctx(tmp_path))
     assert result.success is True
     assert result.changed is True
@@ -569,6 +582,24 @@ def test_a_venv_the_task_builds_is_not_a_warning(
     assert any(call[:2] == ["uv", "venv"] for call in calls)
 
 
+def test_the_venv_step_names_the_interpreter_it_used(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The task lets uv fall back on an interpreter it downloads itself, so the
+    # interpreter of the venv is not always one the machine installed. The step
+    # that builds the venv names the interpreter it ended up with, read from the
+    # pyvenv.cfg of the venv, so the fact stands in the run log of the machine
+    # instead of showing up later as a service that does not start.
+    _deploy_fixture(monkeypatch, tmp_path, the_venv_answers_after_the_sync=True)
+    result = system_metrics_setup.task(_ctx(tmp_path))
+    assert result.success
+    captured = capsys.readouterr()
+    assert "the venv runs the interpreter /usr/lib/python3.14" in captured.out
+    assert "version 3.14.8" in captured.out
+
+
 def test_a_venv_that_still_cannot_be_asked_is_a_warning(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -584,6 +615,9 @@ def test_a_venv_that_still_cannot_be_asked_is_a_warning(
     )
     assert f"# Deployed by Pyntara {__version__}" in unit
     assert any("still does not answer" in warning for warning in result.warnings)
+    # The headline of a run that leaves a gap names the gap: a sentence that
+    # reports a finished deployment would contradict the warning beside it.
+    assert "not fully reached" in (result.message or "")
 
 
 def test_skips_when_already_configured(

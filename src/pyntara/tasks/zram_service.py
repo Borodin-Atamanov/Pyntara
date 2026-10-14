@@ -36,6 +36,7 @@ proved by this run instead of being trusted.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from string import Template
 
@@ -45,11 +46,17 @@ from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.systemd_unit import (
     deploy_program,
+    exec_start_line,
     install_and_enable_unit,
     run_program_and_read_outcome,
     start_deployed_unit,
 )
-from pyntara.utils import task_data_dir
+from pyntara.utils import (
+    apt_package_record_command,
+    run_command,
+    substituted_command,
+    task_data_dir,
+)
 from pyntara.values import common as common_values
 from pyntara.values import engine as engine_values
 from pyntara.values import missing_value_names
@@ -107,7 +114,120 @@ def _render_unit(template_path: Path, command: tuple[str, ...]) -> str:
     """Render the unit template with the command line of the program."""
 
     template = Template(template_path.read_text(encoding="utf-8"))
-    return template.substitute(exec_lines=f"ExecStart={' '.join(command)}")
+    return template.substitute(exec_lines=exec_start_line(command))
+
+
+def _kernel_release() -> str | None:
+    """The release of the running kernel, or None when it was not read."""
+
+    try:
+        return values.KERNEL_RELEASE_FILE_PATH.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        _log(f"cannot read {values.KERNEL_RELEASE_FILE_PATH}: {exc}")
+        return None
+
+
+def _module_is_available(module_name: str, timeout: float) -> bool:
+    """True when the kernel already carries the module or can load it.
+
+    A module that was loaded already has its directory under the kernel module
+    tree, and a module built into the kernel has one as well, because the kernel
+    registers it there; the probe asks the loader about the remaining case
+    without loading anything. The program of this section loads the module the
+    same way, so an answered probe is the promise that the program will find it.
+    """
+
+    if (values.MODULE_SYSFS_DIR / module_name).exists():
+        return True
+    command = substituted_command(
+        values.MODULE_PROBE_COMMAND, {"module_name": module_name}
+    )
+    try:
+        result = run_command(command, check=False, capture=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        _log(f"cannot ask the module loader about {module_name}: {exc}")
+        return False
+    return result.returncode == 0
+
+
+def _archive_knows_package(package: str, timeout: float) -> bool:
+    """True when the archive of this machine carries a package name."""
+
+    try:
+        result = run_command(
+            apt_package_record_command(package),
+            check=False,
+            capture=True,
+            timeout=timeout,
+        )
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        _log(f"cannot ask the archive about {package}: {exc}")
+        return False
+    return result.returncode == 0
+
+
+def _ensure_module(
+    ctx: Context, module_name: str, timeout: float
+) -> tuple[bool, list[str]]:
+    """Make the kernel module loadable; the answer and the warnings.
+
+    The module belongs to the installed kernel and not to this section, so the
+    probe of the loader stands first and a machine that already answers it is
+    told nothing. A kernel whose module tree lacks the module is completed by the
+    package that carries it, and that package is named by the distribution
+    release: the declared candidate names are asked of the archive and the ones
+    this release knows are installed, so a name that exists nowhere is never
+    installed and never reported as a failure of its own.
+
+    A module that no candidate brings is reported as a warning naming the machine
+    fact, because the rest of the section works without it: the machine keeps the
+    disk swap and the devices it has, the run does not stop here, and the person
+    reading the log learns which kernel has to be installed instead.
+    """
+
+    if _module_is_available(module_name, timeout):
+        _log(f"the kernel module {module_name} is available")
+        return True, []
+    release = _kernel_release()
+    if release is None:
+        return False, [
+            (
+                f"the kernel module {module_name} is not available and the release "
+                f"of the running kernel was not read from "
+                f"{values.KERNEL_RELEASE_FILE_PATH}"
+            )
+        ]
+    candidates = [
+        template.format(kernel_release=release)
+        for template in values.MODULE_CARRIER_PACKAGE_NAME_TEMPLATES
+    ]
+    known = [name for name in candidates if _archive_knows_package(name, timeout)]
+    warnings: list[str] = []
+    if known:
+        _log(f"installing the carrier of the {module_name} module: {', '.join(known)}")
+        _, installed, failures, package_warnings = install_missing_packages(ctx, known)
+        warnings.extend(package_warnings)
+        if installed:
+            _log(f"installed the carrier of the module: {', '.join(installed)}")
+        if failures:
+            warnings.append(
+                f"the carrier of the {module_name} module: {failure_detail(failures)}"
+            )
+    if _module_is_available(module_name, timeout):
+        _log(f"the kernel module {module_name} is available after the install")
+        return True, warnings
+    reason = (
+        "were installed without it"
+        if known
+        else "are unknown to the archive of this machine"
+    )
+    warnings.append(
+        f"the kernel module {module_name} is not available on kernel {release}: the "
+        f"packages {', '.join(candidates)} {reason}, so this kernel carries no such "
+        "module and the devices of this section cannot be created; a kernel whose "
+        "module tree is complete provides it"
+    )
+    return False, warnings
 
 
 def task(ctx: Context) -> TaskResult:
@@ -151,6 +271,9 @@ def task(ctx: Context) -> TaskResult:
         _log(f"installed for the zram tools: {', '.join(installed)}")
     if failures:
         warnings.append(f"packages of the zram tools: {failure_detail(failures)}")
+
+    _, module_warnings = _ensure_module(ctx, values.MODULE_NAME, timeout)
+    warnings.extend(module_warnings)
 
     command = _program_command(force=force)
 

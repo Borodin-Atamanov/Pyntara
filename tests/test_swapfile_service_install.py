@@ -560,6 +560,55 @@ def test_the_ramdisk_is_rebuilt_only_when_the_resume_file_changed(
     assert ["update-initramfs", "-u"] not in second_calls
 
 
+def test_the_mount_of_a_swap_directory_that_is_not_there_yet_is_read(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The program creates the swap directory during this run, so the directory
+    # does not exist while the device is read, and findmnt answers nothing about
+    # a path that is not there (measured 2026-10-14). The task asks about the
+    # nearest parent that exists, so the resume address of a machine whose swap
+    # directory no earlier boot created is still published.
+    _write_data_files(tmp_path)
+    swap_directory = tmp_path / "swap"
+    monkeypatch.setattr(values, "SWAPFILE_PATH", swap_directory / "swapfile")
+    calls: list[list[str]] = []
+    asked: list[str] = []
+    program_path = str(values.PROGRAM_DEPLOY_PATH)
+
+    def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
+        calls.append(list(command))
+        if command[0] == "findmnt":
+            asked.append(command[command.index("--target") + 1])
+            return _FakeProc(0, "/\n")
+        if command[0] == "systemctl" and command[1] == "is-enabled":
+            return _FakeProc(1, "disabled")
+        if command[0] == program_path:
+            _write_resume_file_like_the_program(command, RESULT_LINE)
+            return _FakeProc(0, RESULT_LINE + "\n")
+        return _FakeProc(0)
+
+    monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
+    result = swapfile_service_install.task(_ctx(tmp_path))
+    assert asked == [str(tmp_path)]
+    assert not swap_directory.exists()
+    command = _program_call(calls)
+    assert command[command.index("--resume-device") + 1] == "UUID=test-root"
+    assert "hibernation resumes from UUID=test-root" in (result.message or "")
+
+
+def test_the_nearest_existing_parent_is_the_one_asked_about(tmp_path: Path) -> None:
+    # The walk stops at the first parent that exists, so a machine whose swap
+    # directory is missing but whose parent tree is there is asked about the
+    # directory right above the missing one, which is the mount that will hold
+    # the new directory.
+    (tmp_path / "var").mkdir()
+    missing = tmp_path / "var" / "swap" / "nested"
+    assert (
+        swapfile_service_install._existing_ancestor(missing) == tmp_path / "var"
+    )
+    assert swapfile_service_install._existing_ancestor(tmp_path) == tmp_path
+
+
 def test_an_fstab_without_the_line_of_the_swap_mount_publishes_nothing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -576,6 +625,10 @@ def test_an_fstab_without_the_line_of_the_swap_mount_publishes_nothing(
     assert ["update-initramfs", "-u"] not in calls
     command = _program_call(calls)
     assert command[command.index("--resume-device") + 1] == ""
+    # The empty value is quoted in the unit as well: systemd splits the line on
+    # whitespace, so an unquoted empty argument disappears there and the boot
+    # service fails on the argument that took its place (probe unit, 2026-10-14).
+    assert '--resume-device ""' in _unit_text(tmp_path)
 
 
 def test_a_boot_menu_without_the_offset_parameter_is_reported(

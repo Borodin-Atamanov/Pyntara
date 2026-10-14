@@ -122,6 +122,20 @@ def apt_clean_command() -> list[str]:
     return ["apt-get", "clean"]
 
 
+def apt_package_record_command(package: str) -> list[str]:
+    """The query that tells whether the archive of this machine knows a name.
+
+    A package name is a fact of the distribution release, and a name this
+    release does not carry must be told apart from a name that failed to
+    install: apt-cache answers with the record of the package and exit code 0
+    when the archive knows it, and with exit code 100 when no record exists. The
+    query reads the archive index and changes nothing. It lives with the other
+    apt builders so that no module outside this one spells an apt command.
+    """
+
+    return ["apt-cache", "show", package]
+
+
 def install_package_once(
     package: str, timeout: float, *, extra_flags: Sequence[str] = ()
 ) -> tuple[bool, str]:

@@ -55,6 +55,38 @@ RESET_BUSY_RETRY_DELAY_SECONDS: float = 0.5
 # Name of the kernel module that provides the compressed devices.
 MODULE_NAME: str = "zram"
 
+# The kernel interface that tells whether that module is already available: one
+# directory per loaded or built-in module, and the file that carries the release
+# of the running kernel, from which the name of the package that brings the
+# module is built. A module that is built into the kernel has no directory of
+# its own, which is why the probe of the loader below stands next to these two
+# files.
+MODULE_SYSFS_DIR: Path = Path("/sys/module")
+KERNEL_RELEASE_FILE_PATH: Path = Path("/proc/sys/kernel/osrelease")
+
+# The probe of the module loader, handed the module name. It resolves the module
+# and its dependencies exactly as the program does when it loads the module, and
+# the dry run stops before anything is loaded, so a probe changes no state of the
+# machine.
+MODULE_PROBE_COMMAND: tuple[str, ...] = (
+    "modprobe",
+    "--dry-run",
+    "--quiet",
+    "{module_name}",
+)
+
+# Names of the packages that carry the kernel module, tried in this order. The
+# carrier is a fact of the distribution release and must not be derived from it:
+# Ubuntu 24.04 keeps the module in linux-modules-extra-<release>, while 26.04
+# carries it inside linux-modules-<release> itself, where no -extra package exists
+# at all (both measured on 2026-10-14). A name the archive does not know is
+# skipped, so the task installs the carrier this machine really has, and a machine
+# whose module is already loadable never reaches this list.
+MODULE_CARRIER_PACKAGE_NAME_TEMPLATES: tuple[str, ...] = (
+    "linux-modules-extra-{kernel_release}",
+    "linux-modules-{kernel_release}",
+)
+
 # The packages the tools of the program come from: swapon and swapoff are in
 # mount, mkswap in util-linux and modprobe in kmod. The task installs them
 # through the shared package helper, so the section never assumes the machine
@@ -89,6 +121,10 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "RESET_BUSY_ATTEMPTS",
     "RESET_BUSY_RETRY_DELAY_SECONDS",
     "MODULE_NAME",
+    "MODULE_SYSFS_DIR",
+    "KERNEL_RELEASE_FILE_PATH",
+    "MODULE_PROBE_COMMAND",
+    "MODULE_CARRIER_PACKAGE_NAME_TEMPLATES",
     "PACKAGES",
     "PROGRAM_FILE_NAME",
     "PROGRAM_DEPLOY_PATH",

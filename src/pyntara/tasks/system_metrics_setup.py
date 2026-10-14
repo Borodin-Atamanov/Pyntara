@@ -53,7 +53,7 @@ from pyntara import __version__, deployment
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult, warned_result
-from pyntara.systemd_unit import unit_matches, write_unit
+from pyntara.systemd_unit import exec_start_line, unit_matches, write_unit
 from pyntara.utils import (
     apply_owner,
     run_command,
@@ -101,6 +101,35 @@ def _create_venv(
         return f"cannot create venv: {exc}"
     _log("venv created")
     return None
+
+
+def _venv_interpreter_report(venv_dir: Path) -> str:
+    """Which interpreter the venv was built from, read from its own config.
+
+    The task lets uv fall back on an interpreter it downloads itself, so the
+    interpreter of the venv is not always one the machine installed. The base
+    directory and the version of that interpreter stand in the pyvenv.cfg uv
+    wrote, and the caller logs them, so a machine whose venv depends on a
+    downloaded interpreter says so at the step that builds it instead of
+    leaving the fact to a later failure.
+    """
+
+    config_path = venv_dir / values.VENV_CONFIG_FILE_NAME
+    try:
+        text = config_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return f"cannot read {config_path}: {exc}"
+    facts: dict[str, str] = {}
+    for line in text.splitlines():
+        key, separator, value = line.partition("=")
+        if separator:
+            facts[key.strip()] = value.strip()
+    interpreter = facts.get(values.VENV_CONFIG_INTERPRETER_KEY, "") or "unknown"
+    version = facts.get(values.VENV_CONFIG_VERSION_KEY, "") or "unknown"
+    return (
+        f"the venv runs the interpreter {interpreter} (version {version}), "
+        f"read from {config_path}"
+    )
 
 
 def _install_package_into_venv(
@@ -241,7 +270,7 @@ def _render_service_unit(
     the service restarted.
     """
 
-    command = " ".join(
+    exec_line = exec_start_line(
         substituted_command(
             values.SEND_SERVICE_COMMAND,
             {"python": str(venv_python)},
@@ -249,7 +278,7 @@ def _render_service_unit(
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        exec_lines=f"ExecStart={command}",
+        exec_lines=exec_line,
         version=version,
         restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
@@ -267,7 +296,7 @@ def _render_ingest_service_unit(
     service beside it.
     """
 
-    command = " ".join(
+    exec_line = exec_start_line(
         substituted_command(
             values.INGEST_SERVICE_COMMAND,
             {"python": str(venv_python)},
@@ -275,7 +304,7 @@ def _render_ingest_service_unit(
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        exec_lines=f"ExecStart={command}",
+        exec_lines=exec_line,
         version=version,
         restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
@@ -305,7 +334,7 @@ def _render_collector_service_unit(
     to, like the one of the service and the ingest units.
     """
 
-    command = " ".join(
+    exec_line = exec_start_line(
         substituted_command(
             values.COLLECTOR_SERVICE_COMMAND,
             {"python": str(venv_python)},
@@ -313,7 +342,7 @@ def _render_collector_service_unit(
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        exec_lines=f"ExecStart={command}",
+        exec_lines=exec_line,
         version=version,
         restart_seconds=str(values.SERVICE_RESTART_SECONDS),
     )
@@ -601,6 +630,8 @@ def task(ctx: Context) -> TaskResult:
         if error is not None:
             warnings.append(error)
             venv_changed = False
+        else:
+            _log(_venv_interpreter_report(venv_dir))
     changed = changed or venv_changed
     if venv_changed and (
         deployment.venv_package_version(
@@ -772,5 +803,17 @@ def task(ctx: Context) -> TaskResult:
             _log("spool ready")
             changed = True
 
-    message = f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
+    if warnings:
+        # A warning is a step that did not reach its goal, so the headline of a
+        # run with warnings names the gap instead of reporting a finished
+        # deployment; every reason stands in the warnings next to it. A run
+        # without warnings reached the target state and says so.
+        message = (
+            "System Metrics deployed in part, the target state was not fully "
+            f"reached (venv {venv_dir}, spool {spool_dir})"
+        )
+    else:
+        message = (
+            f"System Metrics service deployed, venv {venv_dir}, spool {spool_dir}"
+        )
     return warned_result(changed=changed, message=message, warnings=warnings)

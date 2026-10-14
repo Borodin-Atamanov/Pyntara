@@ -36,7 +36,12 @@ from pyntara import __version__, deployment, metrics, port_forwarding
 from pyntara.context import Context
 from pyntara.logger import log_progress as _log
 from pyntara.models import TaskResult
-from pyntara.systemd_unit import service_is_failed, unit_matches, write_unit
+from pyntara.systemd_unit import (
+    exec_start_line,
+    service_is_failed,
+    unit_matches,
+    write_unit,
+)
 from pyntara.utils import (
     run_command,
     service_is_active,
@@ -71,7 +76,7 @@ def _render_service_unit(
     the service, and the code that runs is the code the unit was rendered for.
     """
 
-    command = " ".join(
+    exec_line = exec_start_line(
         substituted_command(
             values.MODULE_RUN_COMMAND,
             {
@@ -82,7 +87,7 @@ def _render_service_unit(
     )
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        exec_lines=f"ExecStart={command}",
+        exec_lines=exec_line,
         restart_seconds=restart_seconds,
         version=version,
     )

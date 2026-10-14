@@ -64,6 +64,7 @@ from pyntara.models import TaskResult, warned_result
 from pyntara.package_set import failure_detail, install_missing_packages
 from pyntara.systemd_unit import (
     deploy_program,
+    exec_start_line,
     install_and_enable_unit,
     run_program_and_read_outcome,
     start_deployed_unit,
@@ -201,7 +202,7 @@ def _render_unit(
 
     template = Template(template_path.read_text(encoding="utf-8"))
     return template.substitute(
-        exec_lines=f"ExecStart={' '.join(command)}",
+        exec_lines=exec_start_line(command),
         swapfile_path=str(swapfile_path),
         swapoff_path=swapoff_path,
     )
@@ -236,6 +237,24 @@ def _mount_point_of(path: Path, timeout: float) -> tuple[str | None, str | None]
     return None, f"the machine reported no mount point for {path}"
 
 
+def _existing_ancestor(path: Path) -> Path:
+    """The path itself when it is there, otherwise its nearest existing parent.
+
+    The mount that will hold a directory the program has not created yet is the
+    mount of its nearest existing parent, and a question about a path that is not
+    there is answered with nothing at all, so the resume address would be lost for
+    a reason that is not a gap of the machine (measured 2026-10-14: on a machine
+    whose swap directory the program had not created yet, findmnt about that
+    directory ended with exit code 1 and printed no line, while the same question
+    about the root answered with the mount point).
+    """
+
+    candidate = path
+    while not candidate.exists() and candidate != candidate.parent:
+        candidate = candidate.parent
+    return candidate
+
+
 def _resume_device_spec(
     swapfile_directory: Path, timeout: float
 ) -> tuple[str | None, list[str]]:
@@ -249,7 +268,12 @@ def _resume_device_spec(
     address that names nothing.
     """
 
-    mount_point, error = _mount_point_of(swapfile_directory, timeout)
+    holder = _existing_ancestor(swapfile_directory)
+    if holder != swapfile_directory:
+        # The program creates the directory later in this run, so the mount that
+        # will hold it is the one of the nearest parent that exists.
+        _log(f"{swapfile_directory} is not there yet, asking about {holder}")
+    mount_point, error = _mount_point_of(holder, timeout)
     if mount_point is None:
         return None, [error or "the mount point of the swap file was not read"]
     try:

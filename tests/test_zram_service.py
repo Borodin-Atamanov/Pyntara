@@ -43,6 +43,12 @@ WantedBy=multi-user.target
 
 PROGRAM_TEXT = "#!/usr/bin/python3\nprint('program')\n"
 
+# Release of the kernel the tests describe, written into the fixture file the
+# task reads instead of the release of the machine that runs the tests, and the
+# name of the carrier package that release is expected to bring the module in.
+KERNEL_RELEASE = "7.0.0-38-generic"
+CARRIER_PACKAGE = f"linux-modules-extra-{KERNEL_RELEASE}"
+
 RESULT_LINE = json.dumps(
     {
         "changed": True,
@@ -83,6 +89,16 @@ def _point_the_values_at_the_temporary_tree(
     cpuinfo = tmp_path / "cpuinfo"
     cpuinfo.write_text("processor : 0\nprocessor : 1\n", encoding="utf-8")
     monkeypatch.setattr(values, "CPUINFO_PATH", cpuinfo)
+    # The probe of the kernel module reads the module tree of the kernel and the
+    # release of the running kernel, and both are facts of the machine that runs
+    # the tests: they are pointed at the temporary tree as well, so a test never
+    # depends on the kernel of the developer machine.
+    module_dir = tmp_path / "sys-module"
+    module_dir.mkdir()
+    monkeypatch.setattr(values, "MODULE_SYSFS_DIR", module_dir)
+    kernel_release = tmp_path / "osrelease"
+    kernel_release.write_text(KERNEL_RELEASE + "\n", encoding="utf-8")
+    monkeypatch.setattr(values, "KERNEL_RELEASE_FILE_PATH", kernel_release)
 
 
 @pytest.fixture(autouse=True)
@@ -131,15 +147,24 @@ def _install_fake(
     *,
     enabled: bool = False,
     program_result: _FakeProc | None = None,
+    loadable: bool | dict[str, bool] = True,
+    known_packages: set[str] | None = None,
 ) -> list[list[str]]:
     """Replace subprocess.run; return the recorded command lines.
 
     systemctl is-enabled answers from the enabled flag and the program of the
-    section answers with the given process result; every other command succeeds.
+    section answers with the given process result. The module loader answers from
+    the loadable flag, which a caller may hand over as a dictionary it owns, so a
+    test can let the module become loadable when the carrier package is installed;
+    the archive answers about the packages of known_packages. Every other command
+    succeeds.
     """
 
     calls: list[list[str]] = []
     program_path = str(values.PROGRAM_DEPLOY_PATH)
+    module_state: dict[str, bool] = (
+        loadable if isinstance(loadable, dict) else {"value": loadable}
+    )
 
     def fake_run(command: list[str], **kwargs: object) -> _FakeProc:
         calls.append(list(command))
@@ -147,6 +172,12 @@ def _install_fake(
             if enabled:
                 return _FakeProc(0, "enabled\n")
             return _FakeProc(1, "disabled")
+        if command[0] == "modprobe":
+            return _FakeProc(0 if module_state["value"] else 1)
+        if command[0] == "apt-cache":
+            if known_packages is not None and command[2] in known_packages:
+                return _FakeProc(0, f"Package: {command[2]}\n")
+            return _FakeProc(100)
         if command[0] == program_path:
             if program_result is not None:
                 return program_result
@@ -155,6 +186,35 @@ def _install_fake(
 
     monkeypatch.setattr("pyntara.utils.subprocess.run", fake_run)
     return calls
+
+
+def _record_the_carrier_install(
+    monkeypatch: pytest.MonkeyPatch,
+    loadable: dict[str, bool],
+    asked: list[str],
+    carrier_package: str,
+) -> None:
+    """Record the packages the task asks to install, and load the carrier.
+
+    The task installs the tool packages and, when the module is missing, the
+    carrier of the module, both through the shared package helper, which would
+    reach the real machine of the test run. The helper is replaced: it records
+    every name the task asked for and makes the module loadable as soon as the
+    carrier itself is among them, which is what the install of the real carrier
+    does on the target machine. A run of the helper for the tool packages alone
+    leaves the module as unavailable as it was.
+    """
+
+    def fake_install(
+        context: Context, packages: tuple[str, ...]
+    ) -> tuple[list[str], list[str], list[tuple[str, str]], list[str]]:
+        del context
+        asked.extend(packages)
+        if carrier_package in packages:
+            loadable["value"] = True
+        return list(packages), list(packages), [], []
+
+    monkeypatch.setattr(zram_service, "install_missing_packages", fake_install)
 
 
 def _program_call(calls: list[list[str]]) -> list[str]:
@@ -401,11 +461,85 @@ def test_force_passes_the_force_option(
 
 
 def test_no_argument_of_the_command_line_carries_a_space() -> None:
-    # The unit renders the command line as words separated by spaces, so an
-    # argument with a space inside arrives at the program as two arguments and
-    # the boot service fails to start. This guards the interface of the unit.
+    # The unit renders the command line through the shared builder, which quotes
+    # an argument that needs it; none of the arguments of this task needs quoting,
+    # so the line a person reads in the unit file stays plain.
     command = zram_service._program_command(force=False)
     assert not [argument for argument in command if " " in argument]
+
+
+def test_a_kernel_that_cannot_load_the_module_gets_the_carrier_of_this_release(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The module belongs to the kernel and not to this section: when the loader
+    # cannot provide it, the task installs the package that carries it. The
+    # carrier is named by the distribution release, so the archive is asked which
+    # candidate name exists and only that one is installed; here the first
+    # candidate exists and the archive knows nothing about the second.
+    _write_data_files(tmp_path)
+    loadable = {"value": False}
+    calls = _install_fake(
+        monkeypatch, loadable=loadable, known_packages={CARRIER_PACKAGE}
+    )
+    asked: list[str] = []
+    _record_the_carrier_install(monkeypatch, loadable, asked, CARRIER_PACKAGE)
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert asked == [*values.PACKAGES, CARRIER_PACKAGE]
+    assert ["apt-cache", "show", CARRIER_PACKAGE] in calls
+    assert not any("is not available" in warning for warning in result.warnings)
+
+
+def test_a_module_no_package_brings_is_reported_with_its_kernel(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A kernel whose module tree carries no such module and whose archive knows
+    # none of the candidates is a machine fact: the task names the module, the
+    # release and the candidates, installs nothing, and lets the rest of the
+    # section run, so the disk swap of that machine stays its swap.
+    _write_data_files(tmp_path)
+    loadable = {"value": False}
+    _install_fake(monkeypatch, loadable=loadable, known_packages=set())
+    asked: list[str] = []
+    _record_the_carrier_install(monkeypatch, loadable, asked, CARRIER_PACKAGE)
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert asked == list(values.PACKAGES)
+    assert any(
+        values.MODULE_NAME in warning
+        and KERNEL_RELEASE in warning
+        and "unknown to the archive" in warning
+        for warning in result.warnings
+    )
+
+
+def test_a_kernel_that_can_load_the_module_is_not_touched(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The loader answers the probe, so the module is already available on this
+    # machine and no package is looked up or installed.
+    _write_data_files(tmp_path)
+    calls = _install_fake(monkeypatch, loadable=True)
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert ["modprobe", "--dry-run", "--quiet", values.MODULE_NAME] in calls
+    assert not any(call[0] == "apt-cache" for call in calls)
+    assert not any("is not available" in warning for warning in result.warnings)
+
+
+def test_a_module_built_into_the_kernel_needs_no_loader_probe(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A module built into the kernel has no file to load and no loader entry, and
+    # the kernel registers it in the module tree: that directory is the whole
+    # answer, so the loader is never asked.
+    _write_data_files(tmp_path)
+    (values.MODULE_SYSFS_DIR / values.MODULE_NAME).mkdir()
+    calls = _install_fake(monkeypatch, loadable=False)
+    result = zram_service.task(_ctx(tmp_path))
+    assert result.success is True
+    assert not any(call[0] == "modprobe" for call in calls)
+    assert not any("is not available" in warning for warning in result.warnings)
 
 
 def test_the_shared_package_helper_installs_the_tools(

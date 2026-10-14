@@ -28,6 +28,36 @@ from pyntara.utils import (
 )
 
 
+def _quoted_argument(argument: str) -> str:
+    """One argument of an ExecStart line, quoted when systemd would split it."""
+
+    if argument and not any(character in argument for character in ' \t"\\'):
+        return argument
+    escaped = argument.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def exec_start_line(arguments: Sequence[str]) -> str:
+    """The ExecStart line of a unit, built from an argument vector.
+
+    systemd splits the value of ExecStart on whitespace, so an argument that is
+    empty or carries a space of its own does not survive a plain join: an empty
+    argument disappears and the argument after it takes its place, which makes a
+    parameter of the program the value of the parameter before it. Measured with
+    a probe unit on 2026-10-14: the line
+    --resume-device --grub-default-file /etc/default/grub reached the program as
+    --resume-device --grub-default-file, so its parser failed and the service
+    never started. Quoting is what keeps such an argument: systemd reads the
+    double quotes and hands the argument over unchanged, an empty one written as
+    two quotes included (same probe). Only the arguments that need it are
+    quoted, so the names a person reads in the unit file stay plain.
+    """
+
+    return "ExecStart=" + " ".join(
+        _quoted_argument(argument) for argument in arguments
+    )
+
+
 def unit_matches(unit_dir: Path, name: str, expected: str) -> bool:
     """True when the deployed unit file equals the expected content."""
 

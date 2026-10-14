@@ -13,10 +13,11 @@ import ast
 from pathlib import Path
 
 import pyntara
+from pyntara.utils import apt_package_record_command
 
 PACKAGE_ROOT: Path = Path(pyntara.__file__).resolve().parent
 BUILDER_MODULE: Path = PACKAGE_ROOT / "utils.py"
-APT_EXECUTABLES: frozenset[str] = frozenset({"apt", "apt-get"})
+APT_EXECUTABLES: frozenset[str] = frozenset({"apt", "apt-get", "apt-cache"})
 
 
 def _apt_executable_literal_lines(path: Path) -> list[int]:
@@ -53,3 +54,15 @@ def test_the_builder_module_really_builds_apt_commands() -> None:
     # The exception for utils.py must stay justified: the guard above would
     # pass silently if the builders ever moved out of that module.
     assert _apt_executable_literal_lines(BUILDER_MODULE)
+
+
+def test_the_archive_query_names_the_package_and_changes_nothing() -> None:
+    # The carrier of a kernel module is looked up by name, because the name
+    # depends on the distribution release and a candidate this release does not
+    # carry must be told apart from a candidate that failed to install. The query
+    # reads the archive index and touches nothing on the machine.
+    assert apt_package_record_command("linux-modules-extra-1.2.3-generic") == [
+        "apt-cache",
+        "show",
+        "linux-modules-extra-1.2.3-generic",
+    ]

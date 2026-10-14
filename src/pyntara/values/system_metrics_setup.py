@@ -39,10 +39,14 @@ SUPPORT_RETRY_MAX_SECONDS: int = 300
 ERROR_PRIORITY: int = 3
 
 # Python version of the interpreter of the dedicated venv the task creates,
-# written as the minor version the distribution carries (Kubuntu 26.04 ships
-# python3.14). A bare major version would leave the choice to uv, which prefers
-# a CPython it downloaded itself; VENV_CREATE_COMMAND passes
-# --no-managed-python for the same reason.
+# written as the minor version the archive carries (Kubuntu 26.04 ships
+# python3.14). A bare major version would leave the choice to uv, which takes
+# the first interpreter that satisfies it. The creation command lets uv fall
+# back on a CPython it downloads itself, because the target machine is not
+# guaranteed to carry an interpreter of this version and the deployed services
+# must run on such a machine as well; the task reports the interpreter the venv
+# ended up with, read from the pyvenv.cfg of the venv, so a venv that depends on
+# a downloaded interpreter is visible in the run log of the machine.
 PYTHON_VERSION: str = "3.14"
 VENV_DIR: Path = Path("/usr/local/lib/pyntara/venv")
 
@@ -56,6 +60,16 @@ VENV_DAMAGED_PATH: Path = Path("/usr/local/lib/pyntara/venv.damaged")
 # binary relative to VENV_DIR, so every module that runs the deployed code
 # composes it the same way.
 VENV_PYTHON_RELATIVE_PATH: str = "bin/python"
+
+# Name of the file uv writes inside the venv that names the interpreter the venv
+# was built from, and the keys of that file the task reports: the base directory
+# of that interpreter and its version. They are the facts that tell a machine
+# whose venv points at an interpreter uv downloaded from one whose venv points
+# at an interpreter of the distribution, and the file is the only place they are
+# written down.
+VENV_CONFIG_FILE_NAME: str = "pyvenv.cfg"
+VENV_CONFIG_INTERPRETER_KEY: str = "home"
+VENV_CONFIG_VERSION_KEY: str = "version_info"
 
 # Path of the system command commit_system_metrics. The task generates a thin
 # bash command file at this path from the command template with the spool path
@@ -178,7 +192,6 @@ VENV_CREATE_COMMAND: tuple[str, ...] = (
     "{venv_dir}",
     "--python",
     "{python_version}",
-    "--no-managed-python",
 )
 VENV_SYNC_COMMAND: tuple[str, ...] = (
     "{uv}",
@@ -516,6 +529,9 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "VENV_DIR",
     "VENV_DAMAGED_PATH",
     "VENV_PYTHON_RELATIVE_PATH",
+    "VENV_CONFIG_FILE_NAME",
+    "VENV_CONFIG_INTERPRETER_KEY",
+    "VENV_CONFIG_VERSION_KEY",
     "COMMAND_PATH",
     "COMMIT_COMMAND",
     "VAULT_BACKUP_FILE_NAME",

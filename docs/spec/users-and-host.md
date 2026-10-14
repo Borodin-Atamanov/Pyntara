@@ -25,9 +25,9 @@ ZRAM swap is activated with the configured swap_priority, so it is used before t
 
 The zram_service task deploys a program and a systemd oneshot service that runs it at every boot.
 
-One program of the section, deployed from task_data/zram_service/configure_zram.py to its configured path, reads the installed memory and the core count, computes the device count and the size of every device, brings the devices of the machine to that state and activates them. The unit zram.service starts that same program at every boot, so a run and a boot apply one code instead of two implementations of the same steps, and the machine follows a memory size or a core count that changed between two boots instead of repeating numbers that were measured once. The installed RAM is read from the shared memory file, from the line whose name meminfo_total_key carries, with the separator that file uses; the core count comes from the per-core line cpuinfo_processor_key of the cpuinfo_path file, so a kernel that renames a field is answered in the config. The packages the tools of the program come from (mount for swapon and swapoff, util-linux for mkswap, kmod for modprobe) are installed through the shared package helper, so the section never assumes the machine already carries them.
+One program of the section, deployed from task_data/zram_service/configure_zram.py to its configured path, reads the installed memory and the core count, computes the device count and the size of every device, brings the devices of the machine to that state and activates them. The unit zram.service starts that same program at every boot, so a run and a boot apply one code instead of two implementations of the same steps, and the machine follows a memory size or a core count that changed between two boots instead of repeating numbers that were measured once. The installed RAM is read from the shared memory file, from the line whose name meminfo_total_key carries, with the separator that file uses; the core count comes from the per-core line cpuinfo_processor_key of the cpuinfo_path file, so a kernel that renames a field is answered in the config. The packages the tools of the program come from (mount for swapon and swapoff, util-linux for mkswap, kmod for modprobe) are installed through the shared package helper, so the section never assumes the machine already carries them. The kernel module itself is a fact of the installed kernel: the task asks the module loader for it before it runs the program, and installs the package that carries it when the loader cannot provide it. That carrier is named by the distribution release and must not be derived from it (Ubuntu 24.04 keeps the module in linux-modules-extra-<release>, while 26.04 carries it inside linux-modules-<release>, where no -extra package exists at all; measured 2026-10-14), so the declared candidate names are asked of the archive and only the ones this release knows are installed. A kernel whose module tree carries no such module and whose archive knows no carrier is reported as a machine fact naming the module, the release and the candidates, and the rest of the section still runs, so the machine keeps the swap it has.
 
-All parameter values live in the src/pyntara/values/zram_service.py: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, cpuinfo_path, cpuinfo_processor_key, alignment_bytes, module_name, reset_busy_attempts, reset_busy_retry_delay_seconds, program_file_name, program_deploy_path, program_file_mode, service_unit_name and unit_template_file_name. The systemctl calls of the task come from the shared values of src/pyntara/values/engine.py. The path /proc/meminfo and the name of its line come from the shared values module, because the swapfile section reads the same file and line.
+All parameter values live in the src/pyntara/values/zram_service.py: compressor, swap_priority, memory_fraction_percent, fallback_cpu_count, cpuinfo_path, cpuinfo_processor_key, alignment_bytes, module_name, module_sysfs_dir, kernel_release_file_path, module_probe_command, module_carrier_package_name_templates, reset_busy_attempts, reset_busy_retry_delay_seconds, program_file_name, program_deploy_path, program_file_mode, service_unit_name and unit_template_file_name. The systemctl calls of the task come from the shared values of src/pyntara/values/engine.py. The path /proc/meminfo and the name of its line come from the shared values module, because the swapfile section reads the same file and line.
 reset_busy_attempts and reset_busy_retry_delay_seconds bound the retries of a reset or hot_remove that the kernel rejects with EBUSY while a transient opener, for example a udev probe, holds the device.
 
 Kernel 7.0 creates one zram device on every read of the hot_add attribute and older kernels create one device per write; the program tells the two apart by the attribute mode at run time, so the unit does not carry the interface that was detected when the task ran. The task deploys the program and the unit, enables the service and runs the program once; a step the program could not perform is reported as a warning of a completed task, and the program answers with one result line naming what changed and what failed.
@@ -125,13 +125,20 @@ because it ignores the offset of the resume parameter and a device alone does no
 name a swap file. The device is read from the fstab line of the mount that holds
 the swap file, so it is written the way this machine reaches that filesystem,
 which is a UUID for a filesystem that is mounted directly and the mapper path of a
-root that is unlocked at boot; the offset is read by the program from the machine
+root that is unlocked at boot. That mount is read from the nearest parent of the
+swap file that exists, because the program creates the swap directory during the
+same run and a question about a path that is not there is answered with nothing at
+all (measured 2026-10-14). The offset is read by the program from the machine
 itself, because it moves whenever the swap file is created again. Both halves are
 written into the kernel command line of the boot menu and into the attributes of
 the running kernel, and the device is written into the file the initramfs reads as
 well, so a machine whose command line a person edited by hand still carries it.
 The snapshot entries of the btrfs menu copy the current command line when that
-menu is generated, so they carry the address as well.
+menu is generated, so they carry the address as well. The unit of the boot service
+renders its command line through the shared builder, which quotes an argument when
+systemd would otherwise split it, so a machine whose address cannot be published
+carries an empty argument on that line instead of shifting the argument after it
+into its place.
 
 Both settings files are shell variable files, and the section edits them through
 augeas: the tool parses the file with the lens the values name, the program
