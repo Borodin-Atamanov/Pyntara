@@ -194,10 +194,14 @@ The user-data is a cloud-config whose top-level key is `autoinstall`: the identi
 the human account, its password hash and the authorized key), the `ssh` section that installs
 the openssh server, the storage section and the late commands.
 
-The installer does not apply the autoinstall on its own: it asks on its own console whether to
-continue and proceeds only after the answer yes is typed there. The desktop image answers that
-question by piping yes into the installer client; a run driven from the console answers it at
-the console, and it is the single interaction of this path.
+The installer does not apply the autoinstall on its own: it stops at the question "Continue
+with autoinstall? (yes|no)" on its own console and proceeds only after the answer yes is typed
+there. The desktop image answers that question by piping yes into the installer client; a run
+driven from the console answers it at the console, and it is the single interaction of this
+path. The installer names the way to remove the question: an `autoinstall` word on the kernel
+command line makes it start without asking. Until that word is added, a console run must answer
+the question, and a run that only watches the screen waits forever; answer it with the console
+input, for example `virsh send-key DOMAIN --codeset linux KEY_Y KEY_E KEY_S KEY_ENTER`.
 
 The storage layout is the one of the desktop autoinstall with the boot partition reduced for
 space: a 1 MiB bios_grub partition, a 1 GiB ESP, a 512 MiB ext4 /boot, and the rest of the disk
@@ -212,6 +216,47 @@ KEYFILE_PATTERN=/boot/pyntara.tmp to /etc/cryptsetup-initramfs/conf-hook, and re
 initramfs with update-initramfs -u -k all. Write the key file from a base64 form of the
 passphrase, so no quoting of the passphrase can break the command. Build the user-data with a
 script that reads the passphrase file, so the value never reaches a command line.
+
+A trap of the boot loader. This installer boots in BIOS mode, so curtin installs the i386-pc
+boot loader; and when the ESP carries `grub_device: true` curtin installs it INTO that
+partition. A GRUB core image cannot be embedded in a FAT file system, and on a GPT table the
+blocklist fallback is refused, so the install dies with
+`grub-install: error: will not proceed with blocklists` and the whole curthooks stage fails with
+exit code 3. Everything after that stage, the late commands included, then never runs, so the
+machine is left fully written but without a boot loader and without its automatic unlock. Mark
+only the disk as `grub_device` and leave the ESP without it: curtin then installs the BIOS boot
+loader onto the disk and places its core image in the bios_grub partition. The desktop image
+does not meet this trap because its machine boots in EFI mode, where curtin installs x86_64-efi
+into the ESP and never attempts the i386-pc install. Verified 2026-10-14.
+
+A package the server base lacks. The automatic unlock needs the file
+/etc/cryptsetup-initramfs/conf-hook and the initramfs hook that reads it,
+/usr/share/initramfs-tools/hooks/cryptroot. A plain Ubuntu Server install from this ISO carries
+the cryptsetup package but not cryptsetup-initramfs, so neither file exists: the late command
+that writes conf-hook fails, the initramfs learns nothing about the key file, and the installed
+machine could not open its encrypted root at boot even if the commands had run. Add
+`cryptsetup-initramfs` to the packages of the autoinstall. Verified on the target of the first
+attempt on 2026-10-14.
+
+Reading a failure. A failed install leaves the live environment at an error prompt and writes
+the report /var/crash/TIMESTAMP.install_fail.crash inside the live environment, which is a
+memory file system; the report carries the whole curtin and subiquity log with the Python
+traceback of the failing step, so it is the thing to read. The live installer runs an SSH
+server, but this path gives it no key and no password, so the live environment cannot be reached
+over SSH and the report has to be brought out another way, for example by archiving it onto the
+unencrypted /boot of the installed target and reading that disk from the host. The state the
+failure left on the target is read the same way: `qemu-img convert --force-share` of the active
+layer (a running domain holds a write lock that a plain read meets as "Failed to get shared
+write lock"), then `losetup --read-only --partscan`, then `cryptsetup open --readonly
+--key-file`, then a read-only mount. The files the late commands write are what tells whether
+that stage ran: /etc/crypttab still holding `none`, a missing /etc/cryptsetup-initramfs and a
+missing /boot/pyntara.tmp all say it did not run.
+
+Open point about the root subvolume. The root of the installed system came out on the top level
+of the btrfs file system, without the @ subvolume the desktop layout names; `btrfs subvolume
+list` named none on the target of the first attempt (2026-10-14). The points section snapshots
+the root, and whether a top level root is snapshotted the same way was not verified. Check this
+before this path is called finished.
 
 The installer reboots when it finishes, and with the medium first in the boot order the machine
 starts the installer again; place the disk before the medium in the persistent boot order
