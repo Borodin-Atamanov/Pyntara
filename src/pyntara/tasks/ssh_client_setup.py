@@ -37,16 +37,20 @@ from pyntara.values.common import SshDirective
 def _verify_effective_config(
     directives: tuple[SshDirective, ...],
     timeout: float,
-) -> str | None:
-    """Error text when a configured directive is not effective; None when OK.
+) -> list[str]:
+    """One sentence per directive the effective configuration does not carry.
 
     The shared check in pyntara.ssh probes the effective client configuration
-    with "ssh -G" and reports the first directive the configuration does not
-    carry.
+    with "ssh -G" and compares every declared directive against it, reading a
+    value the tool prints in another spelling through the equivalents of that
+    module.
     """
 
     return ssh.effective_config_errors(
-        values.EFFECTIVE_CONFIG_COMMAND, directives, timeout, "ssh -G"
+        values.EFFECTIVE_CONFIG_COMMAND,
+        directives,
+        timeout,
+        "ssh -G",
     )
 
 
@@ -142,8 +146,8 @@ def task(ctx: Context) -> TaskResult:
 
     if (changed or force) and values.DIRECTIVES:
         verify = _verify_effective_config(values.DIRECTIVES, timeout)
-        if verify is not None:
-            warnings.append(verify)
+        if verify:
+            warnings.extend(verify)
         else:
             _log("effective configuration verified through ssh -G")
 

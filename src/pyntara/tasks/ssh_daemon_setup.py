@@ -81,16 +81,20 @@ from pyntara.values.common import SshDirective
 def _verify_effective_config(
     directives: tuple[SshDirective, ...],
     timeout: float,
-) -> str | None:
-    """Error text when a configured directive is not effective; None when OK.
+) -> list[str]:
+    """One sentence per directive the effective configuration does not carry.
 
     The shared check in pyntara.ssh probes the effective daemon configuration
-    with "sshd -T" and reports the first directive the configuration does not
-    carry.
+    with "sshd -T" and compares every declared directive against it, reading a
+    value the daemon prints in another spelling through the equivalents of that
+    module.
     """
 
     return ssh.effective_config_errors(
-        values.EFFECTIVE_CONFIG_COMMAND, directives, timeout, "sshd -T"
+        values.EFFECTIVE_CONFIG_COMMAND,
+        directives,
+        timeout,
+        "sshd -T",
     )
 
 
@@ -390,11 +394,11 @@ def task(ctx: Context) -> TaskResult:
                 changed = True
 
     if (dropin_changed or force) and values.DIRECTIVES:
-        verify = _verify_effective_config(values.DIRECTIVES, timeout)
-        if verify is None:
-            _log("effective configuration verified through sshd -T")
+        findings = _verify_effective_config(values.DIRECTIVES, timeout)
+        if findings:
+            warnings.extend(findings)
         else:
-            warnings.append(verify)
+            _log("effective configuration verified through sshd -T")
 
     socket_enabled = service_is_enabled(values.SOCKET_UNIT_NAME, timeout)
     socket_active = service_is_active(values.SOCKET_UNIT_NAME, timeout)
@@ -529,11 +533,11 @@ def task(ctx: Context) -> TaskResult:
                 _log("service active")
                 changed = True
                 if port_value is not None:
-                    verify = _verify_listening_port(port_value, timeout)
-                    if verify is None:
+                    listener_finding = _verify_listening_port(port_value, timeout)
+                    if listener_finding is None:
                         _log(f"listener on port {port_value} verified")
                     else:
-                        warnings.append(verify)
+                        warnings.append(listener_finding)
     elif force or socket_changed or port_changed:
         _log(f"restarting service: systemctl restart {values.SERVICE_UNIT_NAME}")
         try:
@@ -550,11 +554,11 @@ def task(ctx: Context) -> TaskResult:
             _log("service restarted")
             changed = True
             if port_value is not None:
-                verify = _verify_listening_port(port_value, timeout)
-                if verify is None:
+                listener_finding = _verify_listening_port(port_value, timeout)
+                if listener_finding is None:
                     _log(f"listener on port {port_value} verified")
                 else:
-                    warnings.append(verify)
+                    warnings.append(listener_finding)
     elif dropin_changed:
         _log(f"reloading service: systemctl reload {values.SERVICE_UNIT_NAME}")
         try:

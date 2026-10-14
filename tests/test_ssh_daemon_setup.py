@@ -18,6 +18,7 @@ import pytest
 from support import FakeProc as _FakeProc
 from support import augtool_fake_run, make_context
 
+from pyntara import ssh
 from pyntara.context import Context
 from pyntara.tasks import ssh_daemon_setup
 from pyntara.values import ssh_daemon_setup as ssh_daemon_values
@@ -825,6 +826,55 @@ def test_socket_untouched_when_disabled(
     assert result.success is True
     assert result.changed is False
     assert not any(call[0] == "systemctl" and "disable" in call for call in calls)
+
+
+def test_the_dropin_name_sorts_before_the_files_a_distribution_ships() -> None:
+    # OpenSSH uses the FIRST value it obtains for a keyword and reads the files
+    # of an Include pattern in the order that pattern sorts them, so the drop-in
+    # of this section has to sort before the files a distribution image ships,
+    # otherwise its values lose to theirs: measured 2026-10-14 on a machine whose
+    # /etc/ssh/sshd_config.d carries 50-cloud-init.conf with
+    # PasswordAuthentication yes, where the effective value stayed yes with the
+    # name pyntara.conf and became no with the name declared now.
+    name = ssh_daemon_values.SSHD_CONFIG_DROPIN_PATH.name
+    vendor_names = (
+        "50-cloud-init.conf",
+        "60-cloudimg-settings.conf",
+        "99-vendor.conf",
+    )
+    assert name.endswith(".conf"), (
+        "the Include pattern of the distribution reads *.conf files, so every "
+        f"other name is never read at all: {name}"
+    )
+    for vendor_name in vendor_names:
+        assert name < vendor_name, (
+            f"{name} is read after {vendor_name}, so the values of the "
+            "distribution win over the declared ones"
+        )
+
+
+def test_a_spelling_the_daemon_normalizes_is_not_a_warning(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The daemon prints a value of this section as the deprecated alias of the
+    # declared one, so the verification has to accept it and report nothing: a
+    # false finding here stands in front of the real ones and hides them
+    # (measured 2026-10-14 on OpenSSH 9.6p1 Ubuntu-3ubuntu13.19, where it did
+    # exactly that to the password authentication overridden by another file).
+    _install_fixtures(monkeypatch, tmp_path)
+    _install_users(monkeypatch, tmp_path)
+    ctx = _ctx(monkeypatch, tmp_path)
+    _write_sshd_config(ctx)
+    declared, equivalents = ssh.VALUE_EQUIVALENTS[0]
+    aliased = "".join(
+        f"{directive.name.lower()} "
+        f"{equivalents[0] if directive.value == declared else directive.value.lower()}\n"
+        for directive in DEFAULT_DIRECTIVES
+    )
+    _install_fake(monkeypatch, sshd_t_output=aliased)
+    result = ssh_daemon_setup.task(ctx)
+    assert result.success is True
+    assert not [warning for warning in result.warnings if "sshd -T" in warning]
 
 
 def test_sshd_t_verification_failure_is_a_warning(

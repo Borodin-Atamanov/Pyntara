@@ -48,8 +48,20 @@ START_CHECK_RETRY_DELAY_SECONDS: float = 1
 # that pulls the drop-in directory in and never rewritten, and the drop-in the
 # task owns. Directives are written through augeas and updated only when they
 # differ; an empty directive list removes the drop-in file.
+#
+# The name of the drop-in starts with zeroes on purpose: OpenSSH uses the FIRST
+# value it obtains for a keyword, and the files of an Include pattern are read in
+# the order the pattern sorts them, so a file named like the vendor files of a
+# distribution image loses its values to theirs. Measured 2026-10-14 on a machine
+# whose /etc/ssh/sshd_config.d carries 50-cloud-init.conf with
+# PasswordAuthentication yes: with a file named pyntara.conf the effective value
+# stayed yes, and with the name below it became no. The name must end with .conf
+# as well, because the Include pattern of the distribution reads *.conf files and
+# ignores every other name.
 SSHD_CONFIG_PATH: Path = Path("/etc/ssh/sshd_config")
-SSHD_CONFIG_DROPIN_PATH: Path = Path("/etc/ssh/sshd_config.d/pyntara.conf")
+SSHD_CONFIG_DROPIN_PATH: Path = Path(
+    "/etc/ssh/sshd_config.d/0000000-pyntara.conf"
+)
 
 # File mode of the rendered drop-in, the sign that marks a comment in the
 # edited files, the ownership comment written at the top of the drop-in and the
