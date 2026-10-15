@@ -331,6 +331,43 @@ The installed machine is a plain Ubuntu Server and its provisioning is the ordin
 project with the install mode set to server, as README.md and docs/spec/install-modes.md
 describe.
 
+## The network configuration of the build machine
+
+The installer writes the network configuration of the machine it runs on, and that machine is the
+build machine, not the target. Measured on 2026-10-15 on the server image of this recipe: the
+target carried /etc/netplan/00-installer-config.yaml naming the interface of the build machine
+(ens3), matching that card by its hardware address (52:54:00:7e:d8:83) and renaming the card to
+the same name. Written onto another machine, whose card carries a different name and a different
+address, that file matches no card at all: `netplan apply` answers "Cannot find unique matching
+interface for ens18", the machine is left with no address and no network, and the defect is
+visible only on its console, because nothing in the machine can be reached from outside any more.
+
+So remove that file from the image before the image is written onto another machine, or at least
+its match and set-name keys and its addresses, and let the provisioning run configure the network
+of the machine the image lands on. A netplan file left behind is worse than no file at all: with
+no file the interface keeps what the target does by default, while a file that matches nothing
+leaves the machine with no address whatever.
+
+The address of the target rarely comes from DHCP, and on this provider it does not come at all.
+Measured on the Contabo machine of 2026-10-15: its segment carries no DHCP server, shown three
+ways, by dhcpcd sending DISCOVER and receiving no answer and falling back to a link-local
+address, by tcpdump catching one outgoing request and no reply in thirty seconds, and by
+systemd-networkd standing in "degraded (configuring)" with an empty /run/systemd/netif/leases.
+The address, the netmask and the gateway of such a machine are read from the provider and written
+into the netplan file by hand; there they were 173.249.15.40/24 with the gateway 173.249.15.1.
+
+Leave the resolver of the image alone. A machine built by this project answers names through
+/etc/systemd/resolved.conf.d/pyntara-dnsproxy.conf and the dnsproxy service, as the machine of
+that measurement does, so its netplan file carries no nameservers, and none should be added: a
+nameserver written into the netplan file takes the resolution away from the chain the project
+installs.
+
+A machine whose network never comes up is still reachable through the console of the provider,
+and that console accepts only characters that need no shift key: the digits, the lowercase
+letters and the plain symbols. Every shifted symbol, the colon, the asterisk, the pipe and the
+redirection sign among them, reaches the machine as a different character, which ruins a command
+that carries it without saying so.
+
 ## Installer payload files
 
 The build copies these files into the tree at /usr/local/share/pyntara-installer, and the apt file into /etc/apt/apt.conf.d, so the image can be rebuilt from this record alone. This is the payload of the build that produced pyntara-live-2026-10-09n.iso on 2026-10-09.
