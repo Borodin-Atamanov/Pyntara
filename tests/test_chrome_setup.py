@@ -781,7 +781,7 @@ def test_the_mirror_check_reads_the_mount_point_and_the_inode(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # A bind mount of a directory that lies on a btrfs subvolume reports its
-    # filesystem root with the subvolume prefix (/@home/i/.config/google-chrome
+    # filesystem root with the subvolume prefix (/@/home/i/.config/google-chrome
     # for /home/i/.config/google-chrome), so a check that compared that root
     # with the plain profile path reported every correct mirror as unmounted
     # and Chrome was started without --user-data-dir on the target machine.

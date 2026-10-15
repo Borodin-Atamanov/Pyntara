@@ -333,7 +333,7 @@ def _mirror_is_mounted(profile_dir: Path, mirror_path: Path, timeout: float) -> 
     a mount point when it reports the mirror path itself. The filesystem root
     is not compared: a bind mount of a directory on a btrfs subvolume reports
     it with the subvolume prefix (a mirror of /home/i/.config/google-chrome
-    reports /@home/i/.config/google-chrome), so the same directory would look
+    reports /@/home/i/.config/google-chrome), so the same directory would look
     like another one and every correct mirror would be reported unmounted. The
     identity of the two directories is proven by their inode instead.
     """
