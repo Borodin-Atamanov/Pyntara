@@ -6,6 +6,16 @@ Three tasks work on the filesystem of a machine that was installed on btrfs: btr
 
 A machine is installed, the user works on it, and at some point the system stops booting or stops behaving. The user then chooses a point in the boot menu, works from it, and continues with a working system that writes to the disk as any ordinary system does. The point itself is never written to, so it can be used for the next recovery as well. This is what the three sections together provide: compressed storage that gains room over time, and a saved state the user can return to without a developer, a rescue medium or a reinstall.
 
+## Layout
+
+The root filesystem of a machine of this project lives in the subvolume @ of its btrfs filesystem, and the machine never boots the top level of that filesystem: the boot entry carries rootflags=subvol=@, and once the layout is in place the boot menu computes that parameter by itself while it is rebuilt, so no settings file names it and nothing has to maintain it. The top level stays almost empty and carries only subvolumes: @ for the root, @points for the points (The points subvolume) and @swap for the swap area (The swap area).
+
+The home of the user is a directory inside @, exactly like /etc and /var, and never a subvolume of its own. What a point of the machine carries is what decides this: a point is a snapshot of @, and a snapshot never crosses into a nested subvolume, so a home inside @ travels with the point and a session started from that point finds the home as it was, while a home that owns a subvolume leaves an empty directory in the place of the home in every point, which loses the home exactly in the situation the points exist for.
+
+The subvolume of the root is also the reason the top level stays empty. A root that lies on the top level is not a subvolume at all (btrfs subvolume show / answers Name: <FS_TREE>), the top level can never be made read-only, and both the deletion of that root and btrfs send of it are refused, so the recovery that renames a root aside and puts a snapshot in its place cannot be performed on such a machine.
+
+A machine whose installation left its root on the top level is brought to this layout without a reinstallation. The recipe was measured on 2026-10-15 on a stopped machine and stands in the image creation guide, paragraph "The root subvolume" (docs/guides/liveusb-image-creation.md).
+
 ## Compression
 
 The storage setup writes compress=zstd:15 into the option field of the fstab lines of the root and of the home of the running system, and applies the options again with a remount, so the compression is in force without a reboot. zstd level 15 is the highest level the kernel accepts for this parameter; the level is chosen once and pays for itself in every write that follows, because the machine writes far more often than it rewrites its whole data set. The same step removes the declared unwanted options from those lines: autodefrag is taken away, because it defragments continuously, and a defragmentation breaks the extents a save point shares with the root, which would cost the machine the space the sharing saves. A machine configured by an earlier version still carries autodefrag, and this step takes it away on the next run.
