@@ -16,7 +16,7 @@ The disk of a domain is a chain of qcow2 layers and the ACTIVE layer is the top 
 
 The stable route has no daemon: `qemu-img convert -O raw -S 4k <active layer> <raw file>`, then `losetup --read-only -P --show <raw file>`, then mount the subvolume. The loop device and the mount live in the kernel, so they survive between commands; a stale node cannot appear. Measured on test002: 60 GiB of virtual size, 11 GiB of raw file.
 
-The root of a machine installed by the project lies in the subvolume @: mount it with `-o ro,subvol=@`. The top level alone shows only the subvolumes @, @home, @points and @swap. Home is a separate subvolume, `-o ro,subvol=@home`. Keep the whole sequence, from the conversion or the connect to the mount, in one command when using nbd.
+The root of a machine installed with the desktop layout of the distribution lies in the subvolume @: mount it with `-o ro,subvol=@`. The top level alone shows only the subvolumes @, @home, @points and @swap. Home is a separate subvolume, `-o ro,subvol=@home`. That is the layout every machine of the project is meant to carry; a machine this image installed does not carry it yet, and the paragraph "The root subvolume" below records the defect, its measured consequences and the change the installer needs. Keep the whole sequence, from the conversion or the connect to the mount, in one command when using nbd.
 
 Trap: the images directory is mode 0711, so a glob written by the user shell does not expand; write the paths out and use sudo.
 
@@ -88,7 +88,7 @@ The live image needs snapd, and the machine does not carry it, because the proje
 
 The catalog has to sit at /cdrom/casper/install-sources.yaml, the path subiquity reads, and /cdrom is the read-only ISO, so the script mounts a tmpfs over /cdrom/casper and writes the catalog there. The squashfs it names is taken from a separate read-only mount of the live medium under /run/pyntara-iso, because that tmpfs hides the copy of the directory that the ISO itself carries.
 
-The autoinstall has to sit at /autoinstall.yaml, one of the discovery paths of subiquity. It names the source id, marks no section interactive (`interactive-sections: []`), and describes the storage: GPT, a 1 MiB bios_grub partition (curtin skips it on UEFI and creates it for BIOS), a 1 GiB EFI partition, a 1 GiB ext4 partition mounted at /boot, and the rest of the disk as one LUKS2 partition that holds a btrfs root mounted with `compress=zstd:15,noatime,autodefrag`, written into the fstab of the target. It carries no `shutdown` key, and it must not: the schema of this subiquity allows only `reboot` or `poweroff`, the default is `reboot`, and a `poweroff` (which the first builds carried) leaves the user with a dark screen and no result, which is wrong for a machine whose whole point is a working system. Its keyboard section names the layout explicitly: without it the keyboard step of subiquity runs `setupcon --save-only` with whatever model the live session detected, and a model that comes out empty makes setupcon exit 1 without a message, which aborts the installation after curtin has already finished.
+The autoinstall has to sit at /autoinstall.yaml, one of the discovery paths of subiquity. It names the source id, marks no section interactive (`interactive-sections: []`), and describes the storage: GPT, a 1 MiB bios_grub partition (curtin skips it on UEFI and creates it for BIOS), a 1 GiB EFI partition, a 1 GiB ext4 partition mounted at /boot, and the rest of the disk as one LUKS2 partition that holds the btrfs root of the machine, mounted with `compress=zstd:15,noatime`, written into the fstab of the target. The line carries no autodefrag, because a continuous defragmentation breaks the extents a save point shares with the root and the storage task strips that option from every machine it meets, and it names no subvolume of its own, because no action of the installer can create one; the paragraph "The root subvolume" below records that second defect and the change it needs. It carries no `shutdown` key, and it must not: the schema of this subiquity allows only `reboot` or `poweroff`, the default is `reboot`, and a `poweroff` (which the first builds carried) leaves the user with a dark screen and no result, which is wrong for a machine whose whole point is a working system. Its keyboard section names the layout explicitly: without it the keyboard step of subiquity runs `setupcon --save-only` with whatever model the live session detected, and a model that comes out empty makes setupcon exit 1 without a message, which aborts the installation after curtin has already finished.
 
 The empty list both removes the confirmation of the installer itself and keeps the storage config in force. The server applies an autoinstall section only to a controller that is not interactive (`apply_autoinstall_config` in server/server.py skips an interactive controller), so an interactive section throws its own configuration away. That is why the standard screens of the installer cannot be combined with this storage layout: the guided layouts of subiquity create ext4 (`guided_direct`), no guided layout carries mount options, and btrfs is reachable only through the manual partition screen, where the person types the options by hand. With an empty list the installer asks nothing of its own, but its client still requires the answer yes on standard input before it applies the configuration (`noninteractive_confirmation` in client/client.py), which the script supplies with `printf 'yes\n' | snap run subiquity`. Measured trap of that line: the pipe closes the standard input of the client, so a failing installation cannot offer its own prompt and the client dies with `EOFError: EOF when reading a line` inside `noninteractive_watch_app_state` (2026-10-09); the failure itself is still readable in /var/log/installer.
 
@@ -205,7 +205,8 @@ input, for example `virsh send-key DOMAIN --codeset linux KEY_Y KEY_E KEY_S KEY_
 
 The storage layout is the one of the desktop autoinstall with the boot partition reduced for
 space: a 1 MiB bios_grub partition, a 1 GiB ESP, a 512 MiB ext4 /boot, and the rest of the disk
-as one LUKS2 partition holding a btrfs root mounted with compress=zstd:15,noatime,autodefrag.
+as one LUKS2 partition holding the btrfs root of the machine, mounted with
+compress=zstd:15,noatime.
 The storage section carries swap size zero for the reason the desktop autoinstall does. The
 separate unencrypted /boot is what makes the automatic unlock possible, because the boot loader
 reads the kernel and its initial ramdisk before anything is decrypted.
@@ -274,13 +275,43 @@ write lock"), then `losetup --read-only --partscan`, then `cryptsetup open --rea
 that stage ran: /etc/crypttab still holding `none`, a missing /etc/cryptsetup-initramfs and a
 missing /boot/pyntara.tmp all say it did not run.
 
-The root subvolume. The root of the installed system lies on the top level of the btrfs file
-system, without the @ subvolume the desktop layout names; `btrfs subvolume list` named none on
-the target (2026-10-14). The points section snapshots the root, so the question a top level root
-raises is whether that snapshot is taken the same way. Verified on a separate btrfs image on
-2026-10-14: `btrfs subvolume snapshot -r` of a mounted top level succeeds with exit code 0 and
-the snapshot is listed, so the layout difference does not by itself stop the points section. The
-end to end answer comes from the provisioning run on this image.
+The root subvolume. The practice every btrfs installation of the distribution follows, and the
+one this image is meant to carry, keeps the top level of the filesystem almost empty and holds
+the data of the system in a subvolume of its own, mounted as / with `subvol=@`: the fstab of the
+machine names the subvolume and the boot loader receives `rootflags=subvol=@`, the top level
+carries nothing but the subvolumes, and a snapshot of the root can be mounted in its own right,
+renamed into the place of the root, or sent away with `btrfs send`. The root of the system this
+image installs does not follow that practice: it lies on the top level of the btrfs filesystem,
+without the @ subvolume the desktop layout names, and `btrfs subvolume list` named none on the
+target (2026-10-14).
+
+The consequences were measured on 2026-10-14 on an isolated btrfs image whose root is the top
+level. `btrfs subvolume show /` answers `Name: <FS_TREE>`, so the root is not a subvolume at all.
+`btrfs subvolume delete /` is refused with exit code 1, and the top level can never be read-only,
+so the recovery that renames the root aside and puts a snapshot in its place cannot be performed
+on such a machine, and `btrfs send` of the root is refused for the same reason. A read-only
+snapshot of a mounted top level does succeed with exit code 0 and is listed, so the layout
+difference does not by itself stop the points section, whose boot entries name the snapshot
+directly. The end to end answer comes from the provisioning run on this image.
+
+The change that removes the defect creates the subvolume on the fresh filesystem and mounts the
+root with `subvol=@`. The file of the autoinstall cannot express it, and neither can an option
+of the mount alone: the mount of a fresh btrfs with `subvol=@` fails with "No such file or
+directory" while the same mount succeeds once the subvolume exists (both measured on 2026-10-14).
+curtin offers no action that creates a subvolume, its storage actions being disk, partition,
+format, mount, lvm_volgroup, lvm_partition, dm_crypt, raid, bcache, zpool, zfs, nvme_controller
+and device, and subiquity adds only the choice of the disk and the sizes of the partitions. The
+creation therefore has to come from the installer, either before curtin mounts the root or in a
+late command after the system is in place, and the old files have to leave the top level
+afterwards; that removal must skip the mount points of the other filesystems, because /boot and
+/boot/efi are partitions of their own in this layout and removing their contents destroys the
+kernels. Two details make the rest cheap once the subvolume exists: the options of a curtin
+mount action reach both the mount of the installation and the fstab of the target, and the boot
+parameter appears by itself, because /etc/grub.d/10_linux computes `rootflags=subvol=<the path of
+the root relative to the root of the filesystem>` while the menu is rebuilt. Measured on a
+machine whose root is a subvolume: /etc/default/grub names no such parameter, and grub.cfg
+carries `rootflags=subvol=@`. Neither route is built or measured yet; a later build of this
+image and the provisioning run on it are what will answer it end to end.
 
 The installer reboots when it finishes, and with the medium first in the boot order the machine
 starts the installer again; place the disk before the medium in the persistent boot order
@@ -635,7 +666,7 @@ storage:
       type: mount
       path: /
       device: root-format
-      options: compress=zstd:15,noatime,autodefrag
+      options: compress=zstd:15,noatime
     - id: efi-mount
       type: mount
       path: /boot/efi
@@ -657,6 +688,8 @@ late-commands:
   - curtin in-target -- update-initramfs -u -k all
 
 ```
+
+The option line of the root mount carries no autodefrag since 2026-10-14: the storage task strips that option from every machine it meets, because a defragmentation that runs continuously breaks the extents a save point shares with the root, and an installer that writes what a task then removes does the same work twice. The build tree file /home/i/Downloads/pyntara-iso/installer-payload/autoinstall.yaml.in still carries the earlier line and loses the option with the same change. The root of the system still lies on the top level of the filesystem, because neither curtin nor subiquity can create a btrfs subvolume from this file and a mount option alone cannot either: mounting a fresh btrfs with subvol=@ fails with "No such file or directory" (measured on an isolated image on 2026-10-14), while the same mount succeeds once the subvolume exists. The layout every machine of the project is meant to carry, and the change that gives it to a machine this image installs, are recorded in the paragraph "The root subvolume".
 
 install-sources.yaml.in:
 
