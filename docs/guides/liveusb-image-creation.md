@@ -365,6 +365,81 @@ The installed machine is a plain Ubuntu Server and its provisioning is the ordin
 project with the install mode set to server, as README.md and docs/spec/install-modes.md
 describe.
 
+## Operator access of the built server image
+
+The autoinstall gives the human account a random password hash, so nobody knows the password of
+the installed machine and its console cannot be used at all. The build of 2026-10-15 therefore
+set a known password for the account i after the provisioning run and before the export, over
+SSH as root: `printf 'i:%s\n' <value> | chpasswd`, with the single digit 1 as the value, so that
+the operator logs in at the console once and changes it. Measured in the image: i is in the group
+sudo (27), the console login with that password reaches a shell, and sudo accepts the same
+password. This is not secrets/default.password: that file carries the password of default.vault,
+so a run described as made with the default password names the vault source and says nothing
+about the account.
+
+The expiry policy of that password has to be the soft one, because the strict form locks the
+machine out. `chage -d 0 i` marks the password expired and the machine then refuses a login by
+key as well: measured, an SSH login as i with a key answers "Password change required but no TTY
+available", so the account cannot be reached over the network and cannot be repaired without the
+console of the provider. `chage -d $(date +%Y-%m-%d) -M 54750 -W 54750 i` instead keeps the
+password valid for about 150 years with the warning window just as long, so the notice runs from
+the first day and the login is never refused: measured, `chage -l i` answers "Password expires:
+never", and both the console login and the SSH login as i print "Warning: your password will
+expire in 54750 days." The password stays changeable with `passwd`, over SSH with a terminal
+(`ssh -t`).
+
+Root login by key. The seed appends the operator's public key to /root/.ssh/authorized_keys and
+the provisioning adds keys of its own to that file. Measured in the image: the file holds two
+lines, the operator's key (/home/i/.ssh/id_ed25519.pub) carrying the comment Pyntara_mesh and the
+port forwarding key carrying the comment Pyntara_port_forwarding.
+
+## Export and verification of the server image
+
+The export is one conversion of the stopped machine, and three removals belong before it, all
+measured on 2026-10-15.
+
+The swap file. The machine of that build carried /swap/swapfile of 8.13 GiB inside the guest
+filesystem. Removing it released 0.45 GiB of the image file and not the 8.13 GiB the file
+occupies on the filesystem: the allocated clusters fell from 4.32 GiB to 3.87 GiB, because a swap
+file nothing has been written into is a run of zeros and a qcow2 file allocates no cluster for a
+run of zeros. The 2.5 GiB the paragraph above measured came from a file that had carried data.
+The swap unit recreates the file at the first boot of the target machine, so the removal costs
+the target nothing.
+
+The resume address. Because the swap file existed when the boot menu was rebuilt, every kernel
+line of the menu names it: measured in the image, resume=/dev/disk/by-id/dm-uuid-CRYPT-LUKS2-...
+cryptroot with resume_offset=1058048. The image carries those words without the file they mean,
+so a hibernation image would not be found; the swapfile task recomputes the address when the
+provisioning runs on the target, and a resume that finds no image only prints a message and the
+boot continues.
+
+The network file of the build machine. Measured on this build the file was
+/etc/netplan/00-build-dhcp.yaml, naming ens3 with dhcp4; it was removed before the export, so the
+/etc/netplan of the artifact is an empty directory, and the consequence stands as the section
+below describes: the machine written from this image comes up with no network of its own and
+takes its address from the console of the provider.
+
+The artifact. /var/lib/libvirt/images/pyntara-server-26.04.1-image.qcow2, 4152950784 bytes
+(3.87 GiB) of a 100 GiB virtual disk, written by `qemu-img convert -O qcow2` from
+pyntara_server_image2.qcow2; the artifact of the same morning, which lacked the operator access
+of the section above, is kept beside it as
+pyntara-server-26.04.1-image-before-operator-access.qcow2. Verified by reading the artifact
+rather than the machine: `qemu-img check` reports no errors and 3.87 per cent of the clusters
+allocated, `e2fsck -fn` on the /boot partition is clean, the top level of the btrfs filesystem
+carries @, @points and @swap and nothing else, the fstab of the root names subvol=@, the crypttab
+carries luks,discard, /boot/pyntara.tmp holds the 27 byte key file that unlocks the root, the
+LUKS2 header is intact, the boot menu passes rootflags=subvol=@ on every kernel line,
+/etc/machine-id is present, and both /swap and /etc/netplan are empty.
+
+A trap of such a reading, met twice on 2026-10-15. The desktop session auto-mounts the partitions
+of the nbd device through udisks under /run/media/i/<label>, and two consequences follow:
+`cryptsetup close` answers "Device ... is still in use" and the mapping stays open, and a later
+read of the same partition through a mount that survived the disconnect of the device answers
+"Input/output error", which looks like a damaged filesystem while the file system check of that
+very image was clean. Unmount those paths before closing the mapping, and read an "Input/output
+error" of a second read as the stale mount until the read is repeated with no mount of the device
+left in place.
+
 ## The network configuration of the build machine
 
 The installer writes the network configuration of the machine it runs on, and that machine is the
