@@ -25,9 +25,14 @@ The peer list comes from the official public-peers repository: the task
 downloads the repository tarball, parses every markdown file into URI
 strings, saves the full list next to the configuration for reference and
 probes the peers in batches. Each batch is written into the
-configuration, the service is restarted, and after the probe pause the
-task reads the yggdrasil journal for Connected lines to find which peers
-actually connected. When a batch reaches peer_target_count working peers,
+configuration, the service is restarted, and the task then asks the
+admin socket which peers are connected and with which latency: that is
+the direct source and it does not depend on the log the daemon writes.
+The peers of the batch that appear there count as connected, and the
+query is repeated with the geometric backoff until the wanted number of
+peers is reached or the retry budget is spent, so a node whose peers
+connect in a wave finishes the batch as soon as they are up instead of
+waiting out a fixed pause. When a batch reaches peer_target_count working peers,
 the task keeps the target count with the lowest ping from the admin
 socket and restarts the service with the final configuration. When no
 batch reaches the target, the last tried batch stays in the
@@ -98,16 +103,6 @@ from pyntara.yggdrasil import self_address_from_output
 # One peer URI inside a backtick line of the public-peers markdown files.
 PEER_URI_PATTERN = re.compile(
     r"`((?:tcp|tls|quic|ws|wss|socks|sockstls|unix)://[^\s`]+)`"
-)
-
-# A Connected line of the yggdrasil journal:
-# Connected outbound: <ygg-address>@<ip:port>, source <local-addr>.
-# The ygg-address is the full peer IPv6 address with colons, e.g.
-# 226:43e9:...:6ea6, and the remote part after the @ is the address of
-# the peer we dialed.
-CONNECTED_PATTERN = re.compile(
-    r"Connected (?:outbound|inbound): [0-9a-f:]+@"
-    r"(\[[0-9a-f:]+\]:\d+|[0-9.]+:\d+)"
 )
 
 
@@ -394,39 +389,6 @@ def _resolve_uri_addrs(uri: str) -> list[tuple[str, int]]:
         if (ip, port) not in result:
             result.append((ip, port))
     return result
-
-
-def _journal_connected_addrs(
-    probe_seconds: float,
-    timeout: float,
-) -> set[tuple[str, int]]:
-    """The (ip, port) pairs of Connected lines in the recent journal.
-
-    Reads the configured journal query for the last probe window; a
-    failed call yields an empty set, so the batch is simply treated as
-    having connected nothing.
-    """
-
-    result = run_command(
-        substituted_command(
-            values.JOURNAL_CONNECTED_QUERY_COMMAND,
-            {
-                "unit": values.SERVICE_UNIT_NAME,
-                "probe_seconds": str(int(probe_seconds)),
-            },
-        ),
-        check=False,
-        capture=True,
-        timeout=timeout,
-    )
-    if result.returncode != 0:
-        return set()
-    addrs: set[tuple[str, int]] = set()
-    for match in CONNECTED_PATTERN.finditer(result.stdout):
-        parsed = _parse_ip_port(match.group(1))
-        if parsed is not None:
-            addrs.add(parsed)
-    return addrs
 
 
 def _latencies_from_ctl(
@@ -738,29 +700,35 @@ def _save_self_address(
         time.sleep(pause)
 
 
-def _wait_for_connections(timeout: float) -> int:
-    """The live peer count, retried until the configured budget runs out.
+def _wait_for_connections(
+    timeout: float,
+    target: int = 1,
+) -> dict[tuple[str, int], float]:
+    """The connected peer addresses, waited for until target or the budget.
 
-    After the final restart the peers need a moment to re-establish
-    their connections, so the getPeers query is repeated with the
+    The admin socket is the direct source: it reports every connected
+    peer with its remote address and its latency, so the probe never
+    depends on the log the daemon writes. The query is repeated with the
     geometric backoff while the total retry budget
-    connection_wait_max_seconds lasts, mirroring the address save retry.
-    Returns the number of live connections at the end, 0 when none
-    connected within the budget, so the caller can warn the user that
-    the node is not reachable from the mesh instead of reporting a
-    healthy node.
+    connection_wait_max_seconds lasts, so a node whose peers connect in
+    a wave returns as soon as the wanted number is reached instead of
+    waiting out a fixed pause. Returns the peer address to latency map of
+    the last query, empty when nothing connected within the budget, so
+    the caller can warn the user that the node is not reachable from the
+    mesh instead of reporting a healthy node.
     """
 
     deadline = time.monotonic() + values.CONNECTION_WAIT_MAX_SECONDS
     attempts = 0
+    latencies: dict[tuple[str, int], float] = {}
     while True:
         attempts += 1
-        live = _latencies_from_ctl(timeout)
-        if live:
-            return len(live)
+        latencies = _latencies_from_ctl(timeout)
+        if len(latencies) >= target:
+            return latencies
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            return 0
+            return latencies
         pause = min(
             backoff_delay(
                 attempts,
@@ -770,7 +738,10 @@ def _wait_for_connections(timeout: float) -> int:
             ),
             remaining,
         )
-        _log(f"no live connections yet, retrying in {pause}s")
+        _log(
+            f"{len(latencies)} connected peer(s), next check in "
+            f"{pause:.0f}s while waiting for {target}"
+        )
         time.sleep(pause)
 
 
@@ -970,20 +941,19 @@ def task(ctx: Context) -> TaskResult:
                 warnings.append(f"systemctl start failed: {exc}")
                 return done("yggdrasil node not running", True)
             changed = True
-        _log(f"waiting {values.PEER_PROBE_TIMEOUT_SECONDS}s for connections")
-        time.sleep(values.PEER_PROBE_TIMEOUT_SECONDS)
+        latencies = _wait_for_connections(timeout)
         if not service_is_active(values.SERVICE_UNIT_NAME, timeout):
             warnings.append(
                 f"service {values.SERVICE_UNIT_NAME} did not become active after start"
             )
             return done("yggdrasil node not running", changed)
-        if not _latencies_from_ctl(timeout):
+        if not latencies:
             warnings.append(
                 f"service {values.SERVICE_UNIT_NAME} is active but has no "
                 "connections; rerun in force mode to re-select peers"
             )
             return done("yggdrasil running without live connections", changed)
-        _log("service active with live connections")
+        _log(f"service active with {len(latencies)} live connection(s)")
         return TaskResult(
             success=True,
             changed=True,
@@ -1036,7 +1006,7 @@ def task(ctx: Context) -> TaskResult:
             )
             return done("yggdrasil node not running", True)
         _log("service active")
-        live = _wait_for_connections(timeout)
+        live = len(_wait_for_connections(timeout))
         if not live:
             warnings.append(
                 f"service {values.SERVICE_UNIT_NAME} is active but has no "
@@ -1082,22 +1052,15 @@ def task(ctx: Context) -> TaskResult:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             warnings.append(f"systemctl restart failed: {exc}")
             return done("yggdrasil not configured", True)
-        _log(f"waiting {values.PEER_PROBE_TIMEOUT_SECONDS}s for connections")
-        time.sleep(values.PEER_PROBE_TIMEOUT_SECONDS)
-        connected = _journal_connected_addrs(
-            values.PEER_PROBE_TIMEOUT_SECONDS,
-            timeout,
-        )
-        _log(f"journal shows {len(connected)} connected peer address(es)")
+        latencies = _wait_for_connections(timeout, values.PEER_TARGET_COUNT)
+        _log(f"admin socket reports {len(latencies)} connected peer address(es)")
         working: list[str] = []
         for uri in batch:
             addrs = _resolve_uri_addrs(uri)
-            if any(addr in connected for addr in addrs):
+            if any(addr in latencies for addr in addrs):
                 working.append(uri)
         _log(f"batch {batch_index + 1}: {len(working)} of {len(batch)} peers connected")
         if len(working) >= values.PEER_TARGET_COUNT:
-            latencies = _latencies_from_ctl(timeout)
-            _log(f"read latencies for {len(latencies)} peer address(es)")
             best_peers = _pick_best_peers(working, latencies, values.PEER_TARGET_COUNT)
             _log(
                 f"batch {batch_index + 1}: keeping {len(best_peers)} peers "
@@ -1118,7 +1081,7 @@ def task(ctx: Context) -> TaskResult:
             f"service {values.SERVICE_UNIT_NAME} did not become active after restart"
         )
         return done("yggdrasil node not running", True)
-    live = _wait_for_connections(timeout)
+    live = len(_wait_for_connections(timeout))
     if not live:
         warnings.append(
             f"service {values.SERVICE_UNIT_NAME} is active but has no "

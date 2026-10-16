@@ -90,20 +90,19 @@ MULTICAST_INTERFACES: tuple[MulticastInterface, ...] = (
 # Peer list: the full downloaded list is saved next to the configuration for
 # reference, while only the selected working peers go into it. The tarball comes
 # from the official public-peers repository, PEER_BATCH_SIZE peers are probed at
-# once, PEER_TARGET_COUNT working ones are kept, PEER_PROBE_TIMEOUT_SECONDS
-# bounds the wait for one batch to connect and PEER_MAX_BATCHES bounds the walk
-# over the list, where 0 means the whole list. The connections arrive in a wave
-# some 30 to 35 seconds after the restart, because the dials run with a bounded
-# parallelism and the dead peers eat their timeout, so 60 seconds leaves a safe
-# margin. STATIC_PEERS is the fallback used when the download fails: pick two or
-# three nearby nodes from the public peer lists.
+# once, PEER_TARGET_COUNT working ones are kept, and PEER_MAX_BATCHES bounds the
+# walk over the list, where 0 means the whole list. How long one batch may wait
+# for its peers to connect is not a value of its own: the wait reuses the
+# CONNECTION_WAIT_* retry below, so it returns as soon as the wanted number of
+# peers is connected instead of waiting out a fixed pause. STATIC_PEERS is the
+# fallback used when the download fails: pick two or three nearby nodes from the
+# public peer lists.
 PEERS_FULL_PATH: Path = Path("/etc/yggdrasil/peers-full.txt")
 PEERS_TARBALL_URL: str = (
     "https://codeload.github.com/yggdrasil-network/public-peers/tar.gz/refs/heads/master"
 )
 PEER_BATCH_SIZE: int = 100
 PEER_TARGET_COUNT: int = 11
-PEER_PROBE_TIMEOUT_SECONDS: float = 60
 PEER_MAX_BATCHES: int = 0
 STATIC_PEERS: tuple[str, ...] = ()
 
@@ -127,7 +126,7 @@ ADDRESS_SAVE_RETRY_MAX_SECONDS: int = 67
 # address save: the peers need a moment to re-establish their connections.
 CONNECTION_WAIT_BASE_SECONDS: int = 1
 CONNECTION_WAIT_MULTIPLIER: int = 2
-CONNECTION_WAIT_MAX_SECONDS: int = 30
+CONNECTION_WAIT_MAX_SECONDS: int = 129
 
 # Name the record of this channel carries in the network report, so a reader
 # sees which network the reported ssh command goes through.
@@ -139,11 +138,9 @@ ASSET_NAME_TEMPLATE: str = "yggdrasil-{version}-{arch}.deb"
 RELEASE_TAG_PREFIX: str = "v"
 
 # Commands the task runs, and the admin socket calls the task and the deployed
-# address command share. {config_path} is CONFIG_PATH and {unit}
-# the unit above; the journal query reads one probe window of the last
-# {probe_seconds} seconds in a timestamp format a machine can compare. The -json
-# flag is part of the admin calls, because the shared parser reads JSON and the
-# socket prints a table without it.
+# address command share. {config_path} is CONFIG_PATH and {unit} the unit above.
+# The -json flag is part of the admin calls, because the shared parser reads
+# JSON and the socket prints a table without it.
 INSTALLED_VERSION_COMMAND: tuple[str, ...] = ("yggdrasil", "-version")
 EXPORT_KEY_FROM_CONFIG_COMMAND: tuple[str, ...] = (
     "yggdrasil",
@@ -155,15 +152,6 @@ GENERATE_CONFIG_COMMAND: tuple[str, ...] = ("yggdrasil", "-genconf", "-json")
 EXPORT_KEY_FROM_STDIN_COMMAND: tuple[str, ...] = ("yggdrasil", "-useconf", "-exportkey")
 PEERS_LATENCY_COMMAND: tuple[str, ...] = ("yggdrasilctl", "-json", "getPeers")
 SELF_ADDRESS_COMMAND: tuple[str, ...] = ("yggdrasilctl", "-json", "getSelf")
-JOURNAL_CONNECTED_QUERY_COMMAND: tuple[str, ...] = (
-    "journalctl",
-    "-u",
-    "{unit}",
-    "--since",
-    "-{probe_seconds}s",
-    "--no-pager",
-    "--output=short-iso",
-)
 SERVICE_START_COMMAND: tuple[str, ...] = ("systemctl", "start", "{unit}")
 SERVICE_RESTART_COMMAND: tuple[str, ...] = (
     "systemctl",
@@ -264,7 +252,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "PEERS_TARBALL_URL",
     "PEER_BATCH_SIZE",
     "PEER_TARGET_COUNT",
-    "PEER_PROBE_TIMEOUT_SECONDS",
     "PEER_MAX_BATCHES",
     "STATIC_PEERS",
     "ADDRESS_FILE_PATH",
@@ -284,7 +271,6 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "EXPORT_KEY_FROM_STDIN_COMMAND",
     "PEERS_LATENCY_COMMAND",
     "SELF_ADDRESS_COMMAND",
-    "JOURNAL_CONNECTED_QUERY_COMMAND",
     "SERVICE_START_COMMAND",
     "SERVICE_RESTART_COMMAND",
     "SERVICE_ENABLE_COMMAND",

@@ -117,7 +117,6 @@ def _ctx(
     monkeypatch.setattr(values, "INSTALL_RETRIES", retries)
     monkeypatch.setattr(values, "PEER_BATCH_SIZE", batch_size)
     monkeypatch.setattr(values, "PEER_TARGET_COUNT", target_count)
-    monkeypatch.setattr(values, "PEER_PROBE_TIMEOUT_SECONDS", 0.0)
     monkeypatch.setattr(values, "STATIC_PEERS", static_peers)
     monkeypatch.setattr(
         values, "ADDRESS_SAVE_RETRY_BASE_SECONDS", address_save_retry_base_seconds
@@ -178,7 +177,6 @@ def _install_fake(
     fail_install: int = 0,
     missing_binary: bool = False,
     peers_tarball: Path | None = None,
-    journal_output: str = "",
     ctl_json: str = "",
     ctl_failures: int = 0,
     ctl_peers_json: str = "",
@@ -196,8 +194,8 @@ def _install_fake(
     curl answers the release API and writes the fixture package or copies
     the fixture peers tarball, apt-get install fails the first
     fail_install attempts, systemctl reports the enabled and active state
-    and runs start and restart, journalctl returns journal_output,
-    yggdrasilctl getSelf returns ctl_json (empty for the first
+    and runs start and restart, yggdrasilctl getSelf returns ctl_json
+    (empty for the first
     ctl_failures calls) and yggdrasilctl getPeers returns ctl_peers_json
     (empty until the service is started when peers_after_start is set).
     DNS resolution goes through host_map.
@@ -257,8 +255,6 @@ def _install_fake(
             if command[1] in ("start", "restart"):
                 started = True
             return _FakeProc(0)
-        if command[0] == "journalctl":
-            return _FakeProc(0, journal_output)
         if command[0] == "yggdrasilctl":
             if command[1] == "-json" and command[2] == "getPeers":
                 if peers_after_start and not started:
@@ -640,14 +636,6 @@ def test_installs_new_release_with_downloaded_peers(
         "tcp://10.0.0.3:1003",
     ]
     tarball = _make_peers_tarball(tmp_path, uris)
-    journal = (
-        "2026-08-13 Connected outbound: "
-        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
-        "source 192.168.85.146:54588\n"
-        "2026-08-13 Connected outbound: "
-        "201:e165:5940:ce70:e2f:19c5:67b:812e@10.0.0.2:1002, "
-        "source [::]:36046\n"
-    )
     ctl = json.dumps(
         {
             "peers": [
@@ -672,7 +660,6 @@ def test_installs_new_release_with_downloaded_peers(
         enabled=False,
         active=False,
         peers_tarball=tarball,
-        journal_output=journal,
         ctl_peers_json=ctl,
         host_map=host_map,
     )
@@ -691,9 +678,9 @@ def test_installs_new_release_with_downloaded_peers(
         encoding="utf-8"
     )
     assert "10.0.0.1:1001" in full
-    # journalctl and yggdrasilctl were queried.
-    assert any(call[0] == "journalctl" for call in calls)
+    # The connected peers come from the admin socket, never from the log.
     assert any(call[0] == "yggdrasilctl" for call in calls)
+    assert not any(call[0] == "journalctl" for call in calls)
 
 
 def test_no_batch_reaches_target_keeps_last_batch(
@@ -710,7 +697,6 @@ def test_no_batch_reaches_target_keeps_last_batch(
         tmp_path,
         installed_version=None,
         peers_tarball=tarball,
-        journal_output="",
         host_map={"10.0.0.1": "10.0.0.1", "10.0.0.2": "10.0.0.2"},
     )
     result = yggdrasil_service_setup.task(ctx)
@@ -820,10 +806,8 @@ def test_force_reruns_peer_selection(
     host_map = {"10.0.0.1": "10.0.0.1"}
     uris = ["tcp://10.0.0.1:1001"]
     tarball = _make_peers_tarball(tmp_path, uris)
-    journal = (
-        "2026-08-13 Connected outbound: "
-        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
-        "source 192.168.85.146:54588\n"
+    ctl = json.dumps(
+        {"peers": [{"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 1}]}
     )
     ctx = _ctx(monkeypatch, tmp_path, force=True, batch_size=1, target_count=1)
     _write_ready_state(ctx)
@@ -834,13 +818,13 @@ def test_force_reruns_peer_selection(
         enabled=True,
         active=True,
         peers_tarball=tarball,
-        journal_output=journal,
+        ctl_peers_json=ctl,
         host_map=host_map,
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert any(call[0] == "journalctl" for call in calls)
+    assert any(call[0] == "yggdrasilctl" for call in calls)
     assert not any(call[0] == "apt-get" and call[1] == "install" for call in calls)
 
 
@@ -1058,52 +1042,26 @@ def test_resolve_uri_addrs(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
     assert yggdrasil_service_setup._resolve_uri_addrs("tcp://peer.example") == []
 
 
-def test_journal_connected_addrs_parses_lines(
+def test_connected_peers_come_from_the_admin_socket(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Connected lines yield their remote (ip, port) pairs; a failed
-    # journalctl call yields an empty set.
-    journal = (
-        "Connected outbound: "
-        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
-        "source 192.168.85.146:54588\n"
-        "Connected inbound: "
-        "201:e165:5940:ce70:e2f:19c5:67b:812e@[2001:db8::1]:1002, "
-        "source [::]:36046\n"
+    # The connected peers are read from the admin socket, which reports
+    # every peer with its remote address and latency; the task never asks
+    # the journal, because the text a daemon writes is not a contract.
+    ctl = json.dumps(
+        {"peers": [{"remote": "tcp://10.0.0.1:1001", "up": True, "latency": 7}]}
     )
-    calls = _install_fake(monkeypatch, tmp_path, journal_output=journal)
-    assert yggdrasil_service_setup._journal_connected_addrs(30, 10) == {
-        ("10.0.0.1", 1001),
-        ("2001:db8::1", 1002),
-    }
-    assert any(call[0] == "journalctl" for call in calls)
-
-
-def test_journal_query_follows_the_configured_command(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # The journal query is a declared value: its placeholders receive the
-    # configured unit and the probe window in whole seconds.
     monkeypatch.setattr(
-        values,
-        "JOURNAL_CONNECTED_QUERY_COMMAND",
-        (
-            "journal-reader",
-            "--unit",
-            "{unit}",
-            "--window",
-            "{probe_seconds}",
-        ),
+        yggdrasil_service_setup.socket,
+        "getaddrinfo",
+        _fake_getaddrinfo({"10.0.0.1": "10.0.0.1"}),
     )
-    calls = _install_fake(monkeypatch, tmp_path)
-    assert yggdrasil_service_setup._journal_connected_addrs(30.4, 10) == set()
-    assert [
-        "journal-reader",
-        "--unit",
-        "yggdrasil.service",
-        "--window",
-        "30",
-    ] in calls
+    calls = _install_fake(monkeypatch, tmp_path, ctl_peers_json=ctl)
+    assert yggdrasil_service_setup._wait_for_connections(10) == {
+        ("10.0.0.1", 1001): 7.0
+    }
+    assert any(call[0] == "yggdrasilctl" for call in calls)
+    assert not any(call[0] == "journalctl" for call in calls)
 
 
 def test_latencies_from_ctl(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1381,19 +1339,19 @@ def test_wait_for_connections_returns_live_count(
     monkeypatch.setattr(
         yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: live
     )
-    assert yggdrasil_service_setup._wait_for_connections(10) == 2
+    assert yggdrasil_service_setup._wait_for_connections(10) == live
     assert _fake_time == []
 
 
 def test_wait_for_connections_gives_up_without_peers(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
 ) -> None:
-    # No peer appears within the retry budget: the helper returns 0 and
-    # records the backoff pauses, so the caller can warn the user.
+    # No peer appears within the retry budget: the helper returns an empty
+    # map and records the backoff pauses, so the caller can warn the user.
     monkeypatch.setattr(
         yggdrasil_service_setup, "_latencies_from_ctl", lambda timeout: {}
     )
-    assert yggdrasil_service_setup._wait_for_connections(10) == 0
+    assert yggdrasil_service_setup._wait_for_connections(10) == {}
     # The helper retried within the budget and then gave up instead of
     # looping forever; the exact pause count depends on the fake clock
     # reads, so only the retry itself is asserted.
@@ -1415,8 +1373,36 @@ def test_wait_for_connections_retries_until_peers_appear(
         return {("10.0.0.1", 1001): 1.0}
 
     monkeypatch.setattr(yggdrasil_service_setup, "_latencies_from_ctl", fake_latencies)
-    assert yggdrasil_service_setup._wait_for_connections(10) == 1
+    assert yggdrasil_service_setup._wait_for_connections(10) == {
+        ("10.0.0.1", 1001): 1.0
+    }
     assert state["calls"] == 2
+
+
+def test_wait_for_connections_reports_count_and_next_pause(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_time: list[float]
+) -> None:
+    # While the wait retries it reports how many peers are connected and how
+    # long the next pause is, so a reader follows the progress on a slow node.
+    messages: list[str] = []
+    monkeypatch.setattr(
+        yggdrasil_service_setup,
+        "_log",
+        lambda message, **kwargs: messages.append(str(message)),
+    )
+    monkeypatch.setattr(
+        yggdrasil_service_setup,
+        "_latencies_from_ctl",
+        lambda timeout: {("10.0.0.1", 1001): 1.0},
+    )
+    assert yggdrasil_service_setup._wait_for_connections(10, target=3) == {
+        ("10.0.0.1", 1001): 1.0
+    }
+    assert messages
+    assert all(
+        "1 connected peer(s), next check in" in message for message in messages
+    )
+    assert all("while waiting for 3" in message for message in messages)
 
 
 def test_final_config_without_live_connections_warns(
@@ -1427,14 +1413,18 @@ def test_final_config_without_live_connections_warns(
     # of silently reporting a healthy node.
     uris = ["tcp://10.0.0.1:1001", "tcp://10.0.0.2:1002"]
     tarball = _make_peers_tarball(tmp_path, uris)
-    journal = (
-        "2026-08-13 Connected outbound: "
-        "226:43e9:3739:64a4:db0c:4147:abfe:6ea6@10.0.0.1:1001, "
-        "source 192.168.85.146:54588\n"
-        "2026-08-13 Connected outbound: "
-        "226:43e9:3739:64a4:db0c:4147:abfe:6ea7@10.0.0.2:1002, "
-        "source 192.168.85.146:54589\n"
-    )
+    peers = {("10.0.0.1", 1001): 7.0, ("10.0.0.2", 1002): 9.0}
+    state = {"calls": 0}
+
+    def fake_latencies(timeout: float) -> dict[tuple[str, int], float]:
+        del timeout
+        state["calls"] += 1
+        # The pre-install check and the batch probe see both peers; every
+        # later query, the final one included, sees none.
+        if state["calls"] <= 2:
+            return peers
+        return {}
+
     ctx = _ctx(monkeypatch, tmp_path, batch_size=3, target_count=2)
     _install_fake(
         monkeypatch,
@@ -1443,14 +1433,14 @@ def test_final_config_without_live_connections_warns(
         enabled=False,
         active=False,
         peers_tarball=tarball,
-        journal_output=journal,
         host_map={"10.0.0.1": "10.0.0.1", "10.0.0.2": "10.0.0.2"},
+    )
+    monkeypatch.setattr(
+        yggdrasil_service_setup, "_latencies_from_ctl", fake_latencies
     )
     result = yggdrasil_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
     assert any("has no live connections" in warning for warning in result.warnings)
-    config_text = values.CONFIG_PATH.read_text(
-        encoding="utf-8"
-    )
+    config_text = values.CONFIG_PATH.read_text(encoding="utf-8")
     assert "10.0.0.1:1001" in config_text
