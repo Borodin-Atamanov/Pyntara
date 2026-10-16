@@ -886,3 +886,143 @@ luks-passphrase (27 bytes, the text below with no trailing newline):
 ```
 sudo -n cp pyntara-live.iso
 ```
+
+## Writing an image onto the disk of a machine that already runs it
+
+A machine that is already running can be reprovisioned with a prepared image over the
+network, without the console of the provider, if the running system is first moved into
+memory and the disk is left alone afterwards. Walked on 2026-10-16 from a Kubuntu host onto
+a Contabo VDS (169.58.1.142, disk /dev/sda of 100 GiB, 7.9 GiB of memory, interface ens18).
+
+Three things fail the write if they are not handled.
+
+The running system dies during the write because the stream of written data evicts the
+file-backed pages of its processes; a page that is needed again after that has to be read
+from the disk that is being overwritten, and no new process can be started. The cure is to
+move the whole running root into a memory file system and switch the root onto that copy, so
+every command of the operation runs from memory.
+
+The kernel writes to the disk on its own even when no program does: the periodic transaction
+commit of btrfs, the on-line discard of a btrfs mounted with discard, and a swap file that
+carries pages. The cure is to disable swap and freeze the old filesystem before the write.
+
+The machine comes back with no network unless the image itself carries the address of the
+target, because the image is built with an empty /etc/netplan and with cloud-init disabled,
+so nothing configures the card.
+
+Prepare the payload on the builder. Write the target's netplan into a copy of the image,
+convert the copy to a raw file and compress it:
+
+```
+sudo cp --reflink=auto IMAGE.qcow2 IMAGE-target.qcow2
+# open the copy read-write over nbd and LUKS, write /etc/netplan/01-target-network.yaml
+# with mode 0600, check it with netplan generate --root-dir, then close the copy
+qemu-img convert -O raw IMAGE-target.qcow2 /var/tmp/image.raw
+zstd -T0 -3 -o /var/tmp/image.zst /var/tmp/image.raw
+```
+
+The archive is about the size of the allocated part of the image, because the data inside
+LUKS does not compress and the empty clusters cost nothing.
+
+Move the target's root into memory and switch onto it. The script that performs the switch
+must place the next script inside the copy, and the root must be made private first:
+
+```
+mkdir -p /ram/root
+mount -t tmpfs -o size=6500M,mode=0755 tmpfs /ram/root
+cp /ram/stage2.sh /ram/root/stage2.sh
+for d in bin sbin lib lib64 usr etc var root home opt srv media mnt; do
+  cp -a --one-file-system "/$d" /ram/root/
+done
+mkdir -p /ram/root/dev /ram/root/proc /ram/root/sys /ram/root/run /ram/root/oldroot
+mount --bind /dev /ram/root/dev
+mount --bind /proc /ram/root/proc
+mount --bind /sys /ram/root/sys
+mount --bind /run /ram/root/run
+swapoff -a
+mount --make-rprivate /
+cd /ram/root
+pivot_root . oldroot
+```
+
+pivot_root fails with exit code 1 and no message while the root mount is shared, which is how
+systemd leaves it, and `mount --make-rprivate /` is the step that makes the switch succeed.
+The script that runs after the switch is read from the new root, so it has to be inside the
+copy before the switch; one left beside the temporary file system is unreachable afterwards.
+The copied root also has to carry the tool that writes and the one that decompresses
+(dd and zstd here, both from the copied /usr).
+
+Freeze the old filesystem and prove that the disk is quiet:
+
+```
+fsfreeze -f /oldroot
+cat /sys/block/sda/stat
+sleep 6
+cat /sys/block/sda/stat
+```
+
+Two equal readings of the counters say that nothing writes. Remounting to read-only is not
+the way here: with the files of a running system open the kernel answers "mount point is
+busy".
+
+Receive the image and write it. On the target:
+
+```
+busybox nc -l -p 9999 | zstd -dc | dd of=/dev/sda bs=8M conv=sparse,fsync status=progress
+```
+
+and on the builder:
+
+```
+cat /var/tmp/image.zst | nc -N TARGET_ADDRESS 9999
+```
+
+conv=sparse keeps the empty clusters of the raw image from being written, so the disk sees
+only the allocated part. The listener must be reachable from the builder; a short test with a
+temporary listener on the chosen port before the destructive phase costs a minute and removes
+the doubt.
+
+Reboot without the provider console:
+
+```
+sync
+echo b > /proc/sysrq-trigger
+```
+
+The kernel performs the reset, so no process has to be started for it. The machine then
+starts from the written image and, if the image carries the target's address, comes up on the
+network by itself. On the run above the write over the network took about seventeen minutes
+(3.84 GiB of archive over a link of about 6.5 MiB/s while the target decompressed 100 GiB) and
+the machine answered on its key port within the next minutes.
+
+Traps met on this route.
+
+netplan set-name did not rename the interface. On the tested machine the kernel named the
+card ens3 (on the VDS ens18) and the generated .link did not match, so the generated
+.network, which carries the interface name only through the set-name key, matched nothing and
+no address was configured at all. A netplan file that matches on the MAC address alone, with
+no set-name, generates a .network with PermanentMACAddress and no name, and that applies
+whatever the interface is called. This is the form to use for an image written onto an
+unknown machine.
+
+dracut leaves a DHCP configuration in the real root. The network module of the initramfs
+writes /run/systemd/network/zzzz-dracut-default.network, which enables DHCP for every
+non-loopback ethernet; it is present in the image's initrd as
+usr/lib/dracut/dracut-default.network. On a segment without a DHCP server the initramfs
+attempt only delays the boot. In the real root systemd-networkd applied the netplan file,
+which won over it, but the order of the two is not a thing to rely on.
+
+qemu-img convert wrote nothing to its standard output on the tested host: `qemu-img convert
+-O raw IMAGE -` returned 0 and produced no byte, while the same command with a file name
+works. Build the raw file first and compress it afterwards.
+
+The size of the memory copy is the logical size of the tree, not the size of the image file.
+The btrfs of the image is compressed, so the file holds about 3.9 GiB while the tree it
+carries is about 6 GiB, and a memory file system stores the files uncompressed. The memory of
+the target therefore has to hold the logical size, which is why the payload is sent over the
+network instead of being stored in memory beside the copy; holding both at once does not fit
+in 7.9 GiB.
+
+The reboot is not clean. After the reset the machine showed a few failed units (atop,
+fail2ban, tor) because the services were cut by the reset rather than shut down; the machine
+was otherwise healthy, reachable, and resolved names through its own resolver chain.
