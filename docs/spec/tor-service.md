@@ -25,7 +25,7 @@ After a change of the drop-in or the include line the task verifies the whole co
 
 ## Identity and the hidden service directory
 
-The identity lives in the hidden service directory at the declared HIDDEN_SERVICE_DIR. The directory must live inside the Tor data directory (/var/lib/tor): the AppArmor profile of the package confines Tor to its data directory, the same lesson as the i2pd data directory. The task creates the directory when it is absent, sets the declared mode (0700, because Tor refuses to serve an onion service from a world-readable directory) and hands the ownership to the declared TOR_USER (the system user the service runs as), so Tor can write the keys and the hostname file. The contents of the directory are never removed or overwritten: the identity is stable, so the onion address survives restarts and reconfigurations.
+The identity lives in the hidden service directory at the declared HIDDEN_SERVICE_DIR. The directory must live inside the Tor data directory (/var/lib/tor): the AppArmor profile of the package confines Tor to its data directory, the same lesson as the i2pd data directory. The task creates the directory when it is absent, sets the declared mode (0700, because Tor refuses to serve an onion service from a world-readable directory) and hands the ownership to the declared TOR_USER (the system user the service runs as), so Tor can write the keys and the hostname file. Outside force mode the contents of the directory are never removed or overwritten: the identity is stable, so the onion address survives restarts and reconfigurations. Force mode is the exception: it removes the identity files inside the directory before the service step, so the restarted Tor generates a new onion identity and the run reports the new address.
 
 Tor generates the identity on the first start. A missing hostname file is not an error, it is the first-run state: the task reports that the address appears after the first start, and the next run reports it.
 
@@ -43,7 +43,7 @@ The task follows the recoverable failure policy of the task contract: a step tha
 
 ## Idempotency
 
-The target state is reached when the package is installed, the %include line is present in the main configuration, the drop-in file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then returns done with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode rewrites the drop-in, verifies the configuration, restarts the service and rewrites the address file, but never reinstalls the package and never touches the main configuration beyond the guaranteed %include line.
+The target state is reached when the package is installed, the %include line is present in the main configuration, the drop-in file matches the rendered content, the hidden service directory exists, the saved address file matches the current address and the service is enabled and active; the task then returns done with changed=False. A missing or stale address file keeps the task active: it writes the file and never restarts a matching, active installation. Force mode removes the onion identity, rewrites the drop-in, verifies the configuration, restarts the service and rewrites the address file, but never reinstalls the package and never touches the main configuration beyond the guaranteed %include line.
 
 ## Parameters
 

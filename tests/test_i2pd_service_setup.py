@@ -305,6 +305,7 @@ def test_already_configured_skips(
     assert result.success is True
     assert result.changed is False
     assert result.message == "already configured"
+    assert values.TUNNEL_KEYS_PATH.is_file()
     expected_flags = curl_flags(
         engine_values.CURL_TIMEOUT_SECONDS,
         engine_values.CURL_RETRIES,
@@ -820,11 +821,13 @@ def test_missing_template_is_reported(
     assert ["systemctl", "restart", "i2pd.service"] in calls
 
 
-def test_address_reported_when_keys_exist(
+def test_force_mode_removes_the_tunnel_identity(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # With the keys file present, the task message carries the computed
-    # .b32.i2p address of the tunnel.
+    # Force mode means a new identity: the tunnel keys file is removed
+    # before the service step, so i2pd generates a new identity at the
+    # restart. The address of the removed identity is never reported and
+    # the run warns that the new one has not appeared yet.
     _install_fixtures(monkeypatch, tmp_path)
     ctx = _ctx(monkeypatch, tmp_path, force=True)
     _write_state_as_rendered(ctx)
@@ -832,12 +835,10 @@ def test_address_reported_when_keys_exist(
     result = i2pd_service_setup.task(ctx)
     assert result.success is True
     assert result.changed is True
-    assert i2pd_keys_b32_address() in (result.message or "")
+    assert not values.TUNNEL_KEYS_PATH.exists()
     assert ["systemctl", "restart", "i2pd.service"] in calls
-    assert (
-        values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip()
-        == i2pd_keys_b32_address()
-    )
+    assert i2pd_keys_b32_address() not in (result.message or "")
+    assert any("did not appear" in warning for warning in (result.warnings or ()))
 
 
 def test_stale_address_file_is_rewritten_without_restart(

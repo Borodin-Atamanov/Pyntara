@@ -232,6 +232,7 @@ def test_already_configured_skips(
     assert result.success is True
     assert result.changed is False
     assert result.message == "already configured"
+    assert (values.HIDDEN_SERVICE_DIR / values.HOSTNAME_FILE_NAME).is_file()
     assert not any(call[0] == "apt-get" for call in calls)
     assert not any(
         call[0] == "systemctl" and call[1] not in ("is-enabled", "is-active")
@@ -414,6 +415,26 @@ def test_first_start_reports_address_appears_later(
         result.message or ""
     )
     assert not values.ADDRESS_FILE_PATH.exists()
+
+
+def test_force_mode_removes_the_onion_identity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Force mode means a new onion identity: the identity files inside the
+    # hidden service directory are removed before the service step, so the
+    # restarted Tor generates a new address. The directory itself stays.
+    ctx = _ctx(monkeypatch, tmp_path)
+    _write_state_as_rendered(ctx)
+    key_file = values.HIDDEN_SERVICE_DIR / "hs_ed25519_secret_key"
+    key_file.write_bytes(b"old-key")
+    calls = _install_fake(monkeypatch, ctx, installed=True, enabled=True, active=True)
+    result = tor_setup.task(_ctx(monkeypatch, tmp_path, force=True))
+    assert result.success is True
+    assert result.changed is True
+    assert not key_file.exists()
+    assert values.HIDDEN_SERVICE_DIR.is_dir()
+    assert ["systemctl", "restart", "tor@default.service"] in calls
+    assert values.ADDRESS_FILE_PATH.read_text(encoding="utf-8").strip() == ADDRESS
 
 
 def test_hidden_service_dir_gets_configured_mode(

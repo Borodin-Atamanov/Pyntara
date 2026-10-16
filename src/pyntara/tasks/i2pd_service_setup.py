@@ -35,7 +35,9 @@ loop, saves the address into ADDRESS_FILE_PATH with the
 declared mode and reports it in the same run, so the deployed address
 command finds the saved value; a machine where the identity never
 appears ends the wait with a warning that the machine is not reachable
-over I2P yet.
+over I2P yet. Force mode removes the keys file before the service step,
+so the restarted daemon generates a new tunnel identity and the run
+reports the new .b32.i2p address.
 
 The service
 is enabled, and it is started or restarted immediately: the action is
@@ -49,8 +51,9 @@ forking service may take a moment to fork. The task is idempotent: it
 skips when the installed version equals the newest release tag, the
 configuration matches the rendered template, the tunnels file matches
 its render, the tunnel keys file exists and the service is enabled and
-active; force mode rewrites the configurations and restarts the
-service but never reinstalls a matching version.
+active; force mode removes the tunnel identity so a new one is generated,
+rewrites the configurations and restarts the service, but never
+reinstalls a matching version.
 """
 
 from __future__ import annotations
@@ -432,6 +435,21 @@ def task(ctx: Context) -> TaskResult:
         return warned_result(changed=False, message="already configured", warnings=warnings)
 
     changed = False
+
+    if force and values.TUNNEL_KEYS_PATH.is_file():
+        # Force mode means a new identity: the keys file holds the whole
+        # tunnel identity and i2pd recreates it when the file is missing, so
+        # removing it and restarting the daemon gives the machine a new
+        # .b32.i2p address.
+        _log(
+            f"force mode: removing the tunnel identity {values.TUNNEL_KEYS_PATH}; "
+            "i2pd generates a new one at the next start"
+        )
+        try:
+            values.TUNNEL_KEYS_PATH.unlink()
+        except OSError as exc:
+            warnings.append(f"cannot remove the tunnel identity: {exc}")
+
     if needs_install:
         _log(f"downloading {asset_name} into {values.DOWNLOAD_DIR}")
         downloaded = True

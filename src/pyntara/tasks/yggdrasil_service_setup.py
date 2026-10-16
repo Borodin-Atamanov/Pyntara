@@ -14,7 +14,9 @@ The task owns the configuration and the node identity. The package
 postinst generates /etc/yggdrasil/yggdrasil.conf with a fresh key pair;
 the task extracts the key once into a separate PEM file referenced by the
 configured private key path field, so rewriting the configuration never
-changes the node identity. The configuration is rendered as JSON from the
+changes the node identity. Force mode regenerates that key pair from a
+fresh document, so a forced run gives the machine a new node identity and
+a new node address. The configuration is rendered as JSON from the
 declared key names of CONFIG_DOCUMENT_KEYS: the TUN interface name and MTU, the admin socket,
 the inbound listeners (tcp, tls, quic and ws on all stacks with random
 ports) and the multicast discovery blocks.
@@ -50,7 +52,8 @@ as a .bak so it cannot regenerate the profile at the next boot. The task
 is idempotent: it skips when the installed version equals the newest
 release, the configuration exists with a non-empty peer list, the key
 file exists, the saved address file exists and the service is enabled
-and active; force mode reruns the whole peer selection.
+and active; force mode regenerates the node key pair and reruns the
+whole peer selection.
 """
 
 from __future__ import annotations
@@ -184,18 +187,22 @@ def _ensure_private_key(
     timeout: float,
     owner_uid: int,
     owner_gid: int,
+    regenerate: bool = False,
 ) -> None:
-    """Extract or generate the node private key into the PEM file.
+    """Extract, generate or regenerate the node private key into the PEM file.
 
-    When the key file exists, nothing happens: the identity is kept.
-    Otherwise the key is extracted from the existing package-generated
-    configuration, or generated from a fresh document when the
-    configuration is absent. Raises RuntimeError when an export fails.
+    When the key file exists and regenerate is false, nothing happens:
+    the identity is kept. Otherwise the key is extracted from the
+    existing package-generated configuration, or generated from a fresh
+    document when the configuration is absent. Regenerate forces the
+    fresh document, so the key that is written is a new pair and the
+    node takes a new identity: that is what force mode is for. Raises
+    RuntimeError when an export fails.
     """
 
-    if values.PRIVATE_KEY_PATH.is_file():
+    if values.PRIVATE_KEY_PATH.is_file() and not regenerate:
         return
-    if values.CONFIG_PATH.is_file():
+    if values.CONFIG_PATH.is_file() and not regenerate:
         result = run_command(
             substituted_command(
                 values.EXPORT_KEY_FROM_CONFIG_COMMAND,
@@ -899,7 +906,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log(f"ensuring private key at {values.PRIVATE_KEY_PATH}")
     try:
-        _ensure_private_key(timeout, owner_uid, owner_gid)
+        _ensure_private_key(timeout, owner_uid, owner_gid, regenerate=force)
     except RuntimeError as exc:
         warnings.append(str(exc))
         return done("yggdrasil not configured", changed)

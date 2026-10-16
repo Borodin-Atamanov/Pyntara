@@ -33,9 +33,11 @@ The onion service identity lives in the hidden service directory. The
 task creates the directory inside the Tor data directory, where the
 AppArmor profile of the package grants Tor write access, sets its mode
 and ownership to the Tor system user. Tor generates the identity (the
-keys and the hostname file) on the first start; the task never removes
-or overwrites the contents, so the onion address survives restarts and
-reconfigurations. On the first run the hostname file does not exist
+keys and the hostname file) on the first start; outside force mode the
+task never removes or overwrites the contents, so the onion address
+survives restarts and reconfigurations. Force mode removes the identity
+files inside the directory, so the restarted Tor generates a new onion
+identity and the run reports the new onion address. On the first run the hostname file does not exist
 yet, so the message says the address appears after the first start, and
 the next run reports it. Once the address is known, the task saves it
 into the declared ADDRESS_FILE_PATH with the declared mode, so the
@@ -55,8 +57,8 @@ The task is idempotent: it skips when the package is installed, the
 include line is present in the main configuration, the drop-in matches
 the render, the hidden service directory exists, the saved address
 file matches the current address and the service is enabled and
-active; force mode rewrites the drop-in and restarts the service but
-never reinstalls the package.
+active; force mode removes the onion identity, rewrites the drop-in and
+restarts the service, but never reinstalls the package.
 """
 
 from __future__ import annotations
@@ -193,18 +195,31 @@ def _write_dropin(
     apply_owner(values.TORRC_DROPIN_PATH, owner_uid, owner_gid)
 
 
-def _ensure_hidden_service_dir() -> None:
+def _ensure_hidden_service_dir(regenerate: bool = False) -> None:
     """Create the hidden service directory with mode and owner.
 
     The directory must live inside the Tor data directory, the only
     place the AppArmor profile of the package grants Tor write access,
     and must be owned by the Tor system user, so Tor can write the keys
-    and the hostname file. The identity inside is never touched: the
-    onion address must survive restarts. The ownership is applied
-    through the shared helper, which skips the chown outside root.
+    and the hostname file. Outside force mode the identity inside is
+    never touched: the onion address must survive restarts. Regenerate
+    removes the identity files first, so Tor creates a new onion
+    identity at the next start, which is what force mode is for. The
+    ownership is applied through the shared helper, which skips the
+    chown outside root.
     """
 
     values.HIDDEN_SERVICE_DIR.mkdir(parents=True, exist_ok=True)
+    if regenerate:
+        removed = 0
+        for entry in sorted(values.HIDDEN_SERVICE_DIR.iterdir()):
+            if entry.is_file():
+                entry.unlink()
+                removed += 1
+        _log(
+            f"force mode: removed {removed} hidden service identity file(s); "
+            "tor generates a new onion identity at the next start"
+        )
     os.chmod(values.HIDDEN_SERVICE_DIR, values.HIDDEN_SERVICE_DIR_MODE)
     try:
         record = pwd.getpwnam(values.TOR_USER)
@@ -356,7 +371,7 @@ def task(ctx: Context) -> TaskResult:
 
     _log(f"preparing hidden service directory {values.HIDDEN_SERVICE_DIR}")
     try:
-        _ensure_hidden_service_dir()
+        _ensure_hidden_service_dir(regenerate=force)
     except (OSError, RuntimeError) as exc:
         warnings.append(f"cannot prepare hidden service directory: {exc}")
     else:

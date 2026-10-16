@@ -985,6 +985,35 @@ def test_ensure_private_key_generates_when_no_config(
     assert any(call[0] == "yggdrasil" and call[1] == "-genconf" for call in calls)
 
 
+def test_ensure_private_key_keeps_the_existing_key_without_regenerate(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Outside force mode an existing key file IS the node identity and is
+    # never touched.
+    _ctx(monkeypatch, tmp_path)
+    values.PRIVATE_KEY_PATH.parent.mkdir(parents=True)
+    values.PRIVATE_KEY_PATH.write_text("OLD-KEY-PEM", encoding="utf-8")
+    calls = _install_fake(monkeypatch, tmp_path)
+    yggdrasil_service_setup._ensure_private_key(10, 0, 0)
+    assert values.PRIVATE_KEY_PATH.read_text(encoding="utf-8") == "OLD-KEY-PEM"
+    assert not any(call[0] == "yggdrasil" for call in calls)
+
+
+def test_ensure_private_key_regenerates_when_asked(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Force mode means a new identity: the existing key file is ignored, a
+    # fresh config document is generated and the key is exported from it,
+    # so the PEM comes out with the new pair.
+    _ctx(monkeypatch, tmp_path)
+    values.PRIVATE_KEY_PATH.parent.mkdir(parents=True)
+    values.PRIVATE_KEY_PATH.write_text("OLD-KEY-PEM", encoding="utf-8")
+    calls = _install_fake(monkeypatch, tmp_path)
+    yggdrasil_service_setup._ensure_private_key(10, 0, 0, regenerate=True)
+    assert values.PRIVATE_KEY_PATH.read_text(encoding="utf-8") == KEY_PEM
+    assert any(call[0] == "yggdrasil" and call[1] == "-genconf" for call in calls)
+
+
 def test_parse_md_peers_extracts_and_deduplicates() -> None:
     # Backtick URIs are extracted and deduplicated; template peers with
     # placeholder hosts, which crash yggdrasil at startup, are dropped.
