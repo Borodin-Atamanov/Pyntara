@@ -56,6 +56,14 @@ MOUNT_TYPE_COMMAND: tuple[str, ...] = (
     "{path}",
 )
 
+# Release of a mount that a running process still holds. A unit stop runs a
+# regular unmount, and the kernel refuses that while any process keeps a working
+# directory or an open file there, as a long-lived daemon does. The lazy
+# unmount detaches the mount from the namespace at once, so the path shows the
+# disk directory, and the old memory mount disappears when its last user lets
+# go. The tool option is the documented answer of util-linux to a busy mount.
+UMOUNT_COMMAND: tuple[str, ...] = ("umount", "--lazy", "{path}")
+
 # Directory on the disk that holds the copy of the live temporary directory
 # while the memory mount is still in place, and the prefix of the copy the task
 # creates there. The whole copy is removed once its contents reach the disk.
@@ -112,6 +120,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "UNIT_MASKED_STATE",
     "SYSTEMCTL_MASK_COMMAND",
     "MOUNT_TYPE_COMMAND",
+    "UMOUNT_COMMAND",
     "STAGING_DIRECTORY_PATH",
     "STAGING_DIRECTORY_PREFIX",
     "STAGING_DIRECTORY_MODE",

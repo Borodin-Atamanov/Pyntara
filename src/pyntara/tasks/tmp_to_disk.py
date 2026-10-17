@@ -200,6 +200,33 @@ def _stop_unit(timeout: float) -> tuple[bool, str | None]:
     return True, None
 
 
+def _lazy_unmount(timeout: float) -> tuple[bool, str | None]:
+    """Detach the mount at once, leaving the old memory mount to its last user."""
+
+    command = substituted_command(
+        values.UMOUNT_COMMAND, {"path": str(values.TMP_MOUNT_POINT)}
+    )
+    try:
+        run_command(command, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"cannot detach {values.TMP_MOUNT_POINT}: {exc}"
+    return True, None
+
+
+def _released(path: Path, timeout: float, warnings: list[str]) -> bool:
+    """Whether the path is no longer a memory mount, reading the mount again.
+
+    An answer that could not be read is reported as not released, so the caller
+    tries the next way instead of claiming a release nobody proved.
+    """
+
+    mount_type, reason = _mount_type(path, timeout)
+    if reason is not None:
+        warnings.append(reason)
+        return False
+    return mount_type != values.TMPFS_TYPE
+
+
 def _copy_tree(source: Path, destination: Path, timeout: float) -> tuple[bool, str | None]:
     """Copy the contents of one directory into another with the shared tool.
 
@@ -358,13 +385,19 @@ def task(ctx: Context) -> TaskResult:
     released = not in_memory
     if in_memory:
         _log(f"unmounting {values.TMP_MOUNT_POINT}")
-        _, reason = _stop_unit(timeout)
-        if reason is not None:
-            warnings.append(reason)
-        after_type, after_error = _mount_type(values.TMP_MOUNT_POINT, timeout)
-        if after_error is not None:
-            warnings.append(after_error)
-        released = after_type != values.TMPFS_TYPE
+        stopped, stop_reason = _stop_unit(timeout)
+        if not stopped and stop_reason is not None:
+            _log(f"the unit stop usually cannot release a held mount: {stop_reason}")
+        released = _released(values.TMP_MOUNT_POINT, timeout, warnings)
+        if not released:
+            _log(
+                "a running process still holds the mount, detaching it at once "
+                "so the path shows the disk directory"
+            )
+            _, reason = _lazy_unmount(timeout)
+            if reason is not None:
+                warnings.append(reason)
+            released = _released(values.TMP_MOUNT_POINT, timeout, warnings)
         if released:
             changed = True
             _log(f"{values.TMP_MOUNT_POINT} is no longer a memory mount")

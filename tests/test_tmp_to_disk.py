@@ -49,6 +49,7 @@ class _World:
         self.entry_present = entry_present
         self.unit_state = unit_state
         self.release_on_stop = True
+        self.lazy_unmount_works = True
         self.rsync_fails = False
         self.events: list[str] = []
         self.scripts: list[str] = []
@@ -98,8 +99,15 @@ def _install_world(monkeypatch: pytest.MonkeyPatch, world: _World) -> None:
                 world.events.append("stop-unit")
                 if world.release_on_stop:
                     world.mounted = False
-                return FakeProc(0, "")
+                    return FakeProc(0, "")
+                raise subprocess.CalledProcessError(1, command)
             return FakeProc(0, "")
+        if name == "umount":
+            world.events.append("lazy-umount")
+            if world.lazy_unmount_works:
+                world.mounted = False
+                return FakeProc(0, "")
+            raise subprocess.CalledProcessError(32, command)
         if name == "rsync":
             world.events.append("rsync")
             if world.rsync_fails:
@@ -230,6 +238,7 @@ def test_a_mount_that_stays_in_memory_keeps_the_saved_copy(
     # the data is never lost without a word.
     world = _World(mounted=True, entry_present=True, unit_state="enabled")
     world.release_on_stop = False
+    world.lazy_unmount_works = False
     _install_world(monkeypatch, world)
 
     result = tmp_to_disk.task(_ctx())
@@ -244,6 +253,27 @@ def test_a_mount_that_stays_in_memory_keeps_the_saved_copy(
     assert staged[0].name.startswith(values.STAGING_DIRECTORY_PREFIX)
     assert "remove-fstab-entry" in world.events
     assert "mask-unit" in world.events
+    assert "lazy-umount" in world.events
+
+
+def test_a_busy_mount_is_detached_at_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A long-lived process holds a working directory in the memory mount, so the
+    # unit stop fails. The lazy unmount detaches the mount at once, the path
+    # shows the disk directory, and the saved contents reach it.
+    world = _World(mounted=True, entry_present=True, unit_state="enabled")
+    world.release_on_stop = False
+    _install_world(monkeypatch, world)
+
+    result = tmp_to_disk.task(_ctx())
+
+    assert result.changed is True
+    assert result.message == f"{values.TMP_MOUNT_POINT} is on the disk"
+    assert result.warnings == ()
+    assert "lazy-umount" in world.events
+    assert world.events[-1] == "rsync"
+    assert not any((tmp_path / "var-tmp").iterdir())
 
 
 def test_the_disk_directory_gets_the_temporary_mode(
