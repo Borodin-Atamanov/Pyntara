@@ -48,6 +48,12 @@ GRUB_D_ENTRY_CLASS: str = "pyntara"
 # a name and the name a script selects is the name the menu shows.
 GRUB_READ_ONLY_ENTRY_NAME: str = "Pyntara-permanent-ro"
 GRUB_WRITABLE_ENTRY_NAME: str = "Pyntara-work-rw"
+
+# The third group of entries: the root the machine runs from, with every change
+# kept in memory. The entry boots the subvolume of the running root, so the
+# session shows the state of the machine at the moment of the boot, and a
+# reboot returns to the ordinary system with nothing of the session left.
+GRUB_CURRENT_ROOT_ENTRY_NAME: str = "Pyntara-current-root-overlay-tmpfs"
 GRUB_LATEST_KERNEL_SUFFIX: str = "latest-core"
 
 # The line each group prints before it loads its kernel. The read-only snapshot
@@ -59,6 +65,9 @@ READ_ONLY_BOOT_MESSAGE: str = (
 WRITABLE_BOOT_MESSAGE: str = (
     "Loading the writable snapshot that writes to the disk"
 )
+IN_MEMORY_BOOT_MESSAGE: str = (
+    "Loading the current root with all changes kept in memory"
+)
 
 # Parameter that keeps the root filesystem in memory for a session started from
 # the point. The point itself is never written to, so a session that went wrong
@@ -66,6 +75,16 @@ WRITABLE_BOOT_MESSAGE: str = (
 # this parameter a read-only point still boots, but nothing in it can write,
 # which is a rescue session and not a working system.
 OVERLAY_PARAMETER: str = "overlayroot=tmpfs:recurse=0"
+
+# Parameter that starts the machine's own root as an overlay with a writable
+# layer in memory. recurse=0 keeps every other mount of the machine at its own
+# place, which is what lets the swap area stay a real mount; recurse=1 would
+# wrap the swap area in an overlay of its own and leave the machine without
+# swap. swap=1 keeps the fstab line of a swap device, so a machine that swaps on
+# a partition keeps it. A swap file is not named there: overlayroot removes the
+# line of a swap file at any setting, and the swap file of this project is
+# activated by its own service, which reads no fstab line.
+IN_MEMORY_PARAMETER: str = "overlayroot=tmpfs:recurse=0,swap=1"
 
 # The settings of the machine that decide whether the boot menu is shown at all.
 # The entries of both snapshots are of no use to a person who never sees them,
@@ -157,6 +176,39 @@ GRUB_BTRFS_IGNORE_KEY: str = "GRUB_BTRFS_IGNORE_SPECIFIC_PATH"
 GRUB_BTRFS_IGNORE_DIRECTIVE_FORMAT: str = "{key}=({entries})"
 GRUB_BTRFS_IGNORE_ENTRY_FORMAT: str = '"{entry}"'
 
+# Protection of the real boot directories in a session of the root in memory.
+# The session keeps its own changes in memory, but a separate boot directory
+# stays on the disk; a kernel update made in such a session would leave the
+# kernel in the real boot directory and its modules in memory, and the ordinary
+# system would no longer boot. One unit per mount point remounts it read only
+# when the kernel command line carries an overlayroot parameter, and the
+# condition on the mount point keeps the unit away from a machine whose boot
+# directory is a plain directory inside the root, where the remount would turn
+# the whole session read only.
+BOOT_READ_ONLY_UNIT_DIRECTORY: Path = Path("/etc/systemd/system")
+BOOT_READ_ONLY_UNIT_FILE_NAME: str = "pyntara-boot-read-only@.service"
+BOOT_READ_ONLY_UNIT_FILE_MODE: int = 0o644
+BOOT_READ_ONLY_UNIT_TEMPLATE_FILE_NAME: str = "boot_read_only_unit.in"
+BOOT_READ_ONLY_MOUNT_POINTS: tuple[str, ...] = ("/boot", "/boot/efi")
+MOUNT_TOOL_NAME: str = "mount"
+SYSTEMCTL_COMMAND: tuple[str, ...] = ("systemctl",)
+SYSTEMCTL_DAEMON_RELOAD_ARGUMENT: str = "daemon-reload"
+SYSTEMCTL_ENABLE_ARGUMENT: str = "enable"
+
+# The question that answers which mount a path belongs to. The section asks it
+# about the swap file of the machine: a swap file is usable in the in-memory
+# session only when it lies on a mount of its own, because the root is a
+# read-only snapshot under a writable layer there.
+MOUNT_POINT_COMMAND: tuple[str, ...] = (
+    "findmnt",
+    "--noheadings",
+    "--output",
+    "TARGET",
+    "--target",
+    "{path}",
+)
+FSTAB_SWAP_FILESYSTEM_TYPE: str = "swap"
+
 # Timeouts of the storage commands of the section and of the menu rebuild.
 STORAGE_COMMAND_TIMEOUT_SECONDS: int = 120
 SNAPSHOT_TIMEOUT_SECONDS: int = 600
@@ -174,10 +226,24 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "GRUB_D_ENTRY_CLASS",
     "GRUB_READ_ONLY_ENTRY_NAME",
     "GRUB_WRITABLE_ENTRY_NAME",
+    "GRUB_CURRENT_ROOT_ENTRY_NAME",
     "GRUB_LATEST_KERNEL_SUFFIX",
     "READ_ONLY_BOOT_MESSAGE",
     "WRITABLE_BOOT_MESSAGE",
+    "IN_MEMORY_BOOT_MESSAGE",
     "OVERLAY_PARAMETER",
+    "IN_MEMORY_PARAMETER",
+    "BOOT_READ_ONLY_UNIT_DIRECTORY",
+    "BOOT_READ_ONLY_UNIT_FILE_NAME",
+    "BOOT_READ_ONLY_UNIT_FILE_MODE",
+    "BOOT_READ_ONLY_UNIT_TEMPLATE_FILE_NAME",
+    "BOOT_READ_ONLY_MOUNT_POINTS",
+    "MOUNT_TOOL_NAME",
+    "SYSTEMCTL_COMMAND",
+    "SYSTEMCTL_DAEMON_RELOAD_ARGUMENT",
+    "SYSTEMCTL_ENABLE_ARGUMENT",
+    "MOUNT_POINT_COMMAND",
+    "FSTAB_SWAP_FILESYSTEM_TYPE",
     "GRUB_DEFAULT_FILE_PATH",
     "GRUB_MENU_STYLE_DIRECTIVE",
     "GRUB_MENU_WAIT_DIRECTIVE_FORMAT",

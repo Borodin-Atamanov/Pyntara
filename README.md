@@ -124,7 +124,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/install-gui-apps.md](docs/spec/install-gui-apps.md) — graphical applications install from the Ubuntu archive, one at a time, each launcher pinned to the Plasma taskbar
 [docs/spec/snap-remove.md](docs/spec/snap-remove.md) — removal of the snap subsystem and every snap it carries, returning the space they held
 [docs/spec/keyring-setup.md](docs/spec/keyring-setup.md) — the KDE wallet of a machine that logs in automatically is created without a password, so no keyring password dialog appears  
-[docs/spec/btrfs-setup.md](docs/spec/btrfs-setup.md) — btrfs compression, the one-off recompression that runs as a watchable background job, the maintenance timers, and the immutable save point with its writable work copy in the boot menu
+[docs/spec/btrfs-setup.md](docs/spec/btrfs-setup.md) — btrfs compression, the one-off recompression that runs as a watchable background job, the maintenance timers, and the boot menu with the immutable save point, its writable work copy and the current root kept in memory
 Guides — how to work with the project:
 
 [docs/guides/project-structure.md](docs/guides/project-structure.md) — repository layout, file responsibilities, config editing tools  

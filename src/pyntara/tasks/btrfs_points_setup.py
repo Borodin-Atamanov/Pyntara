@@ -7,12 +7,27 @@ untouched, and the same point serves the next recovery as well. The work copy is
 a writable copy of the point: a session started from it is an ordinary system
 that writes to the disk, so the user can simply keep working after a recovery.
 
-The boot menu then shows both. The entry of the point is written by this section,
-because it carries a kernel parameter that the generator of snapshot entries
-would give to every entry it writes; the entry of the copy is written by that
-generator, with the parameter left empty, which is what makes the copy boot
-directly from its subvolume. The point is kept out of the generated list, so it
-appears in the menu exactly once.
+The boot menu then shows all three sessions the machine carries. Both entries of
+the snapshots are written by this section, because the generator of snapshot
+entries would give one kernel parameter to every entry it writes, while the point
+needs the parameter that keeps its root in memory and the copy needs the opposite;
+the entry of the copy therefore carries no parameter and boots its subvolume
+directly. The third entry starts the root the machine runs from with all its
+changes in memory: the root is mounted read only and an overlay with a writable
+layer in tmpfs is placed over it, so the session shows the machine as it was at
+the boot and a reboot leaves nothing of it behind. The point is kept out of the
+generated list, so it appears in the menu exactly once.
+
+The session of the root in memory keeps its changes in memory, so anything that
+survives a reboot has to be named: the swap file of the machine is usable there
+only when it lies on a mount of its own, and every separate mount of the fstab
+stays on the disk. The section reports a swap file on the root filesystem as a
+warning, because the machine would run without swap, and writes the separate
+mounts to the log, because a machine with a home of its own is an ordinary state
+and not an incomplete configuration. The real boot directories are the one
+exception the section acts on: a kernel update made in such a session would leave
+the kernel on the disk and its modules in memory, so a unit remounts those
+directories read only there.
 
 The one-off recompression of the machine runs in the background while the other
 tasks run, and this section waits for it to end before it takes the point, so
@@ -40,6 +55,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -60,6 +76,7 @@ from pyntara.values import btrfs_points_setup as values
 from pyntara.values import btrfs_recompress as recompress_values
 from pyntara.values import btrfs_setup as setup_values
 from pyntara.values import engine as engine_values
+from pyntara.values import swapfile_service_install as swapfile_values
 
 # Warning of a machine whose root filesystem the section could not read.
 ROOT_QUERY_WARNING: str = (
@@ -79,14 +96,14 @@ POINTS_MOUNT_WARNING: str = (
     "stored: the points subvolume has to be mounted first"
 )
 
-# Message of a session that was started from one of the save points. The machine
-# and every session share the boot partition, so a session that runs from a
-# snapshot writes neither the save point nor the boot menu: the entries written
-# from there name the snapshot, and the machine would boot into a copy of itself
-# afterwards.
+# Message of a session that was started from a copy of the root. The copy is
+# either the save point, whose root runs as an overlay in memory, or the root of
+# the machine started with its changes in memory. Both roots are copies of the
+# root the machine was installed on, and the save point and the boot menu of the
+# machine belong to the machine rather than to a session that reads a copy of it.
 SNAPSHOT_SESSION_MESSAGE: str = (
-    "this session was started from a save point, so the save point and the boot "
-    "menu of the machine are left alone"
+    "this session was started from a copy of the root, so the save point and the "
+    "boot menu of the machine are left alone"
 )
 
 
@@ -126,6 +143,8 @@ def task(ctx: Context) -> TaskResult:
     if point_present:
         changed = _ensure_work_copy(warnings) or changed
         changed = _write_boot_entry(ctx, warnings) or changed
+        changed = _write_boot_read_only_units(ctx, warnings) or changed
+        _report_in_memory_session_costs(warnings)
         changed = _write_menu_visibility(warnings) or changed
     else:
         warnings.append(
@@ -141,8 +160,10 @@ def task(ctx: Context) -> TaskResult:
         f"the save point {values.POINT_NAME} and the work copy "
         f"{values.WORK_COPY_NAME} are stored in "
         f"{setup_values.POINTS_MOUNT_POINT}: the menu shows "
-        f"{values.POINT_NAME} with the root filesystem in memory and "
-        f"{values.WORK_COPY_NAME} as an ordinary writable system"
+        f"{values.POINT_NAME} with the root filesystem in memory, "
+        f"{values.WORK_COPY_NAME} as an ordinary writable system, and the "
+        f"current root {values.GRUB_CURRENT_ROOT_ENTRY_NAME} with its changes "
+        f"in memory"
     )
     _log(message)
     return TaskResult(
@@ -412,35 +433,49 @@ def _read_only(directory: Path) -> bool | None:
 
 
 def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
-    """Write the boot entries of both snapshots into the grub.d directory.
+    """Write the boot entries of the three sessions into the grub.d directory.
 
-    Each snapshot gets a group of entries, one per kernel, so the menu offers
-    every kernel for the read-only snapshot and for the writable one. A group
-    that cannot be rendered leaves the file untouched: a file that carried only
-    part of the entries would drop the other snapshot from the menu.
+    Each session gets a group of entries, one per kernel, so the menu offers
+    every kernel for the read-only snapshot, for the writable copy and for the
+    root the machine runs from with its changes in memory. A group that cannot
+    be rendered leaves the file untouched: a file that carried only part of the
+    entries would drop the other sessions from the menu.
     """
+
+    mount = _root_filesystem()
+    if mount is None:
+        warning = ROOT_QUERY_WARNING
+        warnings.append(warning)
+        _log(warning, priority=engine_values.ERROR_PRIORITY)
+        return False
 
     groups = (
         (
             values.GRUB_READ_ONLY_ENTRY_NAME,
-            values.POINT_NAME,
+            f"{setup_values.POINTS_SUBVOLUME_NAME}/{values.POINT_NAME}",
             values.OVERLAY_PARAMETER,
             values.READ_ONLY_BOOT_MESSAGE,
         ),
         (
             values.GRUB_WRITABLE_ENTRY_NAME,
-            values.WORK_COPY_NAME,
+            f"{setup_values.POINTS_SUBVOLUME_NAME}/{values.WORK_COPY_NAME}",
             "",
             values.WRITABLE_BOOT_MESSAGE,
+        ),
+        (
+            values.GRUB_CURRENT_ROOT_ENTRY_NAME,
+            _current_root_subvolume(mount),
+            values.IN_MEMORY_PARAMETER,
+            values.IN_MEMORY_BOOT_MESSAGE,
         ),
     )
     rendered: list[str] = []
     error: str | None = None
-    for entry_name, subvolume_name, kernel_parameter, boot_message in groups:
+    for entry_name, subvolume, kernel_parameter, boot_message in groups:
         entries, group_error, notes = _render_entries(
             ctx,
             entry_name=entry_name,
-            subvolume_name=subvolume_name,
+            subvolume=subvolume,
             kernel_parameter=kernel_parameter,
             boot_message=boot_message,
         )
@@ -472,11 +507,216 @@ def _write_boot_entry(ctx: Context, warnings: list[str]) -> bool:
     return True
 
 
+def _current_root_subvolume(mount: btrfs.MountedFilesystem) -> str:
+    """The subvolume the machine runs from, as the boot loader names it.
+
+    findmnt reports a subvolume mount with a leading slash, as in /@, and the
+    boot loader's rootflags option carries the path without it. A root on the top
+    level of the filesystem carries no subvolume at all, which the option names
+    as a slash.
+    """
+
+    return mount.subvolume.strip("/") or "/"
+
+
+def _write_boot_read_only_units(ctx: Context, warnings: list[str]) -> bool:
+    """Write and enable the unit that protects the real boot directories.
+
+    The session of the root in memory keeps its changes in memory, but a boot
+    directory of its own stays on the disk. A kernel update made there would
+    leave the kernel on the disk and its modules in memory, and the ordinary
+    system would no longer boot, so the unit remounts the directory read only in
+    such a session. The conditions of the unit decide whether it applies at all:
+    the kernel command line has to carry an overlayroot parameter, and the path
+    has to be a mount point of its own; without the second condition a remount
+    of a plain directory would turn the whole session read only.
+    """
+
+    mount_tool = shutil.which(values.MOUNT_TOOL_NAME)
+    if mount_tool is None:
+        warning = (
+            f"the tool {values.MOUNT_TOOL_NAME} was not found, so a session of "
+            f"the root in memory leaves the real boot directories writable"
+        )
+        warnings.append(warning)
+        _log(warning, priority=engine_values.ERROR_PRIORITY)
+        return False
+
+    template = _template_text(ctx, values.BOOT_READ_ONLY_UNIT_TEMPLATE_FILE_NAME)
+    content = btrfs.render_template(template, {"mount_tool": mount_tool})
+    path = values.BOOT_READ_ONLY_UNIT_DIRECTORY / values.BOOT_READ_ONLY_UNIT_FILE_NAME
+    changed = False
+    try:
+        if not path.is_file() or path.read_text(encoding="utf-8") != content:
+            btrfs.write_file_atomically(
+                path, content, values.BOOT_READ_ONLY_UNIT_FILE_MODE
+            )
+            changed = True
+            _log(f"boot directory protection written: {path}")
+    except OSError as exc:
+        warnings.append(f"cannot write the boot directory protection {path}: {exc}")
+        _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+        return False
+
+    if changed or _is_forced(ctx):
+        _enable_boot_read_only_units(warnings)
+    return changed
+
+
+def _enable_boot_read_only_units(warnings: list[str]) -> None:
+    """Enable the unit instances that protect the boot directories of the machine."""
+
+    commands = (
+        values.SYSTEMCTL_COMMAND + (values.SYSTEMCTL_DAEMON_RELOAD_ARGUMENT,),
+        values.SYSTEMCTL_COMMAND
+        + (values.SYSTEMCTL_ENABLE_ARGUMENT, *_boot_read_only_unit_names()),
+    )
+    for command in commands:
+        try:
+            run_command(
+                list(command),
+                timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+                check=True,
+                capture=True,
+            )
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+            warnings.append(
+                f"the call {' '.join(command)} failed: {btrfs.failure_text(exc)}"
+            )
+            _log(warnings[-1], priority=engine_values.ERROR_PRIORITY)
+
+
+def _boot_read_only_unit_names() -> tuple[str, ...]:
+    """The unit instances that protect the boot directories of the machine.
+
+    systemd names an instance after the path it carries, with the slashes turned
+    into hyphens, so /boot becomes boot and /boot/efi becomes boot-efi.
+    """
+
+    prefix, _, suffix = values.BOOT_READ_ONLY_UNIT_FILE_NAME.partition("@")
+    return tuple(
+        f"{prefix}@{mount_point.strip('/').replace('/', '-')}{suffix}"
+        for mount_point in values.BOOT_READ_ONLY_MOUNT_POINTS
+    )
+
+
+def _report_in_memory_session_costs(warnings: list[str]) -> None:
+    """Report what the session of the root in memory cannot keep in memory.
+
+    Two facts decide whether the session behaves as its name promises. A swap
+    file is usable there only when it lies on a mount of its own, because the
+    root is a read-only snapshot under a writable layer, so a file on the root
+    filesystem is reported as a warning: the machine would run without swap. The
+    separate mounts of the fstab keep writing to the disk, so changes there
+    survive a reboot; that list is written to the log and not raised as a
+    warning, because a machine whose home is a subvolume of its own is an
+    ordinary state of an installation this project has not folded yet, and a
+    warning would make every run of such a machine end with a nonzero exit code.
+    The section changes nothing in either case: moving a swap file or a mount
+    belongs to the sections that own them.
+    """
+
+    for swap_file in _active_swap_files():
+        if _mount_point_of(swap_file) != str(setup_values.ROOT_MOUNT_POINT):
+            continue
+        warning = (
+            f"the swap file {swap_file} lies on the root filesystem, so the "
+            f"session of the root in memory has no swap: the file must lie on a "
+            f"mount of its own"
+        )
+        warnings.append(warning)
+        _log(warning, priority=engine_values.ERROR_PRIORITY)
+
+    mounts = _mounts_that_stay_on_disk()
+    if mounts:
+        _log(
+            f"in the session of the root in memory these mounts stay on the "
+            f"disk, so changes there survive a reboot: {', '.join(mounts)}"
+        )
+
+
+def _active_swap_files() -> tuple[str, ...]:
+    """The swap files the machine swaps on, as the swap tool lists them."""
+
+    try:
+        result = run_command(
+            list(swapfile_values.SWAP_SHOW_COMMAND),
+            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+            check=False,
+            capture=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ()
+    if result.returncode != 0:
+        return ()
+    files: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and fields[1] == swapfile_values.SWAP_FILE_TYPE:
+            files.append(fields[0])
+    return tuple(files)
+
+
+def _mount_point_of(path: str) -> str | None:
+    """The mount point a path belongs to, as the mount tool reports it."""
+
+    command = substituted_command(values.MOUNT_POINT_COMMAND, {"path": path})
+    try:
+        result = run_command(
+            command,
+            timeout=values.STORAGE_COMMAND_TIMEOUT_SECONDS,
+            check=False,
+            capture=True,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    for line in result.stdout.splitlines():
+        if line.strip():
+            return line.strip()
+    return None
+
+
+def _mounts_that_stay_on_disk() -> tuple[str, ...]:
+    """The separate mounts that remain writable on the disk in such a session.
+
+    The swap area is left out because it is meant to stay on the disk, the
+    storage of the save points is left out because it is the recovery state of
+    the machine rather than a place a session writes, and the boot directories
+    are left out because the section remounts them read only there. The root
+    itself is the session, so it is not listed either.
+    """
+
+    try:
+        text = setup_values.FSTAB_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ()
+    excluded = {
+        str(setup_values.ROOT_MOUNT_POINT),
+        str(setup_values.POINTS_MOUNT_POINT),
+        str(swapfile_values.SWAPFILE_PATH.parent),
+        *values.BOOT_READ_ONLY_MOUNT_POINTS,
+    }
+    mounts: list[str] = []
+    for line in text.splitlines():
+        fields = fstab.field_values(line)
+        if fields is None:
+            continue
+        mount_point = fields[fstab.MOUNT_POINT_FIELD]
+        if fields[fstab.FILESYSTEM_TYPE_FIELD] == values.FSTAB_SWAP_FILESYSTEM_TYPE:
+            continue
+        if mount_point in excluded or mount_point in mounts:
+            continue
+        mounts.append(mount_point)
+    return tuple(mounts)
+
+
 def _render_entries(
     ctx: Context,
     *,
     entry_name: str,
-    subvolume_name: str,
+    subvolume: str,
     kernel_parameter: str,
     boot_message: str,
 ) -> tuple[str, str | None, tuple[str, ...]]:
@@ -556,7 +796,6 @@ def _render_entries(
     search_line = values.GRUB_SEARCH_UUID_LINE.format(value=boot_uuid)
 
     body = _template_text(ctx, values.GRUB_D_ENTRY_BODY_FILE_NAME)
-    subvolume = f"{setup_values.POINTS_SUBVOLUME_NAME}/{subvolume_name}"
     rendered: list[str] = []
     for version in kept:
         kernel_path = _boot_loader_path(

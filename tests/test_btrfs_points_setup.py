@@ -116,6 +116,8 @@ class _Machine:
         self.entry = tmp_path / "40_pyntara_permanent_entry"
         self.boot = tmp_path / "boot"
         self.boot.mkdir(parents=True, exist_ok=True)
+        self.unit_directory = tmp_path / "systemd"
+        self.unit_directory.mkdir(parents=True, exist_ok=True)
         self.installed_packages: set[str] = set()
         self.calls: list[list[str]] = []
         self.subvolumes: set[Path] = set()
@@ -171,6 +173,14 @@ def _use_values(monkeypatch: pytest.MonkeyPatch, machine: _Machine) -> None:
     monkeypatch.setattr(setup_values, "GRUB_BTRFS_CONFIG_PATH", machine.generator_config)
     monkeypatch.setattr(values, "GRUB_DEFAULT_FILE_PATH", machine.grub_default_file)
     monkeypatch.setattr(values, "GRUB_D_ENTRY_PATH", machine.entry)
+    monkeypatch.setattr(
+        values, "BOOT_READ_ONLY_UNIT_DIRECTORY", machine.unit_directory
+    )
+    monkeypatch.setattr(
+        btrfs_points_setup.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}",
+    )
     monkeypatch.setattr(btrfs_points_setup, "_points_mounted", lambda: True)
 
 
@@ -186,6 +196,8 @@ def _commands_fake(
     kernels_without_initrd: tuple[str, ...] = (),
     boot_relpath_prefix: str = BOOT_RELPATH_PREFIX,
     active_jobs: tuple[bool, ...] = (),
+    swap_answers: str = "",
+    mount_answers: dict[str, str] | None = None,
 ) -> list[list[str]]:
     """Answer every command of the section; record the calls.
 
@@ -212,7 +224,12 @@ def _commands_fake(
         stdout = ""
         stderr = ""
         if command[0] == "findmnt":
-            stdout = root_answer
+            if "SOURCE,FSTYPE,OPTIONS" in command:
+                stdout = root_answer
+            else:
+                stdout = (mount_answers or {}).get(command[-1], "/")
+        elif command[0] == "swapon":
+            stdout = swap_answers
         elif command[0] == "dpkg-query":
             if command[-1] not in machine.installed_packages:
                 rc = 1
@@ -376,7 +393,11 @@ def test_points_setup_writes_the_boot_entries_of_both_snapshots(
         f"{values.OVERLAY_PARAMETER}" in entry
     )
     assert f"rootflags=subvol=@points/{values.WORK_COPY_NAME}" in entry
-    assert entry.count(values.OVERLAY_PARAMETER) == 2
+    assert entry.count(values.IN_MEMORY_PARAMETER) == 2
+    assert (
+        f"rootflags=subvol=@ {values.IN_MEMORY_PARAMETER} quiet splash" in entry
+    )
+    assert entry.count(values.OVERLAY_PARAMETER) == 4
     assert f'linux "/{values.KERNEL_FILE_PREFIX}{NEWER_KERNEL}"' in entry
     assert f'initrd "/{values.INITRD_FILE_PREFIX}{NEWER_KERNEL}"' in entry
 
@@ -405,6 +426,11 @@ def test_points_setup_gives_every_menu_entry_a_name_of_its_own(
         f"{values.GRUB_READ_ONLY_ENTRY_NAME}-7-0-0-9-generic",
         f"{values.GRUB_WRITABLE_ENTRY_NAME}-{values.GRUB_LATEST_KERNEL_SUFFIX}",
         f"{values.GRUB_WRITABLE_ENTRY_NAME}-7-0-0-9-generic",
+        (
+            f"{values.GRUB_CURRENT_ROOT_ENTRY_NAME}-"
+            f"{values.GRUB_LATEST_KERNEL_SUFFIX}"
+        ),
+        f"{values.GRUB_CURRENT_ROOT_ENTRY_NAME}-7-0-0-9-generic",
     ]
     assert len(set(identifiers)) == len(identifiers)
     for identifier in identifiers:
@@ -524,14 +550,22 @@ def test_points_setup_rebuilds_the_menu_without_a_generator_daemon(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     # The daemon of the generator is off, so the rebuild stands alone: no unit
-    # is stopped before it and nothing is started again afterwards.
+    # of the generator is stopped before it and nothing is started again
+    # afterwards. The unit that protects the boot directories is enabled, which
+    # is a call of its own and not a call on the generator.
     machine = _Machine(tmp_path)
     _use_values(monkeypatch, machine)
     calls = _commands_fake(monkeypatch, machine)
 
     btrfs_points_setup.task(_ctx())
 
-    assert not [call for call in calls if call[0] == "systemctl"]
+    generator_calls = [
+        call
+        for call in calls
+        if call[0] == "systemctl"
+        and setup_values.GRUB_BTRFS_DAEMON_UNIT_NAME in call
+    ]
+    assert not generator_calls
     assert any(call[0] == "update-grub" for call in calls)
 
 
@@ -675,6 +709,7 @@ def test_points_setup_changes_nothing_on_a_machine_that_already_carries_both(
     _commands_fake(monkeypatch, machine)
     machine.already_stored(machine.point, machine.work_copy)
     btrfs_points_setup._write_boot_entry(_ctx(), [])
+    btrfs_points_setup._write_boot_read_only_units(_ctx(), [])
 
     result = btrfs_points_setup.task(_ctx())
 
@@ -703,6 +738,7 @@ def test_points_setup_rebuilds_the_menu_when_only_the_visibility_changed(
     calls = _commands_fake(monkeypatch, machine)
     machine.already_stored(machine.point, machine.work_copy)
     btrfs_points_setup._write_boot_entry(_ctx(), [])
+    btrfs_points_setup._write_boot_read_only_units(_ctx(), [])
 
     result = btrfs_points_setup.task(_ctx())
 
@@ -730,6 +766,7 @@ def test_points_setup_rebuilds_the_menu_when_the_run_forces_it(
     calls = _commands_fake(monkeypatch, machine)
     machine.already_stored(machine.point, machine.work_copy)
     btrfs_points_setup._write_boot_entry(_ctx(), [])
+    btrfs_points_setup._write_boot_read_only_units(_ctx(), [])
 
     result = btrfs_points_setup.task(_ctx(force=True))
 
@@ -898,6 +935,168 @@ def test_points_setup_belongs_to_every_install_mode() -> None:
     records = {record.name: record for record in tasks_values.CATALOG}
 
     assert records["btrfs_points_setup"].modes == tasks_values.MODES
+
+
+def test_points_setup_writes_the_entry_of_the_root_in_memory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The third group starts the subvolume the machine runs from, and the
+    # parameter places a writable layer in memory over that subvolume. The
+    # parameter of the point carries no swap setting and the parameter of the
+    # running root does, because the session of the running root must keep the
+    # usual swap of the machine.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(monkeypatch, machine)
+
+    btrfs_points_setup.task(_ctx())
+
+    entry = machine.entry.read_text(encoding="utf-8")
+    assert (
+        f"root=UUID=ec3f8aa4-98ba-4b28-85de-0c4dbff9f669 ro rootflags=subvol=@ "
+        f"{values.IN_MEMORY_PARAMETER} quiet splash" in entry
+    )
+    assert values.IN_MEMORY_BOOT_MESSAGE in entry
+    assert (
+        f"menuentry '{values.GRUB_CURRENT_ROOT_ENTRY_NAME}-"
+        f"{values.GRUB_LATEST_KERNEL_SUFFIX}'" in entry
+    )
+
+
+def test_points_setup_names_the_top_level_root_as_a_slash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A root that lies on the top level of the filesystem carries no subvolume,
+    # and the boot loader names that case as a slash. An empty path in the
+    # option would leave the entry without a root.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch, machine, root_answer="/dev/vda2 btrfs rw,compress=zstd:15\n"
+    )
+
+    btrfs_points_setup.task(_ctx())
+
+    entry = machine.entry.read_text(encoding="utf-8")
+    assert f"rootflags=subvol=/ {values.IN_MEMORY_PARAMETER}" in entry
+
+
+def test_points_setup_protects_the_real_boot_directories(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The session keeps its changes in memory, but a boot directory of its own
+    # stays on the disk, so the unit remounts it read only there. The unit
+    # applies only when the kernel command line carries an overlayroot
+    # parameter and the path really is a mount point of its own, and both
+    # directories are enabled. A second run writes nothing and enables nothing
+    # again.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    calls = _commands_fake(monkeypatch, machine)
+
+    btrfs_points_setup.task(_ctx())
+    btrfs_points_setup.task(_ctx())
+
+    unit = machine.unit_directory / values.BOOT_READ_ONLY_UNIT_FILE_NAME
+    text = unit.read_text(encoding="utf-8")
+    assert unit.stat().st_mode & 0o777 == values.BOOT_READ_ONLY_UNIT_FILE_MODE
+    assert "ConditionKernelCommandLine=overlayroot" in text
+    assert "ConditionPathIsMountPoint=%f" in text
+    assert "ExecStart=/usr/bin/mount -o remount,ro %f" in text
+    enables = [
+        call
+        for call in calls
+        if call[0] == "systemctl" and call[1] == values.SYSTEMCTL_ENABLE_ARGUMENT
+    ]
+    assert enables == [
+        [
+            "systemctl",
+            "enable",
+            "pyntara-boot-read-only@boot.service",
+            "pyntara-boot-read-only@boot-efi.service",
+        ]
+    ]
+
+
+def test_points_setup_reports_a_swap_file_inside_the_root_subvolume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A swap file on the root filesystem is covered by the writable layer of the
+    # in-memory session and cannot be activated there, so the machine would run
+    # without swap. A swap file on a mount of its own is the layout this project
+    # builds, and it is not reported.
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch,
+        machine,
+        swap_answers="/swap.img file 3821M\n",
+        mount_answers={"/swap.img": "/"},
+    )
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert any("/swap.img" in warning and "no swap" in warning for warning in result.warnings)
+
+
+def test_points_setup_accepts_a_swap_file_on_a_mount_of_its_own(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    machine = _Machine(tmp_path)
+    _use_values(monkeypatch, machine)
+    _commands_fake(
+        monkeypatch,
+        machine,
+        swap_answers="/swap/swapfile file 13558M\n",
+        mount_answers={"/swap/swapfile": "/swap"},
+    )
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert not [warning for warning in result.warnings if "no swap" in warning]
+
+
+def test_points_setup_names_the_mounts_that_stay_on_the_disk(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Every separate mount of the fstab keeps writing to the disk in the
+    # session, so its changes survive a reboot. The list is written to the log
+    # and not raised as a warning: a machine whose home is a subvolume of its
+    # own is an ordinary state, and a warning would end every run of such a
+    # machine with a nonzero exit code. The swap area stays on the disk on
+    # purpose, the points storage is the recovery state of the machine, and the
+    # boot directories are made read only, so none of them is listed.
+    machine = _Machine(tmp_path)
+    machine.fstab.write_text(
+        FSTAB_TEXT
+        + "UUID=x /home btrfs defaults 0 0\n"
+        + "UUID=x /swap btrfs defaults 0 0\n"
+        + f"UUID=x {machine.mount_point} btrfs defaults 0 0\n"
+        + "UUID=x /boot/efi vfat defaults 0 2\n",
+        encoding="utf-8",
+    )
+    _use_values(monkeypatch, machine)
+
+    mounts = btrfs_points_setup._mounts_that_stay_on_disk()
+
+    assert mounts == ("/home",)
+
+
+def test_points_setup_does_not_raise_a_warning_for_a_separate_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    machine = _Machine(tmp_path)
+    machine.fstab.write_text(
+        FSTAB_TEXT + "UUID=x /home btrfs defaults 0 0\n", encoding="utf-8"
+    )
+    _use_values(monkeypatch, machine)
+    _commands_fake(monkeypatch, machine)
+
+    result = btrfs_points_setup.task(_ctx())
+
+    assert not [warning for warning in result.warnings if "/home" in warning]
+
+
 
 
 def test_the_shipped_entry_templates_carry_the_placeholders_the_task_fills() -> None:

@@ -26,6 +26,7 @@ ENTRY_FIELD_COUNT: int = 6
 # Position of the fields inside a line, counted from zero.
 DEVICE_FIELD: int = 0
 MOUNT_POINT_FIELD: int = 1
+FILESYSTEM_TYPE_FIELD: int = 2
 OPTIONS_FIELD: int = 3
 
 

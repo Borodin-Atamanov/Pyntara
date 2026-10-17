@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep a boot directory read only in a session that keeps the root in memory
+ConditionKernelCommandLine=overlayroot
+ConditionPathIsMountPoint=%f
+After=local-fs.target
+Before=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=$mount_tool -o remount,ro %f
+
+[Install]
+WantedBy=multi-user.target
