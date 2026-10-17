@@ -177,13 +177,14 @@ from a person editing by hand, is removed there, because that value belongs to
 the kernel command line alone and the file is baked into the initial ramdisk. A
 machine without the augeas tool gets a warning and keeps its working swap file.
 
-A session that was started from a snapshot of the root publishes nothing. The
+A session that was started from a copy of the root publishes nothing. The
 boot partition is shared by every session of the machine, so a menu rebuilt from
 such a session would name the snapshot and the machine would boot a copy of itself
 afterwards; the resume address of the machine belongs to the machine in the same
 way. The program asks findmnt for the root of the session before it writes: the
-root is an overlay when the session runs from the read-only point, and its
-subvolume lies inside the points subvolume when it runs from the work copy. In
+root is an overlay both when the session runs from the read-only point and when
+it keeps the root in memory, and its subvolume lies inside the points subvolume
+when it runs from the work copy. In
 such a session the program reads the offset of the swap file and the caller
 reports it, while the kernel command line, the boot menu and the attributes of the
 running kernel stay untouched; the swap file itself is still brought to its

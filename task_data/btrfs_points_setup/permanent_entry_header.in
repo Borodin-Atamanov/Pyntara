@@ -1,8 +1,11 @@
 #!/bin/sh
 exec tail -n +3 $0
-# Boot entries of the two snapshots of this machine, written by the
+# Boot entries of the three sessions of this machine, written by the
 # btrfs_points_setup task of Pyntara. The group of the read-only snapshot starts
 # it with the root filesystem in memory, so a session started from it works
 # normally and leaves the snapshot untouched, ready for the next recovery. The
 # group of the writable snapshot boots its own subvolume and writes to the disk,
-# so a session started from it is an ordinary system.
+# so a session started from it is an ordinary system. The group of the current
+# root starts that root read only under a writable layer in memory, so a session
+# started from it shows the machine as it was at the boot and leaves nothing
+# behind after a reboot.
