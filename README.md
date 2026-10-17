@@ -108,7 +108,7 @@ parameters. May reference contracts but never repeat them:
 [docs/spec/ssh-client-setup.md](docs/spec/ssh-client-setup.md) — system-wide SSH client defaults, drop-in configuration  
 [docs/spec/port-forwarding-setup.md](docs/spec/port-forwarding-setup.md) — Auto Port Forwarding service, reverse ssh tunnels to the vault port-forwarding servers  
 [docs/spec/upnp-forwarding-setup.md](docs/spec/upnp-forwarding-setup.md) — router port forwarding through UPnP, the published SSH port and its record in the network report  
-[docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile  
+[docs/spec/users-and-host.md](docs/spec/users-and-host.md) — hostname, ZRAM, zswap, swapfile, the temporary directory moved onto the disk  
 [docs/spec/kde-keyboard-setup.md](docs/spec/kde-keyboard-setup.md) — KDE keyboard layouts, switch options, the layout indicator and per-layout hotkeys, applied via kwriteconfig6 and the kglobalaccel daemon  
 [docs/spec/kde-settings.md](docs/spec/kde-settings.md) — KDE dark color scheme, dark global theme, NumLock, touchpad and Wayland virtual keyboard, applied via the plasma-apply tools and kwriteconfig6
 [docs/spec/vocalinux-setup.md](docs/spec/vocalinux-setup.md) — Vocalinux voice dictation from the official AppImage release, system dependencies, app config, autostart and the Meta+S consuming shortcut

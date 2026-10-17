@@ -225,4 +225,18 @@ two actions, the tool that asks the machine about hibernation, the answer that
 means it is offered, the command that runs a call as the desktop user, and the
 sentence that tells the user about the next login.
 
+## Temporary directory on disk
+
+Task: tmp_to_disk, in the desktop and fast_desktop modes only. It depends on no other task and sits in the catalog after the task that configures the resolver of the machine, because it installs its own tools from the archive.
+
+Kubuntu mounts /tmp from memory through the vendor unit tmp.mount, which local-fs.target pulls in at boot and which carries no [Install] section; an fstab entry for the same mount may exist on a machine a person edited. The task reaches its target state in four steps and reports each of them: it copies the contents of the running memory mount to a staging directory on the disk, removes every fstab entry that mounts the directory from memory through augeas, masks tmp.mount, and stops the unit so the running session sees the directory on the disk.
+
+The fstab is edited with the Fstab lens: the entry is selected by its mount point field and its filesystem type field, the selected entries are removed and the tree is saved, so the task writes no syntax of the file itself and every other line and comment survives. Masking is what disables the boot mount, because a unit without an [Install] section cannot be disabled; systemctl unmask reverses it.
+
+The copy comes before any configuration, because the contents of a memory mount disappear the moment it is released; a copy that cannot be made leaves the machine untouched and reports a warning. The copy is made by rsync with permissions, ownership, ACL and extended attributes preserved, and special files such as the sockets of the session are skipped. The staging directory lives under /var/tmp with root-only access and is removed once its contents reach the disk. A process that still holds the mount keeps it in place; the boot configuration is already done, the saved copy stays on the disk and the warning names its path, so the next boot uses the disk directory and nothing is lost.
+
+The task is idempotent: it is done when the directory is not a memory mount, the fstab carries no memory entry, the unit is masked and the directory carries the temporary directory mode 1777. A step that cannot be performed is a warning of the completed task, and the run exits nonzero.
+
+All parameter values live in the src/pyntara/values/tmp_to_disk.py: the mount point, the fstab path, its lens, entry selector and removal line, the filesystem type, the unit name and its masked state word, the mask command, the mount type query, the staging directory path, prefix and mode, the directory mode and its permission mask, the copy command and the packages of the two tools.
+
 These tasks create system services executed at system startup.

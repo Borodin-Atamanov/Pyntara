@@ -155,6 +155,14 @@ CATALOG: tuple[TaskSpec, ...] = (
         MODES,
     ),
     TaskSpec(
+        "tmp_to_disk",
+        "Move the temporary directory onto the disk: copy what the memory mount "
+        "holds, remove the fstab entry that asks for it, mask the unit that mounts "
+        "it and release the mount of the running session.",
+        (),
+        ("desktop", "fast_desktop"),
+    ),
+    TaskSpec(
         "i2pd_service_setup",
         "Install and configure the latest i2pd from GitHub releases as a system "
         "service.",
