@@ -298,6 +298,13 @@ CATALOG: tuple[TaskSpec, ...] = (
         ("desktop",),
     ),
     TaskSpec(
+        "ventoy_install",
+        "Install the latest Ventoy release and the menu entry that creates a "
+        "multiboot USB drive.",
+        (),
+        ("desktop", "fast_desktop"),
+    ),
+    TaskSpec(
         "btrfs_recompress",
         "Compress the data that is already on the btrfs filesystem once and "
         "balance the chunks, as a background job the user can watch.",

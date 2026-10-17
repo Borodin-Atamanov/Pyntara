@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Ventoy
+GenericName=Multiboot USB creator
+Comment=Install Ventoy on a USB drive to boot ISO files from it
+Exec=$gui_path
+Icon=$icon_path
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=false
