@@ -30,9 +30,11 @@ An unknown PYNTARA_INSTALL_MODE value shows the resilience notice, which names t
 
 ## Task selection
 
-The task set is fixed by the PYNTARA_TASKS environment variable: space-separated task names. Dependencies are resolved inside the engine, so the effective set is always complete and ordered.
+The task set is fixed by the PYNTARA_TASKS environment variable: space-separated task names. Dependencies are resolved inside the engine, so the effective set is complete and ordered, unless the variable below removes them. Unknown names are reported and ignored.
 
 When PYNTARA_TASKS is omitted, the default task set of the chosen mode is used: the tasks whose modes field lists that mode.
+
+The automatic inclusion of dependencies is removed by PYNTARA_DONT_RUN_DEPENDENT_TASK: 1, true or yes runs only the named tasks, and without PYNTARA_TASKS only the tasks of the mode, in catalog order. The run prints one line that names every dependency it did not add, or none when the selection has no dependencies of its own, so a short set is never silent. 0, any other answer and an unset variable keep the complete set, and the shipped default is 0. The mode serves a machine whose state is already prepared: a task without its dependencies finds an unprepared machine and reports what it could not do, so the bootstrap and the launcher never set the variable.
 
 Each task has:
 explicit ordering  

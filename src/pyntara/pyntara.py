@@ -441,30 +441,49 @@ def _default_vault_warning(vault_source: str | None) -> str | None:
 
 
 def _resolve_task_names(
-    mode: str, notice_timeout: int | None, tasks: tuple[tasks_values.TaskSpec, ...]
-) -> list[str]:
+    mode: str,
+    notice_timeout: int | None,
+    tasks: tuple[tasks_values.TaskSpec, ...],
+    *,
+    add_dependencies: bool,
+) -> tuple[list[str], list[str]]:
     """Task set from PYNTARA_TASKS, or the resolved mode defaults.
 
     PYNTARA_TASKS is a space-separated list of task names; dependencies are
-    resolved transitively. Unknown names are not fatal: an error notice is
-    shown, the run pauses so the user can interrupt, then the run continues
-    without the unknown names. The mode defaults are resolved the same way:
-    a task that belongs to the mode pulls its catalog dependencies into the
-    run set even when those dependencies belong to no mode themselves.
+    resolved transitively, so a named task brings the tasks it needs into the
+    run rather than relying on the operator to name them. Unknown names are not
+    fatal: an error notice is shown, the run pauses so the user can interrupt,
+    then the run continues without the unknown names. The mode defaults are
+    resolved the same way: a task that belongs to the mode pulls its catalog
+    dependencies into the run set even when those dependencies belong to no mode
+    themselves.
+
+    With add_dependencies false the run set is only the selected tasks
+    themselves: no dependency is added, and the tasks that would have been added
+    are returned as the second answer, so the run names them in its log instead
+    of leaving the user to guess why the set is short. Both answers keep the
+    catalog order, so the order of the selection never decides the execution
+    order.
     """
 
     selection = _env("PYNTARA_TASKS")
     if selection is None:
-        defaults = task_catalog.default_tasks(mode, tasks)
-        return task_catalog.resolve(defaults, tasks)
-    names = selection.split()
-    unknown = task_catalog.unknown_tasks(names, tasks)
-    if unknown:
-        _warn_and_continue(
-            f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them",
-            notice_timeout,
-        )
-    return task_catalog.resolve(names, tasks)
+        selected = task_catalog.default_tasks(mode, tasks)
+    else:
+        selected = selection.split()
+        unknown = task_catalog.unknown_tasks(selected, tasks)
+        if unknown:
+            _warn_and_continue(
+                f"unknown task names in PYNTARA_TASKS: {', '.join(unknown)}; continuing without them",
+                notice_timeout,
+            )
+    resolved = task_catalog.resolve(selected, tasks)
+    if add_dependencies:
+        return resolved, []
+    selected_folded = {name.casefold() for name in selected}
+    names = [name for name in resolved if name.casefold() in selected_folded]
+    omitted = [name for name in resolved if name.casefold() not in selected_folded]
+    return names, omitted
 
 
 def _resolve_force_tasks(
@@ -559,8 +578,15 @@ def run() -> None:
         )
         raise typer.Exit(1)
     mode, mode_warning = _resolve_mode()
-    names = _resolve_task_names(
-        mode, engine_values.NOTICE_TIMEOUT, tasks_values.CATALOG
+    add_dependencies = not _env_flag(
+        "PYNTARA_DONT_RUN_DEPENDENT_TASK",
+        default=engine_values.DONT_RUN_DEPENDENT_TASK_DEFAULT,
+    )
+    names, omitted_dependencies = _resolve_task_names(
+        mode,
+        engine_values.NOTICE_TIMEOUT,
+        tasks_values.CATALOG,
+        add_dependencies=add_dependencies,
     )
     ctx = _run_context(mode, names)
     run_warnings = [
@@ -569,6 +595,11 @@ def run() -> None:
         if warning
     ]
     log_start_banner(__version__, mode, names)
+    if not add_dependencies:
+        log_event(
+            "Dependencies not added: "
+            + (" ".join(omitted_dependencies) if omitted_dependencies else "none")
+        )
     if ctx.force_tasks:
         log_event(f"Force: {' '.join(sorted(ctx.force_tasks))}")
     quiesce_package_updaters(common_values.PACKAGE_STATUS_TIMEOUT_SECONDS)

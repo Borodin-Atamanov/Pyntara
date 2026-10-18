@@ -188,6 +188,13 @@ ENVIRONMENT_FLAG_TRUE_VALUES: tuple[str, ...] = ("1", "true", "yes")
 # once it has served its purpose, false keeps it for a repeated run.
 DELETE_PACKAGES_AFTER_INSTALL_DEFAULT: bool = True
 
+# Shipped answer of PYNTARA_DONT_RUN_DEPENDENT_TASK: false, so a run adds the
+# catalog dependencies of every selected task and the effective set is always
+# complete. True runs only the selected tasks themselves, which is meant for a
+# machine whose state is already prepared; the project sets the flag nowhere,
+# so a target machine always receives the complete set.
+DONT_RUN_DEPENDENT_TASK_DEFAULT: bool = False
+
 # Format of the moment the run writes down, used where a timestamp of the run
 # appears: the prefix of a progress line and the moment a collected report
 # states. One value, so the console and the report name the same moment the
@@ -777,6 +784,7 @@ READ_VALUE_NAMES: tuple[str, ...] = (
     "DIRECTLY_CONNECTED_NETWORKS_COMMAND",
     "DISK_FREE_SPACE_PATH",
     "DISK_RESERVE_BYTES",
+    "DONT_RUN_DEPENDENT_TASK_DEFAULT",
     "DPKG_ARCHITECTURE_COMMAND",
     "DPKG_AUDIT_COMMAND",
     "DPKG_CONFIGURE_PENDING_COMMAND",
