@@ -89,6 +89,7 @@ Password: PYNTARA_VAULT_PASSWORD (optional; without it, or when it matches no va
 Vault source: PYNTARA_VAULT_SOURCE (optional, auto-detected when omitted).  
 Install mode: PYNTARA_INSTALL_MODE (optional; when omitted the engine detects desktop or server from the machine and reports it, so the detection lives in one place).  
 Task selection: PYNTARA_TASKS (optional, space-separated task names; the engine resolves dependencies, otherwise the mode defaults are used).  
+Exact task selection: PYNTARA_DONT_RUN_DEPENDENT_TASK (optional; 1, true or yes runs only the named tasks without their catalog dependencies, and the run logs the dependencies it did not add; 0 or an unset value keeps the complete set). It is meant for a machine whose state is already prepared, and the bootstrap never sets it.  
 Apt index refresh: PYNTARA_SKIP_APT_UPDATE (optional; 1, true or yes skips the apt-get update that the package install tasks run before the first install).  
 Downloaded packages: PYNTARA_DELETE_PACKAGES_AFTER_INSTALL (optional; 1, true or yes, and an absent value, delete the packages and the data a task downloaded once they have served their purpose; 0 keeps them, so a repeated run reuses them and saves network traffic and time).
 

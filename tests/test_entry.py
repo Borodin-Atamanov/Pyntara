@@ -71,6 +71,7 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "PYNTARA_FORCE_TASKS",
         "PYNTARA_SKIP_APT_UPDATE",
         "PYNTARA_DELETE_PACKAGES_AFTER_INSTALL",
+        "PYNTARA_DONT_RUN_DEPENDENT_TASK",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -863,6 +864,136 @@ def test_the_true_answers_of_the_flag_come_from_the_values(
     result = runner.invoke(app, [])
     assert result.exit_code == 0
     assert captured["flag"] is False
+
+
+def _captured_task_set(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    tasks_value: str | None,
+    exact_value: str | None,
+) -> tuple[list[str], str]:
+    """Run the engine with a chosen selection and answer the names it ran.
+
+    The answer is the name list that reached run_tasks and the output of the
+    run, so a test checks both what runs and what the log says about it.
+    """
+
+    _clear_env(monkeypatch)
+    monkeypatch.setenv("PYNTARA_INSTALL_MODE", "minimal")
+    if tasks_value is None:
+        monkeypatch.delenv("PYNTARA_TASKS", raising=False)
+    else:
+        monkeypatch.setenv("PYNTARA_TASKS", tasks_value)
+    if exact_value is None:
+        monkeypatch.delenv("PYNTARA_DONT_RUN_DEPENDENT_TASK", raising=False)
+    else:
+        monkeypatch.setenv("PYNTARA_DONT_RUN_DEPENDENT_TASK", exact_value)
+    captured: dict[str, list[str]] = {"names": []}
+
+    def fake_run_tasks(
+        ctx: Context, names: list[str]
+    ) -> tuple[list[tuple[str, TaskResult]], str | None]:
+        captured["names"] = names
+        return [], None
+
+    monkeypatch.setattr("pyntara.pyntara.run_tasks", fake_run_tasks)
+    result = runner.invoke(app, [])
+    assert result.exit_code == 0
+    return captured["names"], result.output
+
+
+def test_run_exact_selection_runs_only_the_named_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The variable removes the automatic inclusion of dependencies: the run set
+    # is exactly the selected task, and the log names every dependency the run
+    # did not add, so nobody has to guess why the set is short.
+    names, output = _captured_task_set(
+        monkeypatch, tasks_value="btrfs_points_setup", exact_value="1"
+    )
+
+    assert names == ["btrfs_points_setup"]
+    assert ("Dependencies not added: add_extra_repos btrfs_setup btrfs_recompress") in output
+
+
+def test_run_adds_dependencies_without_the_variable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The shipped default is the complete set: one selected task brings its
+    # catalog dependencies, and the log carries no line about omitted ones.
+    names, output = _captured_task_set(
+        monkeypatch, tasks_value="btrfs_points_setup", exact_value=None
+    )
+
+    assert names == [
+        "add_extra_repos",
+        "btrfs_setup",
+        "btrfs_recompress",
+        "btrfs_points_setup",
+    ]
+    assert "Dependencies not added:" not in output
+
+
+def test_run_exact_selection_without_a_list_uses_the_mode_tasks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Without PYNTARA_TASKS the selection is the default set of the mode, and
+    # the variable keeps that set without adding the dependencies the mode does
+    # not name.
+    names, _ = _captured_task_set(
+        monkeypatch, tasks_value=None, exact_value="true"
+    )
+
+    assert names == task_catalog.default_tasks("minimal", REAL_TASKS)
+
+
+@pytest.mark.parametrize("value", ["1", "true", "yes", "TRUE", " yes "])
+def test_the_exact_selection_accepts_the_declared_true_answers(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    names, _ = _captured_task_set(
+        monkeypatch, tasks_value="btrfs_points_setup", exact_value=value
+    )
+
+    assert names == ["btrfs_points_setup"]
+
+
+@pytest.mark.parametrize("value", ["0", "no", "banana"])
+def test_any_other_answer_of_the_exact_selection_is_false(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    names, _ = _captured_task_set(
+        monkeypatch, tasks_value="btrfs_points_setup", exact_value=value
+    )
+
+    assert "btrfs_setup" in names
+
+
+def test_the_exact_selection_keeps_the_catalog_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The order of the words in the selection never decides the execution
+    # order, exactly as without the variable.
+    names, _ = _captured_task_set(
+        monkeypatch,
+        tasks_value="btrfs_points_setup swapfile_service_install",
+        exact_value="1",
+    )
+
+    assert names == ["swapfile_service_install", "btrfs_points_setup"]
+
+
+def test_the_exact_selection_says_when_a_task_has_no_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A task without catalog dependencies still gets a line of its own, so the
+    # absence of the dependency list is the answer and not silence.
+    names, output = _captured_task_set(
+        monkeypatch, tasks_value="swapfile_service_install", exact_value="1"
+    )
+
+    assert names == ["swapfile_service_install"]
+    assert "Dependencies not added: none" in output
 
 
 def test_run_skip_apt_update_zero_is_false(
