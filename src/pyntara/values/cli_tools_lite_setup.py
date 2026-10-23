@@ -86,7 +86,8 @@ PACKAGES: tuple[str, ...] = (
     "ncdu",  # disk usage analyzer with an interactive curses interface
     # network tools
     "net-tools",  # classic tools: ifconfig, netstat, route, arp
-    "nmap",  # network scanner
+    # nmap lives in cli_tools_heavy_setup: with its dependencies it took 28 MB
+    # and 22 s, the largest install of this section
     "tcpdump",  # command-line packet analyzer
     "traceroute",  # trace the network path to a remote host
     "whois",  # client for the whois directory service

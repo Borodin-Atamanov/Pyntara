@@ -1,9 +1,11 @@
 """Unit tests for the cli_tools_heavy_setup task.
 
 The task is the heavy half of the console tools: the media and document
-packages whose install is long (calibre, texlive-extra-utils, pdftk-java). The
-install path itself is shared with the lite section (pyntara.package_set), so
-this suite checks the facts that belong to this section alone: its place in the
+packages, whose install together with its dependencies is the longest of the
+toolset. The four heaviest packages of that list are left out by the values
+module, which names their measured sizes and times in the comments. The install
+path itself is shared with the lite section (pyntara.package_set), so this
+suite checks the facts that belong to this section alone: its place in the
 catalog, the real package list, that the task installs its own list, and that a
 package of that list which fails is named here.
 
@@ -96,11 +98,16 @@ def test_the_heavy_list_holds_the_media_and_document_tools() -> None:
     # The heavy half is the media and document toolset; the everyday utilities
     # stay in the lite section, and the virtual kind of exiftool is never named
     # because dpkg-query cannot see it.
-    assert "calibre" in heavy_values.PACKAGES
     assert "tesseract-ocr" in heavy_values.PACKAGES
     assert "libimage-exiftool-perl" in heavy_values.PACKAGES
     assert "exiftool" not in heavy_values.PACKAGES
     assert "tree" not in heavy_values.PACKAGES
+    # The four heaviest packages are left out on purpose, with their measured
+    # sizes and times in the comments of the values module, and nmap moved here
+    # from the lite section.
+    for left_out in ("texlive-extra-utils", "calibre", "pdftk-java", "pandoc"):
+        assert left_out not in heavy_values.PACKAGES
+    assert "nmap" in heavy_values.PACKAGES
 
 
 def test_all_installed_skips_apt(

@@ -1,12 +1,15 @@
 """Values of the cli_tools_heavy_setup task.
 
 The media and document toolset installed from the Ubuntu archive: images,
-audio, video, PDF, ebooks and OCR. It is the heavy half of the console tools,
-separated from the everyday utilities of cli_tools_lite_setup: the packages
-themselves are large, and the toolchain behind them is much larger, because
-calibre pulls a whole Qt and Python media stack, texlive-extra-utils pulls a
-TeX distribution and pdftk-java pulls a Java runtime. A long or failing install
-here therefore never holds back the light set.
+audio, video, PDF, ebooks and OCR. It is the long half of the console tools,
+separated from the everyday utilities of cli_tools_lite_setup, so a long or
+failing install here never holds back the light set.
+
+The four heaviest packages of the toolset are left out of the list and named in
+the comments below together with the size and the time measured in the install
+logs: in a real run they took about 1305 MB of the 1401 MB and about 462 s of
+the 655 s this section installed, so they were the whole cost of it. A machine
+that needs one of them installs it by hand.
 
 The task checks the real system state with dpkg-query and installs only what is
 missing, so repeated runs change nothing. The apt index is refreshed once
@@ -45,17 +48,31 @@ PACKAGES: tuple[str, ...] = (
     "mat2",  # strip metadata from files
     # pdf and documents
     "poppler-utils",  # pdfunite, pdfseparate, pdfattach, pdfinfo, pdftotext, pdftoppm
-    "texlive-extra-utils",  # pdfcrop, crop pdf margins
-    "pdftk-java",  # pdftk, pdf manipulation and metadata
+    # The four heaviest packages of the whole toolset are left out because they
+    # are too heavy and take too much disk. The numbers measured on the install
+    # logs (median of eight real runs, the additional disk space apt reported
+    # for the package together with its dependencies, and the time apt took)
+    # are 528 MB and 217 s for texlive-extra-utils, 316 MB and 189 s for
+    # calibre, 254 MB and 32 s for pdftk-java, 207 MB and 24 s for pandoc.
+    # Together they are 1305 MB of the 1401 MB and 462 s of the 655 s the whole
+    # section installed, and every one of them drags a whole toolchain: a TeX
+    # distribution, a Qt and Python media stack, a Java runtime. A machine that
+    # needs one of them installs it by hand.
+    # "texlive-extra-utils",  # pdfcrop, crop pdf margins
+    # "pdftk-java",  # pdftk, pdf manipulation and metadata
     "qpdf",  # pdf encryption, cleaning and normalization
     "ghostscript",  # gs, postscript and pdf interpreter
-    "pandoc",  # document format converter
-    "calibre",  # ebook-convert, ebook format conversion
+    # "pandoc",  # document format converter
+    # "calibre",  # ebook-convert, ebook format conversion
     # ocr
     "tesseract-ocr",  # OCR engine
     "tesseract-ocr-eng",  # English language data for tesseract
     "tesseract-ocr-rus",  # Russian language data for tesseract
     "tesseract-ocr-spa",  # Spanish language data for tesseract
+    # network scanning, moved here from cli_tools_lite_setup because its
+    # install with dependencies took 28 MB and 22 s, the largest install of
+    # that section
+    "nmap",  # network scanner
 )
 
 # The names the task reads. The list lives next to the values it names, the
