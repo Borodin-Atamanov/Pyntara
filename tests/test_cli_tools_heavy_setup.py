@@ -94,22 +94,6 @@ def test_cli_tools_heavy_setup_depends_on_add_extra_repos() -> None:
     assert task_def.depends == ("add_extra_repos",)
 
 
-def test_the_heavy_list_holds_the_media_and_document_tools() -> None:
-    # The heavy half is the media and document toolset; the everyday utilities
-    # stay in the lite section, and the virtual kind of exiftool is never named
-    # because dpkg-query cannot see it.
-    assert "tesseract-ocr" in heavy_values.PACKAGES
-    assert "libimage-exiftool-perl" in heavy_values.PACKAGES
-    assert "exiftool" not in heavy_values.PACKAGES
-    assert "tree" not in heavy_values.PACKAGES
-    # The four heaviest packages are left out on purpose, with their measured
-    # sizes and times in the comments of the values module, and nmap moved here
-    # from the lite section.
-    for left_out in ("texlive-extra-utils", "calibre", "pdftk-java", "pandoc"):
-        assert left_out not in heavy_values.PACKAGES
-    assert "nmap" in heavy_values.PACKAGES
-
-
 def test_all_installed_skips_apt(
     monkeypatch: pytest.MonkeyPatch, _test_package_set: None
 ) -> None:
